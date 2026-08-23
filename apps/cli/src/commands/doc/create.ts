@@ -145,7 +145,7 @@ export const createCommand: WorkspaceCommandSpec = {
       valueName: "path",
       description:
         "Folder under `data/docs/`, as a bare name (`finance`) or the full prefix " +
-        "(`data/docs/finance`); a type SPEC.md §7 gives its own document root may instead name " +
+        "(`data/docs/finance`). A type SPEC.md §7 gives its own document root may instead name " +
         "that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` " +
         "declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an " +
         "explicit folder wins over that default. **`--type thread` is the exception at both " +

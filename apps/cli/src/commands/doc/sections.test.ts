@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { HEADING_PATH_SEPARATOR } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import { CliError, UsageError } from "../../errors.js";
@@ -272,54 +269,5 @@ describe("selectSection", () => {
     for (const near of ["Escrow", "Mortgage options > Escrow", " Mortgage options › Escrow"]) {
       expect(() => selectSection(sections, "doc_a1b2c3", near, undefined)).toThrow(UsageError);
     }
-  });
-});
-
-/**
- * The scan is a copy of `apps/server/src/core/headings.ts`, which `apps/cli`
- * cannot import: it depends on `@corpus/contract` alone, and that module is not
- * on the server's published surface. A copy drifts, and a drifted copy here
- * means `--section` reads a different section from the one `corpus search`
- * addressed — the two verbs stop composing, silently.
- *
- * So the copy is asserted against its original. This test fails on either side
- * moving, and the fix is never to update one of the two literals: it is to make
- * both match, or to move the scan into `@corpus/contract` beside the
- * `splitLines`/`fencedCodeRanges` primitives it already builds on, which is the
- * end state this duplication is standing in for.
- */
-describe("the heading scan is the server's, not a second opinion", () => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const read = (path: string): Promise<string> => readFile(join(here, path), "utf8");
-
-  it("shares the ATX grammar, the closing sequence and the fence mask, character for character", async () => {
-    const [mine, theirs] = await Promise.all([
-      read("./sections.ts"),
-      read("../../../../server/src/core/headings.ts"),
-    ]);
-
-    for (const shared of [
-      "const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \\t]+(.*))?$/;",
-      "const CLOSING_SEQUENCE = /[ \\t]+#+[ \\t]*$/;",
-      "if (overlapsRange(fenced, line.start, line.contentEnd)) continue;",
-      "while ((stack[stack.length - 1]?.level ?? 0) >= level) stack.pop();",
-      'headings = stack.map((heading) => heading.text).filter((heading) => heading !== "");',
-    ]) {
-      expect(theirs, `apps/server/src/core/headings.ts no longer contains: ${shared}`).toContain(
-        shared,
-      );
-      expect(mine, `doc/sections.ts no longer contains: ${shared}`).toContain(shared);
-    }
-  });
-
-  it("joins a path the way the server's chunker does, from the contract's own separator", async () => {
-    const chunker = await read("../../../../server/src/semantic/chunker.ts");
-
-    expect(chunker).toContain(
-      "headings.length === 0 ? title : headings.join(HEADING_PATH_SEPARATOR)",
-    );
-    expect(await read("./sections.ts")).toContain(
-      "headings.length === 0 ? title : headings.join(HEADING_PATH_SEPARATOR)",
-    );
   });
 });

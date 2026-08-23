@@ -1,16 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { UsageError } from "./errors.js";
+import { gloss } from "./gloss.js";
 import {
+  argDescription,
   commandSynopsis,
   flagDescription,
   flagUsage,
+  parseHelpMode,
   renderCommandHelp,
   renderRootHelp,
   renderTopicHelp,
 } from "./help.js";
-import { fixtureEverythingCommand, fixtureRegistry, fixtureTopic } from "./registry/fixtures.js";
+import {
+  fixtureEverythingCommand,
+  fixtureProseCommand,
+  fixtureRegistry,
+  fixtureTopic,
+} from "./registry/fixtures.js";
 import { GLOBAL_FLAGS } from "./registry/globals.js";
+import type { FlagSpec } from "./registry/types.js";
 
 const plain = { color: false };
+const brief = { color: false, mode: "brief" } as const;
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[`);
 
 describe("renderRootHelp", () => {
@@ -107,6 +118,110 @@ describe("renderCommandHelp", () => {
   });
 });
 
+describe("parseHelpMode", () => {
+  it("reads the two modes and defaults to full", () => {
+    expect(parseHelpMode(undefined)).toBe("full");
+    expect(parseHelpMode("full")).toBe("full");
+    expect(parseHelpMode("brief")).toBe("brief");
+  });
+
+  it.each(["short", "", "BRIEF", "true"])("refuses %j as a usage error", (raw) => {
+    expect(() => parseHelpMode(raw)).toThrow(UsageError);
+    expect(() => parseHelpMode(raw)).toThrow(/unknown help mode/);
+  });
+});
+
+describe("--help=brief", () => {
+  const command = renderCommandHelp(fixtureProseCommand, brief);
+  const full = renderCommandHelp(fixtureProseCommand, plain);
+
+  it("matches its snapshot", () => {
+    expect(command).toMatchSnapshot();
+  });
+
+  it("matches its snapshot for a topic verb too", () => {
+    expect(renderCommandHelp(fixtureEverythingCommand, brief)).toMatchSnapshot();
+  });
+
+  it("leaves the full text untouched, and full is what an unset mode renders", () => {
+    expect(renderCommandHelp(fixtureProseCommand, { color: false, mode: "full" })).toBe(full);
+    expect(full).toContain("A paragraph that `--help=brief` drops entirely");
+    expect(full).toContain("Deeper runs cost more");
+    expect(full).toContain("Examples:");
+  });
+
+  it("drops the description paragraph and the examples", () => {
+    expect(command).not.toContain("A paragraph that `--help=brief` drops entirely");
+    expect(command).not.toContain("Examples:");
+    expect(command).not.toContain("Expound upon doc-1.");
+  });
+
+  it("keeps the summary, the synopsis and every name", () => {
+    expect(command).toContain("corpus expound — Say a great deal about very little.");
+    expect(command).toContain("corpus expound <target> [flags]");
+    expect(command).toContain("<target>");
+    expect(command).toContain("--depth <number>");
+    expect(command).toContain("--aside <string>");
+  });
+
+  it("renders each description's first sentence and drops the rest", () => {
+    for (const flag of fixtureProseCommand.flags) {
+      expect(command).toContain(gloss(flag.description));
+    }
+    expect(command).toContain("The thing to expound upon.");
+    expect(command).not.toContain("Deeper runs cost more");
+    expect(command).not.toContain("rendered after the main text");
+    expect(command).not.toContain("read from the workspace");
+  });
+
+  it("keeps the default and the repeatability, which are not prose", () => {
+    expect(command).toContain("(default: 2)");
+    expect(command).toContain("(repeatable)");
+  });
+
+  it("keeps the global flags, glossed", () => {
+    for (const flag of GLOBAL_FLAGS) {
+      expect(command).toContain(`--${flag.name}`);
+      expect(command).toContain(gloss(flag.description));
+    }
+    // The `--json` paragraph is four sentences; only the first survives.
+    expect(command).not.toContain("so absence never has to be guessed at");
+  });
+
+  it("points at the full text", () => {
+    expect(command).toContain("Run `corpus expound --help` for the full text and examples.");
+  });
+
+  it("costs a fraction of the full text", () => {
+    const words = (text: string): number => text.trim().split(/\s+/).length;
+    expect(words(command)).toBeLessThan(words(full) / 2);
+  });
+
+  it("strips a topic help down to its verbs", () => {
+    const help = renderTopicHelp(fixtureTopic, brief);
+    expect(help).toContain("corpus widget — Manage widgets.");
+    expect(help).toContain("Show one widget.");
+    expect(help).not.toContain("A fixture topic standing in");
+    expect(help).not.toContain("Global flags:");
+    expect(help).toContain("Run `corpus widget --help` for the full text.");
+  });
+
+  it("strips the root help down to its commands and topics", () => {
+    const help = renderRootHelp(fixtureRegistry, brief);
+    expect(help).toContain("everything");
+    expect(help).toContain("widget");
+    expect(help).not.toContain("Global flags:");
+    expect(help).not.toContain("docs/cli.md");
+    expect(help).toContain("Run `corpus --help` for the full text.");
+  });
+
+  it("still emits no ANSI escapes when colour is off, and bolds when it is on", () => {
+    expect(ANSI.test(renderCommandHelp(fixtureProseCommand, brief))).toBe(false);
+    expect(ANSI.test(renderTopicHelp(fixtureTopic, { color: true, mode: "brief" }))).toBe(true);
+    expect(ANSI.test(renderRootHelp(fixtureRegistry, { color: true, mode: "brief" }))).toBe(true);
+  });
+});
+
 describe("colour", () => {
   it("emits no ANSI escapes when colour is off", () => {
     expect(ANSI.test(renderRootHelp(fixtureRegistry, plain))).toBe(false);
@@ -130,12 +245,40 @@ describe("flag and synopsis rendering", () => {
       "--title <text>",
     );
     expect(flagUsage({ name: "count", type: "number", description: "" })).toBe("--count <number>");
+    // A flag with a `bareValue` reads its value from `--flag=value` alone, and
+    // the bracketed placeholder is what says so.
+    expect(
+      flagUsage({
+        name: "help",
+        alias: "h",
+        type: "string",
+        valueName: "mode",
+        bareValue: "full",
+        description: "",
+      }),
+    ).toBe("-h, --help[=<mode>]");
     expect(
       flagDescription({ name: "count", type: "number", default: 3, description: "Count." }),
     ).toBe("Count. (default: 3)");
     expect(
       flagDescription({ name: "tag", type: "string", repeated: true, description: "Tag." }),
     ).toBe("Tag. (repeatable)");
+  });
+
+  it("glosses a description in brief and leaves it whole in full", () => {
+    const flag: FlagSpec = {
+      name: "depth",
+      type: "number",
+      default: 2,
+      description: "How far. Or not.",
+    };
+    expect(flagDescription(flag, "full")).toBe("How far. Or not. (default: 2)");
+    expect(flagDescription(flag)).toBe("How far. Or not. (default: 2)");
+    expect(flagDescription(flag, "brief")).toBe("How far. (default: 2)");
+
+    const arg = { name: "id", required: true, description: "The id. Read from the workspace." };
+    expect(argDescription(arg)).toBe("The id. Read from the workspace.");
+    expect(argDescription(arg, "brief")).toBe("The id.");
   });
 
   it("marks required arguments with angle brackets and optional ones with square brackets", () => {

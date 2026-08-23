@@ -7,8 +7,13 @@ import { renderMigrations } from "../../migrations/render.js";
 import { detectMigrations, type DetectedMigration } from "../../migrations/registry.js";
 import type { Output } from "../../output.js";
 import { TEMPLATE_MANIFEST_FILE, templateManifestPath } from "../../paths.js";
-import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import type {
+  Registry,
+  WorkspaceCommandContext,
+  WorkspaceCommandSpec,
+} from "../../registry/types.js";
 import { collectIncoming, shaOnDisk, type ToolRoots } from "../../template/incoming.js";
+import { staleVerbCitations, type StaleCitation } from "../../template/stale-verbs.js";
 import {
   readTemplateManifest,
   serializeManifest,
@@ -209,6 +214,18 @@ export interface UpgradeReport {
    * and a workspace whose template files are current can still need one.
    */
   readonly migrations: readonly DetectedMigration[];
+  /**
+   * Instruction files that name a `corpus` command this build does not have
+   * (CLI-059) — always present, `[]` when there are none.
+   *
+   * Scanned **after** the sync, so what is reported is what this run could not
+   * repair: a citation in a file the sync just updated is already gone, and what
+   * is left is in the files the workspace made its own. Like a migration it is
+   * reported, never fixed, and never touches the exit code — a skill naming a
+   * missing verb still saves and still runs, and fails only when the agent
+   * reaches that line.
+   */
+  readonly staleCitations: readonly StaleCitation[];
 }
 
 /**
@@ -243,6 +260,12 @@ export interface WorkspaceUpgradeRequest {
    * care keeps working; every real call passes the workspace's value.
    */
   readonly dataDir?: string;
+  /**
+   * The installed command surface, for the stale-citation scan (CLI-059). A
+   * caller that omits it gets no scan rather than a wrong one: this module is
+   * imported *by* the registry, so it cannot import the registry back.
+   */
+  readonly registry?: Registry;
 }
 
 export async function runWorkspaceUpgrade(
@@ -258,6 +281,7 @@ export async function runWorkspaceUpgrade(
       restore: context.flags.boolean("restore"),
       adopt: context.flags.boolean("adopt"),
       dataDir: context.workspace.dataDir,
+      registry: context.registry,
     },
     dependencies,
   );
@@ -268,12 +292,32 @@ export async function runWorkspaceUpgrade(
   // is not a template file. §2.4 wants it listed distinctly, which means at the
   // end of the report rather than inside one of its sections.
   renderMigrations(context.out, report.migrations);
+  renderStaleCitations(context.out, report.staleCitations);
 }
 
+/**
+ * The template sync, plus the one thing that can only be judged once it has run.
+ *
+ * The scan is deliberately **outside** `syncTemplate` and deliberately last:
+ * every one of that function's four exits is a different amount of work done, and
+ * a citation is stale or not according to what is on disk when the run is over.
+ * Doing it here means one call site instead of four, and it means a `--dry-run`
+ * reports the workspace as it stands — which is exactly what a dry run is for.
+ */
 export async function applyWorkspaceUpgrade(
   request: WorkspaceUpgradeRequest,
   dependencies: UpgradeDependencies = {},
 ): Promise<UpgradeReport> {
+  const report = await syncTemplate(request, dependencies);
+  const registry = request.registry;
+  if (registry === undefined) return { ...report, staleCitations: [] };
+  return { ...report, staleCitations: staleVerbCitations({ root: request.root, registry }) };
+}
+
+async function syncTemplate(
+  request: WorkspaceUpgradeRequest,
+  dependencies: UpgradeDependencies,
+): Promise<Omit<UpgradeReport, "staleCitations">> {
   const root = request.root;
   const dryRun = request.dryRun ?? false;
   const restore = request.restore ?? false;
@@ -306,7 +350,7 @@ export async function applyWorkspaceUpgrade(
         throw gitFailure("configuring the workspace repository's maintenance", cause);
       });
 
-  const report: UpgradeReport = {
+  const report: Omit<UpgradeReport, "staleCitations"> = {
     workspace: root,
     fromVersion: manifest?.tool ?? null,
     toVersion: request.version,
@@ -365,7 +409,7 @@ export async function applyWorkspaceUpgrade(
     // baseline the operator may never supply.
     const healed = healQueueSkeleton(root, queueSkeleton);
     const trackable = await trackableMarkers(root, healed);
-    const partial: UpgradeReport = {
+    const partial: Omit<UpgradeReport, "staleCitations"> = {
       ...report,
       written: healed,
       queueSkeletonIgnored: healed.filter((marker) => !trackable.includes(marker)),
@@ -403,7 +447,7 @@ export async function applyWorkspaceUpgrade(
   const trackable = await trackableMarkers(root, healed);
   const staged = [...applied, ...trackable, ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : [])];
 
-  const result: UpgradeReport = {
+  const result: Omit<UpgradeReport, "staleCitations"> = {
     ...report,
     written,
     queueSkeletonIgnored: healed.filter((marker) => !trackable.includes(marker)),
@@ -554,7 +598,7 @@ function countMissing(from: readonly string[], against: readonly string[]): numb
 async function commitUpgrade(
   request: WorkspaceUpgradeRequest,
   paths: readonly string[],
-  report: UpgradeReport,
+  report: Omit<UpgradeReport, "staleCitations">,
 ): Promise<string | null> {
   const message =
     `workspace: upgrade template files ${report.fromVersion ?? "(no baseline)"} → ` +
@@ -629,6 +673,59 @@ export function renderUpgradeReport(out: Output, report: UpgradeReport): void {
     return;
   }
   renderUpgradeReportBody(out, report);
+}
+
+/**
+ * The stale-citation section (CLI-059), rendered **beside** the template report
+ * rather than inside it — the same position `renderMigrations` takes, and for
+ * the same reason, plus one of its own.
+ *
+ * The shared reason: `corpus upgrade` renders the template report *nested*,
+ * under a "workspace template:" heading, and the two verbs must print this
+ * finding in one place a reader can learn once.
+ *
+ * The reason of its own is decisive. Both of `corpus upgrade`'s renderers skip
+ * the nested report entirely when the template files are current — "already up
+ * to date" needs no detail — and a workspace whose template files are all
+ * current is exactly the one this check exists for: its skills were edited, so
+ * the sync kept them, so their dead verbs are still there. Nested, the finding
+ * would be dropped in the only case that matters.
+ *
+ * Silent when there is nothing, unlike the migrations section, which always says
+ * `none`. That section answers a question an operator ran the upgrade to ask;
+ * this one is a fault report, and a fault report that speaks when there is no
+ * fault is a line every reader learns to skip.
+ */
+export function renderStaleCitations(
+  out: Output,
+  citations: readonly StaleCitation[],
+  // `corpus upgrade` writes its report to `.corpus/upgrade.log` as well as
+  // printing it: an upgrade started from the board runs detached and restarts
+  // the server the browser was talking to, so the file is where the answer can
+  // still be read afterwards. A finding that only reached stdout would be lost
+  // in exactly the run nobody was watching.
+  record: (line: string) => void = () => undefined,
+): void {
+  if (citations.length === 0) return;
+
+  const lines = [
+    "",
+    `${plural(citations.length, "stale command reference")} — these files tell the agent to run ` +
+      "a command this tool does not have, and it will find out by trying. Nothing here was " +
+      "changed:",
+    ...citations.flatMap((citation) => [
+      `  ${citation.path}:${String(citation.line)}: \`corpus ${citation.command}\``,
+      `    ${citation.text}`,
+      `    ${citation.hint}`,
+    ]),
+    "  Each of these files is yours, so the repair is an edit: `corpus doc edit <id>` with the " +
+      "line rewritten, or `corpus workspace diff <path>` to see what the tool's own copy says " +
+      "now.",
+  ];
+  for (const line of lines) {
+    out.line(line);
+    record(line);
+  }
 }
 
 function renderUpgradeReportBody(out: Output, report: UpgradeReport): void {
@@ -761,6 +858,16 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "section says `none` when nothing fires, and a migration never changes the exit code — it is " +
     "work for the agent, not a failure of the upgrade. Under `--json` it is the `migrations` " +
     "array. Every command in it is safe to run twice.\n\n" +
+    "**Stale command references are reported too, and only the ones this run could not fix.** A " +
+    "verb the tool removes lives on in every skill the workspace has edited, and the agent finds " +
+    "out by running it. So once the sync is done, the workspace's `CLAUDE.md`, `README.md`, " +
+    "`.claude/skills/` and `.claude/agents/` are read for `corpus …` commands the installed " +
+    "registry does not have, and each one is printed with its file, its line, the line itself " +
+    "and the help that lists what the topic does have. Only code is read — a fenced block or an " +
+    "inline span — and a sentence saying a verb was removed is prose about a command rather than " +
+    "an instruction to run it, so it is left alone. The section is silent when there is nothing, " +
+    "changes no exit code, and appears under `--json` as `staleCitations`. Nothing here is " +
+    "edited: these files are the workspace's, and the repair is `corpus doc edit`.\n\n" +
     "This command and `corpus init` are the only two that write workspace files directly and " +
     "commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the " +
     "server stopped, because a workspace whose skills are broken is exactly the one whose loop " +

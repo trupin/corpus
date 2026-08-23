@@ -13,6 +13,7 @@ import { INTERRUPT_SIGNALS, type InterruptSignal, type SignalTarget } from "../.
 import { upgradeLogPath } from "../../paths.js";
 import { createTestContext, type TestContextOptions } from "../../registry/fixtures.js";
 import { stubFetch } from "../../testing/fetch.js";
+import { registry } from "../../registry/index.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
 import { commitAll, initRepository } from "../init/git.js";
 import { generateToken, scaffoldWorkspace } from "../init/scaffold.js";
@@ -167,6 +168,10 @@ async function run(options: RunOptions): Promise<Harness> {
     json: options.json ?? true,
     cwd: options.root ?? tempDir("nowhere"),
     version: "0.3.0",
+    // The real surface: the stale-citation scan (CLI-059) judges a workspace's
+    // skills against the commands this build actually has, and the fixture
+    // registry would make every command in them look removed.
+    registry,
   });
   const lifecycle: string[] = [];
   const installs: string[] = [];
@@ -951,6 +956,71 @@ describe("corpus upgrade reports the data migrations a workspace needs", () => {
     const harness = await run({ root: null, template, json: false });
     expect(harness.stdout()).not.toContain("migrations:");
     expect((await run({ root: null, template })).result().migrations).toEqual([]);
+  });
+});
+
+describe("corpus upgrade reports a skill that names a command this tool does not have", () => {
+  /**
+   * CLI-059. The finding is hoisted out of the nested template report for a
+   * reason the migrations do not have: both renderers skip that nested report
+   * when the template files are current, and a workspace whose files are current
+   * is exactly the one this finds something in. The detector's own cases are in
+   * `src/template/stale-verbs.test.ts`.
+   */
+  function citeARemovedVerb(root: string): void {
+    write(
+      root,
+      ".claude/skills/orchestrate/SKILL.md",
+      ["orchestrate v1", "", "```bash", "corpus skill rollback orchestrate", "```", ""].join("\n"),
+    );
+  }
+
+  it("names the file, the line and the help that lists the real verbs", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    citeARemovedVerb(root);
+
+    const result = (await run({ root, template })).result();
+    expect(result.staleCitations).toEqual([
+      {
+        path: ".claude/skills/orchestrate/SKILL.md",
+        line: 4,
+        command: "skill rollback",
+        text: "corpus skill rollback orchestrate",
+        hint: "`corpus skill --help=brief` lists the verbs `corpus skill` has.",
+      },
+    ]);
+  });
+
+  it("reports it under --check, where the nested template report is not printed at all", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    citeARemovedVerb(root);
+
+    const harness = await run({ root, template, flags: { check: true }, json: false });
+    expect(harness.stdout()).toContain("1 stale command reference");
+    expect(harness.stdout()).toContain(".claude/skills/orchestrate/SKILL.md:4:");
+  });
+
+  it("prints the block and writes it into the report file", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    citeARemovedVerb(root);
+
+    const harness = await run({ root, template, json: false });
+    expect(harness.stdout()).toContain("1 stale command reference");
+    expect(read(root, ".corpus/upgrade.log")).toContain(
+      ".claude/skills/orchestrate/SKILL.md:4: `corpus skill rollback`",
+    );
+  });
+
+  it("says nothing when every citation resolves, and claims nothing outside a workspace", async () => {
+    const template = makeTemplate();
+    const harness = await run({ root: await makeWorkspace(template), template, json: false });
+    expect(harness.stdout()).not.toContain("stale command reference");
+
+    const outside = await run({ root: null, template });
+    expect(outside.result().staleCitations).toEqual([]);
   });
 });
 

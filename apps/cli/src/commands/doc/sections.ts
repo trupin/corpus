@@ -1,9 +1,4 @@
-import {
-  fencedCodeRanges,
-  HEADING_PATH_SEPARATOR,
-  overlapsRange,
-  splitLines,
-} from "@corpus/contract";
+import { headingSections, renderHeadingPath } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 
 /**
@@ -35,43 +30,20 @@ import { UsageError } from "../../errors.js";
  * only fail to match if the document changed in between — which is exactly what
  * a staleness check is for.
  *
- * ## The scan is the server's, re-stated
+ * ## The scan is the contract's, not a second opinion
  *
- * The boundary rule, the ATX grammar and the fence masking are copied from
- * `apps/server/src/core/headings.ts`, which the CLI cannot import (it depends
- * on `@corpus/contract` alone, and `headings.ts` is not on the server's
- * published surface). Copying a scan invites drift, so `sections.test.ts` reads
- * that file and fails when either side moves. The right end state is the scan
- * moving into `@corpus/contract` beside the `splitLines`/`fencedCodeRanges`
- * primitives it already builds on — a contract change, and therefore a separate
- * issue.
+ * The boundary rule, the ATX grammar, the fence masking and the address join
+ * are `@corpus/contract`'s `headingSections` and `renderHeadingPath`
+ * (CONTRACT-070) — the same scan the server's chunker, its search addresses and
+ * its thread context pack read. Until then this file **copied** them from
+ * `apps/server/src/core/headings.ts`, which the CLI cannot import, and a test
+ * here compared the two files' source text. What is left below is the CLI's own
+ * part and only that: which sections are readable, how one is addressed to a
+ * caller, and what happens when a `--section` names none or several.
  */
-
-/** ATX headings, CommonMark's rule: up to three leading spaces, then 1–6 `#`. */
-const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
-
-/** A closing sequence (`## Rates ##`) is decoration, not part of the heading. */
-const CLOSING_SEQUENCE = /[ \t]+#+[ \t]*$/;
 
 /** How many heading paths a failed `--section` lists before pointing at `--headings`. */
 export const MAX_LISTED_PATHS = 40;
-
-const headingText = (raw: string | undefined): string =>
-  (raw ?? "").replace(CLOSING_SEQUENCE, "").trim();
-
-/**
- * The address, joined exactly as the server joins a search hit's `headingPath`
- * (`apps/server/src/semantic/chunker.ts`): enclosing headings outermost first,
- * and the document's **title** when a passage has none above it, so every
- * section has an address.
- *
- * A **display join**: callers print a path and never split one, because a
- * heading may legitimately contain the separator. That is why matching a
- * `--section` value is string equality against the whole rendered path rather
- * than a comparison of parsed segments.
- */
-const renderHeadingPath = (headings: readonly string[], title: string): string =>
-  headings.length === 0 ? title : headings.join(HEADING_PATH_SEPARATOR);
 
 /** One stretch of a body under one heading, and the bytes it covers. */
 export interface DocumentSection {
@@ -102,42 +74,20 @@ export interface DocumentSection {
  * whose address collides with that heading's.
  */
 export function documentSections(body: string, title: string): readonly DocumentSection[] {
-  const fenced = fencedCodeRanges(body);
-  const sections: DocumentSection[] = [];
-  const stack: { readonly level: number; readonly text: string }[] = [];
-  let start = 0;
-  let level = 0;
-  let headings: readonly string[] = [];
-
-  const close = (end: number): void => {
-    const text = body.slice(start, end);
-    if (text.trim() === "") return;
-    sections.push({ headingPath: renderHeadingPath(headings, title), level, start, end, text });
-  };
-
-  for (const line of splitLines(body)) {
-    // `match` rather than the server's `exec`, which is the only line here that
-    // deliberately differs from it: `hygiene.test.ts` forbids these modules
-    // from naming `exec(` at all, and it is right to stay blunt about a word
-    // that usually means a subprocess. Identical semantics for a non-global
-    // regex, so the parity test below has nothing to reconcile.
-    const match = line.text.match(ATX_HEADING);
-    if (match === null) continue;
-    // A `## Rates` inside a fenced block is prose, here and in the server's
-    // scan and the semantic chunker — all three read the same mask.
-    if (overlapsRange(fenced, line.start, line.contentEnd)) continue;
-
-    close(line.start);
-    level = (match[1] ?? "").length;
-    while ((stack[stack.length - 1]?.level ?? 0) >= level) stack.pop();
-    stack.push({ level, text: headingText(match[2]) });
-    // An empty heading (`##` with nothing after it) closes its level without
-    // naming one, so it is dropped from the path rather than joined as "".
-    headings = stack.map((heading) => heading.text).filter((heading) => heading !== "");
-    start = line.start;
-  }
-  close(body.length);
-  return sections;
+  // The scan's partition covers the body exactly, blank stretches included; a
+  // *readable* section is one with something in it. The preamble is the only
+  // section that can ever be blank — every other holds at least its own heading
+  // line — and dropping it is what stops a document opening on `# Title` from
+  // offering an empty section whose address collides with that heading's.
+  return headingSections(body)
+    .map((section) => ({
+      headingPath: renderHeadingPath(section.headings, title),
+      level: section.level,
+      start: section.start,
+      end: section.end,
+      text: body.slice(section.start, section.end),
+    }))
+    .filter((section) => section.text.trim() !== "");
 }
 
 /**

@@ -19,6 +19,7 @@ import type {
   WorkspaceCommandContext,
 } from "../../registry/types.js";
 import type { ToolRoots } from "../../template/incoming.js";
+import type { StaleCitation } from "../../template/stale-verbs.js";
 import { findWorkspaceRoot, resolveWorkspace, type Workspace } from "../../workspace.js";
 import { inspectServer, probeHealth } from "../server/state.js";
 import { runStart } from "../server/start.js";
@@ -27,6 +28,7 @@ import {
   applyWorkspaceUpgrade,
   conflictResolutionCommand,
   conflictsOf,
+  renderStaleCitations,
   renderUpgradeReport,
   type UpgradeReport,
 } from "../workspace/upgrade.js";
@@ -163,6 +165,17 @@ export interface UpgradeResult {
    * and never a reason to exit non-zero.
    */
   readonly migrations: readonly DetectedMigration[];
+  /**
+   * Skills and instruction files that name a `corpus` command this build does
+   * not have (CLI-059) — always present, `[]` when there are none.
+   *
+   * Hoisted out of `template` for the reason `migrations` is, and for one more:
+   * both renderers below skip the nested template report when the template files
+   * are current, and a workspace whose files are current is exactly the one this
+   * finds something in — its skills were edited, so the sync kept them, so their
+   * dead verbs are still there. Reported, never fixed, never a non-zero exit.
+   */
+  readonly staleCitations: readonly StaleCitation[];
   readonly server: ServerReport | null;
   /** Workspace-relative path of the written report, or `null` when none was written. */
   readonly reportPath: string | null;
@@ -357,6 +370,7 @@ async function reportCheck(context: CommandContext, stage: Stage): Promise<void>
             actor: stage.actor,
             dryRun: true,
             dataDir: stage.located.workspace.dataDir,
+            registry: context.registry,
           },
           stage.effects.template ?? {},
         );
@@ -379,6 +393,7 @@ async function reportCheck(context: CommandContext, stage: Stage): Promise<void>
     templateFailure: null,
     conflicts: conflictsFrom(template),
     migrations: template?.migrations ?? [],
+    staleCitations: template?.staleCitations ?? [],
     server: null,
     reportPath: null,
   };
@@ -547,6 +562,7 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
             version: installed.version ?? context.version,
             actor: stage.actor,
             dataDir: stage.workspaceContext.workspace.dataDir,
+            registry: context.registry,
           },
           effects.template ?? {},
         );
@@ -642,6 +658,7 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     templateFailure,
     conflicts: conflictsFrom(template),
     migrations: template?.migrations ?? [],
+    staleCitations: template?.staleCitations ?? [],
     server,
     reportPath: journal.relativePath,
   };
@@ -650,6 +667,9 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     journal.note(line);
   });
   renderMigrations(context.out, result.template === null ? null : result.migrations, (line) => {
+    journal.note(line);
+  });
+  renderStaleCitations(context.out, result.staleCitations, (line) => {
     journal.note(line);
   });
   if (journal.relativePath !== null) {
@@ -733,6 +753,7 @@ async function reportAlreadyCurrent(
             actor: stage.actor,
             dryRun: true,
             dataDir: stage.located.workspace.dataDir,
+            registry: context.registry,
           },
           stage.effects.template ?? {},
         );
@@ -755,6 +776,7 @@ async function reportAlreadyCurrent(
     templateFailure: null,
     conflicts: conflictsFrom(template),
     migrations: template?.migrations ?? [],
+    staleCitations: template?.staleCitations ?? [],
     server: {
       wasRunning: stage.wasRunning,
       stopped: false,
@@ -781,6 +803,9 @@ async function reportAlreadyCurrent(
     stage.journal.note(line);
   });
   renderMigrations(context.out, result.template === null ? null : result.migrations, (line) => {
+    stage.journal.note(line);
+  });
+  renderStaleCitations(context.out, result.staleCitations, (line) => {
     stage.journal.note(line);
   });
   stage.journal.finish(result);
@@ -860,6 +885,7 @@ function renderCheck(out: Output, result: UpgradeResult, method: InstallMethod):
   }
   renderConflicts(out, result.conflicts, () => undefined);
   renderMigrations(out, result.template === null ? null : result.migrations);
+  renderStaleCitations(out, result.staleCitations);
   out.line("nothing was downloaded, installed or written (--check).");
 }
 
@@ -930,6 +956,14 @@ export const upgradeCommand: StandaloneCommandSpec = {
     "nothing fires. A migration never changes the exit code: it is the agent's work, not the " +
     "upgrade's failure. Under `--json` it is the `migrations` array. `--check` reports it too, " +
     "against the tool installed now.\n\n" +
+    "**A skill that names a command this tool does not have is reported as well.** A verb the " +
+    "tool removes lives on in every skill the workspace has edited, and until now the agent " +
+    "found out by running it. After the sync, the workspace's `CLAUDE.md`, `README.md`, " +
+    "`.claude/skills/` and `.claude/agents/` are read for `corpus …` commands the installed " +
+    "registry does not carry, and each is printed with its file, its line and the help that " +
+    "lists what the topic does have. A citation the sync " +
+    "just repaired is already gone and is not reported. It changes no exit code, and under " +
+    "`--json` it is the `staleCitations` array.\n\n" +
     "**The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started " +
     "from the board runs detached and its last act restarts the server the browser was talking " +
     "to, so the file is the only place the answer can still be read afterwards. It is truncated " +

@@ -1,5 +1,6 @@
-import { GLOBAL_FLAG_ALIASES, GLOBAL_FLAG_NAMES } from "./globals.js";
-import type { CommandSpec, Registry, TopicSpec } from "./types.js";
+import { countWords, gloss, MAX_GLOSS_WORDS } from "../gloss.js";
+import { GLOBAL_FLAGS, GLOBAL_FLAG_ALIASES, GLOBAL_FLAG_NAMES } from "./globals.js";
+import type { ArgSpec, CommandSpec, FlagSpec, Registry, TopicSpec } from "./types.js";
 
 /**
  * Structural validation of the command surface. It runs when the registry module
@@ -8,6 +9,13 @@ import type { CommandSpec, Registry, TopicSpec } from "./types.js";
  *
  * The rule that matters most: every command carries at least one example. That
  * is the mechanism that keeps the generated reference worth reading.
+ *
+ * The gloss rule below is the second of that kind. `--help=brief` renders the
+ * first sentence of every description as its one-line gloss (CLI-056), so an
+ * opening sentence longer than {@link MAX_GLOSS_WORDS} words is not a style
+ * preference — it is a brief help that is not brief. Failing at module load is
+ * what makes "every flag has a gloss" true by construction rather than by
+ * review.
  */
 
 export class RegistryValidationError extends Error {
@@ -22,10 +30,36 @@ export class RegistryValidationError extends Error {
 
 const NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
+/**
+ * The one-line form `--help=brief` will print for this declaration, checked for
+ * length. A non-empty description always yields a non-empty gloss — the first
+ * sentence of a string with no terminator is the whole string — so the failure
+ * this catches is never a blank line, only a paragraph pretending to be one.
+ */
+function glossProblems(declaration: ArgSpec | FlagSpec, label: string): readonly string[] {
+  const words = countWords(gloss(declaration.description));
+  if (words <= MAX_GLOSS_WORDS) return [];
+  return [
+    `${label} opens with a ${String(words)}-word sentence; \`--help=brief\` prints it as the ` +
+      `one-line gloss, so it must be at most ${String(MAX_GLOSS_WORDS)} words ` +
+      `(split the sentence — the full text keeps everything)`,
+  ];
+}
+
+function flagGlossProblems(flag: FlagSpec, label: string): readonly string[] {
+  return glossProblems(flag, `${label} flag "--${flag.name}"`);
+}
+
 export function collectRegistryProblems(registry: Registry): readonly string[] {
   const problems: string[] = [];
 
   if (registry.summary.trim() === "") problems.push("the registry has no summary");
+
+  // Globals are merged into every command's help, brief included, so they are
+  // held to the same gloss rule even though no command declares them.
+  for (const flag of GLOBAL_FLAGS) {
+    problems.push(...flagGlossProblems(flag, "the global flag"));
+  }
 
   const topLevel = new Set<string>();
   for (const command of registry.commands) {
@@ -101,6 +135,7 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
     }
     if (arg.description.trim() === "")
       problems.push(`${label} argument "${arg.name}" has no description`);
+    problems.push(...glossProblems(arg, `${label} argument "${arg.name}"`));
     if (arg.required && optionalSeen) {
       problems.push(`${label} declares required argument "${arg.name}" after an optional one`);
     }
@@ -125,6 +160,10 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
       problems.push(`${label} flag "--${flag.name}" is not kebab-case`);
     if (flag.description.trim() === "")
       problems.push(`${label} flag "--${flag.name}" has no description`);
+    problems.push(...flagGlossProblems(flag, label));
+    if (flag.bareValue !== undefined && flag.type !== "string") {
+      problems.push(`${label} flag "--${flag.name}" declares a bareValue but is not a string flag`);
+    }
     if (flag.type === "boolean" && flag.repeated === true) {
       problems.push(`${label} flag "--${flag.name}" is a repeated boolean, which has no meaning`);
     }

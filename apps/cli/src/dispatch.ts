@@ -1,6 +1,7 @@
 import { UsageError } from "./errors.js";
+import { DEFAULT_HELP_MODE, parseHelpMode, type HelpMode } from "./help.js";
 import { GLOBAL_FLAGS } from "./registry/globals.js";
-import type { CommandSpec, Registry, TopicSpec } from "./registry/types.js";
+import type { CommandSpec, FlagSpec, Registry, TopicSpec } from "./registry/types.js";
 import { suggest } from "./suggest.js";
 
 /**
@@ -10,9 +11,9 @@ import { suggest } from "./suggest.js";
  */
 
 export type Resolution =
-  | { readonly kind: "root-help" }
+  | { readonly kind: "root-help"; readonly helpMode: HelpMode }
   | { readonly kind: "version" }
-  | { readonly kind: "topic-help"; readonly topic: TopicSpec }
+  | { readonly kind: "topic-help"; readonly topic: TopicSpec; readonly helpMode: HelpMode }
   | {
       readonly kind: "command";
       readonly command: CommandSpec;
@@ -21,14 +22,21 @@ export type Resolution =
       readonly tokens: readonly string[];
     };
 
-/** Global flags that consume the following token, so a scan does not mistake it for a name. */
+/**
+ * Global flags that consume the following token, so a scan does not mistake it
+ * for a name. A flag declaring `bareValue` is excluded however it is typed: it
+ * reads its value from `--flag=value` alone, so `corpus --help doc` names `doc`.
+ */
+const takesNextToken = (flag: FlagSpec): boolean =>
+  flag.type !== "boolean" && flag.bareValue === undefined;
+
 const GLOBAL_VALUE_FLAGS: ReadonlySet<string> = new Set(
-  GLOBAL_FLAGS.filter((flag) => flag.type !== "boolean").map((flag) => flag.name),
+  GLOBAL_FLAGS.filter(takesNextToken).map((flag) => flag.name),
 );
 
 const GLOBAL_VALUE_ALIASES: ReadonlySet<string> = new Set(
   GLOBAL_FLAGS.flatMap((flag) =>
-    flag.type !== "boolean" && flag.alias !== undefined ? [flag.alias] : [],
+    takesNextToken(flag) && flag.alias !== undefined ? [flag.alias] : [],
   ),
 );
 
@@ -36,8 +44,11 @@ export function resolveCommand(registry: Registry, argv: readonly string[]): Res
   const first = findNameToken(argv, 0);
 
   if (first === undefined) {
-    if (hasBooleanFlag(argv, "help")) return { kind: "root-help" };
-    return hasBooleanFlag(argv, "version") ? { kind: "version" } : { kind: "root-help" };
+    // Root and topic help are decided before any command spec exists, so the
+    // mode has to come off raw argv here rather than from the flag parser.
+    const helpMode = helpRequest(argv);
+    if (helpMode === undefined && hasBooleanFlag(argv, "version")) return { kind: "version" };
+    return { kind: "root-help", helpMode: helpMode ?? DEFAULT_HELP_MODE };
   }
 
   const command = registry.commands.find((candidate) => candidate.name === first.value);
@@ -51,7 +62,9 @@ export function resolveCommand(registry: Registry, argv: readonly string[]): Res
   }
 
   const second = findNameToken(argv, first.index + 1);
-  if (second === undefined) return { kind: "topic-help", topic };
+  if (second === undefined) {
+    return { kind: "topic-help", topic, helpMode: helpRequest(argv) ?? DEFAULT_HELP_MODE };
+  }
 
   const verb = topic.commands.find((candidate) => candidate.name === second.value);
   if (verb === undefined) {
@@ -103,6 +116,21 @@ function findNameToken(argv: readonly string[], from: number): NameToken | undef
 
 function hasBooleanFlag(argv: readonly string[], name: string): boolean {
   return argv.some((token) => token === `--${name}` || token === `--${name}=true`);
+}
+
+/**
+ * The help mode argv asks for, or `undefined` when it asks for no help at all.
+ * An unrecognised mode throws here, before anything is rendered — the same
+ * `parseHelpMode` a resolved command's parsed flags go through, so
+ * `corpus --help=short` and `corpus doc list --help=short` fail identically.
+ */
+function helpRequest(argv: readonly string[]): HelpMode | undefined {
+  for (const token of argv) {
+    if (token === "--") return undefined;
+    if (token === "--help" || token === "-h") return DEFAULT_HELP_MODE;
+    if (token.startsWith("--help=")) return parseHelpMode(token.slice("--help=".length));
+  }
+  return undefined;
 }
 
 function without(argv: readonly string[], indices: readonly number[]): readonly string[] {

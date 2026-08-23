@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createClient } from "../../client.js";
 import { templateManifestPath } from "../../paths.js";
 import { createTestContext } from "../../registry/fixtures.js";
+import { registry } from "../../registry/index.js";
 import type { WorkspaceCommandContext } from "../../registry/types.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
 import { workspaceOn } from "../../testing/stub-server.js";
@@ -128,6 +129,10 @@ function harnessFor(
     flags: options.flags ?? {},
     ...(options.json === undefined ? {} : { json: options.json }),
     version: "0.2.0",
+    // The real surface, not the fixture one: the stale-citation scan (CLI-059)
+    // judges a workspace's skills against the commands this build actually has,
+    // and a fixture registry would make every command in them look removed.
+    registry,
   });
   return {
     root,
@@ -830,6 +835,115 @@ describe("corpus workspace upgrade reports data migrations", () => {
 
     expect(harness.stdout()).toContain("migrations: none");
     expect(harness.stdout()).not.toContain("views-to-board");
+  });
+});
+
+describe("corpus workspace upgrade reports stale command references", () => {
+  /** A workspace whose own skill teaches a verb this build does not have. */
+  async function withStaleSkill(): Promise<{ harness: Harness; template: string; root: string }> {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(
+      root,
+      ".claude/skills/orchestrate/SKILL.md",
+      ["orchestrate v1", "", "```bash", "corpus skill rollback orchestrate", "```", ""].join("\n"),
+    );
+    await commitAll({ dir: root, message: "agent evolved the orchestrate skill" });
+    return { harness: harnessFor(root), template, root };
+  }
+
+  it("names the skill, the line, the command and what to do instead", async () => {
+    const { harness, template } = await withStaleSkill();
+    await upgrade(harness, { template });
+
+    const out = harness.stdout();
+    expect(out).toContain("1 stale command reference");
+    expect(out).toContain(".claude/skills/orchestrate/SKILL.md:4: `corpus skill rollback`");
+    expect(out).toContain("corpus skill rollback orchestrate");
+    expect(out).toContain("`corpus skill --help=brief` lists the verbs `corpus skill` has.");
+    expect(out).toContain("corpus workspace diff <path>");
+  });
+
+  it("reports it even when every template file is already current", async () => {
+    // The "already up to date." short-circuit is about template *files*, and an
+    // edited skill is exactly the file that is never up to date by that measure.
+    const { harness, template } = await withStaleSkill();
+    await upgrade(harness, { template });
+    const second = harnessFor(harness.root);
+    await upgrade(second, { template });
+
+    expect(second.stdout()).toContain("already up to date.");
+    expect(second.stdout()).toContain("1 stale command reference");
+  });
+
+  it("says nothing at all when there is nothing to say", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+    expect(harness.stdout()).not.toContain("stale command reference");
+  });
+
+  it("carries the findings in --json and changes no exit code", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(
+      root,
+      ".claude/skills/comment/SKILL.md",
+      ["comment v1", "", "```bash", "corpus skill rollback comment", "```", ""].join("\n"),
+    );
+    await commitAll({ dir: root, message: "agent evolved the comment skill" });
+
+    const harness = harnessFor(root, { json: true });
+    await expect(upgrade(harness, { template })).resolves.toBeUndefined();
+    expect(harness.report().staleCitations).toEqual([
+      {
+        path: ".claude/skills/comment/SKILL.md",
+        line: 4,
+        command: "skill rollback",
+        text: "corpus skill rollback comment",
+        hint: "`corpus skill --help=brief` lists the verbs `corpus skill` has.",
+      },
+    ]);
+  });
+
+  it("is scanned after the sync, so a citation the sync repaired is not reported", async () => {
+    // The workspace never touched this file, so the upgrade overwrites it with
+    // the tool's own copy — and the citation is gone before the scan runs.
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(root, ".claude/skills/orchestrate/SKILL.md", "orchestrate v1\n");
+    write(
+      template,
+      "claude/skills/orchestrate/SKILL.md",
+      ["orchestrate v2", "", "```bash", "corpus queue idle", "```", ""].join("\n"),
+    );
+
+    // Prove the pre-sync state would have been reported, so the assertion below
+    // is about ordering rather than about there being nothing to find.
+    write(
+      root,
+      ".claude/skills/comment/SKILL.md",
+      ["comment v1", "", "```bash", "corpus skill rollback comment", "```", ""].join("\n"),
+    );
+    await commitAll({ dir: root, message: "agent evolved the comment skill" });
+    write(
+      template,
+      "claude/skills/comment/SKILL.md",
+      ["comment v2", "", "```bash", "corpus queue idle", "```", ""].join("\n"),
+    );
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    const out = harness.stdout();
+    expect(out).toContain("update  .claude/skills/orchestrate/SKILL.md");
+    // The edited one was kept, so its dead verb is still there and still said.
+    expect(out).toContain("keep    .claude/skills/comment/SKILL.md");
+    expect(out).toContain(".claude/skills/comment/SKILL.md:4: `corpus skill rollback`");
+    expect(out).not.toContain(".claude/skills/orchestrate/SKILL.md:4:");
   });
 });
 

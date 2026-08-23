@@ -28,6 +28,16 @@ export interface FlagSpec {
   readonly default?: boolean | string | number;
   /** Placeholder shown in help for value-taking flags: `--workspace <path>`. */
   readonly valueName?: string;
+  /**
+   * A string flag whose value may be left off: `--help` and `--help=brief` are
+   * both legal, and the bare form means this value.
+   *
+   * Such a flag never takes its value from the **following** token, only from
+   * the inline `--flag=value` form. That is the whole point: `corpus doc list
+   * --help` must not swallow a positional, and `corpus --help` must not swallow
+   * the command name (CLI-056).
+   */
+  readonly bareValue?: string;
   readonly description: string;
 }
 
@@ -64,6 +74,17 @@ export interface CommandContext {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Version of the `corpus` tool, for anything that records its provenance. */
   readonly version: string;
+  /**
+   * The command surface this build has — the same declaration that rendered the
+   * help the caller read.
+   *
+   * Here so that a verb can answer "does this tool have `corpus skill
+   * rollback`?" without importing `registry/index.ts`: a command module that
+   * imported the registry that imports it would close a cycle. The one caller
+   * today is the upgrade's stale-citation scan (CLI-059), which needs the
+   * installed surface to judge a workspace's skills against.
+   */
+  readonly registry: Registry;
 }
 
 export interface WorkspaceCommandContext extends CommandContext {
