@@ -36,6 +36,7 @@ import {
   planDefaultOpenClears,
 } from "./default-open.js";
 import { decideStageStatus, stageStatusWarning } from "./kanban.js";
+import { assertOrderIsABoardPosition, ORDER_RECOVERY_ON_UPDATE } from "./order-rule.js";
 import { assertDocumentKey } from "./key.js";
 import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
@@ -625,6 +626,14 @@ export async function updateDocumentLocked(
   // Before anything is reconciled or written, and after `changedFields` has
   // decided the patch really moves `status` at all.
   assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);
+  // Likewise, and for the same reason: `fields` is where "the save would really
+  // write this" is already known, so neither guard has to re-derive it. It is
+  // also what makes this path's no-op exemption free — `fields["order"]` is
+  // `undefined` both for a patch that never named the key and for one that
+  // re-sent the value the file already holds, and the rule (`order-rule.ts`,
+  // shared with creation) treats the two the same because they write the same
+  // nothing.
+  assertOrderIsABoardPosition(id, loaded.row.type, fields["order"], ORDER_RECOVERY_ON_UPDATE);
 
   // §6 step by step: resolve against `oldBody`, map through the diff, write
   // the result back. The engine owns every judgment; this call site owns only

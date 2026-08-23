@@ -56,8 +56,12 @@ const rowOf = (docs: DocList, id: string): DocRow | undefined =>
 describe("POST /api/docs with view and board keys", () => {
   it("writes them as top-level YAML keys and reads them back on both routes", async () => {
     ws = createWriteWorkspace("view-create", { sprint: "s026" });
+    // A board, because this case carries `order` — a board's position, which
+    // `POST /api/docs` refuses on anything else (SERVER-143). Every other key
+    // here is written the same way whatever the type, which is what the case is
+    // about: they land as plain top-level YAML in canonical order.
     const created = await createDoc(ws, {
-      type: "view",
+      type: "board",
       title: "Finance",
       folder: "views",
       stage: "triage",
@@ -75,7 +79,7 @@ describe("POST /api/docs with view and board keys", () => {
     const text = ws.read(created.path);
     expect(frontmatterLines(text)).toEqual([
       "id: doc_finance".replace("doc_finance", created.id),
-      "type: view",
+      "type: board",
       "title: Finance",
       "created: 2026-07-27T09:00:00Z",
       "updated: 2026-07-27T09:00:00Z",
@@ -114,7 +118,7 @@ describe("POST /api/docs with view and board keys", () => {
     expect(frontmatter["column"]).toBeUndefined();
     expect(frontmatter["extra"]).toEqual({ column: "board/kanban", pinned: true });
 
-    const row = rowOf(await list("type=view&sort=order"), created.id);
+    const row = rowOf(await list("type=board&sort=order"), created.id);
     expect(row).toMatchObject({
       stage: "triage",
       order: 20,
@@ -515,10 +519,13 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
 
   it("clears a view key the patch nulls, and keeps `due: null` written", async () => {
     ws = createWriteWorkspace("view-clear", { sprint: "s026" });
+    // A board again, for the reason above: the case is about a `null` clearing a
+    // §10 key, and `order` is the key it clears — which only a board may carry
+    // in the first place (SERVER-143).
     const created = await createDoc(ws, {
-      type: "view",
+      type: "board",
       title: "Finance",
-      folder: "views",
+      folder: "boards",
       stage: "triage",
       order: 30,
       extra: { column: "board/kanban" },
@@ -544,7 +551,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     // §5's canonical block keeps its `due: null`; only the §10 keys are cleared.
     expect(text).toContain("due: null");
 
-    const row = rowOf(await list("type=view"), created.id);
+    const row = rowOf(await list("type=board"), created.id);
     expect(row).toMatchObject({ stage: null, order: null, extra: {} });
   });
 

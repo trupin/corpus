@@ -586,21 +586,26 @@ describe("POST /api/docs/{id}/edit-session/flush", () => {
 // `PUT /api/docs/{id}` carrying `{ extra: { width } }` and nothing else, and the
 // agent was asked whether a column width ripples into other documents.
 describe("only a content edit opens a session (SERVER-095)", () => {
-  /** Every field class a `PUT` can move without touching a word of the document. */
-  const frontmatterOnly: readonly (readonly [string, Record<string, unknown>])[] = [
-    ["a dragged column width", { extra: { width: 725 } }],
-    ["a tag", { tags: ["mortgage"] }],
-    ["a status", { status: "resolved" }],
-    ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
-    ["a view query", { query: { type: "thread", status: "open" } }],
-    ["a board position", { order: 3, columns: ["doc_seedinbox"] }],
-    ["a due date", { due: "2026-09-01" }],
-    ["nothing at all — a save that names no change (§9.2)", {}],
+  /**
+   * Every field class a `PUT` can move without touching a word of the document,
+   * each on a document type that field belongs to — `order` is a board's
+   * position and a view is refused one (SERVER-143), so the case that carries it
+   * runs on a board.
+   */
+  const frontmatterOnly: readonly (readonly [string, string, Record<string, unknown>])[] = [
+    ["a dragged column width", "view", { extra: { width: 725 } }],
+    ["a tag", "view", { tags: ["mortgage"] }],
+    ["a status", "view", { status: "resolved" }],
+    ["a still-current mark", "view", { reviewed: "2026-07-27T09:00:00Z" }],
+    ["a view query", "view", { query: { type: "thread", status: "open" } }],
+    ["a board position", "board", { order: 3, columns: ["doc_seedinbox"] }],
+    ["a due date", "view", { due: "2026-09-01" }],
+    ["nothing at all — a save that names no change (§9.2)", "view", {}],
   ];
 
-  it.each(frontmatterOnly)("does not wake the agent for %s", async (_label, patch) => {
+  it.each(frontmatterOnly)("does not wake the agent for %s", async (_label, type, patch) => {
     const ws = workspace("ack-fm-only", { editAckIdleMs: IDLE_MS });
-    const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "Body.\n" });
+    const doc = await createDoc(ws, { type, title: "Open threads", body: "Body.\n" });
     pastTheSquashWindow(ws);
     const before = ws.head();
 
@@ -771,7 +776,9 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     // them opens a second session, and none of them ends the one that is open.
     // The person wrote once, so the agent is woken once.
     const ws = workspace("ack-interleaved-fm", { editAckIdleMs: IDLE_MS });
-    const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "one\n" });
+    // A board, because one of the writes below is a reorder — `order` is a
+    // board's position and `PUT` refuses it on a view (SERVER-143).
+    const doc = await createDoc(ws, { type: "board", title: "Work", body: "one\n" });
     pastTheSquashWindow(ws);
 
     await edit(ws, doc.id, "one\ntwo\n");

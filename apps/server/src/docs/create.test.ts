@@ -594,3 +594,68 @@ describe("POST /api/docs", () => {
     expect(row?.path).toBe(created.path);
   });
 });
+
+/**
+ * SPEC.md §10, rider 2 and SERVER-143 (create half added on the orchestrator's
+ * decision, 2026-08-23): **`order` is a board's position among boards, and
+ * nothing else** — so a view must not be able to be *born* carrying one either.
+ *
+ * `PUT /api/docs/{id}` was the door the issue named, and closing only that one
+ * would have left the product in the shape the bug is: one write path refusing
+ * the field and another accepting it, which is exactly how the field survived
+ * Phase 41's migration. Both paths call the one assertion in `order-rule.ts`.
+ */
+describe("POST /api/docs — `order` is a board's position", () => {
+  it("refuses an `order` on a new view, naming the field and the rule", async () => {
+    start("create-order-view");
+    const head = ws.head();
+
+    const response = await ws.post("/api/docs", {
+      type: "view",
+      title: "Scoped",
+      order: 7,
+      query: { type: "note" },
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      code: string;
+      issues: { path: string; message: string }[];
+    };
+    expect(body.code).toBe("bad_request");
+    const issue = body.issues[0];
+    expect(issue?.path).toBe("body.order");
+    expect(issue?.message).toContain("not a board");
+    expect(issue?.message).toContain("§10");
+    // The recovery is the one that applies here: there is no key to unset yet.
+    expect(issue?.message).toContain("Omit the field");
+    // Nothing was created and nothing was committed.
+    expect(ws.head()).toBe(head);
+    const rows = ws.db.prepare("SELECT id FROM documents WHERE type = 'view'").all();
+    expect(rows).toEqual([]);
+  });
+
+  it("refuses it on a new note too — the rule is the type, not the word `view`", async () => {
+    start("create-order-note");
+
+    const response = await ws.post("/api/docs", { type: "note", title: "Mortgage", order: 7 });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("still lets a new board be created with one", async () => {
+    start("create-order-board");
+
+    const board = await createDoc(ws, { type: "board", title: "Work", order: 7 });
+
+    expect(parseDocument(ws.read(board.path)).data["order"]).toBe(7);
+  });
+
+  it("accepts `order: null` on a view — the contract's own no-key spelling", async () => {
+    start("create-order-null");
+
+    const view = await createDoc(ws, { type: "view", title: "Scoped", order: null });
+
+    expect(parseDocument(ws.read(view.path)).data["order"]).toBeUndefined();
+  });
+});
