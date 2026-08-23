@@ -1468,3 +1468,37 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-153 | The Reflect control, and what changed since the agent last looked | done | P1 | opus | UI-148, SERVER-137 |
 | CONTRACT-080 | A board reorder is one commit: `POST /api/boards/order` — PR #58's second blocking finding, one vertical (contract, server, kit/UI) | done | P0 | opus | UI-148, SERVER-138 |
 | PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |
+
+## Phase 43 — The tree tells the truth, and a value is changed where it is shown (2026-08-23, user reports)
+
+Two things the user raised on 2026-08-23, one with a screenshot of five
+identical rows and one with a mockup.
+
+**The explorer duplicates a document under every expanded ancestor.** Not a
+collapse bug, though collapsing is what makes it visible: `GET /api/docs?folder=`
+is a **path prefix**, so a parent folder's listing contains every descendant's
+documents, and the tree draws the same document under the parent and under the
+sub-folder with the same React key. React says outright that duplicate keys
+duplicate or omit children. The fix is a listing that stops at the folder
+(CONTRACT-081, SERVER-141) and a tree that draws each document once (UI-161).
+P0, at the user's word.
+
+**Frontmatter is displayed twice and edited in the copy.** The reader draws a
+chip strip that says what the document holds and, below it, a labelled form
+holding the same values. The user wants the chip to be the control — tags with a
+`+` and a per-chip menu, the status picker where the status is shown, the date
+picker on the date. That contradicts §10's "editable as a small form", so it
+needs a rider: SHARED-068 carries the drafted text, **unsigned**, and UI-162
+implements it.
+
+**Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068
+waits on the user's signature and blocks nothing else, so UI-162 runs whenever
+that signature arrives. Critical path: CONTRACT-081 → SERVER-141 → UI-161.
+
+| ID | Title | Status | Priority | Model | Dependencies |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | todo | P0 | opus | — |
+| SERVER-141 | List a folder's own documents | todo | P0 | opus | CONTRACT-081 |
+| UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
+| SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, unsigned | todo | P0 | fable | — |
+| UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
