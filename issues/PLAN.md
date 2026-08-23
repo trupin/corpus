@@ -1537,3 +1537,4 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | CONTRACT-082 | The CLI pays 23ms a call for routes it never serves (CLI-058 measurement) | todo | P1 | opus | — |
 | SERVER-143 | A view accepts an `order` the spec says it does not have (CLI-063 finding) | todo | P1 | opus | — |
 | CLI-064 | A batch verb needs a decided exit code before it is worth building (CLI-058 recommendation) — **not in v0.20.0** | todo | P1 | fable | CLI-057, CLI-058 |
+| UI-165 | A column's thread margin cannot be reached by any gesture (UI-163 escalation) — **not in v0.20.0**, needs a user call | todo | P2 | opus | UI-163 |
