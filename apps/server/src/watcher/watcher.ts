@@ -18,11 +18,12 @@
 // {@link folderTreeSignature} across the batch, never by the *shape* of the
 // events in it (SERVER-020). See {@link FlushContext}.
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
   QUEUE_EVENT_STATUSES,
   QueueEventStatusSchema,
+  type Actor,
   type QueryKey,
   type QueueEventStatus,
 } from "@corpus/contract";
@@ -59,6 +60,17 @@ import type { ReadHeadVersion } from "./git-head.js";
 import { WATCH_FILES, WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
 import { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
 import type { SelfWriteRegistry } from "./self-writes.js";
+
+/**
+ * SPEC.md §9.1's `last_actor` for a change the watcher picked up (§4).
+ *
+ * `user`, and it is not a default standing in for a party nobody knows: an
+ * out-of-band edit is by definition a change the server did not make, so it
+ * carries no agent attribution, and a change nobody attributed to the agent is a
+ * person's. §7's reflection reads this column, and it must not be told that a
+ * hand-edited file is the agent's own output.
+ */
+const OUT_OF_BAND_ACTOR: Actor = "user";
 
 /** Trailing debounce: how long after the last event a batch is flushed. */
 export const WATCH_DEBOUNCE_MS = 50;
@@ -226,6 +238,63 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
   const flushBudgetMs = options.flushBudgetMs ?? WATCH_FLUSH_BUDGET_MS;
   const workspaceRoot = db.config.workspaceRoot;
   const corpusDir = db.config.corpusDir;
+
+  /**
+   * The workspace root as the filesystem spells it. Read once, because it is the
+   * yardstick {@link caseCanonicalPath} measures an event's path against and it
+   * cannot change while the process runs.
+   */
+  const realWorkspaceRoot = ((): string => {
+    try {
+      return realpathSync.native(workspaceRoot);
+    } catch {
+      return workspaceRoot;
+    }
+  })();
+
+  /**
+   * The path as the filesystem spells it, when what the watcher was handed
+   * differs from it **only in case**.
+   *
+   * A directory renamed to another case on a case-insensitive filesystem leaves
+   * chokidar watching both spellings for the life of the process: measured
+   * against chokidar 4 on macOS, every later write to a file under it arrives
+   * **twice**, once under the name the directory used to have and once under the
+   * name it has. The stale half projects a row at a path no file is at, so
+   * `db doctor` reports `orphan_row` for it and `duplicate_id` for the real one,
+   * and one change costs two invalidation frames. It is reachable without any of
+   * Corpus's own verbs — `mv Finance finance` in a shell does it — and
+   * SERVER-136 found it through `POST /api/folders/rename`.
+   *
+   * `realpathSync.native` is the correction, and the **native** one
+   * specifically: the JavaScript implementation resolves symlinks without
+   * touching case, and only the platform call answers what a directory is really
+   * called.
+   *
+   * The comparison is made on the **workspace-relative** halves rather than on
+   * the two absolute paths, and that is what keeps it symlink-safe in both
+   * directions. A workspace reached through a symlink — every macOS temp
+   * directory is one — has a real root that shares no prefix with the reported
+   * path, so an absolute comparison would refuse every correction; and a
+   * *document* path that resolves out of the workspace, or to a different place
+   * under it, differs by more than case and is left exactly as it arrived. A
+   * path that no longer resolves — every `unlink`, and a file removed between
+   * the event and here — keeps what the event said, which is the only name left
+   * to key a removal on.
+   */
+  const caseCanonicalPath = (absPath: string): string => {
+    let real: string;
+    try {
+      real = realpathSync.native(absPath);
+    } catch {
+      return absPath;
+    }
+    const reported = workspaceRelativePath(workspaceRoot, absPath);
+    const actual = workspaceRelativePath(realWorkspaceRoot, real);
+    if (reported === null || actual === null || actual === reported) return absPath;
+    if (actual.toLowerCase() !== reported.toLowerCase()) return absPath;
+    return join(workspaceRoot, ...actual.split("/"));
+  };
 
   const roots = WATCH_ROOTS.map((root) => join(workspaceRoot, ...root.split("/")));
   for (const root of roots) {
@@ -402,11 +471,15 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     }
 
     const existing = documentAt(relativePath);
-    let outcome = projectDocument(db, absPath);
+    // SPEC.md §9.1's `last_actor`, and §4 decides it: a change that reached the
+    // watcher came from outside the server, so nobody attributed it to the
+    // agent, so it is a person's. `OUT_OF_BAND_ACTOR` is that one word, named so
+    // the reasoning sits beside the value rather than in a commit message.
+    let outcome = projectDocument(db, absPath, OUT_OF_BAND_ACTOR);
     let retired: string | null = null;
     if (outcome.kind === "skipped") {
       retired = retireStaleHolder(root, relativePath, content.toString("utf8"));
-      if (retired !== null) outcome = projectDocument(db, absPath);
+      if (retired !== null) outcome = projectDocument(db, absPath, OUT_OF_BAND_ACTOR);
     }
     // The old name goes into the same commit as the new one when a rename's
     // halves reached us in the order that hides the removal (SERVER-090).
@@ -452,8 +525,11 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       existsSync(join(corpusDir, QUEUE_DIR, status, `${id}.json`)),
     );
 
-  const collect = (context: FlushContext, absPath: string, kind: WatchEventKind): void => {
+  const collect = (context: FlushContext, reported: string, kind: WatchEventKind): void => {
     const keys = context.keys;
+    // The path as the filesystem spells it, which is not always the path the
+    // event carries; see {@link caseCanonicalPath}.
+    const absPath = caseCanonicalPath(reported);
     const relativePath = workspaceRelativePath(workspaceRoot, absPath);
     if (relativePath === null) return;
     const target = classifyWatchPath(relativePath);

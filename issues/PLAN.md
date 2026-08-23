@@ -1270,6 +1270,7 @@ was written for.
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
+| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
@@ -1448,7 +1449,7 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | done | P1 | opus | SHARED-064 |
 | AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
 | SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
-| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
+| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | done | P1 | opus | CONTRACT-075 |
 | SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | todo | P1 | opus | CONTRACT-076 |
 | CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
 | CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | todo | P0 | opus | CONTRACT-074, CLI-060 |

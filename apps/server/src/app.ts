@@ -30,7 +30,13 @@ import { mountAgentRoutes } from "./agents/index.js";
 import { mountCaptureRoutes } from "./capture/index.js";
 import { mountCheckRoutes } from "./check/index.js";
 import { mountSkillRoutes } from "./skills/index.js";
-import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
+import {
+  createDocumentMutex,
+  mountDocsRoutes,
+  type DocsWorkspace,
+  type DocumentMutex,
+} from "./docs/index.js";
+import { mountFolderRoutes } from "./folders/index.js";
 import {
   mountThreadRoutes,
   mountThreadScopeRoutes,
@@ -122,6 +128,15 @@ export interface CorpusServer {
    * (sprint-004 Adjudication 2). `undefined` in unit tests that need no rows.
    */
   readonly projection: ProjectionDb | undefined;
+  /**
+   * The one per-document write lane every mutation queues in (SERVER-006), and
+   * the only handle a test has on it: holding a lane is how an interleaving is
+   * *decided* rather than timed, which is the difference between a lost-update
+   * regression test that proves something and one that passes on a fast laptop.
+   * `undefined` alongside {@link projection} — a server with no rows mounts no
+   * write path to serialize.
+   */
+  readonly mutex: DocumentMutex | undefined;
   /**
    * The one in-process invalidation emitter (SPEC.md §2.2 rule 3). Write paths
    * and the watcher publish here; `GET /events` is a subscriber. There is
@@ -393,6 +408,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   let commitOutOfBand: CommitOutOfBandChanges | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
+  /** The write lanes, published on the server so a test can hold one. */
+  let documentMutex: DocumentMutex | undefined;
   /**
    * SPEC.md §4's boot half (SERVER-094), bound only when the server has a
    * workspace to recover — i.e. when it has a projection, which is the same
@@ -563,6 +580,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // two mutexes would serialize each surface against itself and neither
     // against the other (SERVER-006).
     const mutex = createDocumentMutex();
+    documentMutex = mutex;
 
     // Retrieval's semantic half, built before the two endpoints that read it.
     // Constructing it costs nothing — no query, no resolution, no model — and it
@@ -584,6 +602,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     mountIndexRoutes(app, indexMaintenance);
 
     mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
+
+    // SPEC.md §9.2's folder acts (SERVER-136). Mounted beside the document
+    // surface and sharing its lanes: a folder act writes the same files
+    // `PUT /api/docs/{id}` writes, so the two queue rather than race. Inside
+    // this block because a folder's membership is a projection read.
+    mountFolderRoutes(app, docsWorkspace, mutex);
 
     // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
     // collection query it filters identically to, so it mounts here rather than
@@ -798,6 +822,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     logger,
     queue,
     projection: deps.projection,
+    mutex: documentMutex,
     bus,
     selfWrites,
     semantic,

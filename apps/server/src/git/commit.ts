@@ -53,7 +53,7 @@
 //   working tree is never touched — the mutation stands (SPEC.md §11), it is
 //   simply not staged.
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { Actor } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
@@ -224,6 +224,35 @@ export interface CommitRequest {
    * not itself close the window: {@link AutoCommitter.closeWindow} does.
    */
   readonly act?: boolean | undefined;
+  /**
+   * Paths this act **moved away from** that the filesystem can no longer tell
+   * apart from where it moved them to — a folder renamed to a different case on
+   * a case-insensitive filesystem (SERVER-136).
+   *
+   * It exists because the ordinary commit is `--only`, which builds its tree
+   * from `HEAD` plus the **working tree** of the staged paths. That is what
+   * keeps an operator's unrelated staged work out of an autosave, and it is
+   * exactly what cannot express this one move: after `data/docs/Finance`
+   * becomes `data/docs/finance`, the kernel still answers "present, unchanged"
+   * for every path under the old spelling, so no combination of `git add`,
+   * `core.ignorecase` or pathspec makes `--only` record the old paths as gone.
+   * Measured on macOS APFS and confirmed against git's own answer, which is to
+   * update the index (`git mv`) and commit **from** it.
+   *
+   * So a request that sets this is committed from a **scratch index** built for
+   * it — `HEAD`, minus these paths, plus the working tree of the staged paths —
+   * which reaches the same tree `--only` would have reached and keeps the same
+   * promise: the operator's real index is not the one being committed, and
+   * nothing outside this act's paths can be swallowed. The real index is put
+   * back in step over these paths afterwards, or `git status` would show the
+   * rename staged in reverse forever.
+   *
+   * A commit made this way **never folds** into an open window: the scratch
+   * index is seeded from `HEAD`, so an amend from it would restate `HEAD`'s own
+   * tree. Nothing is lost by that — the only caller is a folder act, which is a
+   * bulk act and already commits alone (SPEC.md §4).
+   */
+  readonly forget?: readonly string[] | undefined;
 }
 
 export type CommitOutcome =
@@ -405,6 +434,9 @@ const mergeAnchors = (
   for (const id of orphaned) remapped.delete(id);
   return { remapped, orphaned };
 };
+
+/** Distinguishes one scratch index from the next; see `scratchIndexPath`. */
+let scratchIndexes = 0;
 
 export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitter {
   const { git } = options;
@@ -724,6 +756,20 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
    * not there **as far as staging is concerned**, which is what `existsSync`
    * meant all along.
    */
+  /**
+   * Where a scratch index for one commit lives — inside the repository's own
+   * git directory, so it shares a filesystem with the index it stands in for
+   * and is swept with the repository rather than left in a temp directory.
+   *
+   * `gitDir` is `git rev-parse --git-dir`'s answer, which is relative to the
+   * workspace for an ordinary repository and absolute for a linked worktree;
+   * `resolve` takes both. The name carries the process and a counter because
+   * two commits in one process must never share one, and the git lock the
+   * committer holds already keeps them from overlapping.
+   */
+  const scratchIndexPath = (gitDir: string): string =>
+    resolve(git.root, gitDir.trim(), `corpus-scratch-index-${process.pid}-${scratchIndexes++}`);
+
   const stageablePaths = async (
     paths: readonly string[],
   ): Promise<{ paths: string[]; removed: string[]; directories: string[] }> => {
@@ -894,25 +940,68 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // path from failing the commit for the paths that are real.
     const { paths, removed, directories } = await stageablePaths(request.paths);
     const head = await headSha();
-    if (paths.length > 0) {
-      // `-A` so a removal (a delete, or a move's old path) stages as a removal
-      // rather than being silently left behind in the tree.
-      const staged = await git.exec(["add", "-A", "--", ...paths]);
-      if (!staged.ok) {
-        await unstage(paths, head);
-        return failure("staging failed", staged);
+    if (paths.length === 0) return { kind: "skipped", reason: "nothing to commit" };
+
+    // A move the working tree cannot spell — see `CommitRequest.forget`. Every
+    // git call below then runs against a scratch index instead of the
+    // operator's, and the commit is made from it rather than with `--only`.
+    const forget = request.forget ?? [];
+    const scratch = forget.length === 0 ? null : scratchIndexPath(repository.stdout);
+    const options = scratch === null ? undefined : { env: { GIT_INDEX_FILE: scratch } };
+    const discardScratch = (): void => {
+      if (scratch !== null) rmSync(scratch, { force: true });
+    };
+
+    if (scratch !== null) {
+      const seeded = await git.exec(
+        head === null ? ["read-tree", "--empty"] : ["read-tree", "HEAD"],
+        options,
+      );
+      if (!seeded.ok) {
+        discardScratch();
+        return failure("staging failed", seeded);
       }
-    } else {
+      // The half `--only` cannot reach: the old spelling leaves the tree because
+      // it is dropped from the index, not because the filesystem was asked
+      // whether it is still there.
+      const forgotten = await git.exec(
+        ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", ...forget],
+        options,
+      );
+      if (!forgotten.ok) {
+        discardScratch();
+        return failure("staging failed", forgotten);
+      }
+    }
+
+    // `-A` so a removal (a delete, or a move's old path) stages as a removal
+    // rather than being silently left behind in the tree.
+    const staged = await git.exec(["add", "-A", "--", ...paths], options);
+    if (!staged.ok) {
+      if (scratch === null) await unstage(paths, head);
+      else discardScratch();
+      return failure("staging failed", staged);
+    }
+
+    // "Is there anything to commit?", asked of whichever index this commit will
+    // be made from. `git status` compares the operator's index, which a scratch
+    // commit is deliberately not using.
+    const change =
+      scratch === null
+        ? await git.exec(["status", "--porcelain", "--", ...paths])
+        : await git.exec(
+            head === null ? ["ls-files"] : ["diff", "--cached", "--name-only", "HEAD"],
+            options,
+          );
+    if (change.ok && change.stdout.trim() === "") {
+      if (scratch === null) await unstage(paths, head);
+      else discardScratch();
       return { kind: "skipped", reason: "nothing to commit" };
     }
 
-    const status = await git.exec(["status", "--porcelain", "--", ...paths]);
-    if (status.ok && status.stdout.trim() === "") {
-      await unstage(paths, head);
-      return { kind: "skipped", reason: "nothing to commit" };
-    }
-
-    const candidate = head === null ? null : await amendTarget(request, head);
+    // A scratch commit never folds: its index is seeded from `HEAD`, so an amend
+    // would restate `HEAD`'s own tree. See `CommitRequest.forget`.
+    const candidate = head === null || scratch !== null ? null : await amendTarget(request, head);
     // Three reasons a fold that git would accept must not happen anyway: an
     // amend that would *empty* the commit git refuses outright, one that would
     // take the open window's only copy of what this save removes, and — the
@@ -965,16 +1054,42 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // exception this once made it (SERVER-022 finding 5). Skipping the flag
     // there meant the very first auto-commit in a fresh workspace swallowed
     // whatever the operator happened to have staged.
-    if (paths.length > 0) args.push("--only", "--", ...paths);
+    // A scratch commit is scoped by the index it was built from, which holds
+    // `HEAD` plus this act's paths and nothing else — so it needs no pathspec,
+    // and must not be given one: `--only` would rebuild the tree from the
+    // working tree and undo the whole point (see `CommitRequest.forget`).
+    if (scratch === null) args.push("--only", "--", ...paths);
 
-    const committed = await git.exec(args);
+    const committed = await git.exec(args, options);
     if (!committed.ok) {
       openWindow = null;
-      await unstage(paths, head);
+      if (scratch === null) await unstage(paths, head);
+      else discardScratch();
       return failure(
         target === null ? "git commit failed" : "git commit --amend failed",
         committed,
       );
+    }
+    if (scratch !== null) {
+      discardScratch();
+      // The operator's index still spells these paths the way `HEAD` did a
+      // moment ago, and comparing it against the commit just made shows the
+      // rename staged **in reverse**. Put it back in step over this act's paths
+      // and no others: drop the spelling that is gone, then re-add what is on
+      // disk. Failures are logged rather than raised — the commit already
+      // landed, and §11's rule is that a write stands.
+      for (const repair of [
+        ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--force", "--", ...forget],
+        ["add", "-A", "--", ...paths],
+      ]) {
+        const done = await git.exec(repair);
+        if (!done.ok) {
+          logger.error("could not put the index back in step after a folder rename", {
+            paths: [...paths],
+            output: gitOutput(done),
+          });
+        }
+      }
     }
 
     const sha = await headSha();
