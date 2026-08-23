@@ -501,14 +501,105 @@ describe("complete, fail and abandon", () => {
     expect(failed).toMatchObject({ error: "boom", status: "failed" });
   });
 
-  it("is idempotent, and leaves the first reason in place", async () => {
+  /**
+   * SERVER-145. A repeat used to answer `200` with the first reason still on the
+   * file, so a caller that passed a second reason was told the event was failed
+   * and never told its reason went nowhere. The refusal says `already`, writes
+   * nothing, and leaves the first reason exactly where it was.
+   */
+  it("refuses a repeat by name, leaving the first reason in place", async () => {
     const service = makeService();
     const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+    await service.claimAll();
     await service.fail(event.id, "first");
-    const again = await service.fail(event.id, "second");
 
-    expect(again.error).toBe("first");
+    await expect(service.fail(event.id, "second")).rejects.toMatchObject({
+      status: 409,
+      body: { message: `queue event ${event.id} is already failed` },
+    });
+    const failed: unknown = JSON.parse(
+      readFileSync(service.store.pathFor("failed", event.id), "utf8"),
+    );
+    expect(failed).toMatchObject({ error: "first" });
     expect(await service.store.listIds("failed")).toEqual([event.id]);
+  });
+
+  /**
+   * The pair from SERVER-145's reproduction: a `processed` event re-settled to
+   * `failed` and back, exit 0 both times. The event is claimed and completed
+   * once, and every later settle is refused with the state it is already in.
+   */
+  it("refuses to re-settle a processed event in either direction", async () => {
+    const service = makeService();
+    const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+    await service.claimAll();
+    await service.complete(event.id);
+
+    await expect(service.fail(event.id, "stray")).rejects.toMatchObject({
+      status: 409,
+      body: {
+        message: `queue event ${event.id} is processed; only in-progress work can be failed`,
+      },
+    });
+    await expect(service.complete(event.id)).rejects.toMatchObject({
+      status: 409,
+      body: { message: `queue event ${event.id} is already processed` },
+    });
+    await expect(service.defer(event.id, { blockedOn: "doc_a1b2c3d4" })).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(service.abandon(event.id)).rejects.toMatchObject({
+      status: 409,
+      body: {
+        message:
+          `queue event ${event.id} is processed; ` +
+          "only pending, in-progress, deferred or failed work can be abandoned",
+      },
+    });
+
+    // Nothing moved: the account of what happened to this event is unchanged.
+    expect(await service.store.listIds("processed")).toEqual([event.id]);
+    expect(await service.store.listIds("failed")).toEqual([]);
+    expect(await service.store.listIds("abandoned")).toEqual([]);
+  });
+
+  /**
+   * Worse than the filed defect and found while reproducing it: settling work
+   * **nobody ever claimed** moved it straight out of `pending/`, so the work was
+   * never done and the event was gone. SPEC.md §7: "nobody settles work they did
+   * not claim".
+   */
+  it("refuses to settle work nobody claimed", async () => {
+    const service = makeService();
+    const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+
+    await expect(service.complete(event.id)).rejects.toMatchObject({
+      status: 409,
+      body: {
+        message: `queue event ${event.id} is pending; only in-progress work can be completed`,
+      },
+    });
+    await expect(service.fail(event.id, "never ran")).rejects.toMatchObject({ status: 409 });
+    expect(await service.store.listIds("pending")).toEqual([event.id]);
+  });
+
+  /**
+   * Abandon is the operator's give-up, not the agent's report, so it is admitted
+   * from more than `in-progress` — the console offers it on a failed job beside
+   * `retry` (SPEC.md §7), and `job abandon` calls straight into it.
+   */
+  it("abandons a failed event, and refuses a second abandon by name", async () => {
+    const service = makeService();
+    const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+    await service.claimAll();
+    await service.fail(event.id, "boom");
+
+    expect((await service.abandon(event.id)).status).toBe("abandoned");
+    await expect(service.abandon(event.id)).rejects.toMatchObject({
+      status: 409,
+      body: { message: `queue event ${event.id} is already abandoned` },
+    });
+    expect(await service.store.listIds("abandoned")).toEqual([event.id]);
   });
 
   it("404s an unknown id", async () => {
@@ -659,6 +750,9 @@ describe("defer", () => {
     // exactly while the job is deferred, so a processed event may not carry it.
     const requeued = await service.requeue(event.id, { onlyFrom: ["failed", "deferred"] });
     expect(requeued.blockedOn).toBeUndefined();
+    // A retry puts the event back at the **start** of the work, so it is claimed
+    // again before it can be settled again (SERVER-145).
+    await service.claimAll();
     const processed = await service.complete(event.id);
     expect(processed.blockedOn).toBeUndefined();
     expect(onDisk(service, "processed", event.id)).not.toHaveProperty("blockedOn");
@@ -942,9 +1036,12 @@ describe("losing a race with another actor", () => {
     expect(await service.reapStale()).toEqual({ reaped: [], failed: [] });
   });
 
+  // Both spies go up **after** the claim, since a settle is now defined for
+  // claimed work only (SERVER-145) and the claim itself needs the real store.
   it("404s a transition whose event moved away underneath it", async () => {
     const service = makeService();
     const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
     vi.spyOn(service.store, "move").mockResolvedValue(false);
 
     await expect(service.complete(event?.id ?? "")).rejects.toMatchObject({ status: 404 });
@@ -953,6 +1050,7 @@ describe("losing a race with another actor", () => {
   it("404s a transition whose file vanished between locate and read", async () => {
     const service = makeService();
     const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
     vi.spyOn(service.store, "readEvent").mockResolvedValue(undefined);
 
     await expect(service.complete(event?.id ?? "")).rejects.toMatchObject({ status: 404 });
@@ -1200,6 +1298,7 @@ describe("the projection mirror", () => {
       [seeded.id, "pending"],
     ]);
 
+    await service.claimAll();
     await service.complete(seeded.id);
     expect(late.upserts.at(-1)).toMatchObject({ id: seeded.id, status: "processed" });
     // The mirror handed to the constructor stops receiving anything: it saw the
@@ -1211,6 +1310,7 @@ describe("the projection mirror", () => {
     const service = createQueueService({ corpusDir, pollIntervalMs: 10 });
     services.push(service);
     const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+    await service.claimAll();
     expect((await service.complete(event.id)).status).toBe("processed");
   });
 });
@@ -1276,8 +1376,9 @@ describe("a finished event closes the commit window (§4)", () => {
     await service.fail(event?.id ?? "", "boom");
     expect(closes).toHaveLength(1);
 
-    // Idempotent, and nothing ended: the event was already failed.
-    await service.fail(event?.id ?? "", "again");
+    // Refused, and nothing ended: the event was already failed (SERVER-145 —
+    // before it, this second call was a `200` that closed a second window).
+    await expect(service.fail(event?.id ?? "", "again")).rejects.toMatchObject({ status: 409 });
     expect(closes).toHaveLength(1);
   });
 

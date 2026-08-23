@@ -137,35 +137,40 @@ describe("retry", () => {
     await expect(jobs.retry("evt_nosuchjob")).rejects.toMatchObject({ status: 404 });
   });
 
-  it("cannot re-run a job that completes while the retry is in flight", async () => {
+  it("cannot re-run a job that is abandoned while the retry is in flight", async () => {
     // SERVER-022 finding 2. The status check used to run in this service,
     // outside the queue's serialize chain, and `requeue` moves an event from
-    // whichever directory it is in — so a `complete` landing in the interval
-    // left the retry putting a *processed* event back into `pending/`, and the
+    // whichever directory it is in — so a settle landing in the interval left
+    // the retry putting an already-settled event back into `pending/`, and the
     // agent ran a finished job a second time.
+    //
+    // The racing verb is `abandon` rather than `complete` since SERVER-145:
+    // completing a *failed* job is now itself refused, so the two console
+    // actions on one failed row — retry and abandon — are the live version of
+    // this race, and the one the console can actually produce.
     const id = await failedJob();
 
-    const completed = queue.complete(id);
+    const abandoned = queue.abandon(id);
     const retried = jobs
       .retry(id)
       .then(() => ({ kind: "landed" as const }))
       .catch((error: unknown) => ({ kind: "refused" as const, error }));
-    await completed;
+    await abandoned;
     const outcome = await retried;
 
-    // Exactly one of the two wins, and the completion did: it reached the chain
+    // Exactly one of the two wins, and the abandon did: it reached the chain
     // first. What must never happen is both.
     expect(outcome.kind).toBe("refused");
     expect(outcome).toMatchObject({
       error: {
         status: 409,
-        message: `queue event ${id} is processed; only a failed or deferred job can be retried`,
+        message: `queue event ${id} is abandoned; only a failed or deferred job can be retried`,
       },
     });
-    expect(await queue.store.locate(id)).toBe("processed");
+    expect(await queue.store.locate(id)).toBe("abandoned");
     // One status directory holds the event, and the retry left no trace in the
     // log of a run it did not start.
-    expect(await queue.status()).toMatchObject({ processed: 1, pending: 0, failed: 0 });
+    expect(await queue.status()).toMatchObject({ abandoned: 1, pending: 0, failed: 0 });
     expect((await jobs.readLog(id, 0)).lines.map((line) => line.line)).not.toContain(
       RETRY_LOG_LINE,
     );

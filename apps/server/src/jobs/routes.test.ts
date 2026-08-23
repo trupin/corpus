@@ -364,6 +364,9 @@ describe("GET /api/jobs", () => {
   it("returns the console rows in the contract's shape", async () => {
     const id = await enqueue({ threadId: THREAD });
     await ingest(id, "working");
+    // Claimed before it is settled: a settle is defined for claimed work only
+    // (SERVER-145).
+    await server.queue.claimAll();
     await server.queue.fail(id, "boom");
 
     const response = await request("/api/jobs");

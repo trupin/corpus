@@ -1540,9 +1540,10 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | UI-165 | A column's thread margin cannot be reached by any gesture (UI-163 escalation) — **not in v0.20.0**, needs a user call | todo | P2 | opus | UI-163 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document (AGENT-045 finding) — **not in v0.20.0**, needs a user call | todo | P1 | fable | CLI-060 |
 | CLI-066 | A body piped over a socket is dropped silently, exit 0 (SHARED-070 finding) | todo | P0 | opus | — |
-| SERVER-145 | A settled event can be settled again, and `queue fail` needs no reason (SHARED-070 finding) | todo | P0 | opus | — |
+| SERVER-145 | A settled event can be settled again, and `queue fail` needs no reason (SHARED-070 finding) | done | P0 | opus | — |
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens (SHARED-070) — **not in v0.20.0** | todo | P1 | fable | SHARED-070 |
 | AGENT-048 | The standing style rule is paid twice per context (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
 | AGENT-049 | `queue idle` prints a shape the skill does not promise (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
 | SERVER-144 | Retrieval ranks the product's own skills into every pack (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
+| SERVER-146 | One server test failed once under load and was not named — **not in v0.20.0** | todo | P2 | opus | — |

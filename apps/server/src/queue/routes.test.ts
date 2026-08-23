@@ -426,6 +426,7 @@ describe("the transition endpoints", () => {
 
   it("accepts a fail with no reason", async () => {
     const [id] = await seed(1);
+    await request("/api/queue/claim-all", { method: "POST" });
     const response = await request(`/api/queue/${String(id)}/fail`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -436,11 +437,44 @@ describe("the transition endpoints", () => {
     expect(await server.queue.status()).toMatchObject({ failed: 1 });
   });
 
-  it("is idempotent, and 404s an unknown id", async () => {
+  /**
+   * SERVER-145 over HTTP, which is where it matters: the guard is the server's,
+   * so a caller that is not the CLI meets it too. Each refusal is a `409` in the
+   * `ApiError` envelope, naming the state the event is in.
+   */
+  it("refuses to re-settle a settled event, in either direction", async () => {
     const [id] = await seed(1);
-    await request(`/api/queue/${String(id)}/complete`, { method: "POST" });
-    const again = await request(`/api/queue/${String(id)}/complete`, { method: "POST" });
-    expect(again.status).toBe(200);
+    await request("/api/queue/claim-all", { method: "POST" });
+    expect((await request(`/api/queue/${String(id)}/complete`, { method: "POST" })).status).toBe(
+      200,
+    );
+
+    const refail = await request(`/api/queue/${String(id)}/fail`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "stray" }),
+    });
+    expect(refail.status).toBe(409);
+    const parsed = ApiErrorSchema.safeParse(await refail.json());
+    expect(parsed.success && parsed.data.code).toBe("conflict");
+    expect(parsed.success && parsed.data.message).toContain("is processed");
+
+    const recomplete = await request(`/api/queue/${String(id)}/complete`, { method: "POST" });
+    expect(recomplete.status).toBe(409);
+    const repeat = ApiErrorSchema.safeParse(await recomplete.json());
+    expect(repeat.success && repeat.data.message).toBe(
+      `queue event ${String(id)} is already processed`,
+    );
+
+    // The event stayed where the one real settle put it.
+    expect(await server.queue.status()).toMatchObject({ processed: 1, failed: 0, abandoned: 0 });
+  });
+
+  it("refuses to settle an event nobody claimed, and 404s an unknown id", async () => {
+    const [id] = await seed(1);
+    const unclaimed = await request(`/api/queue/${String(id)}/complete`, { method: "POST" });
+    expect(unclaimed.status).toBe(409);
+    expect(await server.queue.status()).toMatchObject({ pending: 1, processed: 0 });
 
     const missing = await request("/api/queue/evt_missing00000/complete", { method: "POST" });
     expect(missing.status).toBe(404);
