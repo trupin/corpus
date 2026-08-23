@@ -133,6 +133,29 @@ followed by a labelled form repeating the same values.
    value, and that no labelled form remains on either surface
 5. Do the whole of step 3 with the keyboard alone
 
+## Adjudication — the stage chip, when the document holds a stage nobody claims
+
+**PR #59 review, recorded so the resolution is a decision on file rather than
+silent drift.**
+
+The signed rider's two sentences conflict in one corner. It says the strip shows
+"its type, its folder, its tags, its status, **its stage**, its dates", and it
+also says the stage chip "is absent when none [of the claiming kanbans] do".
+
+A document that **holds** a `stage` in its frontmatter while **no** kanban claims
+it satisfies the first and fails the second.
+
+`FrontmatterForm.tsx` resolves it in favour of showing held frontmatter: the chip
+appears, reading the stage the document has, and offers no words to change it to.
+The reviewer agreed this is the right reading and I am confirming it as the
+decision.
+
+**Why display wins.** The strip's whole purpose after this rider is to be the
+document *as the corpus holds it*. A field that is on disk and not on the strip
+is a value the surface hides, which is the failure the rider exists to end. The
+"absent when none do" sentence is about a chip **offering a vocabulary** it does
+not have — an empty picker — not about concealing a value the file carries.
+
 ## E2E Verification Log
 
 ### Post-Implementation Verification
