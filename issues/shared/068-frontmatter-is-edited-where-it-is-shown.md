@@ -4,7 +4,7 @@
 shared
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -45,15 +45,15 @@ This issue carries the SPEC rider. UI-162 implements it.
 
 ## Acceptance Criteria
 
-- [ ] The rider text below is read back to the user verbatim and **signed**
+- [x] The rider text below is read back to the user verbatim and **signed**
       before any line of SPEC.md is edited.
-- [ ] §10's Document view sentence is replaced, not appended to, so the spec does
+- [x] §10's Document view sentence is replaced, not appended to, so the spec does
       not describe two surfaces.
-- [ ] The rider is dated and attributed in the spec, as every other rider is.
-- [ ] `npm run spec:check` (or `scripts/check-spec-refs.ts`) passes — every §
+- [x] The rider is dated and attributed in the spec, as every other rider is.
+- [x] `npm run spec:check` (or `scripts/check-spec-refs.ts`) passes — every §
       citation in the issues still resolves.
 
-## The rider, as drafted — **unsigned**
+## The rider, as drafted — **signed 2026-08-23**
 
 > **Frontmatter is edited on the strip that shows it.** The document's own line —
 > its type, its folder, its tags, its status, its stage, its dates — is one strip
@@ -116,7 +116,13 @@ user's signature.
 ## E2E Verification Log
 
 ### Post-Implementation Verification
-_[Agent fills]_
+Applied 2026-08-23 by the orchestrator (fable). Both riders were read back to the
+user verbatim before any edit, and both were signed in the `/goal` that started
+this release: _"Riders SHARED-068 and SHARED-069 signed."_
+
+The §10 sentences were **replaced**, not appended to, so the spec describes one
+surface each. `npm run spec:check ✓ 6880 citation(s) across 1618 file(s), against
+19 section(s) of SPEC.md`.
 
 ## Completion Checklist (domain agent)
 - [ ] Tests written and passing

@@ -4,7 +4,7 @@
 shared
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -54,13 +54,13 @@ This issue carries the SPEC rider. UI-163 implements it.
 
 ## Acceptance Criteria
 
-- [ ] The rider below is read back verbatim and **signed** before SPEC.md is
+- [x] The rider below is read back verbatim and **signed** before SPEC.md is
       edited.
-- [ ] §10's body-width sentence is replaced, not appended to.
-- [ ] The rider is dated and attributed, as every other rider is.
-- [ ] `npm run spec:check` passes.
+- [x] §10's body-width sentence is replaced, not appended to.
+- [x] The rider is dated and attributed, as every other rider is.
+- [x] `npm run spec:check` passes.
 
-## The rider, as drafted — **unsigned**
+## The rider, as drafted — **signed 2026-08-23**
 
 > **A document's content fills its reader, and a reader is sized once.** In a
 > column the body is as wide as the column. The column's own edge is the single
@@ -133,7 +133,13 @@ signature.
 ## E2E Verification Log
 
 ### Post-Implementation Verification
-_[Agent fills]_
+Applied 2026-08-23 by the orchestrator (fable). Both riders were read back to the
+user verbatim before any edit, and both were signed in the `/goal` that started
+this release: _"Riders SHARED-068 and SHARED-069 signed."_
+
+The §10 sentences were **replaced**, not appended to, so the spec describes one
+surface each. `npm run spec:check ✓ 6880 citation(s) across 1618 file(s), against
+19 section(s) of SPEC.md`.
 
 ## Completion Checklist (domain agent)
 - [ ] Tests written and passing

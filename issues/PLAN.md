@@ -1526,8 +1526,8 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | todo | P0 | opus | — |
 | SERVER-141 | List a folder's own documents | todo | P0 | opus | CONTRACT-081 |
 | UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
-| SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, unsigned | todo | P0 | fable | — |
+| SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
 | UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
-| SHARED-069 | A document's content fills the document — the SPEC rider, unsigned | todo | P0 | fable | — |
+| SHARED-069 | A document's content fills the document — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
 | UI-163 | The body fills its column, and full screen keeps its own width | todo | P0 | opus | SHARED-069 |
 | SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
