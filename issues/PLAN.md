@@ -1551,3 +1551,5 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | CLI-067 | `queue fail` needs a reason, and two help strings now contradict the server (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
 | UI-166 | What full screen does to a turn's leading and measure (UI-156 recommendation) — **not in v0.20.0** | todo | P2 | opus | UI-156 |
 | INFRA-032 | A tampered generated artifact survives a green local run (CONTRACT-083 finding) — **not in v0.20.0** | todo | P2 | opus | — |
+| UI-167 | Designating a resident is reachable only by right-click (user report 2026-08-23) | todo | P0 | opus | — |
+| UI-168 | A resident's weight cannot be chosen from the app at all (user report 2026-08-23) | todo | P0 | opus | — |
