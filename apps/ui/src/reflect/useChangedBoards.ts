@@ -3,7 +3,7 @@ import { docsListKey, useCorpusClient, useDocs } from "@corpus/kit";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Board } from "../board/boardDoc";
-import { deriveStageColumns } from "../board/kanban";
+import { decidingStageBoard, deriveStageColumns } from "../board/kanban";
 import { VIEWS_FILTER } from "../board/useColumns";
 import { toBoardColumn, type BoardColumn } from "../board/viewDoc";
 import { useReflectStatus } from "./useReflectStatus";
@@ -62,6 +62,9 @@ export function useChangedBoards(boards: readonly Board[]): ReadonlySet<string> 
    * once and both tabs read the same answer.
    */
   const plan = useMemo(() => {
+    // Only the chips read it, and this pass reads only filters — but a column
+    // derived with the wrong deciding board is still a column derived wrongly.
+    const deciding = decidingStageBoard(boards);
     const filters: Readonly<Record<string, string>>[] = [];
     const seen = new Map<string, number>();
     const slotsOf = new Map<string, number[]>();
@@ -81,7 +84,7 @@ export function useChangedBoards(boards: readonly Board[]): ReadonlySet<string> 
               // nothing, so there is nothing cached for it to say anything about.
               return row === undefined ? [] : [toBoardColumn(viewId, row)];
             })
-          : [...deriveStageColumns(board)];
+          : [...deriveStageColumns(board, deciding)];
       for (const column of columns) {
         if (column.error !== null) continue;
         const cacheKey = JSON.stringify(docsListKey(column.filter));

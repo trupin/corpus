@@ -37,7 +37,7 @@ export { sameQuery } from "./viewDoc";
 
 export function useSaveAsView(): SaveAsView {
   const surface = useBoardSurface();
-  const { columns } = useColumns(surface.current);
+  const { columns } = useColumns(surface.current, surface.boards);
   const createDoc = useCreateDoc();
   const { mutateAsync } = createDoc;
   const { addColumn } = surface;

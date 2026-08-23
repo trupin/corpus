@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -49,18 +49,18 @@ half: ask for the folder's own documents, and never draw one document twice.
 
 ## Acceptance Criteria
 
-- [ ] Each folder lists only the documents filed **directly** in it. A document
+- [x] Each folder lists only the documents filed **directly** in it. A document
       in a sub-folder is drawn under the sub-folder and nowhere else.
-- [ ] `useFolderDocs` passes `folderScope: "self"`.
-- [ ] The bound line (`N of M — the listing reached its bound`) counts the
+- [x] `useFolderDocs` passes `folderScope: "self"`.
+- [x] The bound line (`N of M — the listing reached its bound`) counts the
       folder's own documents, so `limit=100` bounds the folder rather than its
       whole subtree.
-- [ ] No two rows in the tree ever share a key. A test asserts it directly over
+- [x] No two rows in the tree ever share a key. A test asserts it directly over
       `buildTreeRows`, so the guarantee does not depend on the server's filter
       being right.
-- [ ] Collapsing and reopening a folder, at any depth, any number of times,
+- [x] Collapsing and reopening a folder, at any depth, any number of times,
       leaves the row count unchanged.
-- [ ] No React duplicate-key warning is emitted by the explorer. The test suite
+- [x] No React duplicate-key warning is emitted by the explorer. The test suite
       fails on one rather than printing it.
 
 ## Technical Design
@@ -159,14 +159,87 @@ exact-match fixture reports `1` every round — which is why the shipped suite
 never caught it.
 
 ### Post-Implementation Verification
-_[Agent fills]_
+
+**Model: opus (claude-opus-5[1m]).**
+
+**The wire, first.** A real server (`corpus server start`, port 8790, a scratch
+workspace holding `todos/a.md` and `todos/unfiled/b.md`) answers exactly as
+CONTRACT-081 and SERVER-141 promise:
+
+```
+GET /api/docs?folder=todos&includeArchived=true
+  → doc_alpha001 @ data/docs/todos/a.md, doc_beta0001 @ data/docs/todos/unfiled/b.md
+    page {'total': 2, 'limit': 50, 'offset': 0}
+GET /api/docs?folder=todos&folderScope=self&includeArchived=true
+  → doc_alpha001 @ data/docs/todos/a.md
+    page {'total': 1, 'limit': 50, 'offset': 0}
+```
+
+`page.total` is `1` under `self` and `2` without it, so the bound line counts
+the folder's own documents rather than its subtree's.
+
+**Reproduction in a real browser, with both halves removed.** Chromium against
+the built UI the server serves, expanding `todos` and `todos/unfiled` then
+collapsing and reopening `todos` ten times:
+
+```
+round 1: alpha rows 1, beta rows 1
+round 2: alpha rows 1, beta rows 3
+round 3: alpha rows 1, beta rows 4
+…
+round 10: alpha rows 1, beta rows 11
+after ten: alpha 1, beta 12
+```
+
+The user's report, exactly: the count climbs with each collapse and reopen.
+
+**The same ten rounds against the fix:**
+
+```
+round 1..10: alpha rows 1, beta rows 1
+after ten: alpha 1, beta 1
+```
+
+`beta` is drawn under `unfiled` and nowhere else, and no console warning is
+emitted. Three depths were exercised in the same run (`todos`,
+`todos/unfiled`, and the move of `alpha` into `todos/unfiled` for UI-158, which
+left one row under `unfiled` and none under `todos`).
+
+**Falsification, both halves, independently.**
+
+- `folderScope: "self"` removed → `Explorer.test.tsx` red:
+  `expected '?folder=todos&includeArchived=true&li…' to contain 'folderScope=self'`.
+- `pushDocs`'s filter removed → four tests red across two files:
+  `treeRows.test.ts` on the shape, on key uniqueness (`expected 4 to be 5`) and
+  on the bound line, and `Explorer.test.tsx`'s "draws one row even when the
+  server ignores folderScope" (`expected 2 to be 1`, plus React's duplicate-key
+  warning: `expected [ Array(1) ] to deeply equal []`).
+
+**The fixture is the load-bearing part, and it now lies the way the server
+does.** `Explorer.test.tsx` answers `folder=X` as a **prefix** and honours
+`folderScope=self`; a third option, `ignoreFolderScope`, answers the whole
+subtree whatever the modifier said, which is what tests the client-side filter
+alone. With the prefix fixture and no fix, the nested case drew two rows and
+React warned — the reproduction the orchestrator logged above.
+
+**Every test in `Explorer.test.tsx` now fails on a React duplicate-key
+warning**: `console.error` is spied on in `beforeEach` (passing through), and
+`afterEach` asserts no line containing "same key" was logged.
+
+**One thing fixed on the way past**: `ExplorerTree.tsx` spread `key` into its
+`<button>`s, which React warned about on every render of the tree. The key is
+now passed directly.
+
+**Checks.** `vitest run apps/ui` — 178 files, 3689 tests pass. `vitest run
+packages/kit` — 63 files, 954 tests pass. `npm run typecheck` exit 0.
+`eslint apps/ui packages/kit` exit 0. `prettier --check` clean.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Board, KanbanSpec } from "./boardDoc";
 import {
   canMove,
+  decidingStageBoard,
   deriveStageColumns,
   edgesToText,
   leadsTo,
@@ -28,6 +29,12 @@ const HOUSING: KanbanSpec = {
   },
   status: { done: "resolved", dropped: "archived" },
 };
+
+/**
+ * The columns of a workspace holding **one** kanban, where the board is its own
+ * deciding board (UI-160). The two-kanban case has its own describe block.
+ */
+const columnsOf = (subject: Board) => deriveStageColumns(subject, subject);
 
 const board = (overrides: Partial<Board> = {}): Board => ({
   id: "board_k",
@@ -163,7 +170,7 @@ describe("moveStage", () => {
 
 describe("deriveStageColumns", () => {
   it("is one column per stage, in `stages` order, with stable ids", () => {
-    const columns = deriveStageColumns(board());
+    const columns = columnsOf(board());
     expect(columns.map((column) => column.title)).toEqual(HOUSING.stages);
     expect(columns.map((column) => column.id)).toEqual(
       HOUSING.stages.map((stage) => stageColumnId("board_k", stage)),
@@ -172,12 +179,12 @@ describe("deriveStageColumns", () => {
   });
 
   it("names the board document as `viewId` — every act on a stage edits the board", () => {
-    expect(deriveStageColumns(board())[0]?.viewId).toBe("board_k");
-    expect(deriveStageColumns(board())[0]?.kind).toBe("stage");
+    expect(columnsOf(board())[0]?.viewId).toBe("board_k");
+    expect(columnsOf(board())[0]?.kind).toBe("stage");
   });
 
   it("asks for the first stage and the unstaged in ONE request (`stage=,<first>`)", () => {
-    const columns = deriveStageColumns(board());
+    const columns = columnsOf(board());
     expect(columns[0]?.filter).toEqual({ tag: "housing", stage: ",candidates" });
     expect(columns[1]?.filter).toEqual({ tag: "housing", stage: "visiting" });
     expect(columns[0]?.stage?.holdsUnset).toBe(true);
@@ -185,18 +192,18 @@ describe("deriveStageColumns", () => {
   });
 
   it("adds `status=archived` to a stage the board maps to archived", () => {
-    const columns = deriveStageColumns(board());
+    const columns = columnsOf(board());
     expect(columns[4]?.filter).toEqual({ tag: "housing", stage: "dropped", status: "archived" });
     expect(columns[3]?.filter).toEqual({ tag: "housing", stage: "done" });
   });
 
   it("leaves the board's own `status` filter alone — the scope wins", () => {
-    const columns = deriveStageColumns(board({ query: { tag: "housing", status: "open" } }));
+    const columns = columnsOf(board({ query: { tag: "housing", status: "open" } }));
     expect(columns[4]?.filter["status"]).toBe("open");
   });
 
   it("has no null sentinel on a kanban over `status` — every document has one", () => {
-    const columns = deriveStageColumns(
+    const columns = columnsOf(
       board({
         kanban: { field: "status", stages: ["open", "resolved", "archived"] },
         query: { type: "note" },
@@ -208,7 +215,7 @@ describe("deriveStageColumns", () => {
   });
 
   it("draws the scope chips, the field chip, the sentinel note, the map and the edges", () => {
-    const first = deriveStageColumns(board())[0];
+    const first = columnsOf(board())[0];
     expect(first?.chips.map((chip) => chip.label)).toEqual([
       "tag: housing",
       "stage: candidates",
@@ -217,7 +224,7 @@ describe("deriveStageColumns", () => {
       "→ visiting",
       "→ dropped",
     ]);
-    const dropped = deriveStageColumns(board())[4];
+    const dropped = columnsOf(board())[4];
     expect(dropped?.chips.map((chip) => chip.label)).toEqual([
       "tag: housing",
       "stage: dropped",
@@ -235,14 +242,14 @@ describe("deriveStageColumns", () => {
    * review).
    */
   it("says `→ open` on a stage the map does not name, muted rather than good", () => {
-    const offer = deriveStageColumns(board())[2];
+    const offer = columnsOf(board())[2];
     const chip = offer?.chips.find((entry) => entry.key === "unmapped");
     expect(chip?.label).toBe("→ open");
     expect(chip?.tone).toBe("muted");
     expect(chip?.title).toContain("maps no status to this stage");
     // One status chip per column, never two.
     expect(offer?.chips.filter((entry) => entry.label.startsWith("→ open"))).toHaveLength(1);
-    const done = deriveStageColumns(board())[3];
+    const done = columnsOf(board())[3];
     expect(done?.chips.find((entry) => entry.key === "unmapped")).toBeUndefined();
   });
 
@@ -252,7 +259,7 @@ describe("deriveStageColumns", () => {
    * column would be a promise nothing keeps.
    */
   it("draws no default-status chip on a kanban over `status`", () => {
-    const columns = deriveStageColumns(
+    const columns = columnsOf(
       board({
         kanban: { field: "status", stages: ["open", "resolved", "archived"] },
         query: { type: "note" },
@@ -264,12 +271,12 @@ describe("deriveStageColumns", () => {
   });
 
   it("says `→ ∅` for a stage nothing leads out of", () => {
-    const done = deriveStageColumns(board())[3];
+    const done = columnsOf(board())[3];
     expect(done?.chips.at(-1)).toMatchObject({ label: "→ ∅", tone: "edge-end" });
   });
 
   it("carries where each column leads and where it sits", () => {
-    const columns = deriveStageColumns(board());
+    const columns = columnsOf(board());
     expect(columns[2]?.stage).toMatchObject({
       boardId: "board_k",
       field: "stage",
@@ -283,10 +290,70 @@ describe("deriveStageColumns", () => {
   });
 
   it("gives every stage column the board document's width", () => {
-    expect(deriveStageColumns(board({ width: 420 }))[0]?.width).toBe(420);
+    expect(columnsOf(board({ width: 420 }))[0]?.width).toBe(420);
   });
 
   it("is empty for a board that is not a kanban", () => {
-    expect(deriveStageColumns(board({ kanban: null }))).toEqual([]);
+    expect(columnsOf(board({ kanban: null }))).toEqual([]);
+  });
+});
+
+/**
+ * UI-160. The deciding board is the lowest-`order` kanban that claims the
+ * document (SERVER-138), which need not be the board being dragged on — so a
+ * status chip on any other kanban over `stage` is advisory and can be wrong.
+ * One board alone cannot exhibit this, which is why every case here has two.
+ */
+describe("a status chip on a board that may not decide", () => {
+  const A = board({ id: "board_a", title: "Triage", order: 1 });
+  const B = board({ id: "board_b", title: "House hunt", order: 2 });
+  const chipOn = (subject: Board, deciding: Board | null, key: string) =>
+    deriveStageColumns(subject, deciding)[3]?.chips.find((chip) => chip.key === key);
+
+  it("promises on the lowest-`order` kanban, which nothing can outrank", () => {
+    expect(decidingStageBoard([B, A])?.id).toBe("board_a");
+    expect(chipOn(A, decidingStageBoard([B, A]), "mapped")).toMatchObject({
+      label: "→ resolved",
+      tone: "good",
+    });
+  });
+
+  it("hedges on the higher-`order` kanban, and names the board that decides", () => {
+    const chip = chipOn(B, decidingStageBoard([B, A]), "mapped");
+    expect(chip?.label).toBe("→ resolved?");
+    expect(chip?.tone).toBe("muted");
+    expect(chip?.title).toContain("“Triage” (board_a)");
+    expect(chip?.title).toContain("lowest-order board that claims a document");
+  });
+
+  it("hedges the unmapped `→ open` chip for the same reason", () => {
+    const offer = deriveStageColumns(B, A)[2]?.chips.find((chip) => chip.key === "unmapped");
+    expect(offer?.label).toBe("→ open?");
+    expect(offer?.tone).toBe("muted");
+    expect(offer?.title).toContain("“Triage” (board_a)");
+  });
+
+  it("keeps `order: null` behind a numbered board, exactly as the bar does", () => {
+    const unnumbered = board({ id: "board_n", title: "Aardvark", order: null });
+    expect(decidingStageBoard([unnumbered, A])?.id).toBe("board_a");
+    expect(chipOn(unnumbered, decidingStageBoard([unnumbered, A]), "mapped")?.label).toBe(
+      "→ resolved?",
+    );
+  });
+
+  it("ignores a kanban over `status` when deciding, since the coupling skips it", () => {
+    // The server's `stageKanbanBoards` filters on `field = 'stage'`, so a
+    // status kanban at `order: 0` outranks nothing.
+    const statusBoard = board({
+      id: "board_s",
+      order: 0,
+      kanban: { field: "status", stages: ["open", "resolved"] },
+    });
+    expect(decidingStageBoard([statusBoard, A])?.id).toBe("board_a");
+  });
+
+  it("is one board's own answer where the workspace holds one kanban", () => {
+    expect(decidingStageBoard([A])?.id).toBe("board_a");
+    expect(chipOn(A, decidingStageBoard([A]), "mapped")?.tone).toBe("good");
   });
 });

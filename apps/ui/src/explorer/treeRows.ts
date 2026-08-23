@@ -1,5 +1,5 @@
 import type { DocRow, FolderNode } from "@corpus/contract";
-import { stalenessLevel, type StalenessLevel } from "@corpus/kit";
+import { folderOf, stalenessLevel, type StalenessLevel } from "@corpus/kit";
 
 /**
  * The explorer's tree, as a flat list of rows (SPEC.md §10, rider 1: "shows the
@@ -110,6 +110,21 @@ export interface TreeInput {
   readonly currentBoardId: string | null;
 }
 
+/**
+ * Whether this row is filed **directly** in this folder — the one comparison
+ * that stops a document being drawn under every expanded ancestor (UI-161).
+ *
+ * Belt and braces beside `folderScope: "self"`, and deliberately so. `folder=`
+ * is prefix-scoped for a reason a board column depends on, the explorer is the
+ * one caller that wants the other set, and a tree that draws whatever a listing
+ * hands it is one server change away from that bug again. The row's own folder
+ * is read off `path` rather than trusted from a field, because `path` is what
+ * the server states about placement.
+ */
+function filedIn(row: DocRow, path: string): boolean {
+  return folderOf(row.path) === (path === "" ? "" : `${path}/`);
+}
+
 const byName = (left: FolderNode, right: FolderNode): number => left.name.localeCompare(right.name);
 
 const byTitle = (left: DocRow, right: DocRow): number => left.title.localeCompare(right.title);
@@ -162,7 +177,8 @@ export function buildTreeRows(input: TreeInput): readonly TreeRow[] {
       pending(null);
       return;
     }
-    for (const row of [...answer.items].sort(byTitle)) {
+    const own = answer.items.filter((row) => filedIn(row, node.path));
+    for (const row of [...own].sort(byTitle)) {
       rows.push({
         kind: "doc",
         key: `d:${row.id}`,
@@ -181,13 +197,18 @@ export function buildTreeRows(input: TreeInput): readonly TreeRow[] {
         isCurrentBoard: row.type === "board" && row.id === input.currentBoardId,
       });
     }
+    // The **page** is what was cut short, so the page is what decides whether a
+    // bound line is drawn at all — a listing that returned everything it matched
+    // reached no bound, however many of its rows belong to another folder.
+    // `shown` is then the count on screen rather than the count that arrived,
+    // because a number nobody can count back is not worth stating.
     if (answer.items.length < answer.total) {
       rows.push({
         kind: "bound",
         key: `b:${node.path}`,
         folder: node.path,
         depth,
-        shown: answer.items.length,
+        shown: own.length,
         total: answer.total,
       });
     }

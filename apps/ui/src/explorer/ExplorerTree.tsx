@@ -181,8 +181,13 @@ export function ExplorerTree({ rows, acts, renaming, onRename }: ExplorerTreePro
             />
           );
         }
+        /*
+         * No `key` here. React reads it off a spread but warns that it must be
+         * passed directly, and the warning is right: a key is an instruction to
+         * the reconciler rather than a prop, and it is what keeps a row's DOM
+         * node alive across a re-render (see the docblock above).
+         */
         const common = {
-          key: row.key,
           type: "button" as const,
           role: "treeitem",
           "data-tree-row": row.key,
@@ -202,6 +207,7 @@ export function ExplorerTree({ rows, acts, renaming, onRename }: ExplorerTreePro
         if (row.kind === "folder") {
           return (
             <button
+              key={row.key}
               {...common}
               className="tr folder"
               data-tree-folder={row.path}
@@ -228,6 +234,7 @@ export function ExplorerTree({ rows, acts, renaming, onRename }: ExplorerTreePro
 
         return (
           <button
+            key={row.key}
             {...common}
             className={[
               "tr doc",

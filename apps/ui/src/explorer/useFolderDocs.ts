@@ -22,11 +22,20 @@ import { EXPLORER_FOLDER_LIMIT, type FolderDocs } from "./treeRows";
  * documents stay in the tree, marked". Every other list in the product excludes
  * them by the collection route's default, so this is the single place that opts
  * back in, and the rows say so.
+ *
+ * **`folderScope: "self"` — the folder's own documents** (CONTRACT-081,
+ * SERVER-141). `folder=` is a path *prefix* everywhere else, because a folder
+ * column shows a folder's work and the conversations about it. The tree wants
+ * the other set: a document filed in `todos/unfiled` belongs under `unfiled` and
+ * nowhere else, and without this modifier it was drawn again under every
+ * expanded ancestor (UI-161). It is also what makes the bound line honest —
+ * `limit` and `page.total` then bound the folder rather than its whole subtree.
  */
 
 export function useFolderDocs(folder: string): FolderDocs {
   const query = useDocs({
     folder,
+    folderScope: "self",
     includeArchived: true,
     limit: EXPLORER_FOLDER_LIMIT,
     sort: "title",

@@ -30,7 +30,7 @@ describe("useColumns", () => {
   it("asks for every view document in one bounded request", async () => {
     const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_3"])), {
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_3"]), []), {
       wrapper: harness.Wrapper,
     });
 
@@ -53,7 +53,7 @@ describe("useColumns", () => {
   it("renders the columns in the board's order", async () => {
     const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(listing(["doc_3", "doc_1", "doc_2"])), {
+    const { result } = renderHook(() => useColumns(listing(["doc_3", "doc_1", "doc_2"]), []), {
       wrapper: harness.Wrapper,
     });
 
@@ -77,7 +77,7 @@ describe("useColumns", () => {
   it("renders a view the board lists twice as two columns with distinct slots", async () => {
     const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_1"])), {
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_1"]), []), {
       wrapper: harness.Wrapper,
     });
 
@@ -103,7 +103,7 @@ describe("useColumns", () => {
   it("renders a column the board lists and the corpus cannot answer for", async () => {
     const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_gone"])), {
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_gone"]), []), {
       wrapper: harness.Wrapper,
     });
 
@@ -125,7 +125,7 @@ describe("useColumns", () => {
   it("has no columns before the corpus answers, and says so honestly", async () => {
     const wire = boardTransport({ views: [] });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(listing([])), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(listing([]), []), { wrapper: harness.Wrapper });
 
     expect(result.current.columns).toEqual([]);
     await waitFor(() => {
@@ -139,7 +139,7 @@ describe("useColumns", () => {
   it("resolves nothing when no board is showing", async () => {
     const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(null), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(null, []), { wrapper: harness.Wrapper });
 
     await waitFor(() => {
       expect(result.current.isPending).toBe(false);
@@ -152,7 +152,7 @@ describe("useColumns", () => {
     const harness = createCorpusTestHarness({
       fetch: failing as unknown as typeof globalThis.fetch,
     });
-    const { result } = renderHook(() => useColumns(listing(["doc_1"])), {
+    const { result } = renderHook(() => useColumns(listing(["doc_1"]), []), {
       wrapper: harness.Wrapper,
     });
 
@@ -175,7 +175,7 @@ describe("useColumns", () => {
       kanban: { field: "stage", stages: ["a", "b"] },
       query: { tag: "housing" },
     };
-    const { result } = renderHook(() => useColumns(kanban), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(kanban, [kanban]), { wrapper: harness.Wrapper });
 
     // Ready on the first render: nothing is fetched to derive a stage column,
     // so the board never shows its empty state waiting for the view query.
@@ -192,7 +192,7 @@ describe("useColumns", () => {
       id: "board_k",
       kanban: { field: "status", stages: ["open", "resolved"] },
     };
-    const { result } = renderHook(() => useColumns(kanban), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(kanban, [kanban]), { wrapper: harness.Wrapper });
 
     await waitFor(() => {
       expect(result.current.columns).toHaveLength(2);

@@ -6,17 +6,20 @@ import { boardRow, boardTransport } from "../testing/boardFixture";
 import { createBoardHarness } from "../testing/boardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { docFixture } from "../testing/readerFixture";
+import { ContextMenuProvider } from "../menu/ContextMenuHost";
+import { resetEscapeLayers } from "./useEscapeStack";
 import { FrontmatterForm } from "./FrontmatterForm";
 
 /**
- * The reader's `stage ▾` control (SPEC.md §10, rider 6: "anything the graph does
- * not allow is done by setting the field in the document").
+ * The reader's stage chip (SPEC.md §10, rider 6: "anything the graph does not
+ * allow is done by setting the field in the document" — moved onto the chip by
+ * the 2026-08-23 rider, UI-162).
  *
  * Its own file, and under a **board** harness rather than the reader one: the
- * control's whole subject is which kanbans claim this document, which is a fact
+ * chip's whole subject is which kanbans claim this document, which is a fact
  * about the bar. `FrontmatterForm.test.tsx` mounts the form with no board
  * provider at all, which is the other half of the same rule — a workspace with
- * no kanban offers no stages, and the control is absent rather than empty.
+ * no kanban offers no stages, and the chip's menu is absent rather than empty.
  */
 
 beforeEach(() => {
@@ -25,6 +28,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetEscapeLayers();
   vi.unstubAllGlobals();
 });
 
@@ -80,36 +84,72 @@ function mount(
   };
   const harness = createBoardHarness(fetch);
   render(
-    <FrontmatterForm
-      doc={DOC}
-      selectTitle={false}
-      onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
-    />,
+    <ContextMenuProvider>
+      <FrontmatterForm
+        doc={DOC}
+        selectTitle={false}
+        onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
+      />
+    </ContextMenuProvider>,
     { wrapper: harness.Wrapper },
   );
   return { wire, notices };
 }
 
-const stageControl = (): HTMLSelectElement => screen.getByRole("combobox", { name: /stage/i });
+const stageChip = (): HTMLButtonElement | null =>
+  document.querySelector<HTMLButtonElement>("button[data-chip='stage']");
+const menuItem = (act: string): HTMLButtonElement =>
+  document.querySelector(`[data-ctx-menu] [data-act='${act}']`) as HTMLButtonElement;
 
-/** The bar's boards arrive a request later than the form does. */
-async function whenBoardsArrive(): Promise<void> {
-  await waitFor(() => {
-    expect(stageControl().querySelectorAll("optgroup").length).toBeGreaterThan(0);
-  });
+function openStageMenu(): void {
+  const chip = stageChip();
+  if (chip === null) throw new Error("no stage chip on the strip");
+  fireEvent.click(chip);
 }
 
-describe("the stage control", () => {
+/**
+ * The bar's boards arrive a request later than the form does, and the chip is
+ * already a control before they do — a held stage alone offers Clear plus
+ * itself. The menu snapshots its items when it opens, so the only honest way
+ * to wait for the vocabulary is to open, look, and close until it is there.
+ *
+ * A plain polled loop, **not** `waitFor`: this probe mutates the DOM (a menu
+ * opens and closes), and `waitFor` re-runs its callback on every mutation —
+ * a self-feeding microtask loop that starves its own timeout timer. Measured:
+ * one worker pinned at ~90% CPU, forever.
+ */
+async function whenBoardsOffer(): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (stageChip() !== null) {
+      openStageMenu();
+      const groups = document.querySelectorAll("[data-ctx-menu] .fm-menu-group").length;
+      fireEvent.keyDown(document, { key: "Escape" });
+      if (groups > 0) return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("the boards never offered a stage vocabulary");
+}
+
+describe("the stage chip", () => {
   it("offers every stage of every kanban that claims the document, under its board's name", async () => {
     mount([
       boardRow({ id: "b_house", title: "House hunt", kanban: HOUSING, query: { tag: "housing" } }),
     ]);
-    await whenBoardsArrive();
-    const labels = [...stageControl().querySelectorAll("optgroup")].map((group) => group.label);
-    expect(labels).toEqual(["House hunt"]);
-    const options = [...stageControl().options].map((option) => option.value);
-    expect(options).toEqual(["", "candidates", "visiting", "offer"]);
-    expect(screen.getByRole("option", { name: "Clear the stage" })).toBeTruthy();
+    await whenBoardsOffer();
+    expect(stageChip()?.textContent).toBe("stage: candidates");
+
+    openStageMenu();
+    const groups = [...document.querySelectorAll("[data-ctx-menu] .fm-menu-group")].map(
+      (group) => group.textContent,
+    );
+    expect(groups).toEqual(["House hunt"]);
+    const items = [...document.querySelectorAll("[data-ctx-menu] [role='menuitem']")].map((item) =>
+      item.getAttribute("data-act"),
+    );
+    expect(items).toEqual(["stage:clear", "stage:candidates", "stage:visiting", "stage:offer"]);
+    // The current word is marked — the strip and the menu read one value.
+    expect(menuItem("stage:candidates").textContent).toContain("✓ candidates");
   });
 
   it("is absent when no kanban over `stage` claims the document", async () => {
@@ -120,25 +160,29 @@ describe("the stage control", () => {
     });
     const harness = createBoardHarness(wire.fetch);
     render(
-      <FrontmatterForm
-        doc={docFixture({ frontmatter: { ...DOC.frontmatter, stage: null }, path: DOC.path })}
-        selectTitle={false}
-        onNotify={() => undefined}
-      />,
+      <ContextMenuProvider>
+        <FrontmatterForm
+          doc={docFixture({ frontmatter: { ...DOC.frontmatter, stage: null }, path: DOC.path })}
+          selectTitle={false}
+          onNotify={() => undefined}
+        />
+      </ContextMenuProvider>,
       { wrapper: harness.Wrapper },
     );
     await waitFor(() => {
       expect(wire.calls.some((call) => call.search.includes("type=board"))).toBe(true);
     });
-    expect(screen.queryByRole("combobox", { name: /stage/i })).toBeNull();
+    expect(stageChip()).toBeNull();
+    expect(screen.queryByText(/^stage:/)).toBeNull();
   });
 
   it("writes the stage ALONE — never a status the coupling owns", async () => {
     const { wire } = mount([
       boardRow({ id: "b_house", title: "House hunt", kanban: HOUSING, query: { tag: "housing" } }),
     ]);
-    await whenBoardsArrive();
-    fireEvent.change(stageControl(), { target: { value: "offer" } });
+    await whenBoardsOffer();
+    openStageMenu();
+    fireEvent.click(menuItem("stage:offer"));
 
     await waitFor(() => {
       expect(wire.writes("PUT")).toHaveLength(1);
@@ -150,8 +194,9 @@ describe("the stage control", () => {
     const { wire } = mount([
       boardRow({ id: "b_house", title: "House hunt", kanban: HOUSING, query: { tag: "housing" } }),
     ]);
-    await whenBoardsArrive();
-    fireEvent.change(stageControl(), { target: { value: "" } });
+    await whenBoardsOffer();
+    openStageMenu();
+    fireEvent.click(menuItem("stage:clear"));
 
     await waitFor(() => {
       expect(wire.writes("PUT")).toHaveLength(1);
@@ -171,8 +216,9 @@ describe("the stage control", () => {
       ],
       { warnCoupled: true },
     );
-    await whenBoardsArrive();
-    fireEvent.change(stageControl(), { target: { value: "offer" } });
+    await whenBoardsOffer();
+    openStageMenu();
+    fireEvent.click(menuItem("stage:offer"));
 
     await waitFor(() => {
       expect(notices.some((notice) => notice.includes("stage `offer` set status to"))).toBe(true);
@@ -184,8 +230,9 @@ describe("the stage control", () => {
     const { wire, notices } = mount([
       boardRow({ id: "b_house", title: "House hunt", kanban: HOUSING, query: { tag: "housing" } }),
     ]);
-    await whenBoardsArrive();
-    fireEvent.change(stageControl(), { target: { value: "visiting" } });
+    await whenBoardsOffer();
+    openStageMenu();
+    fireEvent.click(menuItem("stage:visiting"));
 
     await waitFor(() => {
       expect(wire.writes("PUT")).toHaveLength(1);
@@ -193,7 +240,7 @@ describe("the stage control", () => {
     expect(notices).toEqual([]);
   });
 
-  it("shows a stage no board draws rather than rendering blank over it", async () => {
+  it("shows a stage no board draws rather than marking nothing over it", async () => {
     const wire = boardTransport({
       boards: [
         boardRow({
@@ -206,18 +253,22 @@ describe("the stage control", () => {
     });
     const harness = createBoardHarness(wire.fetch);
     render(
-      <FrontmatterForm
-        doc={docFixture({
-          frontmatter: { ...DOC.frontmatter, stage: "gazumped" },
-          path: DOC.path,
-        })}
-        selectTitle={false}
-        onNotify={() => undefined}
-      />,
+      <ContextMenuProvider>
+        <FrontmatterForm
+          doc={docFixture({
+            frontmatter: { ...DOC.frontmatter, stage: "gazumped" },
+            path: DOC.path,
+          })}
+          selectTitle={false}
+          onNotify={() => undefined}
+        />
+      </ContextMenuProvider>,
       { wrapper: harness.Wrapper },
     );
-    await whenBoardsArrive();
-    expect(stageControl().value).toBe("gazumped");
-    expect(screen.getByRole("option", { name: "gazumped (no board draws this)" })).toBeTruthy();
+    await whenBoardsOffer();
+    expect(stageChip()?.textContent).toBe("stage: gazumped");
+    openStageMenu();
+    expect(menuItem("stage:gazumped").textContent).toContain("✓ gazumped");
+    expect(menuItem("stage:gazumped").textContent).toContain("no board draws this");
   });
 });

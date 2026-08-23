@@ -1232,9 +1232,9 @@ left in a report.
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
 | UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
 | UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
-| UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | todo | P1 | UI-150 |
+| UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | done | P1 | UI-150 |
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
-| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | todo | P2 | UI-152, SERVER-138 |
+| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
@@ -1525,14 +1525,14 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | done | P0 | opus | — |
 | SERVER-141 | List a folder's own documents | done | P0 | opus | CONTRACT-081 |
-| UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
+| UI-161 | The explorer draws a document under every expanded ancestor | done | P0 | opus | CONTRACT-081, SERVER-141 |
 | SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
-| UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
+| UI-162 | The chip strip is the frontmatter editor | done | P0 | fable | SHARED-068 |
 | SHARED-069 | A document's content fills the document — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
-| UI-163 | The body fills its column, and full screen keeps its own width | todo | P0 | opus | SHARED-069 |
+| UI-163 | The body fills its column, and full screen keeps its own width | done | P0 | opus | SHARED-069 |
 | SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | todo | P1 | opus | CLI-056 |
-| UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | todo | P2 | opus | CONTRACT-078 |
+| UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | done | P2 | opus | CONTRACT-078 |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |
 | CONTRACT-082 | The CLI pays 23ms a call for routes it never serves (CLI-058 measurement) | todo | P1 | opus | — |
 | SERVER-143 | A view accepts an `order` the spec says it does not have (CLI-063 finding) | todo | P1 | opus | — |

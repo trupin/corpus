@@ -99,6 +99,9 @@ export { useDeleteTurn } from "./query/useDeleteTurn.js";
 export { useRespondToForm, type FormAnswerVariables } from "./query/useRespondToForm.js";
 export { useUpdateDoc, useUpdateDocById, type UpdateDocVariables } from "./query/useUpdateDoc.js";
 export { useSetDocArchived, type DocArchiveVariables } from "./query/useSetDocArchived.js";
+// Relocation, and only relocation: the id never changes, so nothing pointing at
+// the document is rewritten (SPEC.md §9.2).
+export { useMoveDoc, type MoveDocVariables } from "./query/useMoveDoc.js";
 export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCapture } from "./query/useCapture.js";
 export { useCreateThread, type CreateThreadVariables } from "./query/useCreateThread.js";

@@ -1,3 +1,4 @@
+import type { FolderRefusal } from "@corpus/contract";
 import {
   useDeleteFolder,
   useSetFolderArchived,
@@ -47,6 +48,11 @@ export interface ExplorerActs {
   readonly createInFolder: (path: string) => void;
   /** Creates a `folder:` view document and appends it to the showing board. */
   readonly pinFolder: (path: string) => void;
+  /**
+   * Every folder a document can be moved into (`moveTargets`), so the document
+   * menu can name them. Empty until the tree has arrived.
+   */
+  readonly folders: readonly string[];
   readonly notify: (notice: RowNotice) => void;
 }
 
@@ -105,6 +111,9 @@ export function TreeDocMenuItems({ subject, acts, close }: TreeDocMenuItemsProps
       acts.openFullScreen(subject.id);
     },
     boardTargets: others,
+    // The mockup's "Move to folder…" (`design/navigation.html`), drawn as the
+    // folders themselves: the explorer is already showing the destinations.
+    moveTargets: acts.folders,
   });
 
   return <MenuItems actions={actions} onDone={close} />;
@@ -257,10 +266,9 @@ export function TreeFolderMenuItems({
         void setArchived
           .mutateAsync({ path, archived: true })
           .then((result) => {
-            acts.notify({
-              tone: "info",
-              message: folderStatusNotice(path, result.documents.length, true),
-            });
+            acts.notify(
+              folderStatusNotice(path, result.documents.length, refusalsOf(result), true),
+            );
           })
           .catch((cause: unknown) => {
             acts.notify({ tone: "error", message: `Archive folder failed — ${reason(cause)}` });
@@ -276,10 +284,9 @@ export function TreeFolderMenuItems({
         void setArchived
           .mutateAsync({ path, archived: false })
           .then((result) => {
-            acts.notify({
-              tone: "info",
-              message: folderStatusNotice(path, result.documents.length, false),
-            });
+            acts.notify(
+              folderStatusNotice(path, result.documents.length, refusalsOf(result), false),
+            );
           })
           .catch((cause: unknown) => {
             acts.notify({ tone: "error", message: `Unarchive folder failed — ${reason(cause)}` });
@@ -303,10 +310,7 @@ export function TreeFolderMenuItems({
         void deleteFolder
           .mutateAsync(path)
           .then((result) => {
-            acts.notify({
-              tone: "info",
-              message: folderDeleteNotice(path, result.documents.length),
-            });
+            acts.notify(folderDeleteNotice(path, result.documents.length, refusalsOf(result)));
             close();
           })
           .catch((cause: unknown) => {
@@ -324,19 +328,105 @@ function reason(cause: unknown): string {
   return cause instanceof Error ? cause.message : "the server refused it";
 }
 
+const plural = (count: number, word: string): string =>
+  `${String(count)} ${word}${count === 1 ? "" : "s"}`;
+
+/**
+ * How many refused documents a notice names before it starts counting.
+ *
+ * A toast is one or two lines, and a folder act can refuse dozens. Three is what
+ * fits; the rest are counted rather than dropped, because a truncated list
+ * presented as complete is SHARED-057's failure.
+ */
+export const REFUSALS_NAMED = 3;
+
+/**
+ * `refused` off a result, degraded to "nothing was refused" when it is absent.
+ *
+ * The field is required by the contract and the client does not validate
+ * responses, so a server that omits it hands the surface `undefined` — and a
+ * `.length` on it is a blank screen where a toast should be. Reading a field
+ * nothing read before is exactly where that bites (UI-098's fixture gaps).
+ */
+function refusalsOf(result: {
+  readonly refused?: readonly FolderRefusal[] | undefined;
+}): readonly FolderRefusal[] {
+  return result.refused ?? [];
+}
+
+/**
+ * The refused documents, as text (CONTRACT-078).
+ *
+ * **By id, and the message verbatim.** The result carries no titles — a status
+ * act names ids and statuses — and an id is what the CLI takes, so it is the
+ * handle a person can act on. The message is the server's finding rendered as
+ * prose and never parsed: CONTRACT-078 deliberately ships no reason class,
+ * because a vanished file and a validator's refusal arrive as the same throw.
+ * A message that arrives empty says so rather than leaving an id with a dash
+ * after it.
+ */
+export function refusedClause(refused: readonly FolderRefusal[]): string {
+  const named = refused
+    .slice(0, REFUSALS_NAMED)
+    .map((entry) => {
+      const message = entry.message.trim();
+      return `${entry.id} — ${message === "" ? "no reason given" : message}`;
+    })
+    .join("; ");
+  const hidden = refused.length - Math.min(refused.length, REFUSALS_NAMED);
+  return hidden === 0 ? named : `${named} (and ${String(hidden)} more not named here)`;
+}
+
 /**
  * What a folder archive narrates.
  *
- * The count is **what the server listed**, and the sentence says so rather than
- * saying "changed": `documents` is the state after the act, so a folder whose
- * documents were already archived reports all of them (SERVER-136).
+ * **Three outcomes, and they read as three** (SPEC.md §11: a non-blocking
+ * failure is reported, not swallowed). With nothing refused the count is **what
+ * the server listed**, and the sentence says so rather than saying "changed":
+ * `documents` is the state after the act, so a folder whose documents were
+ * already archived reports all of them (SERVER-136). With some refused the act
+ * partly succeeded, so the notice says so and keeps the successful half — eleven
+ * of twelve moved, and describing that as a failure would be its own lie. With
+ * every document refused nothing happened, and that is an error.
+ *
+ * `listed` is `documents.length`, which for a status act counts the refused ones
+ * too: they are listed with the status they kept, and `refused` is what says why
+ * they kept it.
  */
-export function folderStatusNotice(path: string, listed: number, archived: boolean): string {
+export function folderStatusNotice(
+  path: string,
+  listed: number,
+  refused: readonly FolderRefusal[],
+  archived: boolean,
+): RowNotice {
   const verb = archived ? "Archived" : "Restored";
-  return (
-    `${verb} ${path}/ — committed. The server listed ${String(listed)} document` +
-    `${listed === 1 ? "" : "s"} in the folder afterwards; nothing moved on disk.`
-  );
+  const act = archived ? "Archive" : "Unarchive";
+  const changed = Math.max(0, listed - refused.length);
+  if (refused.length === 0) {
+    return {
+      tone: "info",
+      message:
+        `${verb} ${path}/ — committed. The server listed ${plural(listed, "document")} in the ` +
+        "folder afterwards; nothing moved on disk.",
+    };
+  }
+  if (changed === 0) {
+    return {
+      tone: "error",
+      message:
+        `${act} ${path}/ changed nothing — every one of its ${plural(listed, "document")} was ` +
+        `refused, and each keeps the status it had: ${refusedClause(refused)}.`,
+    };
+  }
+  return {
+    tone: "info",
+    message:
+      `${verb} ${path}/ in part — committed. ${String(changed)} of ${plural(listed, "document")} ` +
+      `now read ${archived ? "archived" : "open"}; ${plural(refused.length, "document")} ` +
+      `${refused.length === 1 ? "was" : "were"} refused and ${refused.length === 1 ? "keeps" : "keep"} ` +
+      `the status ${refused.length === 1 ? "it" : "they"} had: ${refusedClause(refused)}. ` +
+      "Nothing moved on disk.",
+  };
 }
 
 /**
@@ -345,10 +435,37 @@ export function folderStatusNotice(path: string, listed: number, archived: boole
  * The response names the documents it removed. It names no threads, and the
  * folder itself may still be there if it held something that is not a document
  * (SERVER-136), so neither is asserted here.
+ *
+ * **A refused document is not in `removed`** — it still exists — so the total
+ * this notice counts against is the two halves added, and nothing is inferred
+ * from either alone.
  */
-export function folderDeleteNotice(path: string, removed: number): string {
-  return (
-    `Deleted ${String(removed)} document${removed === 1 ? "" : "s"} under ${path}/ — user-only ` +
-    "act; git retains their history. Threads on them survive as orphaned records."
-  );
+export function folderDeleteNotice(
+  path: string,
+  removed: number,
+  refused: readonly FolderRefusal[],
+): RowNotice {
+  const tail = "git retains their history. Threads on them survive as orphaned records.";
+  if (refused.length === 0) {
+    return {
+      tone: "info",
+      message: `Deleted ${plural(removed, "document")} under ${path}/ — user-only act; ${tail}`,
+    };
+  }
+  if (removed === 0) {
+    return {
+      tone: "error",
+      message:
+        `Deleted nothing under ${path}/ — every one of its ${plural(refused.length, "document")} ` +
+        `was refused and still exists: ${refusedClause(refused)}.`,
+    };
+  }
+  return {
+    tone: "info",
+    message:
+      `Deleted ${String(removed)} of ${plural(removed + refused.length, "document")} under ` +
+      `${path}/ — user-only act. ${plural(refused.length, "document")} ` +
+      `${refused.length === 1 ? "was" : "were"} refused and still ` +
+      `${refused.length === 1 ? "exists" : "exist"}: ${refusedClause(refused)}. ${tail}`,
+  };
 }

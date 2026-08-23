@@ -445,6 +445,25 @@ export interface CorpusClient {
    */
   archiveDoc(id: string): Promise<DocMutationResponse>;
   /**
+   * `POST /api/docs/{id}/move` — relocation, and **only** relocation
+   * (SPEC.md §9.2).
+   *
+   * It rewrites the file path and nothing else. The id is assigned at creation
+   * and is immutable, so every `[[ref]]`, anchor entry and thread `parent`
+   * survives the move untouched, and the projection re-maps id → path. A move
+   * presents no document key for the same reason (SPEC.md §7): it does not
+   * touch the content, so it can overwrite nobody's edit.
+   *
+   * `folder` is under `data/docs/`, spelled either bare (`finance`) or with the
+   * full prefix (`data/docs/finance`), and it is **required** — a move names
+   * where the document is going, and there is no inbox-first default here. The
+   * filename does not change, so a destination already holding a file of that
+   * name is a `400` and never an overwrite. `400` too for a document whose
+   * location is fixed: a thread is flat under `data/threads/` and a skill lives
+   * in its own folder under `.claude/`.
+   */
+  moveDoc(id: string, folder: string): Promise<DocMutationResponse>;
+  /**
    * `POST /api/docs/{id}/unarchive` — the inverse, back to `status: resolved`.
    *
    * The **only** way back: `PUT /api/docs/{id}` with a non-archived `status` on
@@ -1166,6 +1185,13 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/docs/{id}/archive",
         await api.POST("/api/docs/{id}/archive", { params: { path: { id } } }),
+      );
+    },
+
+    async moveDoc(id, folder) {
+      return unwrap(
+        "POST /api/docs/{id}/move",
+        await api.POST("/api/docs/{id}/move", { params: { path: { id } }, body: { folder } }),
       );
     },
 

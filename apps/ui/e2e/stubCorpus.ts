@@ -208,6 +208,12 @@ export interface StubRow {
    */
   readonly status?: DocStatus;
   /**
+   * SPEC.md §5's tags, as the file holds them. Seeded, stored, and written
+   * through on `PUT` since the chip strip became their editor (UI-162) — a
+   * fixed `[]` here made every tag write look like a wipe on the echo.
+   */
+  readonly tags?: readonly string[];
+  /**
    * SPEC.md §5's optional deadline, as the file holds it.
    *
    * Seeded rather than flatly `null`, which is what it was until the review of
@@ -333,6 +339,8 @@ interface StoredDoc {
   /** The frontmatter record of which model wrote which turn, keyed by `ts`. */
   turnModels: Record<string, string>;
   status: DocStatus;
+  /** Stored and written through, since the chip strip edits them (UI-162). */
+  tags: string[];
   /** See {@link StubRow.due}. */
   due: string | null;
   order: number | null;
@@ -738,6 +746,7 @@ function seeded(row: StubRow): StoredDoc {
     body: row.body ?? "",
     turnModels: { ...(row.turnModels ?? {}) },
     status: row.status ?? "open",
+    tags: [...(row.tags ?? [])],
     due: row.due ?? null,
     order: row.order ?? null,
     query: row.query ?? null,
@@ -1212,8 +1221,9 @@ export async function stubCorpus(
    *   The server also emits `stale`, `due` and `failed-job`, none of which are
    *   thread-scoped, so `needs=stale` answers empty here on a corpus the server
    *   would report rows for.
-   * - `tags`, `due`, `reviewed` and `evergreen` are fixed, so no spec can reach
-   *   the surfaces that read them.
+   * - `reviewed` and `evergreen` are fixed, so no spec can reach the surfaces
+   *   that read them. (`tags` and `due` are stored and written through — the
+   *   chip strip edits both, UI-162.)
    * - `snippets` is always empty, including under `q` — the server returns the
    *   matched passages.
    */
@@ -1226,7 +1236,7 @@ export async function stubCorpus(
       title: doc.title,
       path: doc.path,
       status: doc.status,
-      tags: [],
+      tags: [...doc.tags],
       created: SEEDED_AT,
       updated: doc.updated,
       due: doc.due,
@@ -1350,7 +1360,7 @@ export async function stubCorpus(
       title: doc.title,
       created: SEEDED_AT,
       updated: doc.updated,
-      tags: [],
+      tags: [...doc.tags],
       status: doc.status,
       /*
        * The frontmatter anchors map (SPEC.md §6) — the selectors as the *file*
@@ -1693,7 +1703,12 @@ export async function stubCorpus(
             store.delete(doc.id);
             return { id: doc.id };
           });
-        return json(route, { documents: removed, warnings: [] } satisfies DeleteFolderResult);
+        return json(
+          route,
+          // The stub refuses nothing, so `refused` is the empty array the
+          // contract requires on every act (CONTRACT-078) — never absent.
+          { documents: removed, refused: [], warnings: [] } satisfies DeleteFolderResult,
+        );
       }
       const status: DocStatus = act === "archive" ? "archived" : "resolved";
       const changed = under.map((doc) => {
@@ -1701,7 +1716,11 @@ export async function stubCorpus(
         store.set(doc.id, { ...doc, status });
         return { id: doc.id, status };
       });
-      return json(route, { documents: changed, warnings: [] } satisfies FolderStatusResult);
+      return json(route, {
+        documents: changed,
+        refused: [],
+        warnings: [],
+      } satisfies FolderStatusResult);
     }
 
     /*
@@ -2086,7 +2105,7 @@ export async function stubCorpus(
             created: SEEDED_AT,
             updated: thread.updated,
             status: "open",
-            tags: [],
+            tags: [...thread.tags],
             parent: thread.parent,
             anchor: selector === undefined ? null : anchorId,
             agent: thread.agent,
@@ -2680,7 +2699,7 @@ export async function stubCorpus(
         created: SEEDED_AT,
         updated: doc.updated,
         status: threadStatusOf(doc),
-        tags: [],
+        tags: [...doc.tags],
         parent: doc.parent,
         // The anchor entry lives on the **parent**, and the thread names it.
         anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
@@ -2877,6 +2896,12 @@ export async function stubCorpus(
           );
         }
         if (typeof changes["title"] === "string") doc.title = changes["title"];
+        // Tags are replaced whole, exactly as `UpdateDocRequest` carries them —
+        // stored and echoed, or the chip strip's read-your-write (UI-162) would
+        // watch its own save wipe the tags it just wrote.
+        if (Array.isArray(changes["tags"])) {
+          doc.tags = changes["tags"].filter((tag): tag is string => typeof tag === "string");
+        }
         // A status the contract does not define is not a status the server would
         // ever store, so an unrecognised one is ignored rather than written
         // through — the same refusal `UpdateDocRequest`'s enum makes (UI-102).

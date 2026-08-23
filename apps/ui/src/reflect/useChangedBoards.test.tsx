@@ -39,7 +39,7 @@ function changedRow(overrides: Partial<DocRow> = {}): DocRow {
  * nothing about either agreeing with the *column*.
  */
 function Primer({ board }: { readonly board: Board }): null {
-  const columns = useColumns(board);
+  const columns = useColumns(board, [board]);
   useDocs(columns.columns[0]?.filter ?? {});
   useReflectStatus();
   return null;

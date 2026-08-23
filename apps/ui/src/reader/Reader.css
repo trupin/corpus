@@ -213,98 +213,122 @@
 }
 
 /*
- * ── The width control (UI-066, SPEC.md §10's rider of 2026-08-04) ─────────
+ * ── The body fills its column (SPEC.md §10, rider signed 2026-08-23) ──────
  *
- * *"The document body has a comfortable default width, and the reader can
- * change it — in column view and in full screen… Anchored thread placement
- * follows the body when it moves, and the control is operable from the keyboard
- * like every other affordance."*
+ * *"In a column the body is as wide as the column: the column's own edge is
+ * the single gesture, and the body follows it with no second act."*
  *
- * **The rail is how the handle knows where the body's edge is.** The measure is
- * `62ch` (`66ch` in focus mode) and `ch` is font-dependent, so its pixel value
- * is the browser's to know. Rather than compute it, this empty box carries the
- * *same* `max-width` and the *same* type the body carries — so its right edge
- * **is** the body's right edge, by construction, at the default and at every
- * width somebody drags to. The type declarations below are therefore
- * load-bearing and must stay in step with `.doc-body` in
- * `@corpus/kit/markdown.css`; `.title-grow` above sets its own font for exactly
- * this reason, and the comment there records what happens when it does not.
+ * One declaration is the whole mechanism. Every measured element in the reader
+ * — the body, the title, the banners, the thread cards, the panels below —
+ * takes `max-width: var(--doc-measure, <default>)`, so setting the property to
+ * `100%` here says "the measure is the host's box" and each of them fills its
+ * own container: the body fills `.doc-main`, which fills the column's content
+ * box — or, with the margin up, the `minmax(0, 1fr)` track the
+ * `.reader-scroll.with-margin` grid (anchors.css) leaves it. That is
+ * SHARED-061's shape: the bound is derived from the room, never chosen as a
+ * number, and the room is the column the user already sizes by its own edge.
  *
- * **The handle hangs entirely outside the measure.** `right: -12px` with
- * `width: 12px` puts it in `[measure, measure + 12px]` — in the gutter, never
- * over a character — because a strip that straddled the edge would swallow the
- * click that places a caret at the end of a line. It stays inside
- * `.reader-scroll`'s 22px of right padding, so it adds no horizontal overflow.
- *
- * **It is invisible until you reach for it**, exactly like `.col-resizer` in
- * `Column.css` and `.console-resizer` in `design/index.html` — the mockup draws
- * no width handle, because the feature is new, but it draws the *treatment*: a
- * `role="separator"` strip with a resize cursor that washes `--accent-wash` on
- * hover and while dragging. Two edges in the same app that behave differently is
- * worse than one nobody notices at rest.
- *
- * Nothing here widens the column. A column's width is its view document's
- * (`board/columnWidth.ts`) — that describes the view and travels with it, while
- * this describes the viewer and stays in this browser. The column's own edge is
- * still the way to make the column bigger.
+ * The body's own width control — the rail, the handle, the stored number — is
+ * **full screen's alone** now and lives in `FocusMode.css`. Nothing inside a
+ * column sizes text independently of the column.
  */
+.reader-scroll {
+  --doc-measure: 100%;
+}
+
 .doc-main {
-  /* The rail's containing block, and nothing else: `.doc-main` has no
-     absolutely positioned descendant of its own, and the margin cards are
-     positioned against `.focus-margin`, which is its sibling. */
+  /* The width rail's containing block in full screen, and nothing else:
+     `.doc-main` has no other absolutely positioned descendant of its own, and
+     the margin cards are positioned against `.focus-margin`, its sibling. */
   position: relative;
 }
 
-.doc-width-rail {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  /* In step with `.doc-body` — see the note above. */
-  font-family: var(--serif);
-  font-size: 15px;
-  max-width: var(--doc-measure, 62ch);
-  /* The rail is a ruler, not a target: only the handle takes the pointer. */
-  pointer-events: none;
-  /*
-   * Above the editor, and this line is the difference between a handle that
-   * drags and one that does nothing (measured in Chromium, UI-066). `.doc-editor`
-   * is `position: relative` and spans the **whole** of `.doc-main` — only the
-   * `.doc-body` inside it carries the measure — so it is a positioned sibling
-   * later in document order, and it painted over the gutter the handle lives in.
-   * Focus still reached the handle, so the keyboard worked and only the pointer
-   * was dead: a defect a component test cannot see, because hit testing is the
-   * browser's.
-   */
-  z-index: 3;
-}
-
-.doc-width-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: -12px;
-  width: 12px;
-  cursor: col-resize;
-  pointer-events: auto;
-  touch-action: none;
-}
-
-.doc-width-handle:hover,
-.doc-width-handle:focus-visible,
-.doc-width-handle.resizing {
-  background: var(--accent-wash);
-  outline: none;
-}
-
-/* ── Frontmatter ── */
+/*
+ * ── Frontmatter: the strip is the editor (SPEC.md §10, rider 2026-08-23) ──
+ *
+ * Every chip that names an editable field is the control for that field: tags
+ * open a Rename/Remove menu (the app's one menu frame, `ContextMenuProvider`),
+ * status and stage open their vocabularies, the due chip swaps for the date
+ * field itself. The labelled `.fm-form` grid that used to repeat these values
+ * under the title is gone with the rider — a value displayed in one place and
+ * edited in another was two answers to one question.
+ *
+ * The strip **wraps** — the rider says one strip, not one visual line, and a
+ * row that refused to wrap would either overflow the reader or squeeze its
+ * chips (SHARED-061 rules the second out).
+ */
 .fm-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   margin-bottom: 14px;
   align-items: center;
+}
+
+/* A chip that is a control reads as one when reached for — the same quiet
+   affordance `.t-chip` has: nothing at rest, an accent border on approach. */
+button.fm-chip {
+  cursor: pointer;
+}
+
+button.fm-chip:hover,
+button.fm-chip:focus-visible {
+  border-color: var(--accent);
+}
+
+/* `.chip.on` has a transparent border, so the hover affordance above would
+   move nothing visible on it without this: the border is already reserved. */
+button.fm-chip.on:hover,
+button.fm-chip.on:focus-visible {
+  border-color: var(--accent);
+}
+
+/* The unset due chip: present so the field stays reachable, dashed so it reads
+   as an absence rather than a value (the mockup's `.chip.ghost`). */
+.fm-chips .chip.ghost {
+  border-style: dashed;
+  color: var(--ink-3);
+  background: none;
+}
+
+/*
+ * The input a chip swaps for — a tag being renamed or added, or the due date.
+ * Chip-shaped, and **fixed in width** (SHARED-057: the box is a property of
+ * its place, never of the text in it): a long tag scrolls inside the field
+ * rather than pushing the strip's neighbours around on every keystroke. The
+ * date input keeps its own intrinsic width — its text cannot grow.
+ */
+.fm-chip-input {
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px solid var(--accent);
+  border-radius: 99px;
+  padding: 2.5px 9px;
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.fm-chip-input:not([type="date"]) {
+  width: 14ch;
+}
+
+/* The chip menus' two non-item lines: the reason a locked status gives, and a
+   board's name over its stage words. Neither is a menuitem, so the roving
+   keyboard skips both. */
+.ctx-menu .fm-menu-note {
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: default;
+}
+
+.ctx-menu .fm-menu-group {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  cursor: default;
+  padding-bottom: 2px;
 }
 
 /* The frontmatter's own save chip, where the `edit` chip used to be (UI-093).
@@ -413,76 +437,6 @@
 
 .doc-title:read-only {
   color: var(--ink-2);
-}
-
-/*
- * ── The live controls (UI-093) ────────────────────────────────────────
- *
- * A grid rather than a flex row, and every cell an equal fraction of the
- * reading measure. SHARED-057: *"nothing resizes because of what it holds"* —
- * a `<select>`'s intrinsic width is its widest option and a text field's is its
- * `size`, so a flex row of `auto` items changes width when a document offers
- * `archived` as a third status and again when it does not. Equal fractions
- * cannot: the cells are decided by the row, and the controls fill them.
- *
- * SHARED-061: the bound is the room, not a number. The row is the document's
- * own measure (`--doc-measure`, which the width control moves), and the columns
- * are `1fr` of whatever that is. The one written quantity is the floor a cell
- * may not go below — `16ch`, which is what a date field needs to show a whole
- * date in this face — and `auto-fit` drops to fewer columns rather than
- * shrinking past it, so a narrow column wraps the fields instead of clipping
- * them.
- */
-.fm-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(16ch, 100%), 1fr));
-  gap: 10px;
-  margin: 8px 0 14px;
-  max-width: var(--doc-measure, 62ch);
-}
-
-.fm-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink-3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.fm-input {
-  /* The cell decides the width, never the value inside it (SHARED-057). */
-  width: 100%;
-  min-width: 0;
-  font-family: var(--sans);
-  font-size: 12.5px;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--ink);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 4px 8px;
-}
-
-/* Where a field's act actually lives when it is not this field (UI-020), or why
-   the field is nobody's to set (SHARED-030). It is bounded by its own cell — a
-   `max-width` of its own would be a second bound competing with the grid's. */
-.fm-hint {
-  font-size: 10px;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--ink-3);
-}
-
-/* A locked control is shown, not hidden: the value is real and the reason
-   beneath it says whose it is (SHARED-030). Dimmed the way every other disabled
-   control in the app is, and no narrower — its cell has not changed. */
-.fm-input:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .archived-banner {

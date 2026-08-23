@@ -2,6 +2,7 @@ import {
   THREAD_DOC_TYPE,
   hasStaleActions,
   useDeleteDoc,
+  useMoveDoc,
   useRowActions,
   useSetDocArchived,
   useSetThreadStatus,
@@ -88,6 +89,27 @@ export interface DocActionSubject {
   readonly status: string;
   /** The staleness rung the row rendered at. Fresh (`0`) everywhere else. */
   readonly staleLevel?: StalenessLevel | undefined;
+  /**
+   * Where the document is filed, relative to `data/docs/`, with no trailing
+   * slash. Only the move items read it, and only to leave the folder the
+   * document is already in off the list.
+   */
+  readonly folder?: string | undefined;
+}
+
+/**
+ * What a "Move to …" item says (SPEC.md §9.2: "moving a document rewrites its
+ * path only").
+ *
+ * The sentence a person needs is the one they would otherwise fear: the id is
+ * assigned at creation and never changes, so nothing that points at this
+ * document breaks.
+ */
+export function movedMessage(title: string, folder: string): string {
+  return (
+    `Moved “${title}” to ${folder}/ — committed. Its id is unchanged, so every link, ` +
+    "anchor and thread on it still resolves."
+  );
 }
 
 export interface DocActionOptions {
@@ -131,6 +153,26 @@ export interface DocActionOptions {
    * caller from the board surface, so this module stays board-free.
    */
   readonly boardTargets?: readonly BoardTarget[] | undefined;
+  /**
+   * "Move to …" (SPEC.md §9.2, `POST /api/docs/{id}/move`): every folder in the
+   * workspace, as the caller's tree spells them — relative to `data/docs/`, no
+   * trailing slash, deepest paths included.
+   *
+   * **A list of folders and not a dialog**, which is the decision UI-158 makes
+   * and the reason the mockup's item could stay an ellipsis. The destinations
+   * are a known, small, already-drawn set: the explorer is showing them. Naming
+   * them as items reuses the menu the user already opened, cannot be mistyped,
+   * and reaches the keyboard for free — where a modal would be a surface nothing
+   * draws and a second place to hold a folder path.
+   *
+   * The list is **not bounded**: an act that could not reach some folders would
+   * be broken rather than bounded, and the menu already derives its own ceiling
+   * from the room and scrolls (`menuRoom`). Absent on every surface that does
+   * not pass one, which is every surface but the explorer's tree today — the
+   * document's folder chip in the reader is the second one, and is its own
+   * issue.
+   */
+  readonly moveTargets?: readonly string[] | undefined;
   /**
    * Show this document's comments list (SPEC.md §10's rider, UI-063).
    *
@@ -192,6 +234,23 @@ export function useDocActions(
   });
 
   const deleteDoc = useDeleteDoc();
+
+  /*
+   * On the hook rather than on the call, for the reason every other write here
+   * is (UI-012): a move item closes the menu that started it, and a per-call
+   * `onSuccess` dies with the observer that closing removes.
+   */
+  const moveDoc = useMoveDoc({
+    onSuccess: (_response, variables) => {
+      onNotify({ tone: "info", message: movedMessage(subject.title, variables.folder) });
+    },
+    onError: (error, variables) => {
+      onNotify({
+        tone: "error",
+        message: `Move to ${variables.folder}/ failed — ${error.message}`,
+      });
+    },
+  });
 
   /*
    * Restoring rides on its own hook for the same UI-012 reason resolve/reopen
@@ -349,6 +408,25 @@ export function useDocActions(
       meta: "opens a stale-review thread for the agent",
       disabled: actions.isBusy,
       run: actions.triage,
+    });
+  }
+
+  /*
+   * "Move to …" — one item per folder that is not this document's own
+   * (SPEC.md §9.2). The current folder is left out rather than shown disabled:
+   * a move to where the document already is writes nothing, and §10's rule is
+   * that a context menu lists the acts this item has.
+   */
+  for (const folder of options.moveTargets ?? []) {
+    if (folder === subject.folder) continue;
+    list.push({
+      id: `move-to:${folder}`,
+      label: `Move to ${folder}`,
+      meta: "rewrites the path only — the id, and every link to it, are unchanged",
+      disabled: moveDoc.isPending,
+      run: () => {
+        moveDoc.mutate({ id: subject.id, folder });
+      },
     });
   }
 

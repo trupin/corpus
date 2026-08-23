@@ -79,10 +79,17 @@ export function changedFieldsMessage(
   if (after.stage !== before.stage) moved.push(`stage → ${after.stage ?? "none"}`);
   if (after.status !== before.status) moved.push(`status → ${after.status}`);
   if (moved.length === 0) return `“${title}” — nothing changed; it was already there.`;
-  const coupled = warnings.some((warning) => warning.code === "stage_status");
+  /*
+   * The warning's own words, and not a sentence of ours (UI-160). "The board's
+   * map decided" is the one claim this toast cannot make: the deciding board is
+   * the lowest-`order` kanban that claims the document (SERVER-138), which need
+   * not be the board being dragged on — and the warning names it, together with
+   * which of §5's two outcomes happened. Rendered as text, never parsed.
+   */
+  const coupled = warnings.find((warning) => warning.code === "stage_status");
   return (
     `“${title}” — ${moved.join(", ")}. One commit.` +
-    (coupled ? " The board’s `kanban.status` map decided the status." : "")
+    (coupled === undefined ? "" : ` ${coupled.detail}`)
   );
 }
 

@@ -7,15 +7,11 @@ import {
   DOC_WIDTH_STORAGE_KEY,
   EMPTY_DOC_WIDTH_STATE,
   MAX_DOC_WIDTH,
-  MAX_WIDTH_SURFACES,
   MIN_DOC_WIDTH,
   clampDocWidth,
   clearDocWidthState,
   readDocWidthState,
-  surfaceWidth,
-  withSurfaceWidth,
   writeDocWidthState,
-  type DocWidthState,
 } from "./docWidth";
 import { FOCUS_SURFACE, columnSurface } from "../thread/threadCollapse";
 
@@ -62,49 +58,82 @@ describe("clampDocWidth", () => {
   });
 });
 
-describe("the per-surface store", () => {
-  it("answers null for a surface nobody has dragged", () => {
-    expect(surfaceWidth(EMPTY_DOC_WIDTH_STATE, columnSurface("doc_view_inbox"))).toBeNull();
+describe("full screen's width store", () => {
+  it("answers null while nobody has dragged", () => {
+    expect(EMPTY_DOC_WIDTH_STATE.focus).toBeNull();
+    expect(readDocWidthState(memoryStorage()).focus).toBeNull();
+  });
+
+  it("round-trips the chosen width through storage", () => {
+    const storage = memoryStorage();
+    writeDocWidthState({ version: DOC_WIDTH_STATE_VERSION, focus: 980 }, storage);
+    expect(readDocWidthState(storage)).toEqual({ version: DOC_WIDTH_STATE_VERSION, focus: 980 });
   });
 
   /**
-   * The keys are UI-077's keys, and this is the assertion that says so: a
-   * column reader per column, one focus surface, distinct from each other.
+   * The migration the 2026-08-23 rider asks for, stated as behaviour: an old
+   * blob holds one entry per column reader beside the focus entry. The column
+   * surfaces no longer store a width — a column's body fills the column — so
+   * only the focus key is honoured, and a user who set a full-screen width
+   * keeps it.
    */
-  it("keys a column reader per column and focus mode once", () => {
-    let state: DocWidthState = EMPTY_DOC_WIDTH_STATE;
-    state = withSurfaceWidth(state, columnSurface("doc_view_inbox"), 700);
-    state = withSurfaceWidth(state, columnSurface("doc_view_notes"), 520);
-    state = withSurfaceWidth(state, FOCUS_SURFACE, 980);
-
-    expect(surfaceWidth(state, columnSurface("doc_view_inbox"))).toBe(700);
-    expect(surfaceWidth(state, columnSurface("doc_view_notes"))).toBe(520);
-    expect(surfaceWidth(state, FOCUS_SURFACE)).toBe(980);
+  it("honours the focus key inside a blob still holding column keys", () => {
+    const storage = memoryStorage({
+      [DOC_WIDTH_STORAGE_KEY]: JSON.stringify({
+        version: DOC_WIDTH_STATE_VERSION,
+        surfaces: {
+          [columnSurface("doc_view_inbox")]: 700,
+          [FOCUS_SURFACE]: 980,
+          [columnSurface("doc_view_notes")]: 520,
+        },
+      }),
+    });
+    expect(readDocWidthState(storage).focus).toBe(980);
   });
 
-  it("replaces a surface's width rather than accumulating", () => {
-    const key = columnSurface("doc_view_inbox");
-    const state = withSurfaceWidth(withSurfaceWidth(EMPTY_DOC_WIDTH_STATE, key, 700), key, 820);
-    expect(state.surfaces).toEqual({ [key]: 820 });
+  it("reads no width at all out of a blob holding only column keys", () => {
+    const storage = memoryStorage({
+      [DOC_WIDTH_STORAGE_KEY]: JSON.stringify({
+        version: DOC_WIDTH_STATE_VERSION,
+        surfaces: { [columnSurface("doc_view_inbox")]: 700 },
+      }),
+    });
+    expect(readDocWidthState(storage)).toEqual(EMPTY_DOC_WIDTH_STATE);
   });
 
-  it("drops the least recently chosen surface past the bound", () => {
-    let state: DocWidthState = EMPTY_DOC_WIDTH_STATE;
-    for (let index = 0; index < MAX_WIDTH_SURFACES + 5; index += 1) {
-      state = withSurfaceWidth(state, columnSurface(`col_${String(index)}`), 400 + index);
-    }
-    expect(Object.keys(state.surfaces)).toHaveLength(MAX_WIDTH_SURFACES);
-    expect(surfaceWidth(state, columnSurface("col_0"))).toBeNull();
-    expect(surfaceWidth(state, columnSurface(`col_${String(MAX_WIDTH_SURFACES + 4)}`))).toBe(
-      400 + MAX_WIDTH_SURFACES + 4,
-    );
+  /** "…dropped on the next write", not by a migration pass: the writer emits only focus. */
+  it("prunes dead column entries on the next write", () => {
+    const storage = memoryStorage({
+      [DOC_WIDTH_STORAGE_KEY]: JSON.stringify({
+        version: DOC_WIDTH_STATE_VERSION,
+        surfaces: { [columnSurface("doc_view_inbox")]: 700, [FOCUS_SURFACE]: 980 },
+      }),
+    });
+    writeDocWidthState({ version: DOC_WIDTH_STATE_VERSION, focus: 1040 }, storage);
+    const raw: unknown = JSON.parse(storage.getItem(DOC_WIDTH_STORAGE_KEY) ?? "null");
+    expect(raw).toEqual({
+      version: DOC_WIDTH_STATE_VERSION,
+      surfaces: { [FOCUS_SURFACE]: 1040 },
+    });
   });
 
-  it("round-trips through storage", () => {
+  /**
+   * The stored shape and its version are the pre-rider ones on purpose: the
+   * version is documented as "a change re-asserts the default", so bumping it
+   * is exactly how the kept full-screen width would have been lost.
+   */
+  it("still writes version 1 under the original blob shape", () => {
     const storage = memoryStorage();
-    const key = columnSurface("doc_view_inbox");
-    writeDocWidthState(withSurfaceWidth(EMPTY_DOC_WIDTH_STATE, key, 760), storage);
-    expect(surfaceWidth(readDocWidthState(storage), key)).toBe(760);
+    writeDocWidthState({ version: DOC_WIDTH_STATE_VERSION, focus: 900 }, storage);
+    const raw: unknown = JSON.parse(storage.getItem(DOC_WIDTH_STORAGE_KEY) ?? "null");
+    expect(raw).toEqual({ version: 1, surfaces: { focus: 900 } });
+  });
+
+  it("serializes 'nobody has chosen' as no surfaces at all", () => {
+    const storage = memoryStorage();
+    writeDocWidthState(EMPTY_DOC_WIDTH_STATE, storage);
+    const raw: unknown = JSON.parse(storage.getItem(DOC_WIDTH_STORAGE_KEY) ?? "null");
+    expect(raw).toEqual({ version: DOC_WIDTH_STATE_VERSION, surfaces: {} });
   });
 
   it("reads nothing back when there is no storage at all", () => {
@@ -142,21 +171,36 @@ describe("the per-surface store", () => {
     expect(readDocWidthState(memoryStorage({ [DOC_WIDTH_STORAGE_KEY]: "[]" }))).toEqual(
       EMPTY_DOC_WIDTH_STATE,
     );
+    expect(
+      readDocWidthState(
+        memoryStorage({
+          [DOC_WIDTH_STORAGE_KEY]: JSON.stringify({
+            version: DOC_WIDTH_STATE_VERSION,
+            surfaces: "wide",
+          }),
+        }),
+      ),
+    ).toEqual(EMPTY_DOC_WIDTH_STATE);
   });
 
-  it("ignores a stored value that is not a usable width", () => {
+  it.each([
+    ["a string", "wide"],
+    ["a negative number", -12],
+    ["zero", 0],
+    ["infinity", Number.POSITIVE_INFINITY],
+  ])("ignores a stored focus value that is %s", (_label, value) => {
     const storage = memoryStorage({
       [DOC_WIDTH_STORAGE_KEY]: JSON.stringify({
         version: DOC_WIDTH_STATE_VERSION,
-        surfaces: { focus: "wide", "col:a": -12, "col:b": 640 },
+        surfaces: { focus: value },
       }),
     });
-    expect(readDocWidthState(storage).surfaces).toEqual({ "col:b": 640 });
+    expect(readDocWidthState(storage)).toEqual(EMPTY_DOC_WIDTH_STATE);
   });
 
   it("clears everything it wrote", () => {
     const storage = memoryStorage();
-    writeDocWidthState(withSurfaceWidth(EMPTY_DOC_WIDTH_STATE, FOCUS_SURFACE, 900), storage);
+    writeDocWidthState({ version: DOC_WIDTH_STATE_VERSION, focus: 900 }, storage);
     clearDocWidthState(storage);
     expect(readDocWidthState(storage)).toEqual(EMPTY_DOC_WIDTH_STATE);
   });

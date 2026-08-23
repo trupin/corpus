@@ -6,6 +6,7 @@ import {
   DOC_STATUSES,
   DUE_KEYWORDS,
   DocsQuerySchema,
+  FOLDER_SCOPES,
   NEEDS_FILTERS,
   STALE_TIERS,
   THREAD_AGENT_STATES,
@@ -111,6 +112,13 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
   folder: {
     summary: "Folder under data/docs/, including everything beneath it.",
     values: { kind: "folder" },
+    multi: false,
+  },
+  folderScope: {
+    // A modifier of `folder` and nothing on its own — it answers `400` without
+    // one (CONTRACT-081). `self` is what the explorer's tree asks for.
+    summary: "How far under folder to reach: tree is everything beneath it, self is only it.",
+    values: { kind: "fixed", values: FOLDER_SCOPES },
     multi: false,
   },
   needs: {
@@ -243,6 +251,8 @@ const READING_ORDER: readonly string[] = [
   "tag",
   "status",
   "folder",
+  // Immediately after the filter it modifies: it selects nothing alone.
+  "folderScope",
   "needs",
   "due",
   "since",

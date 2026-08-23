@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -30,27 +30,27 @@ width, keeps it sticky, and keeps a default wider than a column's.
 
 ## Acceptance Criteria
 
-- [ ] The column reader has no body-width handle. Nothing inside a column sizes
+- [x] The column reader has no body-width handle. Nothing inside a column sizes
       text independently of the column.
-- [ ] The body fills the column's content box at every column width, from the
+- [x] The body fills the column's content box at every column width, from the
       column's own minimum upward.
-- [ ] Dragging a column's edge moves the text with it, in the same frame, with no
+- [x] Dragging a column's edge moves the text with it, in the same frame, with no
       second act.
-- [ ] Full screen keeps its width handle, and the width it sets survives
+- [x] Full screen keeps its width handle, and the width it sets survives
       navigation and a reload.
-- [ ] Full screen's width is **one** sticky value, shared by every document
+- [x] Full screen's width is **one** sticky value, shared by every document
       opened there — not one per document and not one per column.
-- [ ] A column's width and full screen's width are unrelated: changing either
+- [x] A column's width and full screen's width are unrelated: changing either
       leaves the other exactly as it was. A test asserts both directions.
-- [ ] Full screen's default measure is wider than a default column, **measured in
+- [x] Full screen's default measure is wider than a default column, **measured in
       a real browser** and pinned by a test — not inferred from two stylesheets.
-- [ ] With anchored threads in the margin, a column's body fills the room **left
+- [x] With anchored threads in the margin, a column's body fills the room **left
       by** the margin. It does not overlap it and does not stop short of it.
-- [ ] Per-column entries in `corpus.docWidth` are no longer read, and are dropped
+- [x] Per-column entries in `corpus.docWidth` are no longer read, and are dropped
       on the next write. The full-screen entry survives the change — a user who
       set a full-screen width keeps it.
-- [ ] Anchored thread placement still tracks the body on both surfaces.
-- [ ] The column reader loses no keyboard capability: the removed handle was
+- [x] Anchored thread placement still tracks the body on both surfaces.
+- [x] The column reader loses no keyboard capability: the removed handle was
       keyboard-operable, and the column's edge already is.
 
 ## Technical Design
@@ -151,17 +151,91 @@ column.
 ## E2E Verification Log
 
 ### Reproduction (bugs only)
-_[Agent fills]_
+Reproduced 2026-08-23 in the shipped `doc-width.spec.ts` (pre-change, Chromium,
+real Vite dev server): a 900px column drew its body at the `62ch` measure
+(asserted band 450–650px, the spec's own "62ch of the shipped serif") with a
+`Document width` handle beside it — the second gesture. Dragging the column's
+edge moved the column and left the text at 62ch. That is the pre-change suite's
+own testimony; it was green before this issue and its column half is rewritten
+by it.
 
 ### Post-Implementation Verification
-_[Agent fills]_
+
+Model: **Fable 5** (`claude-fable-5`) — the issue recommended opus; this agent
+session ran both UI-162 and UI-163 and was already on Fable.
+
+Command (real browser, real Vite dev server, Chromium):
+
+```
+CORPUS_UI_PORT=5373 ./node_modules/.bin/playwright test \
+  --config apps/ui/playwright.config.ts doc-width.spec.ts --workers=1
+→ 13 passed (40.9s)
+```
+
+Concrete evidence, from the rewritten `apps/ui/e2e/doc-width.spec.ts`:
+
+- **The body fills the column.** At a 900px column the body's measured box
+  equals `.reader-scroll`'s content box within 1.5px, and so does
+  `.title-grow`. No `[role=separator][aria-label="Document width"]` and no
+  `.doc-width-rail` exists inside `.reader` (asserted `toHaveCount(0)`).
+- **Same gesture, same frame.** With the pointer still down mid-drag on
+  `.col-resizer`, the body's box already equals the moved content box (polled
+  to <1.5px); after release the prose, the fence and the table all sit at or
+  under the new box.
+- **Column minimum.** At `width: 240` (the column's own minimum) the body
+  equals the ~196px content box.
+- **Margin room.** With `.reader-scroll.with-margin` up, the body equals the
+  `minmax(0,1fr)` track — content box − 300 − 30 — measured atomically with
+  the class. (The class is applied by hand in that test: margin mode in a
+  column needs `.doc-main` ≥ 1100px (`MARGIN_MIN_WIDTH`) and
+  `MAX_COLUMN_WIDTH` is 960, so no gesture reaches the state today; the grid
+  seam is real (`useAnchorLayer` toggles this exact class) and the geometry is
+  what is pinned. Reported to the orchestrator below.)
+- **Full screen keeps its control and its width.** Drag → close → reopen →
+  reload → reopen: the chosen width returns each time (`toBe(chosen)`).
+- **Independence, both directions.** Arrow-keying focus +80px leaves the
+  column body byte-identical (`toBe(columnBody)`) and the column at 900px;
+  dragging the column −150px afterwards leaves focus at its chosen width.
+- **Wider by default, measured.** Default column (336px): body ≈ its 292px
+  content box. Full screen over the same document: `66ch` measured in-browser,
+  asserted `> inColumn` and inside 450–780px. Both sides measured in one run,
+  not read off stylesheets.
+- **Storage migration.** A seeded v1 blob
+  `{col:doc_view_inbox: 780, focus: 600, col:doc_view_threads: 520}`: the
+  column renders at its room (not 780), focus opens at exactly 600, and one
+  ArrowRight rewrites the blob to `{"version":1,"surfaces":{"focus":616}}` —
+  columns pruned, focus kept, version unchanged.
+- **No corpus writes** from the focus handle (`corpus.of("PUT")` empty), and
+  the anchored margin card stays level with its highlight across a +240px
+  body resize (card top == anchor top from one origin; margin still 300px and
+  on-surface).
+
+Unit/component: `docWidth.test.ts` (24) + `docWidthControl.test.tsx` (14) pass;
+full reader+anchors+thread sweep 59 files / 1151 tests green.
+
+**Falsified, twice, as the issue demands:**
+
+1. Reintroduced the cap (`.reader-scroll { --doc-measure: 62ch }`): the three
+   column e2e tests went red ("fills the content box…", "follows the column's
+   edge…", "fills the track the margin leaves…" — each on the box-equality
+   assertion).
+   Reverted; 13/13 green again. One test **cannot** fail under this mutation:
+   "fills the column at the column's own minimum" (240px), because a 62ch cap
+   does not bind below ~500px — it pins the narrow edge case, not the cap.
+2. Pointed full screen's read at the first stored surface instead of the focus
+   key: 4 tests went red — both store tests ("honours the focus key…", "reads
+   no width at all out of a blob holding only column keys") and both control
+   tests ("reads its own width out of a mixed legacy blob", "writes without
+   touching a column, and prunes"). Reverted; green.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes (eslint + prettier + tsc clean on every touched file;
+      pre-existing tsc errors in `board/`, `explorer/`, `reflect/` belong to a
+      parallel agent's in-flight work, none in files this issue touches)
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)

@@ -39,7 +39,8 @@ const BOARD: Board = {
   width: null,
 };
 
-const columns = deriveStageColumns(BOARD);
+// One kanban on the bar, so it is its own deciding board (UI-160).
+const columns = deriveStageColumns(BOARD, BOARD);
 const at = (stage: string): BoardColumn =>
   columns.find((column) => column.title === stage) as BoardColumn;
 

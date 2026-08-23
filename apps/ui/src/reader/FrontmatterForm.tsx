@@ -8,11 +8,14 @@ import {
 } from "@corpus/kit";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -21,20 +24,43 @@ import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
 import { statusLock } from "../doc/statusLock";
+import { useContextMenu } from "../menu/ContextMenuHost";
 import { offeredStages, stageChoicesFor } from "./stageChoices";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
 
 /**
- * Frontmatter as the small form SPEC.md §10 asks for — title, tags, status,
- * due — over the prototype's `.fm-chips` strip.
+ * The chip strip **is** the frontmatter editor (SPEC.md §10, rider signed
+ * 2026-08-23): _"Frontmatter is edited on the strip that shows it. … every chip
+ * that names an editable field **is** the control for that field. There is no
+ * second copy of the same values below it, and no labelled form beside it."_
+ *
+ * The labelled `TAGS` / `STATUS` / `DUE` grid that used to sit under the title
+ * is gone — a value displayed in one place and edited in another is two answers
+ * to one question. What each chip does now:
+ *
+ * - a **tag chip** opens a menu offering Rename and Remove; Rename swaps the
+ *   chip for an input in place, and a `+` at the end of the tags adds one;
+ * - the **status chip** opens §5's one vocabulary, marks the current word, and
+ *   says why when the status is not the reader's to set (`statusLock`);
+ * - the **stage chip** opens the words the claiming kanbans name, grouped under
+ *   their board's title, and is absent when the document is claimed by none and
+ *   holds none;
+ * - the **due chip** swaps for a date input whose native picker opens, and can
+ *   clear the date; with no due date it reads as an unset chip rather than
+ *   disappearing, so the field stays reachable;
+ * - `type`, the folder and `updated` stay read-only — they are not frontmatter
+ *   the reader sets — and the strip still ends with the save chip.
+ *
+ * The chip menus are the app's one menu frame (`ContextMenuProvider` →
+ * `ContextMenu`): anchored to the chip, clamped by `clampToViewport`, with the
+ * ceiling derived from the measured room (`menuRoom`, SHARED-061). A menu that
+ * invented its own placement here would rediscover UI-159.
  *
  * **Under the body's rule, not beside it: no edit mode, no save button**
  * (SHARED-030, signed 2026-08-12). The controls are live wherever the document
- * is shown, and a change commits where it is made. There was an `edit` chip, a
- * draft and a Save button here until UI-093, which meant changing a status cost
- * three clicks on a surface whose neighbouring body accepts a keystroke.
+ * is shown, and a change commits where it is made.
  *
  * **One patch, one write.** Every control writes into one *local* map of the
  * fields the person has touched; the request carries only what differs from the
@@ -44,11 +70,13 @@ import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
  * guarantee from the client side and race each other besides.
  *
  * **When a change is sent** is the one thing this form decides, and it decides
- * it per *change*, not per control — see {@link isDeliberate}. Nothing here
- * chooses a cadence: the debounce is `AUTOSAVE_DEBOUNCE_MS`, imported from the
- * body's autosave, because §10 says frontmatter is "debounced exactly as the
- * body's autosave is" and a second constant is how two rules that agree on the
- * day they were written stop agreeing.
+ * it per *change*, not per control — see {@link isDeliberate}. A menu choice is
+ * one chosen value and sends at once; typing in a tag rename is a run of
+ * keystrokes and waits out the debounce, exactly as the text field it replaced
+ * did. Nothing here chooses a cadence: the debounce is `AUTOSAVE_DEBOUNCE_MS`,
+ * imported from the body's autosave, because §10 says frontmatter is "debounced
+ * exactly as the body's autosave is" and a second constant is how two rules
+ * that agree on the day they were written stop agreeing.
  *
  * **Nothing here squashes commits.** Two fields changed a second apart are two
  * writes, and §4's open commit window is what makes them one commit — the same
@@ -94,7 +122,7 @@ type FieldName = keyof Draft;
 
 const FIELD_NAMES: readonly FieldName[] = ["title", "tags", "status", "stage", "due"];
 
-/** The `<option>` value that clears the field — never a legal stage (non-empty). */
+/** The value that clears the field — never a legal stage (non-empty). */
 export const CLEAR_STAGE = "";
 
 /** The fields the person has touched and the server has not yet confirmed. */
@@ -112,6 +140,24 @@ export function textToTags(text: string): string[] {
     .filter((tag) => tag !== "");
 }
 
+/**
+ * One tag list as the strip renders it and the wire will carry it: trimmed,
+ * empties dropped, first occurrence wins. Collapsing here is what makes a tag
+ * renamed onto a name the document already has **one** tag rather than a
+ * duplicate, and a tag renamed to empty a removal rather than an empty tag.
+ */
+export function normalizedTags(tags: readonly string[]): readonly string[] {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const tag of tags) {
+    const trimmed = tag.trim();
+    if (trimmed === "" || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    kept.push(trimmed);
+  }
+  return kept;
+}
+
 function draftOf(doc: Doc): Draft {
   const { frontmatter } = doc;
   return {
@@ -126,42 +172,25 @@ function draftOf(doc: Doc): Draft {
 /** SPEC.md §7's reversible act, which this form is deliberately not a door to. */
 const ARCHIVED: DocStatus = "archived";
 
-/** The statuses this form may write; archiving is a route, not a status flip. */
-export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
-  (status) => status !== ARCHIVED,
-);
-
 /**
- * A field the person may **see but not set**, and the sentence that says why.
- *
- * One field, one reason: an archived document's `status`, whose act lives on
- * another route (UI-020, SERVER-039). The control stays and is switched off,
- * because there *is* an act here and the note says where — which is different
- * from a field nobody could ever set.
- *
- * The predicate lives in `doc/statusLock.ts` and not here: the row context menu
- * asks the same question of a subject that is **not** a `Doc`, and the only two
- * honest ways to serve both callers were one predicate over the fields they
- * share or two predicates that would eventually disagree.
- *
- * **One reason and one locked field.** Nothing computes a document's `status` or
- * its `due` from its content, so both are ordinary controls on every document,
- * whatever its `type:` says.
+ * Why choosing `archived` in the status menu writes nothing: both directions of
+ * the archive act live on their own routes (UI-020, SERVER-039), so the word is
+ * shown — it is part of §5's one vocabulary — and gated, with this as the why.
  */
-
-/** The options a select must offer: the editable set, plus its own value. */
-function statusOptions(current: DocStatus): readonly DocStatus[] {
-  return EDITABLE_STATUSES.includes(current) ? EDITABLE_STATUSES : DOC_STATUSES;
-}
+const ARCHIVE_ROUTE_REASON =
+  "archive from the ⋯ menu — a status flip would not move a skill’s folder";
 
 /**
  * Whether this change is a **deliberate commit moment** — send it now — or one
  * keystroke in a run of them, which waits out the debounce.
  *
  * The question is asked of the *change*, not of the control, and that is the
- * whole of the distinction. A `<select>` produces one chosen value per gesture
- * and nothing in between, so it always commits. A free-text field produces a
- * value per keystroke and never commits on one.
+ * whole of the distinction. A menu produces one chosen value per gesture and
+ * nothing in between, so it always commits — `status` and `stage` are only ever
+ * set that way, and a tag **removed** by its menu goes through
+ * {@link isDeliberateTagChange} for the same reason. A free-text field produces
+ * a value per keystroke and never commits on one, which is what a tag rename
+ * in place is.
  *
  * **A date input is discrete except when it is empty**, and that exception is
  * measured rather than assumed: while its segments are half-filled Chromium
@@ -190,8 +219,8 @@ export function isDeliberate(field: FieldName, value: string): boolean {
  * only thing that moves a skill's folder to `.claude/skills-archived/`, and
  * `PUT` with a non-archived `status` on an archived document is refused outright
  * with a `400` naming `POST …/unarchive` (SERVER-039). The guard lives *here*
- * rather than only on the `<select>` because the select is not the only path to
- * the wire: leaving the document, rebinding the reader and `pagehide` all flush
+ * rather than only on the menu because the menu is not the only path to the
+ * wire: leaving the document, rebinding the reader and `pagehide` all flush
  * through this function, and guarding the control alone would ship a refusal the
  * user could not connect to anything they did.
  *
@@ -287,7 +316,7 @@ function valueOf(doc: Doc, local: Local): Draft {
  * result widens to a string index signature and `status` stops being a
  * `DocStatus`. This switch *is* that inference, so every other site here reads
  * and writes ordinary fields. `status` is checked against the contract's own
- * list on the way in rather than asserted: a `<select>` is a boundary like any
+ * list on the way in rather than asserted: a menu item is a boundary like any
  * other, and a value nothing recognises changes nothing.
  */
 function withField(local: Local, name: FieldName, value: string): Local {
@@ -348,34 +377,22 @@ function leaveOnEscape(event: KeyboardEvent<HTMLElement>): void {
   event.currentTarget.blur();
 }
 
-interface FieldProps {
-  readonly label: string;
-  /** Non-null when the value is shown but not settable — the reason is rendered. */
-  readonly lock: string | null;
-  /** What the field says when it is live and has something to say. */
-  readonly hint?: string;
-  readonly children: ReactNode;
-}
-
 /**
- * One labelled control, with the one line beneath it that says where its act
- * lives when it is not this control (UI-020).
+ * One tag being edited in place — a rename, or the `+` chip's addition, which
+ * is a rename of an entry that does not exist yet ({@link TagEdit.index} is
+ * then `base.length`).
  *
- * The note comes from the lock when there is one, so a field never has to carry
- * two explanations that could disagree.
+ * `base` is the list the edit started from, and the other chips render from it
+ * while the input is up. That is not a cache: the entry under the caret can
+ * pass through states — empty, or equal to a neighbour — that
+ * {@link normalizedTags} collapses out of the *written* value, and a strip that
+ * re-derived itself from that value mid-keystroke would drop the very chip
+ * being typed into.
  */
-function Field({ label, lock, hint, children }: FieldProps): ReactElement {
-  const note = lock ?? hint;
-  return (
-    // `data-field` names the cell for anything addressing one from outside the
-    // form — the e2e suite. The label text is the field's identity here already,
-    // so this introduces no second name for it.
-    <label className="fm-field" data-field={label}>
-      <span>{label}</span>
-      {children}
-      {note === undefined ? null : <span className="fm-hint">{note}</span>}
-    </label>
-  );
+interface TagEdit {
+  readonly base: readonly string[];
+  readonly index: number;
+  readonly text: string;
 }
 
 export function FrontmatterForm({
@@ -395,16 +412,25 @@ export function FrontmatterForm({
   useEditSurface(docId);
   const queryClient = useQueryClient();
   /*
-   * The boards, for the `stage ▾` control's vocabulary (SPEC.md §10, rider 6).
+   * The boards, for the stage chip's vocabulary (SPEC.md §10, rider 6).
    * `useMaybeBoardSurface` because a reader is legitimately rendered without a
-   * board provider in component tests, and a document's frontmatter form is not
-   * a surface that *needs* one — with no boards there is simply nothing to
+   * board provider in component tests, and a document's frontmatter is not a
+   * surface that *needs* one — with no boards there is simply nothing to
    * offer, which is the honest state of a workspace holding no kanban.
    */
   const boardSurface = useMaybeBoardSurface();
+  /*
+   * The one menu frame the app has (`ContextMenu` under `ContextMenuProvider`):
+   * anchored placement, measured room, the escape layer and the roving
+   * keyboard all come from it. Defaults to a no-op outside the shell, where a
+   * component test renders the strip with no host.
+   */
+  const menus = useContextMenu();
 
   const [local, setLocal] = useState<Local>({});
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const [tagEdit, setTagEdit] = useState<TagEdit | null>(null);
+  const [dueOpen, setDueOpen] = useState(false);
 
   /*
    * What the timers and the exit flush read, held in refs rather than closed
@@ -428,6 +454,8 @@ export function FrontmatterForm({
   // wrapper in `Reader.css` gives it its height.
   const field = useRef<HTMLTextAreaElement>(null);
   const selected = useRef(false);
+  const tagField = useRef<HTMLInputElement>(null);
+  const dueField = useRef<HTMLInputElement>(null);
 
   const clearTimer = useCallback((): void => {
     if (debounce.current !== null) clearTimeout(debounce.current);
@@ -659,14 +687,43 @@ export function FrontmatterForm({
     [flush],
   );
 
+  /*
+   * The input that replaces a chip takes the caret the moment it exists. A
+   * layout effect, so it runs after the menu frame's own unmount cleanup has
+   * returned focus to the (now unmounted) chip — last write wins, and it is
+   * this one.
+   */
+  const tagEditing = tagEdit !== null;
+  useLayoutEffect(() => {
+    if (!tagEditing) return;
+    tagField.current?.focus();
+    tagField.current?.select();
+  }, [tagEditing]);
+
+  useLayoutEffect(() => {
+    if (!dueOpen) return;
+    const input = dueField.current;
+    input?.focus();
+    try {
+      // The native picker, where the browser supports asking for it — placed by
+      // the browser itself, so there is no placement here to get wrong. The
+      // click that opened this chip is still the active gesture, because React
+      // flushes discrete events synchronously.
+      input?.showPicker?.();
+    } catch {
+      // Outside a user gesture (or jsdom): the input itself is still a date
+      // field, focused and typeable, with its own picker control.
+    }
+  }, [dueOpen]);
+
   const value = valueOf(doc, local);
   const statusReason = statusLock(doc.frontmatter);
   const folder = folderOf(doc.path);
   /*
    * Which kanbans claim this document, and therefore which words its `stage`
    * may take. A workspace with no kanban over `stage` offers none, and the
-   * control is absent rather than empty — there is no vocabulary to pick from
-   * and an empty `<select>` would be a control that cannot be used.
+   * chip's menu is absent rather than empty — there is no vocabulary to pick
+   * from and a menu with nothing in it would be a control that cannot be used.
    */
   const stageGroups = stageChoicesFor(boardSurface?.boards ?? [], {
     frontmatter: doc.frontmatter,
@@ -674,31 +731,337 @@ export function FrontmatterForm({
   });
   const stages = offeredStages(stageGroups, doc.frontmatter.stage);
 
+  /** The tags as the strip shows them: the edit's own base while one is up. */
+  const tagList = tagEdit === null ? normalizedTags(textToTags(value.tags)) : tagEdit.base;
+
+  /**
+   * Opens the app's one menu frame at this chip: anchored to the chip's own
+   * box, clamped to the viewport, ceiling derived from the measured room
+   * (`menuModel.ts`). `detail === 0` is a keyboard activation — `↵`/Space on
+   * the chip — and moves focus to the first item, exactly as ⇧F10 does.
+   */
+  const chipMenu = useCallback(
+    (
+      event: MouseEvent<HTMLButtonElement>,
+      label: string,
+      items: (close: () => void) => ReactNode,
+    ): void => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      menus.open({
+        label,
+        clientX: Math.round(rect.left),
+        clientY: Math.round(rect.bottom) + 4,
+        autoFocus: event.detail === 0,
+        items,
+      });
+    },
+    [menus],
+  );
+
+  /** A menu's Remove: one chosen value, so it sends at once ({@link isDeliberate}). */
+  const removeTag = useCallback(
+    (base: readonly string[], index: number): void => {
+      patch("tags", tagsToText(base.filter((_, at) => at !== index)));
+      send.current();
+    },
+    [patch],
+  );
+
+  const startTagEdit = useCallback((base: readonly string[], index: number, text: string): void => {
+    setTagEdit({ base, index, text });
+  }, []);
+
+  const tagInput = (edit: TagEdit): ReactElement => (
+    <input
+      key="tag-edit"
+      ref={tagField}
+      className="chip fm-chip-input"
+      aria-label={
+        edit.index === edit.base.length ? "New tag" : `Rename tag ${edit.base[edit.index] ?? ""}`
+      }
+      value={edit.text}
+      onChange={(event) => {
+        const text = event.target.value;
+        setTagEdit({ ...edit, text });
+        const next = [...edit.base];
+        next.splice(edit.index, 1, text);
+        // Typed, so it debounces — and the written value is normalized, which
+        // is what collapses a rename onto an existing tag and turns a rename
+        // to empty into the removal it is.
+        patch("tags", tagsToText(normalizedTags(next)));
+      }}
+      onBlur={() => {
+        setTagEdit(null);
+      }}
+      onKeyDown={(event) => {
+        leaveOnEscape(event);
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        send.current();
+        setTagEdit(null);
+      }}
+    />
+  );
+
   return (
     <>
       {/*
-       * The strip is the document **as the corpus holds it** — the mockup's own
-       * `.fm-chips`, unchanged — and the controls below are what you are
-       * setting. The two agree except while a save is on the wire, which is
-       * exactly when the chip at the end of the strip says `saving…`.
+       * The strip is the frontmatter editor (SPEC.md §10, rider signed
+       * 2026-08-23). Every value an editable chip shows comes from
+       * `valueOf(doc, local)` — the document overlaid with what the person just
+       * set — so an optimistic value shows while `saving…` is on the chip at
+       * the end, and the chip menus mark the same value the strip displays.
        */}
-      <div className="fm-chips">
+      <div className="fm-chips" role="group" aria-label="Frontmatter">
         <span className="chip">{doc.frontmatter.type}</span>
         {folder === "" ? null : <span className="chip">{folder}</span>}
-        {doc.frontmatter.tags.map((tag) => (
-          <span className="chip" key={tag}>
-            #{tag}
-          </span>
-        ))}
-        <span className="chip on">{doc.frontmatter.status}</span>
-        {/* A stage is shown when there is one, or when a board offers words for
-            it — a document no kanban claims says nothing about a field it does
-            not use. */}
-        {doc.frontmatter.stage === null && stages.length === 0 ? null : (
-          <span className={doc.frontmatter.stage === null ? "chip" : "chip on"}>
-            stage: {doc.frontmatter.stage ?? "none"}
-          </span>
+
+        {tagList.map((tag, index) =>
+          tagEdit !== null && tagEdit.index === index ? (
+            tagInput(tagEdit)
+          ) : (
+            <button
+              key={`${String(index)}:${tag}`}
+              type="button"
+              className="chip fm-chip"
+              data-chip="tag"
+              data-tag={tag}
+              aria-haspopup="menu"
+              onClick={(event) => {
+                const base = tagList;
+                chipMenu(event, `Tag #${tag}`, (close) => (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="ac-item"
+                      data-act="rename-tag"
+                      onClick={() => {
+                        close();
+                        startTagEdit(base, index, tag);
+                      }}
+                    >
+                      Rename
+                      <span className="d">edits the tag in place</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="ac-item"
+                      data-act="remove-tag"
+                      onClick={() => {
+                        close();
+                        removeTag(base, index);
+                      }}
+                    >
+                      Remove
+                      <span className="d">takes #{tag} off this document</span>
+                    </button>
+                  </>
+                ));
+              }}
+            >
+              #{tag}
+            </button>
+          ),
         )}
+        {/* At the end of the tags, not at the end of the strip: it stays beside
+            what it adds to, however far the strip wraps. */}
+        {tagEdit !== null && tagEdit.index === tagList.length ? (
+          tagInput(tagEdit)
+        ) : (
+          <button
+            type="button"
+            className="chip fm-chip fm-chip-add"
+            data-chip="add-tag"
+            aria-label="Add a tag"
+            title="Add a tag"
+            onClick={() => {
+              startTagEdit(tagList, tagList.length, "");
+            }}
+          >
+            +
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="chip on fm-chip"
+          data-chip="status"
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const current = value.status;
+            chipMenu(event, "Set status", (close) => (
+              <>
+                {/* §10: the chip "says why when a document's status is not the
+                    reader's to set" — the reason is `statusLock`'s own sentence,
+                    not one invented here. */}
+                {statusReason === null ? null : (
+                  <div className="ac-item ac-item-note fm-menu-note" role="note">
+                    {statusReason}
+                  </div>
+                )}
+                {DOC_STATUSES.map((word) => {
+                  const isCurrent = word === current;
+                  /*
+                   * §5's whole vocabulary is offered; what is *writable* from
+                   * here is narrower. A locked document writes nothing at all,
+                   * and `archived` is a route rather than a status flip
+                   * (UI-020), so choosing it is gated with the why beneath it.
+                   */
+                  const gated = statusReason !== null || word === ARCHIVED;
+                  return (
+                    <button
+                      key={word}
+                      type="button"
+                      role="menuitem"
+                      className="ac-item"
+                      data-act={`status:${word}`}
+                      data-current={isCurrent ? "" : undefined}
+                      disabled={gated}
+                      onClick={() => {
+                        close();
+                        if (gated) return;
+                        patch("status", word);
+                      }}
+                    >
+                      {isCurrent ? `✓ ${word}` : word}
+                      {word === ARCHIVED && statusReason === null ? (
+                        <span className="d">{ARCHIVE_ROUTE_REASON}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </>
+            ));
+          }}
+        >
+          status: {value.status}
+        </button>
+
+        {/* A stage is shown when there is one, or when a board offers words for
+            it — a document no kanban claims and that holds none says nothing
+            about a field it does not use (`offeredStages` includes the held
+            value, so a chip that shows is always a control: at minimum Clear
+            plus the value it is looking at). */}
+        {value.stage === "" && stages.length === 0 ? null : (
+          <button
+            type="button"
+            className={value.stage === "" ? "chip fm-chip" : "chip on fm-chip"}
+            data-chip="stage"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const current = value.stage;
+              const orphanStage =
+                current !== "" && stageGroups.every((group) => !group.stages.includes(current))
+                  ? current
+                  : null;
+              chipMenu(event, "Set stage", (close) => (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="ac-item"
+                    data-act="stage:clear"
+                    data-current={current === "" ? "" : undefined}
+                    onClick={() => {
+                      close();
+                      patch("stage", CLEAR_STAGE);
+                    }}
+                  >
+                    {current === "" ? "✓ Clear the stage" : "Clear the stage"}
+                    <span className="d">
+                      a kanban'd document is written `open` in the same commit
+                    </span>
+                  </button>
+                  {stageGroups.map((group) => (
+                    <Fragment key={group.boardId}>
+                      {/* The words are the boards': two kanbans over one
+                          document share one `stage` value and two
+                          vocabularies (stageChoices.ts). */}
+                      <div className="ac-item ac-item-note fm-menu-group">{group.boardTitle}</div>
+                      {group.stages.map((stage) => (
+                        <button
+                          key={`${group.boardId}:${stage}`}
+                          type="button"
+                          role="menuitem"
+                          className="ac-item"
+                          data-act={`stage:${stage}`}
+                          data-current={stage === current ? "" : undefined}
+                          onClick={() => {
+                            close();
+                            patch("stage", stage);
+                          }}
+                        >
+                          {stage === current ? `✓ ${stage}` : stage}
+                        </button>
+                      ))}
+                    </Fragment>
+                  ))}
+                  {/* A stage the document carries that no board draws: shown so
+                      the menu marks the value it is looking at, rather than
+                      marking nothing over a document that has one. */}
+                  {orphanStage === null ? null : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="ac-item"
+                      data-act={`stage:${orphanStage}`}
+                      data-current=""
+                      onClick={close}
+                    >
+                      {`✓ ${orphanStage}`}
+                      <span className="d">no board draws this</span>
+                    </button>
+                  )}
+                </>
+              ));
+            }}
+          >
+            stage: {value.stage === "" ? "none" : value.stage}
+          </button>
+        )}
+
+        {/* The due chip swaps for the field itself: the date picker is the
+            browser's own, placed by the browser, and clearing the field is
+            clearing the date ({@link isDeliberate} holds the empty value for
+            the debounce, which is also what lets a typed date finish arriving).
+            With no due date it reads as an unset chip rather than disappearing,
+            so the field is reachable. */}
+        {dueOpen ? (
+          <input
+            ref={dueField}
+            className="chip fm-chip-input"
+            type="date"
+            aria-label="Due date"
+            value={value.due}
+            onChange={(event) => {
+              patch("due", event.target.value);
+            }}
+            onBlur={() => {
+              setDueOpen(false);
+            }}
+            onKeyDown={(event) => {
+              leaveOnEscape(event);
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              send.current();
+              setDueOpen(false);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className={value.due === "" ? "chip ghost fm-chip" : "chip on fm-chip"}
+            data-chip="due"
+            onClick={() => {
+              setDueOpen(true);
+            }}
+          >
+            {value.due === "" ? "due: —" : `due: ${value.due}`}
+          </button>
+        )}
+
         {doc.frontmatter.updated === null ? null : (
           <span className="chip">updated {doc.frontmatter.updated.slice(0, 10)}</span>
         )}
@@ -756,109 +1119,6 @@ export function FrontmatterForm({
             send.current();
           }}
         />
-      </div>
-
-      <div className="fm-form" aria-label="Frontmatter">
-        <Field label="tags" lock={null}>
-          <input
-            className="fm-input"
-            value={value.tags}
-            placeholder="comma, separated"
-            onKeyDown={leaveOnEscape}
-            onChange={(event) => {
-              patch("tags", event.target.value);
-            }}
-          />
-        </Field>
-        <Field
-          label="status"
-          lock={statusReason}
-          hint="archive from the ⋯ menu — a status flip would not move a skill’s folder"
-        >
-          {/*
-           * Switched off rather than replaced by a statement of the value: there
-           * **is** an act on an archived document's status and it lives on
-           * another route, which the note above says (UI-020). A control the
-           * person can see and not use, with the way to arm it named, is the
-           * honest shape for that.
-           */}
-          <select
-            className="fm-input"
-            value={value.status}
-            disabled={statusReason !== null}
-            onKeyDown={leaveOnEscape}
-            onChange={(event) => {
-              patch("status", event.target.value);
-            }}
-          >
-            {statusOptions(value.status).map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {/*
-         * `stage ▾` (SPEC.md §10, rider 6): "anything the graph does not allow
-         * is done by setting the field in the document". This is that control,
-         * and it is deliberately **not** restricted by any transition graph — it
-         * is the way past one. The options are grouped by the board that names
-         * them, because two kanbans over one document share one `stage` value
-         * and two vocabularies (`stageChoices.ts`).
-         *
-         * Absent when no kanban over `stage` claims this document: a `<select>`
-         * with nothing but "Clear the stage" in it is a control with no act.
-         */}
-        {stages.length === 0 ? null : (
-          <Field
-            label="stage"
-            lock={null}
-            hint="any stage on any board that claims this document — this is how a transition is skipped"
-          >
-            <select
-              className="fm-input"
-              value={value.stage}
-              onKeyDown={leaveOnEscape}
-              onChange={(event) => {
-                patch("stage", event.target.value);
-              }}
-            >
-              <option value={CLEAR_STAGE}>Clear the stage</option>
-              {stageGroups.map((group) => (
-                <optgroup key={group.boardId} label={group.boardTitle}>
-                  {group.stages.map((stage) => (
-                    <option key={`${group.boardId}:${stage}`} value={stage}>
-                      {stage}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {/* A stage the document carries that no board on the bar draws:
-                  kept so the control shows the value it is looking at, rather
-                  than rendering blank over a document that has one. */}
-              {value.stage !== "" &&
-              stageGroups.every((group) => !group.stages.includes(value.stage)) ? (
-                <option value={value.stage}>{`${value.stage} (no board draws this)`}</option>
-              ) : null}
-            </select>
-          </Field>
-        )}
-        {/*
-         * `due` is live on every document, and `lock={null}` says so with no
-         * branch: nothing computes a deadline from a document's content, so a
-         * deadline is the person's to set whatever the document's `type:` says.
-         */}
-        <Field label="due" lock={null}>
-          <input
-            className="fm-input"
-            type="date"
-            value={value.due}
-            onKeyDown={leaveOnEscape}
-            onChange={(event) => {
-              patch("due", event.target.value);
-            }}
-          />
-        </Field>
       </div>
     </>
   );

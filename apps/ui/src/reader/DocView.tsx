@@ -384,15 +384,15 @@ export function DocView({
         {...arrived}
       >
         {/*
-         * The body's own right edge, as a grab handle (SPEC.md §10's width
-         * rider). First in the document half so it is one Tab from the head
-         * rather than one Tab past the whole editor, and rendered only while a
-         * body is on screen: the comments list carries no measure, and a
-         * control that visibly does nothing is worse than no control.
-         *
-         * It draws nothing at all outside a reader — `DocWidthContext` is
-         * `null` there — so a `DocView` in a component test lays out exactly as
-         * it did before there was a handle.
+         * The body's own right edge, as a grab handle — in **full screen
+         * only** (SPEC.md §10, rider signed 2026-08-23): a column's body fills
+         * the column, so the column's edge is the single gesture there and this
+         * draws nothing (`DocWidthContext` is `null` — the column reader and a
+         * `DocView` in a component test alike provide none). First in the
+         * document half so it is one Tab from the head rather than one Tab past
+         * the whole editor, and rendered only while a body is on screen: the
+         * comments list carries no measure, and a control that visibly does
+         * nothing is worse than no control.
          */}
         {showsBody ? <DocWidthHandle /> : null}
 
