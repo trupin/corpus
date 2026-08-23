@@ -1530,7 +1530,7 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | UI-162 | The chip strip is the frontmatter editor | done | P0 | fable | SHARED-068 |
 | SHARED-069 | A document's content fills the document — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
 | UI-163 | The body fills its column, and full screen keeps its own width | done | P0 | opus | SHARED-069 |
-| SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
+| SHARED-070 | What else the agent pays for — a measured audit of token cost | done | P1 | fable | — |
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | done | P1 | opus | CLI-056 |
 | UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | done | P2 | opus | CONTRACT-078 |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |
@@ -1539,3 +1539,10 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | CLI-064 | A batch verb needs a decided exit code before it is worth building (CLI-058 recommendation) — **not in v0.20.0** | todo | P1 | fable | CLI-057, CLI-058 |
 | UI-165 | A column's thread margin cannot be reached by any gesture (UI-163 escalation) — **not in v0.20.0**, needs a user call | todo | P2 | opus | UI-163 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document (AGENT-045 finding) — **not in v0.20.0**, needs a user call | todo | P1 | fable | CLI-060 |
+| CLI-066 | A body piped over a socket is dropped silently, exit 0 (SHARED-070 finding) | todo | P0 | opus | — |
+| SERVER-145 | A settled event can be settled again, and `queue fail` needs no reason (SHARED-070 finding) | todo | P0 | opus | — |
+| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens (SHARED-070) — **not in v0.20.0** | todo | P1 | fable | SHARED-070 |
+| AGENT-048 | The standing style rule is paid twice per context (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
+| AGENT-049 | `queue idle` prints a shape the skill does not promise (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
+| CLI-065 | `doc list --json` pays 293 tokens a row (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |

@@ -292,3 +292,14 @@ loosened, and a loosened scanner is the one that stops catching anything.
 - `prettier --check apps/cli/src apps/cli/scripts docs/cli.md` — clean.
 - `tsc --noEmit -p apps/cli/tsconfig.json` — clean.
 - Test server on 8931 stopped; port 8765 never touched.
+
+## Audit note (SHARED-070, 2026-08-23)
+
+The SHARED-070 audit re-observed the fixed cost on the shipping build inside a
+real loop: 164 ms minimum, ~189 ms median over 111 invocations at load 2–4
+(this session's 136.8 ms minimum stands as the floor; not re-litigated). The
+frequency side the session-mode question needs: ~15 calls per worked event,
+~450 calls over a 30-event day ≈ 86 s of startup latency. Context cost of the
+same day's CLI traffic is ~45k tokens — 6% of the loop's total spend, the rest
+being skill re-reads — so a session mode would buy latency, not tokens. Full
+numbers: `issues/evals/SHARED-070-token-audit.md`.

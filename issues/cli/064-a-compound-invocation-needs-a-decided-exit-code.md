@@ -129,3 +129,12 @@ _[Agent fills]_
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+## Audit note (SHARED-070, 2026-08-23)
+
+The audit's measured loop feeds this decision two figures: a worked
+`comment.created` event makes ~15 CLI calls (subagent + orchestrator share) at a
+189 ms median per call under load ~2–4, so batching's ceiling is ~2.9 s of
+fixed latency per event and ~86 s over a 30-event day. Token-wise the calls are
+cheap (mean ~1,500 tok/event, in + out), so batching is a latency play, not a
+context play. Full numbers: `issues/evals/SHARED-070-token-audit.md`.
