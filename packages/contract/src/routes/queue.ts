@@ -218,12 +218,21 @@ export const completeEvent = createRoute({
   path: "/api/queue/{id}/complete",
   tags: ["queue"],
   summary: "Mark a claimed event processed",
+  description:
+    "Moves the event from `in-progress/` to `processed/`: the agent reporting that the work it " +
+    "claimed is done (SPEC.md §7).\n\n" +
+    "`409` when the event is not `in-progress`: only claimed work can be completed, because " +
+    "nobody settles work they did not claim — an event still `pending` was never worked on, and " +
+    "one already in a terminal state was settled once already. A repeat is refused too, and says " +
+    "`already`, so a duplicated call learns that the outcome it wanted is the one on record " +
+    "rather than going to look for a fault. `404` when there is no such event.",
   request: { params: EventIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(QueueEventSchema, "The event, now in `processed/`."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
+    409: CONFLICT_RESPONSE,
   },
 });
 
@@ -232,6 +241,17 @@ export const failEvent = createRoute({
   path: "/api/queue/{id}/fail",
   tags: ["queue"],
   summary: "Mark a claimed event failed",
+  description:
+    "Moves the event from `in-progress/` to `failed/`: the agent reporting that the work it " +
+    "claimed could not be done (SPEC.md §7). `failed/` is the recoverable half of giving up — " +
+    "`POST /api/jobs/{id}/retry` picks it up again, where `abandoned/` is the end.\n\n" +
+    "`409` when the event is not `in-progress`: only claimed work can be failed, because nobody " +
+    "settles work they did not claim — an event still `pending` was never worked on, and one " +
+    "already in a terminal state was settled once already. A repeat is refused too, and says " +
+    "`already`, so a duplicated call learns that the outcome it wanted is the one on record " +
+    "rather than going to look for a fault. It is also what stops a second `fail` quietly " +
+    "discarding the `reason` it carried, since the first one's annotation was never going to be " +
+    "overwritten. `404` when there is no such event.",
   request: {
     params: EventIdParamSchema,
     headers: ActorHeaderSchema,
@@ -246,6 +266,7 @@ export const failEvent = createRoute({
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
+    409: CONFLICT_RESPONSE,
   },
 });
 
@@ -309,12 +330,20 @@ export const abandonEvent = createRoute({
   summary: "Abandon an event",
   description:
     "Moves the event to `abandoned/` — the give-up terminal state, distinct from `failed/` which a " +
-    "retry can pick up again (SPEC.md §7). The event file is kept; nothing is deleted.",
+    "retry can pick up again (SPEC.md §7). The event file is kept; nothing is deleted.\n\n" +
+    "`409` when the event is `processed` or already `abandoned`: only outstanding work can be " +
+    "abandoned, because there is nothing left to give up on once it is done, and " +
+    "`processed/` → `abandoned/` would rewrite the history the kept file exists to be. This is " +
+    "the one settle that is **not** restricted to claimed work — abandoning is the operator's " +
+    "give-up rather than the agent's report, so `pending`, `in-progress`, `deferred` and " +
+    "`failed` events may all be abandoned, which is what lets the console offer it beside " +
+    "`retry` on a failed job. A repeat says `already`. `404` when there is no such event.",
   request: { params: EventIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(QueueEventSchema, "The event, now in `abandoned/`."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
+    409: CONFLICT_RESPONSE,
   },
 });

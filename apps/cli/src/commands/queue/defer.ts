@@ -48,7 +48,10 @@ export async function runDefer(context: WorkspaceCommandContext): Promise<void> 
 
   // An empty `--reason` is treated as no reason at all: the contract's `reason`
   // is `min(1)`, so `{"reason":""}` would be a 400 for a caller who plainly
-  // meant "no annotation" — the same rule `queue fail` and `queue halt` follow.
+  // meant "no annotation" — the same rule `queue halt` follows. `queue fail`
+  // parted company with them in CLI-067: its reason is mandatory, so an empty
+  // one is a usage error there rather than an omission. Here the reason really
+  // is optional — `--blocked-on` is what a deferral cannot do without.
   const reason = context.flags.string("reason")?.trim();
   const body = reason === undefined || reason === "" ? { blockedOn } : { blockedOn, reason };
 
@@ -93,8 +96,11 @@ export const deferCommand: WorkspaceCommandSpec = {
       name: "blocked-on",
       type: "string",
       valueName: "doc-id",
+      // One sentence for the requirement and the meaning: brief help renders the
+      // first sentence only (CLI-056), and this flag's used to gloss as the bare
+      // word "Required", which tells a reader nothing about what to write.
       description:
-        "**Required.** The document a person is editing that the work is waiting on. That " +
+        "**Required** — the document a person is editing that the work is waiting on. That " +
         "session ending is what returns this event to `pending`, so naming the wrong document " +
         "waits forever.",
     },

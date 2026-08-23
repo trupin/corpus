@@ -18,7 +18,10 @@ export const queueTopic: TopicSpec = {
     "The event queue is how work reaches the agent: a comment that requests it enqueues an event, " +
     "and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → " +
     "`corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, " +
-    "and every transition is idempotent so a retried call is never a crash. `defer` is the " +
+    "and **a settle is only ever accepted from the agent that claimed the work** — SPEC.md §7's " +
+    "rule, so a retried `complete` or `fail` is a conflict (exit 5) rather than a second success. " +
+    "`corpus queue in-progress` is how to find out what you still hold before settling. `defer` " +
+    "is the " +
     "fourth, non-terminal outcome: work the agent parked because a person is editing the " +
     "document it needs waits rather than failing, and returns to `pending` by itself when that " +
     "session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill " +

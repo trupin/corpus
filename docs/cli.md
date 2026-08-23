@@ -1730,15 +1730,17 @@ corpus job retry evt_9f2a
 
 Park on, claim and settle the agent's event queue.
 
-The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and **a settle is only ever accepted from the agent that claimed the work** — SPEC.md §7's rule, so a retried `complete` or `fail` is a conflict (exit 5) rather than a second success. `corpus queue in-progress` is how to find out what you still hold before settling. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
 
 **The queue is partitioned into lanes** (SPEC.md §7), and two verbs take one: `idle` and `claim-all` accept `--thread <th_…>` to consume the lane of a conversation with a resident agent. Omitting it is the orchestrator's lane, which is what every caller written before lanes existed already meant. A scoped call sees only its own lane; the orchestrator's sees its own plus every lane nobody is listening on — so two agents working at once read disjoint sets, and a conversation whose agent is absent is still answered, by the orchestrator, rather than left. `corpus agents` lists the lanes and says who is on them; **holding a scoped `idle` is the whole of what makes a resident present** — nothing here registers an agent, because there is nothing to register.
 
 ### `corpus queue abandon`
 
-Give up on an event for good.
+Give up on an event for good, from any state but processed.
 
 Moves the event to `abandoned/` — the terminal give-up state, distinct from `failed/` which a retry can pick up again. Nothing is deleted: the event file is kept where the audit trail can still see it.
+
+It is the one settle that is **not** restricted to claimed work, because it is the operator's give-up rather than the agent's report: a `pending`, `in-progress`, `deferred` or `failed` event can all be abandoned, which is what lets the console offer it beside `retry` on a failed job. What it may not do is give up on work that is **done** — abandoning a `processed` event is a conflict (exit 5), since there is nothing left to give up on and the move would rewrite the history the kept file exists to be. A repeat is refused too, and says `already`.
 
 ```
 corpus queue abandon <event-id> [flags]
@@ -1808,9 +1810,13 @@ corpus queue claim-all --thread th_4b8e2c
 
 ### `corpus queue complete`
 
-Mark a claimed event processed.
+Mark work you claimed processed — completing anything else is refused.
 
-Moves the event from `in-progress/` to `processed/`. Idempotent: completing an already-completed event is not an error, so a duplicated call after a retry exits 0 like the first. The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
+Moves the event from `in-progress/` to `processed/`. **Only claimed work can be completed:** an event you did not claim, or one already settled, is a conflict (exit 5) and nothing moves.
+
+That is SPEC.md §7's rule — nobody settles work they did not claim — and it is **not** idempotent. A second `complete` after a retry does not exit 0 like the first; it is refused, and the refusal says `already`, which is how a duplicated call learns the outcome it wanted is the one on record. Reconcile with `corpus queue in-progress` when you are not sure what you still hold.
+
+The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
 
 ```
 corpus queue complete <event-id> [flags]
@@ -1860,10 +1866,10 @@ corpus queue defer <event-id> [flags]
 
 **Flags**
 
-| Flag                    | Type   | Default | Description                                                                                                                                                                          |
-| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--blocked-on <doc-id>` | string | —       | **Required.** The document a person is editing that the work is waiting on. That session ending is what returns this event to `pending`, so naming the wrong document waits forever. |
-| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                                       |
+| Flag                    | Type   | Default | Description                                                                                                                                                                           |
+| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--blocked-on <doc-id>` | string | —       | **Required** — the document a person is editing that the work is waiting on. That session ending is what returns this event to `pending`, so naming the wrong document waits forever. |
+| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                                        |
 
 **Examples**
 
@@ -1887,9 +1893,13 @@ corpus queue defer evt_9f2a --blocked-on doc_a1b2c3 --json
 
 ### `corpus queue fail`
 
-Mark a claimed event failed.
+Mark work you claimed failed, saying why in the required --reason.
 
-Moves the event to `failed/`, where the console can retry it — the recoverable half of giving up (`abandon` is the other). A bare `fail` sends no request body at all; `--reason` records why, and is shown in the console.
+Moves the event to `failed/`, where the console can retry it — the recoverable half of giving up (`abandon` is the other). **`--reason` is required and checked before any request is sent**, and **only claimed work can be failed:** an event you did not claim, or one already settled, is a conflict (exit 5).
+
+The reason is the whole record of why the work stopped — it is what an operator reads in the failed row, and nothing else carries it. A missing or empty one is a usage error (exit 2) with nothing sent, so the failed row can never exist with nothing to say for itself. Use `corpus queue abandon` when there is genuinely nothing to add.
+
+It is **not** idempotent (SPEC.md §7 — nobody settles work they did not claim). A second `fail` is refused rather than accepted, which is also what stops it quietly discarding the new reason it carried: the first annotation was never going to be overwritten.
 
 ```
 corpus queue fail <event-id> [flags]
@@ -1903,9 +1913,9 @@ corpus queue fail <event-id> [flags]
 
 **Flags**
 
-| Flag              | Type   | Default | Description                                                              |
-| ----------------- | ------ | ------- | ------------------------------------------------------------------------ |
-| `--reason <text>` | string | —       | Why the event failed. Omitted entirely when not given, never sent empty. |
+| Flag              | Type   | Default | Description                                                                                                                                                                |
+| ----------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reason <text>` | string | —       | **Required** — why the event failed, shown in the console's failed row. An empty or whitespace value is refused the same way a missing one is, before any request is sent. |
 
 **Examples**
 
@@ -1915,10 +1925,10 @@ Fail an event and say why.
 corpus queue fail evt_9f2a --reason "the parent document was deleted"
 ```
 
-Fail without an annotation.
+Machine-readable form: the event as one JSON value.
 
 ```
-corpus queue fail evt_9f2a
+corpus queue fail evt_9f2a --reason "the API it needs is down" --json
 ```
 
 ### `corpus queue halt`

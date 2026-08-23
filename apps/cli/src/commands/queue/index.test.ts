@@ -83,9 +83,10 @@ describe("the queue topic", () => {
       const stub = await startStubServer(queueResponder());
       const harness = stubContext(stub, {
         args: { "event-id": "evt_1111" },
-        // A zero window keeps `idle` to a single probe; `defer` refuses to send
-        // anything without the document it is blocked on.
-        flags: { wait: 0, "blocked-on": "doc_a1b2c3" },
+        // A zero window keeps `idle` to a single probe. Two verbs refuse to send
+        // anything without a flag: `defer` needs the document it is blocked on,
+        // and since CLI-067 `fail` needs the reason that ends up in the row.
+        flags: { wait: 0, "blocked-on": "doc_a1b2c3", reason: "wiring check" },
       });
 
       expect(command.requiresWorkspace).not.toBe(false);

@@ -3133,6 +3133,101 @@ describe("the deferred queue state (CONTRACT-021)", () => {
 });
 
 /**
+ * CONTRACT-083 — the four settle verbs all refuse a transition, and all four now
+ * say so.
+ *
+ * SERVER-145 made the queue's terminal states terminal. `defer` had carried an
+ * `onlyFrom` rule since SERVER-030 and declared its `409`; `complete`, `fail` and
+ * `abandon` grew one and declared nothing, so for one release the document told a
+ * generated handler that a refusal it will certainly meet cannot happen.
+ *
+ * **This class is not derivable from the document, and that is the finding.**
+ * CONTRACT-059's sweep works because the *trigger* of its `403` is a value in the
+ * request body — `origin: null` — whose own published description states the
+ * rule, so "a user-only request field implies a declared `403`" reads a fact the
+ * document already carries. The trigger here is the event's current status on the
+ * server, which appears in no request (these three take a path id and, for
+ * `fail`, an optional annotation) and in no response either: `QueueEvent`
+ * publishes no `status` field at all. Nothing in the document states which
+ * statuses a verb admits, so no sweep over the document can derive that a `409`
+ * is owed. Making it derivable means publishing the transition table — the server
+ * declaring its own rules — which is SERVER-119's territory and deliberately not
+ * built here. This is that issue's third instance.
+ *
+ * So the guard is an enumeration, and it is honest about being one: the pin below
+ * fails if any of the four declarations is removed.
+ */
+describe("every queue settle verb declares the transition it refuses (CONTRACT-083)", () => {
+  const SETTLE_VERBS = [
+    ["/api/queue/{id}/complete", "post"],
+    ["/api/queue/{id}/fail", "post"],
+    ["/api/queue/{id}/defer", "post"],
+    ["/api/queue/{id}", "delete"],
+  ] as const;
+
+  /** Vacuity guard: the sweep below is worthless if it walks an empty list. */
+  it("covers every route that settles a queue event", () => {
+    const settling = ENDPOINT_INVENTORY.filter(
+      (entry) => entry.includes("/api/queue/{id}") && !entry.includes("/api/queue/{id}/log"),
+    );
+    expect(settling.sort()).toEqual(
+      SETTLE_VERBS.map(([path, method]) => `${method.toUpperCase()} ${path}`).sort(),
+    );
+  });
+
+  it.each(SETTLE_VERBS)("declares 409 on %s %s", (path, method) => {
+    expect(operation(path, method).responses?.["409"]).toBeDefined();
+  });
+
+  /**
+   * The response slot is `CONFLICT_RESPONSE` for all four, so the shape a client
+   * decodes is one shape. A fourth variant here would be four decoders.
+   */
+  it("refuses with one shape, not four", () => {
+    const shapes = SETTLE_VERBS.map(([path, method]) =>
+      JSON.stringify(operation(path, method).responses?.["409"]),
+    );
+    expect(new Set(shapes).size).toBe(1);
+  });
+
+  /**
+   * The prose says what the conflict *is*. "Conflict" alone sends the reader to
+   * the server source, which is the trip the declaration exists to save.
+   */
+  it.each([
+    ["/api/queue/{id}/complete", "post", "only claimed work can be completed"],
+    ["/api/queue/{id}/fail", "post", "only claimed work can be failed"],
+    ["/api/queue/{id}/defer", "post", "only claimed work can be deferred"],
+    ["/api/queue/{id}", "delete", "only outstanding work can be abandoned"],
+  ])("names the rule on %s %s rather than saying 'conflict'", (path, method, rule) => {
+    const description = operation(path, method).description ?? "";
+    expect(description).toContain(rule);
+    expect(description).toContain("`404` when there is no such event");
+  });
+
+  /**
+   * Three verbs refuse the same thing and say it in the same words. `abandon`
+   * refuses a *different* thing — SPEC.md §7's console offers it beside `retry`
+   * on a failed job, so it is admitted from everything but a finished event — and
+   * saying it in the claim rule's words would be a lie in matching prose.
+   */
+  it("shares one sentence across the three claim-only verbs, and marks abandon as the exception", () => {
+    for (const [path, method] of [
+      ["/api/queue/{id}/complete", "post"],
+      ["/api/queue/{id}/fail", "post"],
+      ["/api/queue/{id}/defer", "post"],
+    ] as const) {
+      expect(operation(path, method).description, path).toContain(
+        "`409` when the event is not `in-progress`",
+      );
+    }
+    const abandon = operation("/api/queue/{id}", "delete").description ?? "";
+    expect(abandon).toContain("`409` when the event is `processed` or already `abandoned`");
+    expect(abandon).toContain("not** restricted to claimed work");
+  });
+});
+
+/**
  * CONTRACT-045 — presence, published once and read at two grains.
  *
  * The console strip used to derive `idle` by elimination from the counts, so a
