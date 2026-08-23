@@ -181,8 +181,7 @@ function commentPopoverProbe(lanes: readonly ReturnType<typeof residentLane>[]):
     <ReaderHost transport={transport}>
       <CommentPopover
         quote="assume a 30-year fixed at 6.1%"
-        top={120}
-        left={80}
+        anchor={{ below: 120, above: 108, left: 80 }}
         pending={false}
         weightScope={`thread:${RESIDENT_THREAD_ID}`}
         recipientScope={RESIDENT_THREAD_ID}
@@ -544,8 +543,7 @@ describe("a pick the server refuses — the other three surfaces", () => {
       <ReaderHost transport={transport}>
         <CommentPopover
           quote="assume a 30-year fixed at 6.1%"
-          top={120}
-          left={80}
+          anchor={{ below: 120, above: 108, left: 80 }}
           pending={false}
           weightScope={`thread:${RESIDENT_THREAD_ID}`}
           recipientScope={RESIDENT_THREAD_ID}

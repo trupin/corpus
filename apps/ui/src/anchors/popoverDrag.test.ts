@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampToRect,
   clampToViewport,
+  placeInRoom,
   POPOVER_DRAG_STEP,
   POPOVER_DRAG_STEP_COARSE,
   POPOVER_EDGE_MARGIN,
   stepForKey,
+  type PopoverRect,
 } from "./popoverDrag.js";
 
 /**
@@ -44,6 +47,85 @@ describe("keeping a dragged popover on screen", () => {
   it("pins a box bigger than the viewport to its near edge rather than a negative one", () => {
     const clamped = clampToViewport({ top: 300, left: 300 }, { width: 1400, height: 900 }, SCREEN);
     expect(clamped).toEqual({ top: POPOVER_EDGE_MARGIN, left: POPOVER_EDGE_MARGIN });
+  });
+});
+
+/**
+ * UI-159's arithmetic: **which side of the words the box opens on, and against
+ * what.**
+ *
+ * Every number below is an input rather than a threshold. That is the point of
+ * the issue: the same defect had been fixed twice with a constant that was true
+ * of the layout on the day it was measured, and a third band of chrome — the
+ * board bar and the column strip together — made both constants wrong.
+ */
+describe("placing a popover in the room its chrome leaves", () => {
+  /** The board's band on a 1024×768 screen with 100px of chrome above and 60 below. */
+  const ROOM: PopoverRect = { top: 100, left: 0, right: 1024, bottom: 708 };
+
+  it("opens under the words when the room under them is the larger part", () => {
+    // 400 under (708 − 8 − 300) against 188 over (288 − 8 − 100).
+    const at = placeInRoom({ below: 300, above: 288, left: 120 }, BOX, ROOM, SCREEN);
+    expect(at).toEqual({ top: 300, left: 120 });
+  });
+
+  it("opens over the words when the room over them is the larger part", () => {
+    // The same box 300px further down: 100 under, 388 over.
+    const at = placeInRoom({ below: 600, above: 588, left: 120 }, BOX, ROOM, SCREEN);
+    expect(at).toEqual({ top: 588 - BOX.height, left: 120 });
+  });
+
+  /**
+   * The regression, as arithmetic. A band of chrome added above the board moves
+   * the words down and takes the room off one side; nothing here is told about
+   * the band, and the answer changes anyway.
+   */
+  it("follows a band of chrome added above the board, with no number of its own", () => {
+    const words = { below: 470, above: 458, left: 120 };
+    const before = placeInRoom(words, BOX, ROOM, SCREEN);
+    // 230 under against 350 over — over, already.
+    expect(before.top).toBe(458 - BOX.height);
+
+    // 84px of new chrome: the room starts lower and the words sit lower with it.
+    const after = placeInRoom(
+      { below: words.below + 84, above: words.above + 84, left: 120 },
+      BOX,
+      { ...ROOM, top: ROOM.top + 84 },
+      SCREEN,
+    );
+    expect(after.top).toBe(458 + 84 - BOX.height);
+    // And the foot of the box is inside the room either way, which is the claim.
+    expect(before.top + BOX.height).toBeLessThanOrEqual(ROOM.bottom - POPOVER_EDGE_MARGIN);
+    expect(after.top + BOX.height).toBeLessThanOrEqual(ROOM.bottom - POPOVER_EDGE_MARGIN);
+  });
+
+  it("keeps the box inside the room on the side it took", () => {
+    // Words at the very foot of the room: the larger side is over them, and the
+    // box would still start above the room's top, so it is pinned to it.
+    const at = placeInRoom({ below: 700, above: 130, left: 120 }, BOX, ROOM, SCREEN);
+    expect(at.top).toBe(ROOM.top + POPOVER_EDGE_MARGIN);
+  });
+
+  /**
+   * **The screen has the last word.** A room too short for the box cannot hold
+   * it, and §10 would rather the box overflow its room than put its Send button
+   * where no pointer can reach it.
+   */
+  it("keeps a box taller than its room on the screen", () => {
+    const cramped: PopoverRect = { top: 600, left: 0, right: 1024, bottom: 700 };
+    const at = placeInRoom({ below: 660, above: 648, left: 120 }, BOX, cramped, SCREEN);
+    expect(at.top + BOX.height).toBeLessThanOrEqual(SCREEN.height - POPOVER_EDGE_MARGIN);
+  });
+
+  it("clamps into a rectangle that is not the screen", () => {
+    expect(clampToRect({ top: 0, left: 0 }, BOX, ROOM)).toEqual({
+      top: ROOM.top + POPOVER_EDGE_MARGIN,
+      left: POPOVER_EDGE_MARGIN,
+    });
+    expect(clampToRect({ top: 5000, left: 0 }, BOX, ROOM)).toEqual({
+      top: ROOM.bottom - BOX.height - POPOVER_EDGE_MARGIN,
+      left: POPOVER_EDGE_MARGIN,
+    });
   });
 });
 

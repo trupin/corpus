@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
-import { usePopoverDrag } from "./popoverDrag";
+import { usePopoverDrag, type PopoverAnchor } from "./popoverDrag";
 
 /**
  * The composer that opens on 💬 Comment — a composer, not a dialog.
@@ -48,7 +48,14 @@ import { usePopoverDrag } from "./popoverDrag";
  * which for anything longer than a phrase is on top of the evidence — the figure
  * two lines up, the sentence a pronoun refers to. The grip at its head picks it
  * up, by pointer or by arrow key, and the position lasts as long as this
- * opening: a place chosen to clear one passage says nothing about the next. What
+ * opening: a place chosen to clear one passage says nothing about the next.
+ *
+ * **Which side of the selection it opens on is derived, not chosen** (UI-159).
+ * The words cut the room the chrome has left into two, and the box takes the
+ * larger part, so a passage near the foot of a screen crowded with chrome opens
+ * a composer *above* it rather than one wedged against the bottom edge with its
+ * Send button off-screen. It is re-derived while it is open — an attachment chip
+ * makes the box taller, and the box moves rather than the button leaving. What
  * makes that affordable is the other half of UI-112 — the words are lit in the
  * document from the moment this opens, so the box no longer has to sit on them
  * to say which they were.
@@ -123,9 +130,14 @@ export function restoredRecipient(
 export interface CommentPopoverProps {
   /** The markdown the thread will be anchored to, shown for confirmation. */
   readonly quote: string;
-  /** Viewport coordinates of the selection the popover hangs off. */
-  readonly top: number;
-  readonly left: number;
+  /**
+   * The selection the popover hangs off, as the two edges it can be put against
+   * (UI-159): `below` is where a box under the words starts, `above` is where a
+   * box over them ends. Which of the two it takes is decided here, from the room
+   * the chrome has left — a host states where the words are and never where the
+   * box goes.
+   */
+  readonly anchor: PopoverAnchor;
   readonly pending: boolean;
   /**
    * Which conversation this comment's weight belongs to (SPEC.md §10's rider) —
@@ -178,8 +190,7 @@ export function quotePreview(quote: string, limit = 90): string {
 
 export function CommentPopover({
   quote,
-  top,
-  left,
+  anchor,
   pending,
   weightScope,
   recipientScope,
@@ -191,7 +202,7 @@ export function CommentPopover({
   const [asking, setAsking] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const drag = usePopoverDrag({ top, left }, box);
+  const drag = usePopoverDrag(anchor, box);
   const intake = useAttachmentIntake(restore?.attachments);
   /*
    * Read from cache, never fetched here. The level set is one shared query the

@@ -202,8 +202,7 @@ describe("the starting point is per conversation", () => {
           {reply("th_a")}
           <CommentPopover
             quote="a passage"
-            top={10}
-            left={10}
+            anchor={{ below: 10, above: 4, left: 10 }}
             pending={false}
             weightScope="doc:doc_a"
             recipientScope="doc_a"

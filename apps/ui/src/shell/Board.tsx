@@ -893,6 +893,15 @@ export function Board(): ReactElement {
         ref={boardEl}
         className="board"
         aria-label="Document lists"
+        /*
+         * The room a popover opens into (UI-159). The board is the flex child
+         * handed whatever the chrome above and below it has not taken, so its
+         * rectangle **is** the free space — measured, never subtracted. A
+         * composer anchored to words in a column derives its side and its bound
+         * from this, which is what makes another band added above the board cost
+         * it nothing.
+         */
+        data-popover-room=""
         onDragOver={(event) => {
           if (dragId === null || boardEl.current === null) return;
           event.preventDefault();

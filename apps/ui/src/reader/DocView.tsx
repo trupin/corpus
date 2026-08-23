@@ -649,8 +649,7 @@ export function DocView({
       {!showsBody || anchors.draft === null ? null : (
         <CommentPopover
           quote={anchors.draft.selection.selector.exact}
-          top={anchors.draft.top}
-          left={anchors.draft.left}
+          anchor={anchors.draft.anchor}
           pending={anchors.submitting}
           // A comment on a document selection is not yet in a conversation, so
           // the nearest scope §10's rule can mean is the document itself.

@@ -1233,6 +1233,7 @@ left in a report.
 | UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
 | UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
 | UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | todo | P1 | UI-150 |
+| UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |

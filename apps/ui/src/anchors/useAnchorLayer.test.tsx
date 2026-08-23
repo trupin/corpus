@@ -363,7 +363,9 @@ describe("commenting on a selection", () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     expect(app.layer().draft?.selection.selector.exact).toBe("6.1%");
-    expect(app.layer().draft?.top).toBe(124);
+    // Both edges of the words, so the composer can pick the side with the room
+    // (UI-159): under the quote's last line, or over its first.
+    expect(app.layer().draft?.anchor).toEqual({ below: 124, above: 94, left: 40 });
   });
 
   it("refuses a selection that quotes nothing, and says so", () => {

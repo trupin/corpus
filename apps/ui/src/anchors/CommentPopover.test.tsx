@@ -35,8 +35,7 @@ function open(overrides: Partial<Parameters<typeof CommentPopover>[0]> = {}): {
     <harness.Wrapper>
       <CommentPopover
         quote="assume a 30-year fixed at 6.1%"
-        top={120}
-        left={80}
+        anchor={{ below: 120, above: 108, left: 80 }}
         pending={false}
         weightScope="doc:doc_a"
         recipientScope="doc_a"
@@ -367,6 +366,11 @@ describe("moving the comment composer", () => {
     return { top: popover().style.top, left: popover().style.left };
   }
 
+  /** Where the box ends — the edge Send sits against, and the one that left. */
+  function foot(): number {
+    return Number.parseInt(popover().style.top, 10) + popover().getBoundingClientRect().height;
+  }
+
   it("follows the pointer and stays where it was dropped", () => {
     open();
     sized(320, 200);
@@ -429,7 +433,7 @@ describe("moving the comment composer", () => {
   });
 
   it("is clamped by the keyboard too", () => {
-    open({ top: 20, left: 20 });
+    open({ anchor: { below: 20, above: 8, left: 20 } });
     sized(320, 200);
     for (let press = 0; press < 10; press += 1) {
       fireEvent.keyDown(grip(), { key: "ArrowLeft", shiftKey: true });
@@ -459,32 +463,200 @@ describe("moving the comment composer", () => {
     drag([100, 100], [[400, 400]]);
     expect(at()).not.toEqual({ top: "120px", left: "80px" });
 
-    reopen({ top: 300, left: 300, quote: "another passage entirely" });
+    reopen({ anchor: { below: 300, above: 288, left: 300 }, quote: "another passage entirely" });
     expect(at()).toEqual({ top: "300px", left: "300px" });
   });
 
   /**
-   * **The box the host placed may not fit where it was placed** (UI-148).
+   * **The box the host placed may not fit where it was placed** (UI-148,
+   * UI-159).
    *
    * The clamp used to apply to a move and never to the opening, so a selection
    * near the foot of the window opened a popover whose Send button sat below it
-   * — reachable by `⌘↵` and by nothing a pointer could press.
+   * — reachable by `⌘↵` and by nothing a pointer could press. UI-148 pulled such
+   * a box up to the floor of the window. UI-159 stopped putting it there at all:
+   * the words divide the room and the box takes the larger part. The claim is
+   * the one this test was written to make, and the second assertion is now the
+   * whole of it — the foot is inside the window.
    */
   it("opens inside the window when the selection leaves no room below it", () => {
     const { reopen } = open();
     sized(320, 200);
-    reopen({ top: window.innerHeight - 40, left: 300, quote: "a passage at the foot" });
-    expect(at()).toEqual({
-      top: `${String(window.innerHeight - 200 - POPOVER_EDGE_MARGIN)}px`,
-      left: "300px",
+    reopen({
+      anchor: { below: window.innerHeight - 40, above: window.innerHeight - 52, left: 300 },
+      quote: "a passage at the foot",
     });
+    // Over the words, which is the side with the room: its foot ends at their top.
+    expect(at()).toEqual({ top: `${String(window.innerHeight - 52 - 200)}px`, left: "300px" });
+    expect(foot()).toBeLessThanOrEqual(window.innerHeight - POPOVER_EDGE_MARGIN);
   });
 
-  it("leaves a box that fits exactly where the host put it", () => {
+  it("leaves a box on the words when under them is the larger side", () => {
     const { reopen } = open();
     sized(320, 200);
-    reopen({ top: 100, left: 120, quote: "a passage with room under it" });
+    reopen({ anchor: { below: 100, above: 88, left: 120 }, quote: "a passage with room under it" });
     expect(at()).toEqual({ top: "100px", left: "120px" });
+  });
+
+  /**
+   * **UI-159's defect, at the size of one assertion.**
+   *
+   * The composer opens, fits, and is then made taller by an attachment chip. The
+   * placement ran once at the opening and wrote into the same slot a drag writes
+   * to, so a box nobody had moved looked moved, was never derived again, and
+   * grew downwards out of the window — 42px of it, measured in Chromium, with
+   * the Send button inside those 42px.
+   */
+  it("puts itself back in the room when a chip makes it taller after it opened", () => {
+    const { reopen } = open({ anchor: { below: 380, above: 368, left: 80 } });
+    sized(320, 200);
+    reopen({});
+    // Under the words: 380 of room below them against 360 above.
+    expect(at().top).toBe("380px");
+
+    sized(320, 400);
+    reopen({});
+    expect(foot()).toBeLessThanOrEqual(window.innerHeight - POPOVER_EDGE_MARGIN);
+    expect(at().top).toBe(`${String(window.innerHeight - 400 - POPOVER_EDGE_MARGIN)}px`);
+  });
+
+  /**
+   * A box the person carried is theirs. Growing reaches it too, so it is kept on
+   * the screen — but it is not put back on the words, because a place chosen to
+   * clear a paragraph is not a placement to be re-derived.
+   */
+  it("keeps a carried box on the screen when it grows, without re-placing it", () => {
+    open({ anchor: { below: 100, above: 88, left: 80 } });
+    sized(320, 200);
+    drag([100, 100], [[100, 5000]]);
+    expect(at().top).toBe(`${String(window.innerHeight - 200 - POPOVER_EDGE_MARGIN)}px`);
+
+    sized(320, 400);
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(foot()).toBeLessThanOrEqual(window.innerHeight - POPOVER_EDGE_MARGIN);
+    // Still at the foot of the screen, where it was carried — not back on the
+    // words at 100.
+    expect(at().top).toBe(`${String(window.innerHeight - 400 - POPOVER_EDGE_MARGIN)}px`);
+  });
+
+  /**
+   * **The size can change without a render of this component**, which is why an
+   * observer sits beside the layout effect: an attachment preview that decodes
+   * late, a font that arrives, a drawer taking a band off the room. jsdom ships
+   * no `ResizeObserver`, so the class is supplied and its callback fired —
+   * exactly the apparatus `ColumnHead.test.tsx` uses for the same reason.
+   */
+  it("re-places the box when its size changes without a render", () => {
+    let callbacks: ResizeObserverCallback[] = [];
+    class TestResizeObserver {
+      constructor(private readonly callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {
+        callbacks = callbacks.filter((entry) => entry !== this.callback);
+      }
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    try {
+      const { reopen } = open({ anchor: { below: 380, above: 368, left: 80 } });
+      sized(320, 200);
+      reopen({});
+      expect(at().top).toBe("380px");
+
+      sized(320, 400);
+      act(() => {
+        for (const callback of [...callbacks]) callback([], {} as ResizeObserver);
+      });
+      expect(foot()).toBeLessThanOrEqual(window.innerHeight - POPOVER_EDGE_MARGIN);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  /**
+   * The room is the marked surface's, and the marked surface is the board — so a
+   * band of chrome added above it moves the composer with no number in here
+   * changing. That is the whole of UI-159: the same defect had been fixed twice
+   * with constants, and a constant is what the third band broke.
+   */
+  it("derives its side from the room the chrome leaves, not from the window", () => {
+    const room = document.createElement("div");
+    room.setAttribute("data-popover-room", "");
+    let band = 0;
+    room.getBoundingClientRect = () =>
+      ({
+        top: band,
+        left: 0,
+        right: 1024,
+        bottom: 600,
+        width: 1024,
+        height: 600 - band,
+      }) as DOMRect;
+    document.body.append(room);
+
+    try {
+      // The room runs 0…600 and the words sit at 368…380, so there is 360 over
+      // them and 212 under: the box goes over, ending at their top.
+      const { reopen } = open({ anchor: { below: 380, above: 368, left: 80 } });
+      sized(320, 200);
+      reopen({});
+      expect(at().top).toBe(`${String(368 - 200)}px`);
+
+      // A band 300px tall above the board takes that room away — 60 over the
+      // words now against the same 212 under — and the composer takes the other
+      // side. Nothing in the composer was told about the band, and no number in
+      // it moved.
+      band = 300;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(at().top).toBe("380px");
+    } finally {
+      room.remove();
+    }
+  });
+
+  /**
+   * **And it does not move while it still fits**, which is the other half of
+   * §10's rule about things that move under a pointer. A box re-placed on every
+   * change would jump away from under the person typing into it every time the
+   * room breathed. So the question asked is not *"where would this go now?"* but
+   * *"is it still inside its room and on the screen?"* — and a yes costs nothing.
+   */
+  it("stays put while it still fits, however the room around it changes", () => {
+    const room = document.createElement("div");
+    room.setAttribute("data-popover-room", "");
+    let bottom = 600;
+    room.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 1024, bottom, width: 1024, height: bottom }) as DOMRect;
+    document.body.append(room);
+
+    try {
+      const { reopen } = open({ anchor: { below: 380, above: 368, left: 80 } });
+      sized(320, 200);
+      reopen({});
+      expect(at().top).toBe("168px");
+
+      // A drawer takes 100px off the foot of the room. The box is at 168…368 and
+      // is still wholly inside it, so nothing happens.
+      bottom = 500;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(at().top).toBe("168px");
+
+      // A chip makes it 20px taller — 168…388, still inside — and it stays put
+      // too. Growing is not on its own a reason to move.
+      sized(320, 220);
+      reopen({});
+      expect(at().top).toBe("168px");
+    } finally {
+      room.remove();
+    }
   });
 });
 
