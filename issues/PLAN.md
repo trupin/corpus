@@ -1494,8 +1494,11 @@ implements it.
 **A document's content fills the document.** The reader carries two widths — the
 column's, in its view document, and the body's own, browser-local — so widening
 a column leaves the text where it was. The user, 2026-08-23: _"I don't want to
-have to resize the document, then the content as well."_ SHARED-069 carries that
-rider, **unsigned**, and UI-163 deletes the body's width.
+have to resize the document, then the content as well."_ In a column the body
+fills the column and its handle goes. **Full screen keeps its own**, sticky and
+unrelated, with a default wider than a column's — there is no column edge to
+follow there. SHARED-069 carries the rider, **unsigned**, and UI-163 implements
+it.
 
 **Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068 and
 SHARED-069 wait on the user's signatures and block nothing else, so UI-162 and
@@ -1510,4 +1513,4 @@ CONTRACT-081 → SERVER-141 → UI-161.
 | SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, unsigned | todo | P0 | fable | — |
 | UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
 | SHARED-069 | A document's content fills the document — the SPEC rider, unsigned | todo | P0 | fable | — |
-| UI-163 | The body fills its reader | todo | P0 | opus | SHARED-069 |
+| UI-163 | The body fills its column, and full screen keeps its own width | todo | P0 | opus | SHARED-069 |

@@ -32,12 +32,23 @@ The user, 2026-08-23:
 > don't want to have to resize the document, then the content as well. The
 > content fills the space.
 
-Today a reader carries **two** widths. The column has one, in its view
+and, on reading the consequence back:
+
+> Full screen is different. I should be able to resize the content width when in
+> full screen. The width in full screen and in column are both sticky and
+> unrelated. There's a sticky width for full screen and one for columns. In full
+> screen, the default width should be wider than the default for column.
+
+Today a **column** reader carries two widths. The column has one, in its view
 document's frontmatter, dragged by the column's own edge. The body has a second,
-browser-local per surface, dragged by its own handle (`apps/ui/src/reader/docWidth.ts`).
+browser-local per surface, dragged by its own handle
+(`apps/ui/src/reader/docWidth.ts`), defaulting to the stylesheet's `62ch`.
 `docWidth.ts` states the split as a decision: _"Dragging the body wider therefore
-never widens the column."_ The consequence is the user's complaint — widening a
-column leaves the text where it was, and the text has to be widened again.
+never widens the column."_ The consequence is the complaint — a 900px column
+still shows 62 characters of text, and the text has to be widened again.
+
+Full screen has no column, so its body width is already the only gesture there.
+It stays, it stays sticky, and its default stays wider.
 
 This issue carries the SPEC rider. UI-163 implements it.
 
@@ -51,37 +62,42 @@ This issue carries the SPEC rider. UI-163 implements it.
 
 ## The rider, as drafted — **unsigned**
 
-> **A document's content fills the document.** The body is as wide as the reader
-> holding it, and nothing inside a reader is sized separately from the reader.
-> There is one gesture for how wide a document reads — a column's own edge on the
-> board, and the window in full screen — and the body follows it with no second
-> act. The body's own width control is removed, and so is the stored body width:
-> a reading posture that had to be set twice was two answers to one question.
-> Where a reader gives its body less than its full width — anchored threads in
-> the margin are the case that exists — the body fills what is left, and the
-> margin is part of what defines that room rather than something the body
-> competes with. Anchored thread placement still follows the body, because the
-> body still moves. A column's edge stays draggable and stays in the view
-> document's frontmatter: it describes the view, it travels with it, and it
-> remains the one thing a person sizes.
+> **A document's content fills its reader, and a reader is sized once.** In a
+> column the body is as wide as the column. The column's own edge is the single
+> gesture, and the body follows it with no second act — the body's own width
+> control is removed from the column reader, and so is its stored width there. A
+> reading posture that had to be set twice was two answers to one question.
+> **Full screen is the other case, and it keeps its control.** There is no column
+> edge in full screen, so the body's own width is the one gesture there. It is
+> sticky in the browser-local set, it survives navigation and reload, and it is
+> **unrelated** to any column's width — neither follows the other. Full screen's
+> default is **wider** than a default column, because full screen is where a
+> document is read at length. Where a reader gives its body less than its full
+> width — anchored threads in the margin are the case that exists — the body
+> fills what is left, and the margin is part of what defines that room rather
+> than something the body competes with. Anchored thread placement still follows
+> the body, because the body still moves. A column's edge stays draggable and
+> stays in the view document's frontmatter: it describes the view and travels
+> with it.
 
 **What this changes about the product, stated plainly so the signature is
 informed.**
 
-**Full screen loses its only width control.** In a column the change removes the
-second of two gestures. In full screen the body control is the *only* gesture, so
-removing it means a document on a 1600px display reads at 1600px, less the thread
-margin when it is up. That is what "the content fills the space" says, and it is
-a real change to how a long document reads at that size. The alternative — the
-body fills a column and keeps its handle in full screen — honours the complaint's
-literal scope and keeps two answers to one question in the product. **The
-recommendation is to fill, everywhere**, because SHARED-061 already says a bound
-is derived from room rather than chosen as a number, and a comfortable measure is
-a number chosen for typography.
+**One control is deleted, not two.** The column reader loses its body handle. Full
+screen keeps its own, and keeps one sticky width across every document opened
+there.
 
-**A stored preference is dropped, not migrated.** `corpus.docWidth` in browser
-storage stops being read. Anyone who had set a width gets their column's width
-instead, with no notice, on the next load.
+**How "wider by default" is met.** The stylesheet already defaults a column body
+to `62ch` and full screen to `66ch`. After this rider the column's default is the
+**column**, so the comparison that matters is `66ch` against a default column —
+440px at base since Phase 41. `66ch` in the reader's serif already clears that,
+so the rider asks for no new number. UI-163 pins the comparison with a
+measurement rather than leaving it to a reading of two stylesheets.
+
+**A stored preference is partly dropped.** `corpus.docWidth` keeps its full-screen
+entry and stops reading its per-column entries. Anyone who had widened a body
+inside a column gets that column's width instead, with no notice, on the next
+load.
 
 ## Technical Design
 
@@ -95,10 +111,13 @@ SHARED-068's: two riders read together is how a live contradiction hides, and
 this project has already paid for that once.
 
 ### Edge Cases
-- The margin column. `MARGIN_COLUMN_RESERVE` is 330px today, and the rider makes
-  that reserve part of the room rather than a subtraction from a chosen number.
+- The margin column. `MARGIN_COLUMN_RESERVE` is 330px today. In a column the
+  rider makes that reserve part of the room rather than a subtraction from a
+  chosen number. In full screen it keeps its present job, because a chosen width
+  is still what the drag sets there.
 - A column narrower than what was `MIN_DOC_WIDTH` (320px). The body fills it. The
   floor now belongs to the column's own drag, which already has one.
+- Full screen keeps `MIN_DOC_WIDTH` and `MAX_DOC_WIDTH`: it still stores a number.
 
 ## Testing Strategy
 
