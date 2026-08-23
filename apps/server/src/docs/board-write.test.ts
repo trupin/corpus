@@ -27,11 +27,14 @@ afterEach(() => {
   ws.close();
 });
 
-const SEED_VIEWS_DIR = join(
+const SEED_DOCS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
   "../../../..",
-  "assets/workspace/data/docs/views",
+  "assets/workspace/data/docs",
 );
+
+const SEED_VIEWS_DIR = join(SEED_DOCS_DIR, "views");
+const SEED_BOARDS_DIR = join(SEED_DOCS_DIR, "boards");
 
 /** Frontmatter block of a file, as lines — what a byte-preservation claim is about. */
 const frontmatterLines = (text: string): string[] => {
@@ -181,15 +184,60 @@ describe("POST /api/docs with view and board keys", () => {
     }
     ws.reproject();
     const board = await list("type=view&sort=order");
+    // AGENT-042: a seed view is a saved query and nothing more — no `pinned`,
+    // no `order`, and so nothing in `extra` either (rider 2). The three come
+    // back in title order, which is where the `order` sort's documented
+    // tiebreak lands them once every `order` is null.
     expect(board.items.map((item) => [item.title, item.order, item.query])).toEqual([
-      ["Attention", 1, { needs: "me" }],
-      ["Inbox", 2, { folder: "inbox" }],
-      ["Open threads", 3, { type: "thread", status: "open" }],
+      ["Attention", null, { needs: "me" }],
+      ["Inbox", null, { folder: "inbox" }],
+      ["Open threads", null, { type: "thread", status: "open" }],
     ]);
-    // The seeds still carry the `pinned: true` a pre-rider-2 workspace wrote;
-    // it is `extra` now, verbatim, until AGENT-042 reseeds and CLI-061's
-    // migration drops it (SPEC.md §2.4).
-    expect(board.items.every((item) => item.extra["pinned"] === true)).toBe(true);
+    expect(board.items.every((item) => Object.keys(item.extra).length === 0)).toBe(true);
+  });
+
+  /**
+   * The other half of the same claim, and the one the board bar reads: rider 2's
+   * three seed boards, from the shipped bytes rather than from a fixture. A
+   * board is an ordinary document, so this is the projection answering about
+   * files `corpus init` copies verbatim.
+   */
+  it("keeps the shipped seed boards round-tripping through the create route", async () => {
+    ws = createWriteWorkspace("board-seed", { sprint: "s026" });
+    for (const name of readdirSync(SEED_VIEWS_DIR).sort()) {
+      ws.write(`data/docs/views/${name}`, readFileSync(join(SEED_VIEWS_DIR, name), "utf8"));
+    }
+    for (const name of readdirSync(SEED_BOARDS_DIR).sort()) {
+      ws.write(`data/docs/boards/${name}`, readFileSync(join(SEED_BOARDS_DIR, name), "utf8"));
+    }
+    ws.reproject();
+    const boards = await list("type=board&sort=order");
+    expect(
+      boards.items.map((item) => [item.title, item.order, item.columns, item.defaultOpen]),
+    ).toEqual([
+      ["Attention", 1, ["doc_seedattention", "doc_seedinbox", "doc_seedopenthreads"], false],
+      // A kanban's columns are derived one per stage and are not view
+      // documents, so its `columns` is null rather than empty — the Files
+      // board below is what an empty one looks like.
+      ["By status", 2, null, false],
+      ["Files", 3, [], true],
+    ]);
+    expect(rowOf(boards, "doc_seedboardbystatus")?.kanban).toEqual({
+      field: "status",
+      stages: ["open", "resolved", "archived"],
+    });
+    expect(rowOf(boards, "doc_seedboardbystatus")?.query).toEqual({ type: "note" });
+    // Exactly one default-open board ships, which is what rider 2 requires of
+    // any workspace and what `corpus init` therefore has to deliver.
+    expect(boards.items.filter((item) => item.defaultOpen).map((item) => item.id)).toEqual([
+      "doc_seedboardfiles",
+    ]);
+    // Every column names a view that ships beside it: a board pointing at an id
+    // no seed carries would render a column that cannot be drawn.
+    const viewIds = new Set((await list("type=view")).items.map((item) => item.id));
+    for (const item of boards.items) {
+      for (const column of item.columns ?? []) expect(viewIds, item.id).toContain(column);
+    }
   });
 });
 

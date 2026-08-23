@@ -37,10 +37,14 @@ assets/workspace/
     docs/
       inbox/.gitkeep                     # quick creation always lands here (SPEC §10)
       templates/note.md                  # `type: template`, `for: note`
+      boards/
+        attention.md                     # seed board, order 1 — the three seed views as columns
+        by-status.md                     # seed board, order 2 — a kanban over `status`
+        files.md                         # seed board, order 3 — no columns, `default-open: true`
       views/
-        attention.md                     # seed pinned view, order 1
-        inbox.md                         # seed pinned view, order 2
-        open-threads.md                  # seed pinned view, order 3
+        attention.md                     # seed view, `needs: me`
+        inbox.md                         # seed view, `folder: inbox`
+        open-threads.md                  # seed view, open threads
     threads/.gitkeep                      # thread documents, flat, named <thread-id>.md
 ```
 
@@ -98,8 +102,8 @@ against, so anything `corpus init` creates and this list omits is invisible to t
 and to the reader. Entries with a trailing `/` are directories, the rest are files, and
 `git init` is an action rather than a path; the order is install order, matching
 `WORKSPACE_DIRECTORIES` in `apps/cli/src/commands/init/scaffold.ts`. Directories that receive
-copied template files (`data/docs/templates/`, `data/docs/views/`, `.claude/skills/`, and
-their parents) arrive with the copy and are not listed here.
+copied template files (`data/docs/templates/`, `data/docs/boards/`, `data/docs/views/`,
+`.claude/skills/`, and their parents) arrive with the copy and are not listed here.
 
 - `data/docs/inbox/` — where quick creation always lands (SPEC.md §10). Its template
   counterpart holds nothing but a `.gitkeep`, which the copy filter drops, so the directory
@@ -209,9 +213,11 @@ ordinary out-of-band edits, and the watcher re-projects them.
 
 ## Changing the template
 
-The seed views, the note template, and the README are **ordinary documents** in the
-installed workspace: the user can edit, reorder, archive, or delete any of them, and nothing
-in the product may hardwire their ids. The skills are documents too, and the agent evolves
+The seed boards, the seed views, the note template, and the README are **ordinary documents**
+in the installed workspace: the user can edit, reorder, archive, or delete any of them, and
+nothing in the product may hardwire their ids. A board is one of them (SPEC.md §10, rider 2):
+its `columns` list is what puts a view on it, its `order` is its place in the board bar, and
+exactly one of the three ships with `default-open: true`. The skills are documents too, and the agent evolves
 them, which is why `corpus workspace upgrade` three-way compares rather than overwriting.
 
 When adding a file here, add it to the tree above and to the test's expected-tree list; when

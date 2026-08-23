@@ -8,8 +8,6 @@ tags: []
 status: open
 anchors: {}
 evergreen: true
-pinned: true
-order: 2
 query:
   folder: inbox
 ---

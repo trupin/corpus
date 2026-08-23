@@ -256,23 +256,30 @@ describe("the board's one bounded query", () => {
 });
 
 describe("the shipped seed views", () => {
-  it("round-trip their query, and carry a pre-rider-2 `pinned` in `extra`", () => {
+  it("round-trip their query, and carry neither key rider 2 removed", () => {
     const views = run({ type: "view", sort: "order" });
+    // AGENT-042 stripped `pinned` and `order` from the shipped seeds, which is
+    // rider 2's other half: a view is a saved query and nothing more, and what
+    // puts one on a board is that board's `columns`. So every seed's `order` is
+    // `null`, and the `order` sort falls through to its documented tiebreak —
+    // nulls last, then title, then id — which is why these three still come
+    // back in the order the Attention board lists them in.
     expect(
       views.items
         .filter((item) => item.id.startsWith("doc_seed"))
         .map((item) => ({ id: item.id, order: item.order, query: item.query })),
     ).toEqual([
-      { id: "doc_seedattention", order: 1, query: { needs: "me" } },
-      { id: "doc_seedinbox", order: 2, query: { folder: "inbox" } },
-      { id: "doc_seedopenthreads", order: 3, query: { type: "thread", status: "open" } },
+      { id: "doc_seedattention", order: null, query: { needs: "me" } },
+      { id: "doc_seedinbox", order: null, query: { folder: "inbox" } },
+      { id: "doc_seedopenthreads", order: null, query: { type: "thread", status: "open" } },
     ]);
-    // `pinned` stopped being a core key on 2026-08-22 (rider 2). A file that
-    // still carries one is not an error: it arrives in `extra` like every other
-    // key the core does not define, and `corpus upgrade` names the migration
-    // that drops it (SPEC.md §2.4, CLI-061).
+    // And nothing lands in `extra` either. A file that *still* carries a
+    // `pinned:` is not an error — the case below covers that, and `corpus
+    // upgrade` names the migration that drops it (SPEC.md §2.4, CLI-061) — but
+    // a shipped seed carrying one would make a brand-new workspace report a
+    // migration against itself.
     for (const view of views.items.filter((item) => item.id.startsWith("doc_seed"))) {
-      expect(view.extra).toEqual({ pinned: true });
+      expect(view.extra, view.id).toEqual({});
     }
   });
 

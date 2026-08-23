@@ -55,6 +55,7 @@ const QUEUE_STATUSES: readonly QueueEventStatus[] = QUEUE_EVENT_STATUSES;
 export const WORKSPACE_DIRECTORIES: readonly string[] = [
   "data",
   "data/docs",
+  "data/docs/boards",
   "data/docs/inbox",
   "data/docs/templates",
   "data/docs/views",

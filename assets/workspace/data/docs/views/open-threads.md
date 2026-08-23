@@ -8,8 +8,6 @@ tags: []
 status: open
 anchors: {}
 evergreen: true
-pinned: true
-order: 3
 query:
   type: thread
   status: open
