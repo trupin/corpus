@@ -820,6 +820,140 @@ describe("when it is interrupted mid-install", () => {
   });
 });
 
+/**
+ * SPEC.md §2.4 rider 8 (signed 2026-08-22), CLI-061. `corpus upgrade` hoists the
+ * migrations out of the nested template report for the same reason it hoists the
+ * conflicts: an agent must be able to see what it still owes without walking
+ * into a sub-object. The detector's own cases are in `src/migrations/`.
+ */
+describe("corpus upgrade reports the data migrations a workspace needs", () => {
+  /** A workspace written before Phase 41: a pinned view, and no board document. */
+  function seedPrePhase41(root: string): void {
+    write(
+      root,
+      "data/docs/views/attention.md",
+      "---\nid: doc_seedattention\ntype: view\ntitle: Attention\npinned: true\norder: 1\n---\n",
+    );
+  }
+
+  it("names the migration after a full upgrade, and performs none of it", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+    const before = read(root, "data/docs/views/attention.md");
+
+    const result = (await run({ root, template })).result();
+
+    expect(result.migrations).toHaveLength(1);
+    const [migration] = result.migrations;
+    expect(migration?.id).toBe("views-to-board");
+    expect(migration?.statement).toContain("no longer read");
+    expect(migration?.commands).toEqual([
+      'corpus doc create --type board --title "Board" --folder boards ' +
+        "--columns doc_seedattention --default-open true",
+      "corpus doc edit doc_seedattention --unset pinned --unset order",
+    ]);
+    expect(migration?.optional).toEqual([]);
+    expect(read(root, "data/docs/views/attention.md")).toBe(before);
+    expect(existsSync(join(root, "data", "docs", "boards"))).toBe(false);
+  });
+
+  it("does not fail the run: a migration is the agent's work, not the upgrade's", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    // Reaching `result()` at all means `runUpgrade` returned rather than throwing.
+    const result = (await run({ root, template })).result();
+    expect(result.tool.installed).toBe(true);
+    expect(result.migrations).toHaveLength(1);
+  });
+
+  it("reports it under --check too, against the tool installed now", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    const result = (await run({ root, template, flags: { check: true } })).result();
+    expect(result.migrations.map((migration) => migration.id)).toEqual(["views-to-board"]);
+  });
+
+  it("reports it when the tool is already the latest release", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    const result = (await run({ root, template, version: "0.3.0" })).result();
+    expect(result.tool.installed).toBe(false);
+    expect(result.migrations.map((migration) => migration.id)).toEqual(["views-to-board"]);
+  });
+
+  it("prints the block and writes it into the report file", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    const harness = await run({ root, template, json: false });
+
+    expect(harness.stdout()).toContain("1 data migration");
+    expect(harness.stdout()).toContain(
+      "corpus doc edit doc_seedattention --unset pinned --unset order",
+    );
+    // The report file is a detached run's only witness (§2.4), so it carries the
+    // migrations exactly as stdout did.
+    const log = read(root, ".corpus/upgrade.log");
+    expect(log).toContain("views-to-board:");
+    expect(log).toContain("corpus doc edit doc_seedattention --unset pinned --unset order");
+  });
+
+  it("looks under the workspace's own dataDir, on every path that reports", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const config = JSON.parse(read(root, ".corpus/config.json")) as Record<string, unknown>;
+    write(root, ".corpus/config.json", JSON.stringify({ ...config, dataDir: "corpus-data" }));
+    write(
+      root,
+      "corpus-data/docs/views/attention.md",
+      "---\nid: doc_relocated\ntype: view\ntitle: Attention\npinned: true\n---\n",
+    );
+
+    const ids = (result: UpgradeResult): readonly string[] =>
+      result.migrations.flatMap((migration) => migration.commands);
+
+    // The install path, the `--check` path and the already-current path each
+    // build the sync request themselves, so each is asked separately.
+    expect(ids((await run({ root, template })).result())).toContain(
+      "corpus doc edit doc_relocated --unset pinned --unset order",
+    );
+    expect(ids((await run({ root, template, flags: { check: true } })).result())).toContain(
+      "corpus doc edit doc_relocated --unset pinned --unset order",
+    );
+    expect(ids((await run({ root, template, version: "0.3.0" })).result())).toContain(
+      "corpus doc edit doc_relocated --unset pinned --unset order",
+    );
+  });
+
+  it("says the section is empty when nothing fires", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+
+    const harness = await run({ root, template, json: false });
+    expect(harness.stdout()).toContain("migrations: none");
+    expect(
+      (await run({ root: await makeWorkspace(template), template })).result().migrations,
+    ).toEqual([]);
+  });
+
+  it("claims nothing about migrations when it ran outside a workspace", async () => {
+    const template = makeTemplate();
+    // No workspace means no files were read, and "none" would be a claim about
+    // documents nothing looked at.
+    const harness = await run({ root: null, template, json: false });
+    expect(harness.stdout()).not.toContain("migrations:");
+    expect((await run({ root: null, template })).result().migrations).toEqual([]);
+  });
+});
+
 describe("the registry entry", () => {
   it("declares a valid command", () => {
     expect(

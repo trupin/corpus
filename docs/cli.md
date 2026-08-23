@@ -373,6 +373,8 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 
 **A conflict is unresolved work, not a notice.** A file this workspace edited that the tool also changed is reported apart from everything that merely happened, each entry naming `corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` array, so an agent can tell what it still owes without reading prose. Conflicts do not fail the run: the upgrade succeeded, and exits 0 with the list.
 
+**A data migration is reported, never performed.** A release that stops reading a frontmatter key leaves every existing workspace written for the release before it, and SPEC.md §2.4 answers that with a report rather than a silent rewrite. The run ends with a `migrations` section, listed apart from the updates and the conflicts: one block per migration, a line saying what the tool no longer reads, then the commands that perform it, ready to paste — and every one of them is safe to run twice. The section says `none` when nothing fires. A migration never changes the exit code: it is the agent's work, not the upgrade's failure. Under `--json` it is the `migrations` array. `--check` reports it too, against the tool installed now.
+
 **The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started from the board runs detached and its last act restarts the server the browser was talking to, so the file is the only place the answer can still be read afterwards. It is truncated at the start of every run and ends in one `report:` line carrying the whole result as JSON.
 
 Run outside a workspace it still upgrades the tool, and says that the template sync and the restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or a mirror instead of `trupin/corpus`.
@@ -403,7 +405,7 @@ Install the latest release, sync this workspace's template files, and restart th
 corpus upgrade
 ```
 
-One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0","upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the sync report, `server` whether it was restarted, `reportPath` where the written report is — and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md","detail":"modified here — 3 lines only here, 1 line only in the new copy","resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`.
+One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0","upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the sync report, `server` whether it was restarted, `reportPath` where the written report is — and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md","detail":"modified here — 3 lines only here, 1 line only in the new copy","resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`. `migrations` is the data half — what the installed tool no longer reads as it is written, each entry carrying the commands that perform it: `[{"id":"views-to-board","statement":"…","commands":["corpus doc create --type board --title Board --folder boards --columns doc_a,doc_b --default-open true","corpus doc edit doc_a --unset pinned --unset order"],"optional":[]}]`.
 
 ```
 corpus upgrade --json
@@ -2679,6 +2681,8 @@ One thing is repaired rather than compared: a workspace initialized before a que
 
 One more repair needs no baseline and makes no commit: a workspace created before Corpus took git's **background maintenance** out of its repository has it back on. Since git 2.29 every `git commit` ends by spawning a detached `git maintenance run --auto`, and a repack racing the server's commits can leave the object store permanently corrupt. Any missing setting is written here, because `corpus init` runs once and a workspace made last week is in that state now. The repository is never **packed** here — an upgrade may run with the server up, and packing beside the sole writer is the race being repaired; packing happens at `corpus server start` and in `corpus workspace maintain`.
 
+**Data migrations are reported, never performed.** A release that stops reading a frontmatter key leaves every existing workspace written for the release before it, so the report ends with a `migrations` section: one block per migration, a line saying what the tool no longer reads, and the commands that perform it, ready to paste (SPEC.md §2.4). The section says `none` when nothing fires, and a migration never changes the exit code — it is work for the agent, not a failure of the upgrade. Under `--json` it is the `migrations` array. Every command in it is safe to run twice.
+
 This command and `corpus init` are the only two that write workspace files directly and commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the server stopped, because a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them. With the server running, the watcher treats the writes as ordinary out-of-band edits and re-projects. Every other document mutation goes through the server — the rule is not soft.
 
 ```
@@ -2713,7 +2717,7 @@ Also put back template files that were deleted from this workspace.
 corpus workspace upgrade --restore
 ```
 
-One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0","dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md","action":"keep-modified","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab"}`.
+One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0","dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md","action":"keep-modified","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab","migrations":[{"id":"views-to-board","statement":"…","commands":["corpus doc create --type board …"],"optional":[]}]}`.
 
 ```
 corpus workspace upgrade --json
