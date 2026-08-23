@@ -1,6 +1,13 @@
-import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
-import type { MenuPlacement } from "./menuModel";
+import { menuRoom, type MenuPlacement, type MenuRoom } from "./menuModel";
 import { useRovingMenu } from "./useRovingMenu";
 import "./menu.css";
 
@@ -47,6 +54,40 @@ export function ContextMenu({
 }: ContextMenuProps): ReactElement {
   const menu = useRef<HTMLDivElement>(null);
   const roving = useRovingMenu(menu, { autoFocus, onDismiss: onClose });
+  const [room, setRoom] = useState<MenuRoom | null>(null);
+
+  /**
+   * The measured room (SHARED-061), applied inline.
+   *
+   * Inline rather than through a class deliberately: a bound written as
+   * `.ctx-menu { max-height: … }` ties on specificity with `@corpus/kit`'s
+   * `.ac-menu { max-height: 200px }`, and the kit's sheet is injected last, so
+   * the app's number silently lost — which is UI-145, the whole of it. An
+   * inline declaration cannot lose a tie, and this one has to be computed
+   * anyway, because the room depends on where the pointer was.
+   *
+   * A layout effect, so nothing is painted at the wrong size first, and with no
+   * dependency list, so a menu whose items change while it is open (delete
+   * arming its confirmation) is re-measured. The equality guard is what stops
+   * that from looping.
+   *
+   * `scrollHeight` is the content's full height whether or not a ceiling is
+   * already clipping it, so the measurement is stable across those re-runs;
+   * `offsetHeight - clientHeight` adds back the borders `scrollHeight` leaves
+   * out, since `box-sizing` is `border-box` app-wide and `max-height` therefore
+   * bounds the border box.
+   */
+  useLayoutEffect(() => {
+    const element = menu.current;
+    if (element === null) return;
+    const borders = element.offsetHeight - element.clientHeight;
+    const next = menuRoom(placement.top, element.scrollHeight + borders, globalThis.innerHeight);
+    setRoom((current) =>
+      current !== null && current.top === next.top && current.maxHeight === next.maxHeight
+        ? current
+        : next,
+    );
+  });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
 
@@ -69,7 +110,11 @@ export function ContextMenu({
       role="menu"
       aria-label={label}
       data-ctx-menu
-      style={{ left: `${String(placement.left)}px`, top: `${String(placement.top)}px` }}
+      style={{
+        left: `${String(placement.left)}px`,
+        top: `${String(room?.top ?? placement.top)}px`,
+        ...(room === null ? {} : { maxHeight: `${String(room.maxHeight)}px` }),
+      }}
       {...roving}
     >
       {children}
