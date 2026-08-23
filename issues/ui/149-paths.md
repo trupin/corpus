@@ -14,27 +14,30 @@ fable — the novel design of the phase; every other UI issue builds on its mode
 
 ## Dependencies
 - Depends on: UI-148
-- Blocks: UI-150, UI-151, PLUGINS-019
+- Blocks: UI-150, UI-151
 
 ## Spec References
-- SPEC.md §11 — rider 3 (paths), the keyboard scheme, "nothing resizes because of what it holds"
+- SPEC.md §10 — rider 3 (paths), the keyboard scheme, "nothing resizes because of what it holds"
 - `design/navigation.html` — `openFromView`, `openFromPath`, `openHere`, `restartPathHere`, `newPathRight`, `detachPath`, `closeCol`, `closeAllPaths`, `recenterIfInPath`, the strip reconciliation in `boardState`
 
 ## Summary
+
+> **Amended 2026-08-22 (Phase 41 prep).** This issue was written before v0.18.0 removed the plugin surface and derived status (SHARED-067). The clauses that named them are struck below, and the §-citations are renumbered to the post-v0.18.0 SPEC.
+
 Replaces "click a row, the column widens into a reader" with "click a row, a reader column opens to its right". The board's strip becomes a sequence of query columns and paths, paths being browser-local chains of reader columns hanging off an origin row (or off nothing). The prototype's acts and rules are the contract; this issue ports them onto the real components — the existing `Reader`, `Column`, the nav stack, the escape stack — rather than rewriting them.
 
 ## Acceptance Criteria
 - [ ] **Strip model** in local state v3 (UI-148's blob): per board, an ordered list of `{ kind: "query", view, stack }` and `{ kind: "path", id, origin: { view, doc } | { view: "explorer", doc } | null, cols: [{ stack: NavEntry[] }] }`. Reconciliation keeps query items in the board's order and paths in place relative to the item before them (port `boardState`).
 - [ ] **Open from a row** (`ColumnList` row click, `↵`): a path hangs off that row; a second pick from the same column replaces the path; the origin row carries `.origin` (accent bar, `▸`) while its path is open; a row open elsewhere on the board carries a dot.
-- [ ] **Follow a link** inside a path column (`[[refs]]`, backlinks, bare-id handles, plugin `onOpen`): the path continues right, truncating what was after that column.
+- [ ] **Follow a link** inside a path column (`[[refs]]`, backlinks, bare-id handles): the path continues right, truncating what was after that column.
 - [ ] **No loops**: a document already in the path → `scrollIntoView({inline:"center"})` on its column, a flash, a toast, nothing closed. The rule is per board.
 - [ ] **Open here** (row menu, `⌥↵`, reader menu): pushes onto that column's own nav stack — the existing reader inside a query column, unchanged; inside a path column it navigates in place and truncates to the right. The loop rule applies here too.
 - [ ] **Restart the path here**, **New path to the right**, **Keep — detach from its origin**, **Close this column and after**, **Close the whole path**, from the path column's `⋯` and right-click; **Close paths** on the board bar with its count pill; `esc` closes the active path column (after overlays and focus mode, before the column reader's back), `⇧esc` closes every path on the board.
-- [ ] **Query columns stop widening** (`Column.tsx` lines ~237-242 `readingFloor`): a path column has its own width (`440px` base, then the user-adjustable width rule of §11 applies to it like any column); `soft-wrap.spec.ts` "column widens" and `reader.spec.ts` "column reader measure" are rewritten for the new geometry.
+- [ ] **Query columns stop widening** (`Column.tsx` lines ~237-242 `readingFloor`): a path column has its own width (`440px` base, then the user-adjustable width rule of §10 applies to it like any column); `soft-wrap.spec.ts` "column widens" and `reader.spec.ts` "column reader measure" are rewritten for the new geometry.
 - [ ] **Every `open()` caller** through `openInColumn.tsx` resolves to a path: a caller that passes `columnId` (the keyboard's `↵` on a highlighted row) hangs the path off that row; a caller with a `subject` or nothing (search overlay `↵`, console `↗ open`, `LaneScope`, a link inside focus mode, "open in <board>") lands as a **loose path at the left edge** of the current board. `resolveColumn`'s folder/type precedence is deleted; `reveal` and `selectTitle` ride the path column's first `NavEntry` unchanged. The `OpenTarget` contract grows `origin?: { view, doc }` and `placement?: "origin" | "left"`.
 - [ ] **Focus mode is untouched** except that `f`/`⇧↵`/`⤢` work from a path column too, and a link followed inside focus closes focus and opens a loose path.
 - [ ] **Paths render** as a band (`.path`, dashed border; solid when loose) holding `.pcol` columns with the prototype's head: `◂ <origin>` / `◂ <previous doc>` / `◦ path · no origin`, back when the stack is deeper than one, `⤢`, `⋯`, `✕`. Snap scrolling follows the newest path column; a 13″ width (1280px) is measured in an e2e test with the explorer closed.
-- [ ] Context menus: the row menu gains Open / Open here / Open in full screen / open in… <boards>; the path column menu is the prototype's; plugin rows keep their own items under the same rules.
+- [ ] Context menus: the row menu gains Open / Open here / Open in full screen / open in… <boards>; the path column menu is the prototype's.
 - [ ] e2e `paths.spec.ts`: open, continue, loop re-centre, replace, open-here, restart, new-right, close-all, the search overlay landing left, focus link landing left.
 
 ## Technical Design
@@ -53,7 +56,7 @@ Replaces "click a row, the column widens into a reader" with "click a row, a rea
 
 ### Key Implementation Details
 - Port the prototype's acts as pure functions over the strip (`openFromView(strip, view, doc)` returns a new strip plus the key to focus); the component layer only calls them and scrolls. That is what makes the loop rule and the replacement rule testable without a DOM.
-- `PathColumn` reuses `useNavStack`'s API over `cols[i].stack` so scroll restore, reveal and the empty-document abandonment rule (§11) work unchanged inside a path.
+- `PathColumn` reuses `useNavStack`'s API over `cols[i].stack` so scroll restore, reveal and the empty-document abandonment rule (§10) work unchanged inside a path.
 - The active column (`kactive`) is one key across query and path columns: `q:<view>` / `p:<id>:<idx>`.
 - Origin highlight is derived at render from the strip, never stored on the row.
 

@@ -19,7 +19,7 @@ opus
 ## Spec References
 - SPEC.md §2.3 — "The `corpus` CLI — one registry, self-documenting"
 - SPEC.md §9.2 — folder routes, the document row
-- SPEC.md §11 — boards as documents, kanban boards
+- SPEC.md §10 — boards as documents, kanban boards
 
 ## Summary
 The agent's whole surface is the CLI, and the agent must be able to build a board, a kanban, and a stage change with it. This issue adds the flags for every new field, removes the two that no longer exist, adds `--unset <key>` (the migration in CLI-061 needs it), and adds `corpus folder rename|archive|unarchive|delete`. `docs/cli.md` regenerates from the registry.
@@ -46,7 +46,7 @@ The agent's whole surface is the CLI, and the agent must be able to build a boar
 ### Key Implementation Details
 - `--kanban` and `--query` take JSON because the shapes are nested and the agent writes JSON without ceremony; the help text shows one complete example each.
 - `--unset` goes through the update route as an explicit "remove key" — coordinate with SERVER-138 for the body form (`{ unset: ["pinned", "order"] }` beside `changes`).
-- `folder delete --yes` is the CLI's own guard; the server has none (§11: deletion asks in the UI).
+- `folder delete --yes` is the CLI's own guard; the server has none (§10: deletion asks in the UI).
 
 ### Edge Cases
 - `--columns ""` sets an empty list (a board with no columns, which Files is); `--unset columns` removes the key.

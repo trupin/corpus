@@ -13,12 +13,12 @@ P0
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-077, CLI-062
+- Depends on: CONTRACT-074, CLI-060
 - Blocks: —
 
 ## Spec References
 - SPEC.md §2.4 — "Upgrading" (rider 8: migrations reported as commands, never performed)
-- SPEC.md §11 — boards as documents
+- SPEC.md §10 — boards as documents
 
 ## Summary
 Phase 41 removes `pinned` and stops reading `order` on views. An existing workspace has three seed views and possibly more that carry both, and after the upgrade its board is empty. The user's decision (2026-08-22): no silent migration; the upgrade commands say what to do, written for the agent that runs them. This issue adds a **migration registry** to the CLI — each entry a detector over the workspace's files and an instruction writer — and a **migrations** section in both upgrade reports. The first entry is "pinned views without a board". Every later breaking change adds an entry; the registry is the rule.

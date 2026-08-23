@@ -13,17 +13,20 @@ P0
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-077
-- Blocks: UI-148, UI-152, CLI-062
+- Depends on: CONTRACT-074
+- Blocks: UI-148, UI-152, CLI-060
 
 ## Spec References
 - SPEC.md §5 — "The document model" (`stage`, "while a document is in a kanban, its stage decides its status")
 - SPEC.md §9.1 — "Projection (SQLite)"
 - SPEC.md §9.2 — "HTTP API" ("a response's warnings also carry effects on documents the request never named")
-- SPEC.md §11 — "UI — the board" (boards as documents, kanban boards)
+- SPEC.md §10 — "UI — the board" (boards as documents, kanban boards)
 
 ## Summary
-The server reads and writes the fields CONTRACT-077 put on the wire, indexes `stage` so it filters, drops `pinned` from the projection, and owns the two rules that are facts about documents rather than gestures: at most one board is `default-open`, and a document's stage decides its status while it is in a kanban. Nothing here migrates a workspace: a view file that still says `pinned: true` projects with that key in `extra`, and CLI-061 tells the agent what to do about it.
+
+> **Amended 2026-08-22 (Phase 41 prep).** This issue was written before v0.18.0 removed the plugin surface and derived status (SHARED-067). The clauses that named them are struck below, and the §-citations are renumbered to the post-v0.18.0 SPEC.
+
+The server reads and writes the fields CONTRACT-074 put on the wire, indexes `stage` so it filters, drops `pinned` from the projection, and owns the two rules that are facts about documents rather than gestures: at most one board is `default-open`, and a document's stage decides its status while it is in a kanban. Nothing here migrates a workspace: a view file that still says `pinned: true` projects with that key in `extra`, and CLI-061 tells the agent what to do about it.
 
 ## Acceptance Criteria
 - [ ] `documents` gains `stage TEXT` (indexed) and `board_json TEXT` (columns, kanban, default-open) and loses `pinned`; the schema version bumps and the projection rebuilds from files on start.
@@ -33,11 +36,11 @@ The server reads and writes the fields CONTRACT-077 put on the wire, indexes `st
 - [ ] A write that changes `stage` (create, update, patch) on a document **in a kanban** also writes `status`: the board's `kanban.status[stage]` when mapped, `open` otherwise; in one commit; the response names the status change beside the stage change. "In a kanban" means: some `type: board` document, not archived, with `kanban.field: stage`, whose scope query matches the document **with archived documents included**. When several kanbans match, the one with the lowest `order` decides and the warning says which.
 - [ ] A write that changes only `status` never touches `stage`.
 - [ ] A `stage` write is never refused for being off the board's transitions (the UI governs the drag; the CLI and the reader may set any stage).
-- [ ] Validation of `kanban` at the write boundary matches CONTRACT-077's refusals; `404`/`400` messages name the field.
+- [ ] Validation of `kanban` at the write boundary matches CONTRACT-074's refusals; `404`/`400` messages name the field.
 - [ ] Unknown frontmatter keys, `pinned` included, keep landing in `extra` unchanged.
 - [ ] `unset: [..]` on the update body removes each named key from the file's frontmatter (core or `extra`) in the same commit as any `changes`; `id`, `type`, `created` refuse `400` naming the key; an absent key is a no-op, not an error.
-- [ ] A document whose status is **derived** (§12, e.g. `todo`) never has `status` written by the stage coupling: the stage is written, the status is left to its derivation, and the response's warnings say so (§5, amendment signed 2026-08-22).
-- [ ] `documents` gains `last_actor TEXT` (`user` | `agent`), written on every write from the acting party the write carried, and `user` for a change the watcher picks up from outside the server (§4); projected as `lastActor` on the row (CONTRACT-077). A rebuild from files reads it from the last commit's author on that path, which is the same fact §4 records.
+- [ ] ~~A document whose status is **derived** never has `status` written by the stage coupling.~~ **Struck 2026-08-22 (Phase 41 prep).** Derived status was removed with the plugin surface (SHARED-067), so no document has one. The coupling writes `status` for every document in a kanban, with no carve-out. The rider that signed this carve-out (§5, 2026-08-22) survives as dead text and is not implemented.
+- [ ] `documents` gains `last_actor TEXT` (`user` | `agent`), written on every write from the acting party the write carried, and `user` for a change the watcher picks up from outside the server (§4); projected as `lastActor` on the row (CONTRACT-074). A rebuild from files reads it from the last commit's author on that path, which is the same fact §4 records.
 
 ## Technical Design
 

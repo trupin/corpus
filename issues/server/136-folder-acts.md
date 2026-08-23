@@ -42,7 +42,7 @@ Implements the four routes of CONTRACT-075 as bulk acts over `data/docs/<path>`:
 
 ### Key Implementation Details
 - Enumerate from the projection (`documents.path LIKE 'path/%'`), then act file by file through the primitives; do not `fs.rename` the directory, because the primitives keep anchors, threads and the projection consistent and a directory move would skip all of it.
-- Wrap the loop in the same "one act, one commit" window the bulk-mode save uses (§11's staged bulk change is the precedent).
+- Wrap the loop in the same "one act, one commit" window the bulk-mode save uses (§10's staged bulk change is the precedent).
 - Case-only renames on a case-insensitive filesystem: rename through a temporary name.
 
 ### Edge Cases

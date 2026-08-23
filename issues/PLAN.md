@@ -1267,7 +1267,7 @@ was written for.
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
 | SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
-| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-067 |
+| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
@@ -1415,6 +1415,23 @@ by the server when the corpus has been quiet for `reflect.quiet` (30 minutes by
 default, `0` disables) after an unreflected change; the agent gathers the
 window itself, writes changelog entries and one digest thread; the board marks
 what is unreflected.
+
+**Prep applied 2026-08-22, before any agent read these files.** The v0.18.0
+ID-collision rename swept this phase's issue files and left three kinds of
+damage, all repaired in one commit: nineteen dependency references pointed at
+the plugin-deletion issues that had taken their numbers (`CONTRACT-077` for
+`CONTRACT-074`, `SERVER-139` for `SERVER-136`, `CLI-060` for `CLI-062`,
+`AGENT-042` for `AGENT-044`); forty-odd `§11` citations still meant the UI
+section, which v0.18.0 renumbered to `§10`; and four clauses in SERVER-138,
+UI-152, UI-149 and AGENT-042 described derived status, plugin rows and
+`docs/PLUGINS.md`, all of which v0.18.0 deleted. Those four are struck in place
+with a dated note rather than removed, and SPEC §5 and §10 were checked to carry
+no derived-status carve-out — the carve-out lived only in the issue files.
+
+**Riding along in the same PR, by the v0.19.0 release scope:** UI-145 (the
+context menu's ceiling never applies, and UI-149 adds four items to that menu)
+and UI-147 (`design/index.html` still draws the column-open this phase
+replaces). They keep their rows in their own phases.
 
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
 CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137

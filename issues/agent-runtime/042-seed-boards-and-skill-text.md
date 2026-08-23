@@ -14,14 +14,16 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (riders 2, 5, 6, 9 signed); CLI-060 for the verbs the skill text cites; SERVER-137 for the event to exist end to end
-- Blocks: PLUGINS-019
 
 ## Spec References
 - SPEC.md §4 — the workspace tree and seeds
 - SPEC.md §5 — `stage`
-- SPEC.md §11 — boards as documents, kanban boards, the seed boards
+- SPEC.md §10 — boards as documents, kanban boards, the seed boards
 
 ## Summary
+
+> **Amended 2026-08-22 (Phase 41 prep).** This issue was written before v0.18.0 removed the plugin surface and derived status (SHARED-067). The clauses that named them are struck below, and the §-citations are renumbered to the post-v0.18.0 SPEC.
+
 The workspace template ships three pinned views and the product agent's skills say "pin me a view". After Phase 41 a column is a line in a board document and a kanban is a board over a field. This issue updates what `corpus init` installs and what the agent is told: three seed boards, seed views without `pinned`/`order`, and skill, README and docs text that describe boards, kanbans and `stage` in the agent's terms.
 
 ## Acceptance Criteria
@@ -31,7 +33,7 @@ The workspace template ships three pinned views and the product agent's skills s
 - [ ] `assets/workspace/claude/skills/orchestrate/SKILL.md` (~line 1037, "documents `--pinned`, `--order`") teaches: pin a view = add its id to a board's `columns`; make a kanban = one board document with `kanban`; move a document along a workflow = `corpus doc edit --stage`; and that a stage may write a status (§5) so the agent reads the response.
 - [ ] `assets/workspace/claude/skills/comment/SKILL.md` mentions of "board" still read true (they do not say pinned; verify).
 - [ ] The orchestrate skill handles **`workspace.reflect`** (SPEC §7 rider 9): gather the window with `corpus doc list --since <payload.since>` (no `--since` when null), read what it chooses, write a changelog entry on each document it has something to say about, and post **one standalone thread** as the digest — first line names the window `since … until …`, then what moved, what it did, what it asks — and posts it even when there is nothing to say, in one line. It never treats a stage name as an instruction. The skill names the cost rule: read a document only when the list line is not enough.
-- [ ] `docs/workspace-template.md` (~lines 41-43) and `docs/PLUGINS.md` (~lines 20, 75-78: "pinned `type: view` with `column:`") updated: a plugin column is a view with `column:` listed on a board.
+- [ ] `docs/workspace-template.md` (~lines 41-43) updated: the seed views are no longer "pinned … order N" but ids listed on a board document. (`docs/PLUGINS.md` was deleted by SHARED-067 and needs nothing.)
 - [ ] `corpus init` in a temp dir yields the three boards and the board bar shows them in order (checked with the UI once UI-148 lands; until then, `corpus doc list --type board --sort order`).
 
 ## Technical Design
@@ -40,7 +42,7 @@ The workspace template ships three pinned views and the product agent's skills s
 - `assets/workspace/data/docs/boards/*.md` — new
 - `assets/workspace/data/docs/views/{attention,inbox,open-threads}.md` — strip two keys
 - `assets/workspace/README.md`, `assets/workspace/claude/skills/orchestrate/SKILL.md`
-- `docs/workspace-template.md`, `docs/PLUGINS.md`
+- `docs/workspace-template.md`
 - any template manifest that lists seed files (the three-way rule in `corpus workspace upgrade` needs the new files known as template files)
 
 ### Key Implementation Details

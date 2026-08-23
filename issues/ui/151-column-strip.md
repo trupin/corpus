@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — rider 4 (the column strip), "nothing resizes because of what it holds"
+- SPEC.md §10 — rider 4 (the column strip), "nothing resizes because of what it holds"
 - `design/navigation.html` — `renderColbar`, `watchVisibility`, `goTo`
 
 ## Summary

@@ -19,7 +19,7 @@ opus
 ## Spec References
 - SPEC.md §5 — "The document model" (`stage`, the coupling rule)
 - SPEC.md §9.2 — "HTTP API" (`GET /api/docs` params, the document row)
-- SPEC.md §11 — "UI — the board" (boards as documents, kanban boards)
+- SPEC.md §10 — "UI — the board" (boards as documents, kanban boards)
 
 ## Summary
 A board is a `type: board` document whose frontmatter lists its columns, its position, its kanban definition and whether it receives the explorer's opens. `stage` is a new core field on every document. `pinned` goes away: nothing reads it once a board lists its columns. This issue puts all of that on the wire — schemas, route definitions, the generated `openapi.json` and the typed client — so the server and the three clients build against one shape. **Breaking by the user's decision (2026-08-22)**: `pinned` and the `pinned=` filter are removed, not deprecated; CLI-061 tells an existing workspace what to do.

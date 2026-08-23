@@ -14,11 +14,11 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (rider 7 signed)
-- Blocks: SERVER-139, CLI-062, UI-150
+- Blocks: SERVER-136, CLI-060, UI-150
 
 ## Spec References
 - SPEC.md §9.2 — "HTTP API" (folder acts; "a response's warnings also carry effects on documents the request never named")
-- SPEC.md §11 — "UI — the board" (the explorer's folder menu)
+- SPEC.md §10 — "UI — the board" (the explorer's folder menu)
 
 ## Summary
 The explorer offers standard actions on directories, and the server has none: every write path today takes one document id. This issue defines four folder routes. Each takes a folder path in a JSON body (paths carry slashes, so they do not go in the URL), and each returns the documents it changed, because a folder act is a bulk act and §9.2 says an act names what it touched.
@@ -47,7 +47,7 @@ The explorer offers standard actions on directories, and the server has none: ev
 
 ### Edge Cases
 - A folder that holds a skill (`.claude/skills/...`) is outside `data/docs/` and outside these routes: `400`, "skills are archived by document".
-- Renaming to a different case on a case-insensitive filesystem is the server's problem (SERVER-139), but the contract documents that `to` is compared exactly.
+- Renaming to a different case on a case-insensitive filesystem is the server's problem (SERVER-136), but the contract documents that `to` is compared exactly.
 
 ## Testing Strategy
 Schema tests for path validation; a route-definition test that mounts the four routes on a stub and round-trips one success and one refusal each.

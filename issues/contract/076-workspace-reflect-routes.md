@@ -14,7 +14,7 @@ opus
 
 ## Dependencies
 - Depends on: SHARED-064 (rider 9 signed)
-- Blocks: SERVER-137, CLI-062, UI-153
+- Blocks: SERVER-137, CLI-060, UI-153
 
 ## Spec References
 - SPEC.md §7 — "Event queue and agent loop" (rider 9: reflection)
@@ -26,7 +26,7 @@ Reflection is one event with one field and two routes: ask for one, and read the
 ## Acceptance Criteria
 - [ ] Event type `workspace.reflect` is in the core event-type list with payload `{ since: string (ISO) | null }` — `null` for a corpus never reflected on.
 - [ ] `POST /api/workspace/reflect` → `202 { eventId, since, pending: boolean }`: a new event when none is pending or in progress, else the one already pending, with `pending: true` — an ask while one is pending is answered with the pending one, never refused and never doubled.
-- [ ] `GET /api/workspace/reflect` → `{ reflected: string | null, pending: eventId | null, changed: number, lastDigest: threadId | null, quiet: number }` — `changed` is the count of documents with `updated > reflected` **whose last write was not the agent's** (`lastActor !== "agent"`, CONTRACT-077; archived excluded — an archived document shows on no board, so a mark for it is impossible, and the agent's own gather sees archives at the next reflection with `--include-archived`; decided at PR #56's review, 2026-08-22), `quiet` the configured window in minutes. This is the §7 rule "the agent's own writes never count as unreflected", applied server-side with the same predicate the UI applies row by row.
+- [ ] `GET /api/workspace/reflect` → `{ reflected: string | null, pending: eventId | null, changed: number, lastDigest: threadId | null, quiet: number }` — `changed` is the count of documents with `updated > reflected` **whose last write was not the agent's** (`lastActor !== "agent"`, CONTRACT-074; archived excluded — an archived document shows on no board, so a mark for it is impossible, and the agent's own gather sees archives at the next reflection with `--include-archived`; decided at PR #56's review, 2026-08-22), `quiet` the configured window in minutes. This is the §7 rule "the agent's own writes never count as unreflected", applied server-side with the same predicate the UI applies row by row.
 - [ ] `openapi.json` regenerated, drift check green, typed client exposes both.
 
 ## Technical Design
