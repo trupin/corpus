@@ -28,7 +28,7 @@ describe("the published query-key vocabulary", () => {
    * derived from the module, because a test that computes its expectation from
    * the thing it is testing pins nothing.
    */
-  it("is exactly the nine shapes the server emits", () => {
+  it("is exactly the ten shapes the server emits", () => {
     const shapes = QUERY_KEY_NAMES.map((name) => QUERY_KEY_VOCABULARY[name].shape);
     expect(shapes).toEqual([
       '["docs"]',
@@ -40,11 +40,12 @@ describe("the published query-key vocabulary", () => {
       '["jobs", "<eventId>"]',
       '["index"]',
       '["agents"]',
+      '["reflect"]',
     ]);
   });
 
   /**
-   * Closed by assertion, not by convention: adding a tenth entry to the
+   * Closed by assertion, not by convention: adding an eleventh entry to the
    * record without adding it here fails, naming the newcomer.
    */
   it("is a closed set — the record and the pinned name list agree", () => {
@@ -59,6 +60,7 @@ describe("the published query-key vocabulary", () => {
       "job",
       "index",
       "agents",
+      "reflect",
     ]);
   });
 

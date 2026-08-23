@@ -211,7 +211,8 @@ export const documentKeyRequestField = DocumentKeySchema.optional().describe(
   `${DOCUMENT_KEY_DESCRIPTION}\n\n**Required when this request carries \`body\`**, which is the ` +
     "write that replaces a block without naming what it changes; a `body` with no key is a `400` " +
     "naming this field. **Not required by a write that names its own delta** — a tag, a status, " +
-    "`reviewed`, a view key — which merges with whatever else happened rather than overwriting " +
+    "`reviewed`, a view or board key, an `unset` — which merges with whatever else happened " +
+    "rather than overwriting " +
     "it. Sending one anyway is welcome and is **still checked**: presenting a key always means " +
     "*I am writing against this version*, so a stale one is refused whatever else the request " +
     "changes. A caller that always sends what it read therefore needs no rule about which fields " +
@@ -226,11 +227,22 @@ export const documentKeyRequestField = DocumentKeySchema.optional().describe(
  * rather than a rediscovery of the rule. **The rule for classifying a new
  * field**: does its value replace something whose current contents the request
  * does not state? `body` does — it carries no statement of what it meant to
- * change, so it can destroy silently. A scalar (`title`, `status`, `due`,
- * `reviewed`, `evergreen`, `pinned`, `order`, `column`) does not: naming it is a
- * complete statement of the change, and last-writer-wins on it loses nothing the
- * request did not itself state. `extra` does not: it is an RFC 7386 shallow
- * merge patch, so it is per-key delta by construction.
+ * change, so it can destroy silently. A scalar (`title`, `status`, `stage`,
+ * `due`, `reviewed`, `evergreen`, `order`, `defaultOpen`) does not: naming it is
+ * a complete statement of the change, and last-writer-wins on it loses nothing
+ * the request did not itself state. `extra` does not: it is an RFC 7386 shallow
+ * merge patch, so it is per-key delta by construction. `unset` does not: it
+ * names the keys it removes, which is the whole of what it does.
+ *
+ * **`columns` and `kanban` are whole-value fields and still do not need a key**
+ * (CONTRACT-074), which is the one place the rule above wants reading twice. A
+ * `columns` write does replace a list whose current contents the request does
+ * not state, so it can lose a column another writer just added. It stays keyless
+ * because §7 puts the line at *the body*, and because the recovery differs in
+ * kind: a lost column is one visible item a person re-adds from the board, where
+ * a lost body is prose nobody can reconstruct. A caller that cares presents the
+ * key anyway — doing so always means *I am writing against this version*, and is
+ * still checked.
  *
  * **`tags` is deliberately not here**, and the reason is now a mechanism rather
  * than a residual (SERVER-102). §7 names *"adding a tag"* among the writes that

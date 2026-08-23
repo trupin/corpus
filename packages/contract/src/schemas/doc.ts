@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { ACTORS } from "../actor.js";
 import { BodyRangeSchema, TextQuoteSelectorSchema } from "./anchor.js";
 import { ExtraFrontmatterSchema } from "./extra.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
@@ -24,9 +25,27 @@ import { warningsField } from "./warning.js";
  * still open, render, search and pass `doc check`. A closed enum here would
  * turn every one of them into a `400` at the boundary, which is the one
  * failure this openness exists to prevent. Consumers that only handle the core
- * six narrow with {@link CoreDocTypeSchema}.
+ * set narrow with {@link CoreDocTypeSchema}.
+ *
+ * **`board` joined the set on 2026-08-22** (rider 2, SHARED-064): a board is a
+ * `type: board` document listing its columns, its position among boards and its
+ * kanban, so the core gives it behaviour and it belongs here. It sits beside
+ * `view` because that is what it is made of — a board lists the ids of view
+ * documents — and not at the end, which would read as an afterthought rather
+ * than as a member of the same family. SPEC.md §5's canonical frontmatter block
+ * still lists the older six in its `type:` comment while §10's rider makes
+ * `board` first-class; the discrepancy is §5's to fix, and this package never
+ * edits SPEC.md.
  */
-export const CORE_DOC_TYPES = ["note", "thread", "view", "template", "skill", "agent-def"] as const;
+export const CORE_DOC_TYPES = [
+  "note",
+  "thread",
+  "view",
+  "board",
+  "template",
+  "skill",
+  "agent-def",
+] as const;
 
 export const CoreDocTypeSchema = z.enum(CORE_DOC_TYPES);
 
@@ -233,15 +252,17 @@ const UNDATED_DESCRIPTION = (which: string): string =>
   "substituting a date; staleness treats an unknown age as fresh.";
 
 /**
- * **The §10 view keys are first-class core fields, not extra frontmatter**
- * (CONTRACT-011 design decision, 2026-07-27). Three reasons, in force order:
+ * **The §10 view and board keys are first-class core fields, not extra
+ * frontmatter** (CONTRACT-011 design decision, 2026-07-27; widened to the board
+ * keys by CONTRACT-074, 2026-08-22). Three reasons, in force order:
  *
- * 1. Two of the three are server semantics — `pinned` is a `GET /api/docs`
- *    filter and `order` is a sort key, and a key the server filters and sorts
- *    on is by definition not opaque passthrough. Routing them through `extra`
- *    would mean the server reaching into a blob it promises never to read.
- * 2. §10 makes columns core product ("a column IS a `type: view` document");
- *    core keys are closed and validated here, and `query`'s well-formedness
+ * 1. Several are server semantics — `order` is a sort key, `stage` is a filter,
+ *    and `default-open` is a value the server keeps unique across boards. A key
+ *    the server filters, sorts or arbitrates on is by definition not opaque
+ *    passthrough, and routing one through `extra` would mean the server reaching
+ *    into a blob it promises never to read.
+ * 2. §10 makes boards core product ("a board is a `type: board` document"); core
+ *    keys are closed and validated here, and a `kanban` block's well-formedness
  *    deserves a `400` at the write boundary, which `extra` deliberately never
  *    provides.
  * 3. It keeps `extra`'s contract absolute — *nothing* in it is ever
@@ -251,21 +272,29 @@ const UNDATED_DESCRIPTION = (which: string): string =>
  * `extra` (`./extra.js`); that split — closed core, open extra — is the whole
  * shape of the surface.
  *
- * Carried on **every** document, not only views: frontmatter is per-file and
- * `type` is an open string, so any file may hold the keys; they simply mean
- * nothing off a view. Shared verbatim between the list row and the single
- * read — `doc.test.ts` pins the descriptions identical, the same rule the
- * nullable timestamps follow.
+ * Carried on **every** document, not only views and boards: frontmatter is
+ * per-file and `type` is an open string, so any file may hold the keys; they
+ * simply mean nothing off the type that uses them. Shared verbatim between the
+ * list row and the single read — `doc.test.ts` pins the descriptions identical,
+ * the same rule the nullable timestamps follow.
+ *
+ * **`pinned` is gone, removed rather than deprecated** (rider 2, signed
+ * 2026-08-22; the user's decision the same day). A view document is a saved
+ * query and nothing more: what puts a column on a board is the board's own
+ * `columns` list, so nothing reads `pinned` any more and a key nothing reads is
+ * not a core key. A file that still carries one is not an error — it arrives in
+ * `extra` like every other key the core does not define — and `corpus upgrade`
+ * names the migration that drops it (SPEC.md §2.4, CLI-061). The `pinned=`
+ * filter left `GET /api/docs` in the same act.
  */
-const PINNED_DESCRIPTION =
-  "True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when " +
-  "the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`.";
-
 const ORDER_DESCRIPTION =
-  "Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the " +
-  "file carries no `order` key — such a column is still placed, by the documented tiebreak " +
-  "(`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder " +
-  "may write midpoints between neighbours instead of renumbering every column.";
+  "**A board's position among boards**, ascending under `sort=order` (SPEC.md §10, rider 7). " +
+  "`null` when the file carries no `order` key — such a board is still placed, by the documented " +
+  "tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a " +
+  "reorder may write midpoints between neighbours instead of renumbering every board. **It is a " +
+  "board's position and nothing else**: a `type: view` document is a saved query with no position " +
+  "of its own, the same view may sit on two boards, and a column's place is its index in that " +
+  "board's `columns`.";
 
 /**
  * The three tag fields on an update, and the one sentence that separates them:
@@ -298,12 +327,14 @@ const REMOVE_TAGS_DESCRIPTION =
   "be combined with `tags`.";
 
 const VIEW_QUERY_DESCRIPTION =
-  "The stored board query of a `type: view` document (SPEC.md §10): a flat map from " +
+  "**A view's query, or a kanban board's scope** (SPEC.md §10): a flat map from " +
   "`GET /api/docs` parameter names to a value or an array of values — arrays OR together, like " +
-  'the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server ' +
-  "stores it and never interprets it: the client compiles it into the collection query and " +
-  "renders it as filter chips, so an unknown key degrades in the client, never on the wire. " +
-  "`null` when the file carries no `query` key.";
+  'the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). On a ' +
+  "`type: view` document it is the stored query the column lists; on a kanban board it is the " +
+  "scope every derived stage column is drawn from, narrowed per column by that column's own " +
+  "`stage=` or `status=`. The server stores it and never interprets it: the client compiles it " +
+  "into the collection query and renders it as filter chips, so an unknown key degrades in the " +
+  "client, never on the wire. `null` when the file carries no `query` key.";
 
 const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -312,24 +343,248 @@ export const ViewQuerySchema = z
   .openapi({ description: VIEW_QUERY_DESCRIPTION });
 
 /**
- * Response-side view keys plus the open extra object, spread into both
+ * A stage value as a document may carry it, and as a board may name it.
+ *
+ * **Comma-free, exactly as a tag is.** `stage=` is a comma-separated OR list
+ * (`../schemas/query.ts`), so a stage carrying a comma would be a value the
+ * filter could never select — and a kanban column that cannot be queried is a
+ * column that silently shows the wrong documents. Tags solved this the same way
+ * and for the same reason, so the separator needs no escaping scheme on either
+ * field. SPEC.md §5 calls `stage` free-form, and it stays free-form: one
+ * reserved character is the price of being filterable, which §5 asks for in the
+ * same sentence.
+ *
+ * Write-side only. The response-side `stage` is a plain nullable string
+ * ({@link stageField}), because a response reports what a file holds rather than
+ * validating it — the split `TextQuoteSelectorSchema` established.
+ */
+export const StageValueSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !value.includes(","), {
+    message:
+      "a stage may not contain a comma: `GET /api/docs?stage=` is a comma-separated OR list " +
+      "(SPEC.md §5, §10), so a stage with one could never be filtered for.",
+  });
+
+const STAGE_DESCRIPTION =
+  "**Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban " +
+  "boards that use it (§10), written comma-free, and filterable with `GET /api/docs?stage=`. " +
+  "`null` when the file carries no `stage` key, which is what puts a document in a kanban's " +
+  "**first column**. **It is not `status`, and neither substitutes for the other**: `status` says " +
+  "whether work remains, `stage` says where in a workflow the document is, and a document in any " +
+  "stage is ordinarily `open`. While a document is in a kanban its stage decides its status — a " +
+  "stage the board's `kanban.status` map names writes that status on entry, a stage with no " +
+  "mapping writes `open`, in the same commit and named in the response — while writing `status` " +
+  "never moves a stage. Two kanbans over the same documents share this one value, so they should " +
+  "share a vocabulary.";
+
+const COLUMNS_DESCRIPTION =
+  "**The columns of a `type: board` document**: the ids of the `type: view` documents that render " +
+  "them, in display order (SPEC.md §10, rider 2). `null` when the file carries no `columns` key " +
+  "— which is every non-board document, and also a **kanban** board, whose columns are derived " +
+  "one per stage from `kanban.stages` and are not view documents at all. Adding, removing or " +
+  "reordering a column edits the board document and never the view, so the same view may sit on " +
+  "two boards without either knowing about the other.";
+
+const DEFAULT_OPEN_DESCRIPTION =
+  "True on the one board that **receives every open that names no board** (SPEC.md §10, rider 2 " +
+  "as amended 2026-08-22): the explorer's clicks, and the first load of a browser that remembers " +
+  "no board. `false` when the file carries no `default-open` key. **At most one board carries " +
+  "it** — setting it on one clears the others, in the same commit, and the response names the " +
+  "documents it changed (SPEC.md §9.2) — and when no board carries it the first board in `order` " +
+  "receives those opens instead. The frontmatter key is `default-open`; `defaultOpen` is its wire " +
+  "spelling, and `unset` names the frontmatter one.";
+
+/**
+ * The one place `stage` is spelled, referenced by both the single read and the
+ * list row so the two cannot describe the same file key differently — the rule
+ * the nullable timestamps already follow.
+ */
+const stageField = z.string().nullable().describe(STAGE_DESCRIPTION);
+
+/** The two fields a kanban may be drawn over (SPEC.md §10, rider 6). */
+export const KANBAN_FIELDS = ["status", "stage"] as const;
+
+export const KanbanFieldSchema = z.enum(KANBAN_FIELDS);
+
+/**
+ * A board drawn as a kanban over one field (SPEC.md §10, rider 6; §5's coupling
+ * rule).
+ *
+ * **Strict, like the form grammar and for the same reason** (CONTRACT-038): the
+ * agent writes this block into YAML with §10 as its only reference, so
+ * `transitionz` must fail loudly rather than silently mean nothing. Every
+ * refusal below names the field it is about, because the caller's next act is to
+ * fix that field in a document.
+ *
+ * **The contract validates shape; the server enforces the status map.** §10 is
+ * explicit that the server does not enforce transitions — a person may set the
+ * field directly from the reader or the CLI and skip the graph entirely — so
+ * nothing here refuses a write for landing a document in an unreachable stage.
+ * What is refused is a graph that cannot be drawn: a transition leaving or
+ * reaching a stage the board does not declare, a stage leading to itself, a
+ * status mapped for a stage that is not on the board.
+ *
+ * **Absent is not empty.** `transitions` omitted means the linear funnel (each
+ * stage leads to its neighbours, both ways — a UI rule); `transitions: {}` means
+ * a graph in which nothing may be dragged anywhere. `status` omitted means the
+ * board couples no stage to a status; `status: {}` means the same thing and is
+ * simply the long way to write it.
+ */
+export const KanbanSchema = z
+  .strictObject({
+    field: KanbanFieldSchema.describe(
+      "The document field this board's columns are drawn over (SPEC.md §10). `stage` is the " +
+        "free-form workflow position of §5; `status` is the three-value lifecycle. Those are the " +
+        "only two — a kanban over an arbitrary frontmatter key would be a board over a value the " +
+        "server neither filters nor arbitrates.",
+    ),
+    stages: z
+      .array(StageValueSchema)
+      .min(1)
+      .describe(
+        "The stages in **display order**, one column each, distinct. The first is where a " +
+          "document in scope with no value for the field sits (SPEC.md §10), which is why a " +
+          "client asks for that column with `stage=,<first>` — the first stage or nothing at all, " +
+          "in one request. **A kanban over `status` may name only the three statuses of §5**, " +
+          `\`${DOC_STATUSES.join("`, `")}\`, because those are the only values that field holds.`,
+      ),
+    transitions: z
+      .record(z.string(), z.array(z.string()))
+      .optional()
+      .describe(
+        "For each stage, the stages a **drag** may reach — the board's transition graph " +
+          "(SPEC.md §10). Every key and every value must be one of `stages`, and a stage may not " +
+          "lead to itself. **Omitted means the linear funnel**: each stage leads to its " +
+          "neighbours, both ways. An empty object is not the same thing — it is a graph nothing " +
+          "may be dragged along. A stage the graph does not reach is still reachable by setting " +
+          "the field in the document, from the reader or the CLI: the server enforces the status " +
+          "map, never the transitions.",
+      ),
+    status: z
+      .record(z.string(), DocStatusSchema)
+      .optional()
+      .describe(
+        "**How a stage decides a status** (SPEC.md §5's coupling rule): entering a stage named " +
+          "here writes that status in the same commit, and entering a stage that is not named " +
+          "here writes `open`. Every key must be one of `stages`. The coupling is by this " +
+          "explicit map and never by a stage's name, so a stage called `archived` couples to " +
+          "nothing unless the board says so. Omitted means the board couples no stage at all.",
+      ),
+  })
+  .superRefine((kanban, ctx) => {
+    const declared = new Set<string>();
+    for (const [index, stage] of kanban.stages.entries()) {
+      if (declared.has(stage)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["stages", index],
+          message:
+            `duplicate stage \`${stage}\`: a kanban's stages are its columns, and a column ` +
+            "appears once.",
+        });
+      }
+      declared.add(stage);
+      if (kanban.field === "status" && !DocStatusSchema.safeParse(stage).success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["stages", index],
+          message:
+            `\`${stage}\` is not a status: a kanban over \`status\` has the three statuses of ` +
+            `SPEC.md §5 as its only possible stages (\`${DOC_STATUSES.join("`, `")}\`).`,
+        });
+      }
+    }
+    for (const [from, targets] of Object.entries(kanban.transitions ?? {})) {
+      if (!declared.has(from)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["transitions", from],
+          message: `\`${from}\` is not one of \`stages\`: a transition may only leave a stage this board declares.`,
+        });
+      }
+      for (const [index, to] of targets.entries()) {
+        if (!declared.has(to)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["transitions", from, index],
+            message: `\`${to}\` is not one of \`stages\`: a transition may only reach a stage this board declares.`,
+          });
+          continue;
+        }
+        if (to === from) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["transitions", from, index],
+            message: `\`${from}\` may not lead to itself: a drop on the column a document is already in changes nothing.`,
+          });
+        }
+      }
+    }
+    for (const stage of Object.keys(kanban.status ?? {})) {
+      if (!declared.has(stage)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["status", stage],
+          message: `\`${stage}\` is not one of \`stages\`: only a stage this board draws can decide a status.`,
+        });
+      }
+    }
+  })
+  .openapi("Kanban", {
+    description:
+      "A board drawn as a **kanban** over one field (SPEC.md §10): the field, the stages in " +
+      "display order, and optionally the transition graph and the stage-to-status map of §5. Its " +
+      "columns are derived one per stage from the board's `query` scope and are not view " +
+      "documents; a document in scope with no value for the field sits in the first column. A " +
+      "drag follows a transition and nothing else, and anything the graph forbids is still done " +
+      "by setting the field in the document — **the server enforces the status map, never the " +
+      "transitions**.",
+  });
+
+/**
+ * A nullable reference to the registered {@link KanbanSchema}, spelled as a
+ * union rather than as `KanbanSchema.nullable()`.
+ *
+ * `zod-to-openapi` propagates a registered name onto anything derived from it,
+ * so `.nullable()` here would rewrite the shared `Kanban` component to
+ * `type: ["object", "null"]` for every route that references it (CONTRACT-037).
+ * The union publishes `anyOf: [{$ref: Kanban}, {type: "null"}]` and leaves the
+ * component plain, which the "every named component is a plain, non-nullable,
+ * undefaulted object" invariant in `openapi.test.ts` exists to keep true.
+ */
+const nullableKanban = z.union([KanbanSchema, z.null()]);
+
+const KANBAN_ROW_DESCRIPTION =
+  "**The kanban definition of a `type: board` document** (SPEC.md §10), or `null` when the file " +
+  "carries no `kanban` key — which is every non-board document and every ordinary board, whose " +
+  "columns are the view ids in `columns` instead. A board carries one or the other, never both: " +
+  "a kanban's columns are derived from its stages.";
+
+/**
+ * Response-side view and board keys plus the open extra object, spread into both
  * `DocFrontmatterSchema` and `docRowBaseShape` — the same instances, so the
  * two routes cannot describe the same file key differently. All present on
  * every response (`false`/`null`/`{}` when the file omits the key): the
  * nullable-not-optional convention `threadRowShape` documents, and what lets
  * the board read its whole column set from the list response with no N+1.
  *
- * **Three keys, not four** (SHARED-066). A `column` key once named a renderer
- * `<plugin>/<type>`, and with no plugin surface left it names nothing — so it
- * is not a core key any more. A file that still carries one is not an error: it
- * arrives in `extra` like every other key the core does not define (§9.1),
- * round-trips verbatim, and its view renders as the filtered list its `query`
- * describes.
+ * **Five keys** (CONTRACT-074). Two are a view's or a board's ordering and
+ * query; three are a board's own — `columns`, `kanban` and `defaultOpen`. A
+ * `column` key once named a renderer `<plugin>/<type>` and a `pinned` key once
+ * put a view on the board; with no plugin surface left and boards listing their
+ * own columns, neither names anything (SHARED-066, rider 2). A file that still
+ * carries one is not an error: it arrives in `extra` like every other key the
+ * core does not define (§9.1), round-trips verbatim, and its view renders as the
+ * filtered list its `query` describes.
  */
-const viewFrontmatterShape = {
-  pinned: z.boolean().describe(PINNED_DESCRIPTION),
+const viewAndBoardFrontmatterShape = {
   order: z.number().nullable().describe(ORDER_DESCRIPTION),
   query: ViewQuerySchema.nullable().describe(VIEW_QUERY_DESCRIPTION),
+  columns: z.array(DocumentIdSchema).nullable().describe(COLUMNS_DESCRIPTION),
+  kanban: nullableKanban.describe(KANBAN_ROW_DESCRIPTION),
+  defaultOpen: z.boolean().describe(DEFAULT_OPEN_DESCRIPTION),
   extra: ExtraFrontmatterSchema,
 } as const;
 
@@ -342,6 +597,7 @@ export const DocFrontmatterSchema = z
     updated: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("last modified")),
     tags: z.array(z.string()),
     status: DocStatusSchema,
+    stage: stageField,
     anchors: z
       .record(AnchorIdSchema, TextQuoteSelectorSchema)
       .describe("Text-quote selectors for threads on this document, keyed by anchor id."),
@@ -353,7 +609,7 @@ export const DocFrontmatterSchema = z
     ),
     evergreen: z.boolean().describe("True opts the document out of staleness entirely."),
     origin: originField,
-    ...viewFrontmatterShape,
+    ...viewAndBoardFrontmatterShape,
   })
   .openapi("DocFrontmatter");
 
@@ -408,6 +664,37 @@ export const DocSchema = z
   .openapi("Doc");
 
 /**
+ * **Who made this document's last write** — projected as `documents.last_actor`
+ * (SPEC.md §9.1) from §4's attribution, and the row column §7's reflection
+ * reads.
+ *
+ * **On the row and not in the frontmatter, because it is not a frontmatter
+ * key.** Nobody writes it and nobody can: it is read off the write that landed,
+ * exactly as `excerpt` and `stale` are read off the body and the clock. Putting
+ * it on `DocFrontmatter` would claim a file key that does not exist.
+ *
+ * **Declared here once because two features read it** (CONTRACT-074's brief,
+ * and the reason it is not behind a request): UI-153 marks a row with it, and
+ * `GET /api/workspace/reflect`'s `changed` counts the same set server-side. The
+ * predicate itself is shipped rather than described twice — see `isUnreflected`
+ * in `./reflect.js`, which is the one implementation both apply.
+ */
+const lastActorField = z.enum(ACTORS).openapi({
+  description:
+    "The acting party of this document's **last write** (SPEC.md §4, projected as " +
+    "`documents.last_actor`, §9.1). Never absent and never null: a document the server has never " +
+    "written reads `user`, and so does an out-of-band edit the watcher picked up, because a " +
+    "change nobody attributed to the agent is a person's. It is not frontmatter and it is not " +
+    "settable — no request carries it. **It is what §7's reflection reads**: a document changed " +
+    "only by the agent since the corpus's last reflection is not marked and not counted, since " +
+    "the changelog entries and the digest a reflection produces are its output rather than new " +
+    "work for it. Pair it with `updated`, `status` and the clock from " +
+    "`GET /api/workspace/reflect` — or call `isUnreflected`, which is the one implementation of " +
+    "that predicate and the same one the server counts `changed` with.",
+  example: "user",
+});
+
+/**
  * The projection's `documents` columns, without the body (SPEC.md §9.1). Spread
  * rather than `.extend()`-ed into the list row in `query.ts`: zod-to-openapi
  * carries a registered component name onto derived schemas, so building the row
@@ -419,6 +706,7 @@ export const docRowBaseShape = {
   title: z.string(),
   path: z.string(),
   status: DocStatusSchema,
+  stage: stageField,
   tags: z.array(z.string()),
   created: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("created")),
   updated: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("last modified")),
@@ -426,8 +714,9 @@ export const docRowBaseShape = {
   reviewed: IsoDateTimeSchema.nullable(),
   evergreen: z.boolean(),
   origin: originField,
+  lastActor: lastActorField,
   excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
-  ...viewFrontmatterShape,
+  ...viewAndBoardFrontmatterShape,
 } as const;
 
 /**
@@ -455,13 +744,9 @@ export const CreateDocRequestSchema = z
       .boolean()
       .optional()
       .describe("True opts the document out of staleness entirely. Defaults to `false`."),
-    pinned: z
-      .boolean()
+    stage: StageValueSchema.nullable()
       .optional()
-      .describe(
-        `${PINNED_DESCRIPTION} Defaults to \`false\` — a view renders as a board column only ` +
-          "once pinned.",
-      ),
+      .describe(`${STAGE_DESCRIPTION} Null is the same as omitting it: no \`stage\` key.`),
     order: z
       .number()
       .nullable()
@@ -470,12 +755,65 @@ export const CreateDocRequestSchema = z
     query: ViewQuerySchema.nullable()
       .optional()
       .describe(`${VIEW_QUERY_DESCRIPTION} Null is the same as omitting it: no \`query\` key.`),
+    columns: z
+      .array(DocumentIdSchema)
+      .nullable()
+      .optional()
+      .describe(`${COLUMNS_DESCRIPTION} Null is the same as omitting it: no \`columns\` key.`),
+    kanban: nullableKanban
+      .optional()
+      .describe(`${KANBAN_ROW_DESCRIPTION} Null is the same as omitting it: no \`kanban\` key.`),
+    defaultOpen: z
+      .boolean()
+      .optional()
+      .describe(
+        `${DEFAULT_OPEN_DESCRIPTION} Defaults to \`false\` — creating a board never displaces ` +
+          "the one a browser opens onto unless the create says so.",
+      ),
     extra: ExtraFrontmatterSchema.optional(),
   })
   .openapi("CreateDocRequest");
 
 /**
- * Strict (CONTRACT-017): with every field optional, a typoed key — `pinnned`,
+ * The three frontmatter keys `unset` refuses (SPEC.md §9.2: "for any frontmatter
+ * key but `id`, `type` and `created`").
+ *
+ * They are not a taste: `id` is identity, and every `[[ref]]`, anchor entry and
+ * thread `parent` resolves through it; `type` decides what behaviour the core
+ * gives the document at all; `created` is the document's birth, which cannot be
+ * un-happened. A file missing any of the three is not the same document with a
+ * key removed — it is a different document, or none.
+ */
+export const UNSETTABLE_EXCLUSIONS = ["id", "type", "created"] as const;
+
+/**
+ * **`unset` names file keys, not wire keys**, and that is the one decision in it
+ * worth writing down (CONTRACT-074).
+ *
+ * The keys most worth removing are the ones the core has *stopped* defining —
+ * `pinned`, a view's `order` — and such a key has no wire spelling at all: it
+ * arrives in `extra` under whatever the file calls it. A field that spoke wire
+ * names would therefore be unable to name the very keys SPEC.md §2.4 introduced
+ * it for. So the spelling is the file's, and the one core key whose two
+ * spellings differ is named the file's way: `default-open`, never `defaultOpen`.
+ *
+ * It names its own delta, so it presents no document key — removing a named key
+ * merges with whatever else happened, exactly as `removeTags` does, and it is
+ * deliberately not in `KEYED_UPDATE_FIELDS`.
+ */
+const UNSET_DESCRIPTION =
+  "Frontmatter keys to **remove** from the file (SPEC.md §9.2) — how a migration (§2.4) drops a " +
+  "key the tool has stopped reading, and what `corpus doc update --unset` sends. Keys are named " +
+  "**exactly as the file writes them**, not as this API spells them: the keys most worth removing " +
+  "are ones the core no longer defines, and those have no wire spelling at all. Where a core key " +
+  "differs, the file's spelling is the one that works — `default-open`, never `defaultOpen`. " +
+  "Removing a key the document does not carry is a no-op rather than a failure, exactly as " +
+  "`removeTags` is. **`id`, `type` and `created` are refused**, with the offending key named: " +
+  "they are the document's identity, its behaviour and its birth. It names its own delta, so it " +
+  "presents no `key`.";
+
+/**
+ * Strict (CONTRACT-017): with every field optional, a typoed key — `stagee`,
  * or an extra-frontmatter key sent at top level instead of inside `extra` — would otherwise
  * validate as the empty update and silently change nothing.
  *
@@ -514,10 +852,14 @@ export const UpdateDocRequestSchema = z
       .optional()
       .describe('Set to the current instant to record "still current" (SPEC.md §5).'),
     evergreen: z.boolean().optional(),
-    // The view keys follow the request's own convention — name only what you
-    // change. `null` clears the key from the file; subsequent reads report
-    // `null` (`false` for `pinned`, whose absent and false states are one).
-    pinned: z.boolean().optional().describe(PINNED_DESCRIPTION),
+    // The view and board keys follow the request's own convention — name only
+    // what you change. `null` clears the key from the file; subsequent reads
+    // report `null` (`false` for `defaultOpen`, whose absent and false states
+    // are one). `unset` below is the general form, and the only way to remove a
+    // key this schema does not declare.
+    stage: StageValueSchema.nullable()
+      .optional()
+      .describe(`${STAGE_DESCRIPTION} On update, \`null\` clears the key from the file.`),
     order: z
       .number()
       .nullable()
@@ -526,6 +868,22 @@ export const UpdateDocRequestSchema = z
     query: ViewQuerySchema.nullable()
       .optional()
       .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    columns: z
+      .array(DocumentIdSchema)
+      .nullable()
+      .optional()
+      .describe(`${COLUMNS_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    kanban: nullableKanban
+      .optional()
+      .describe(`${KANBAN_ROW_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    defaultOpen: z
+      .boolean()
+      .optional()
+      .describe(
+        `${DEFAULT_OPEN_DESCRIPTION} Setting it \`true\` clears the flag from every other board ` +
+          "in the same commit, and the response names those documents.",
+      ),
+    unset: z.array(z.string().min(1)).optional().describe(UNSET_DESCRIPTION),
     extra: ExtraFrontmatterSchema.optional(),
   })
   .refine((patch) => !updateNeedsDocumentKey(patch) || patch.key !== undefined, {
@@ -553,6 +911,26 @@ export const UpdateDocRequestSchema = z
       path: ["addTags"],
     },
   )
+  /**
+   * The three keys a document cannot survive losing, refused **by name** rather
+   * than as a class: the caller's next act is to edit that entry out of the
+   * array, and a message that only said "some key is reserved" would leave them
+   * reading the list themselves.
+   */
+  .superRefine((patch, ctx) => {
+    for (const [index, key] of (patch.unset ?? []).entries()) {
+      if ((UNSETTABLE_EXCLUSIONS as readonly string[]).includes(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["unset", index],
+          message:
+            `\`${key}\` cannot be unset: \`${UNSETTABLE_EXCLUSIONS.join("`, `")}\` are a ` +
+            "document's identity, its behaviour and its birth (SPEC.md §5, §9.2). Every other " +
+            "frontmatter key may be removed.",
+        });
+      }
+    }
+  })
   .openapi("UpdateDocRequest")
   /**
    * The keyed-write rule, **published as JSON Schema rather than only as prose**
@@ -658,6 +1036,8 @@ export const DeleteDocResultSchema = z
   .openapi("DeleteDocResult");
 
 export type ViewQuery = z.infer<typeof ViewQuerySchema>;
+export type KanbanField = z.infer<typeof KanbanFieldSchema>;
+export type Kanban = z.infer<typeof KanbanSchema>;
 export type DocType = z.infer<typeof DocTypeSchema>;
 export type CoreDocType = z.infer<typeof CoreDocTypeSchema>;
 export type DocStatus = z.infer<typeof DocStatusSchema>;

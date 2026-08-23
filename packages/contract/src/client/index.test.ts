@@ -3,11 +3,18 @@ import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { contractRoutes, mountAppendTurn } from "../routes/index.js";
 import { FormSchema, validateFormAnswer } from "../schemas/form.js";
+import { DEFAULT_REFLECT_QUIET_MINUTES } from "../schemas/reflect.js";
 import * as client from "./index.js";
 import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./index.js";
 
 const BASE_URL = "http://127.0.0.1:8765";
 const TOKEN = "workspace-token";
+
+/** The reflection clock the stub reports. */
+const REFLECTED_AT = "2026-08-22T09:00:00Z";
+
+/** Counts asks so the stub can answer the second one with the pending reflection. */
+let reflectionAsks = 0;
 
 /** The key a read hands out, and the fresh one every write answers with (SPEC.md §7). */
 const DOC_KEY = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcde";
@@ -26,9 +33,12 @@ const frontmatter = {
   reviewed: null,
   evergreen: false,
   origin: null,
-  pinned: false,
+  stage: null,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
 };
 
@@ -183,6 +193,7 @@ function createServer() {
             title: frontmatter.title,
             path: "data/docs/mortgage.md",
             status: frontmatter.status,
+            stage: null,
             tags: frontmatter.tags,
             created: frontmatter.created,
             updated: frontmatter.updated,
@@ -190,12 +201,15 @@ function createServer() {
             reviewed: null,
             evergreen: false,
             origin: null,
+            lastActor: "user" as const,
             // The handler echoes the parsed query so the test can assert what
             // the typed client actually put on the wire.
             excerpt: `isParent=${isParent === undefined ? "absent" : String(isParent)}`,
-            pinned: false,
             order: null,
             query: null,
+            columns: null,
+            kanban: null,
+            defaultOpen: false,
             extra: {},
             stale: "aging" as const,
             parent: null,
@@ -557,6 +571,83 @@ function createServer() {
         state: "indexing" as const,
       },
       202,
+    ),
+  );
+
+  app.openapi(contractRoutes.createDoc, (c) => {
+    const request = c.req.valid("json");
+    return c.json(
+      {
+        doc: {
+          frontmatter: { ...frontmatter, type: request.type, title: request.title },
+          body: request.body ?? "",
+          path: `data/docs/${request.folder ?? "inbox"}/created.md`,
+          anchors: [],
+          key: DOC_KEY,
+          userEditing: false,
+        },
+        warnings: [],
+      },
+      201,
+    );
+  });
+
+  /**
+   * The folder acts (CONTRACT-075). The rename echoes the acting party into a
+   * path so the test can assert the client attributed the call, and the delete
+   * refuses an agent, which is what makes the user-only rule reachable through
+   * the typed client rather than only declared.
+   */
+  app.openapi(contractRoutes.renameFolder, (c) => {
+    const { from, to } = c.req.valid("json");
+    if (from === "missing") {
+      return c.json({ code: "not_found" as const, message: `No folder ${from}.` }, 404);
+    }
+    if (to === "taken") {
+      return c.json({ code: "conflict" as const, message: `${to} already exists.` }, 409);
+    }
+    return c.json(
+      {
+        documents: [
+          { id: frontmatter.id, path: `data/docs/${to}/mortgage.md` },
+          { id: "th_x9y8", path: "data/threads/th_x9y8.md" },
+        ],
+        warnings: [],
+      },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.archiveFolder, (c) =>
+    c.json({ documents: [{ id: frontmatter.id, status: "archived" as const }], warnings: [] }, 200),
+  );
+  app.openapi(contractRoutes.unarchiveFolder, (c) =>
+    c.json({ documents: [{ id: frontmatter.id, status: "resolved" as const }], warnings: [] }, 200),
+  );
+  app.openapi(contractRoutes.deleteFolder, (c) => {
+    if (c.req.header(ACTOR_HEADER) === "agent") {
+      return c.json(
+        { code: "forbidden" as const, message: "the agent archives, never deletes" },
+        403,
+      );
+    }
+    return c.json({ documents: [{ id: frontmatter.id }], warnings: [] }, 200);
+  });
+
+  /** Reflection (CONTRACT-076): a fresh ask, then the pending one. */
+  app.openapi(contractRoutes.askReflection, (c) => {
+    const asked = reflectionAsks++;
+    return c.json({ eventId: "evt_7c1d", since: REFLECTED_AT, pending: asked > 0 }, 202);
+  });
+  app.openapi(contractRoutes.getReflectStatus, (c) =>
+    c.json(
+      {
+        reflected: REFLECTED_AT,
+        pending: null,
+        changed: 2,
+        lastDigest: "th_x9y8",
+        quiet: DEFAULT_REFLECT_QUIET_MINUTES,
+      },
+      200,
     ),
   );
 
@@ -1503,5 +1594,157 @@ describe("the roster and designation through the generated client (CONTRACT-051)
     const recipient: Recipient = lane;
     const scope: Scope = lane;
     expect([recipient, scope]).toEqual(["th_x9y8", "th_x9y8"]);
+  });
+});
+
+/**
+ * The wire layer of Phase 41, exercised through the **generated client** against
+ * the real route definitions — so a shape the types accept but validation
+ * rejects would fail here rather than in a consumer.
+ */
+describe("the board, folder and reflection surface through the typed client", () => {
+  it("filters by a stage, and by the null sentinel ORed with one", async () => {
+    const client = createTestClient();
+    const single = await client.api.GET("/api/docs", { params: { query: { stage: "review" } } });
+    expect(single.response.status).toBe(200);
+
+    const firstColumn = await client.api.GET("/api/docs", {
+      params: { query: { stage: ",triage" } },
+    });
+    expect(firstColumn.response.status).toBe(200);
+  });
+
+  it("creates a kanban board in one call, graph and status map included", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/docs", {
+      body: {
+        type: "board",
+        title: "Pipeline",
+        order: 1,
+        defaultOpen: true,
+        query: { tag: "deal" },
+        kanban: {
+          field: "stage",
+          stages: ["triage", "drafting", "done"],
+          transitions: { triage: ["drafting"], drafting: ["done"] },
+          status: { done: "resolved" },
+        },
+      },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.doc.frontmatter.type).toBe("board");
+  });
+
+  /**
+   * The refusal travels the real validation path: `@hono/zod-openapi` runs the
+   * superRefine before any handler, so a graph that cannot be drawn is refused
+   * by the **contract** rather than by a server that remembered to check. The
+   * `400` body is the server's to shape, per the note on the halt refusal above;
+   * what is asserted here is that validation rejects the call at all.
+   */
+  it("refuses a transition reaching a stage the board never declared", async () => {
+    const { data, response } = await createTestClient().api.POST("/api/docs", {
+      body: {
+        type: "board",
+        title: "Pipeline",
+        kanban: { field: "stage", stages: ["triage"], transitions: { triage: ["nowhere"] } },
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+  });
+
+  it("sends an `unset` on the update body, which is what a migration runs", async () => {
+    const { response } = await createTestClient().api.PUT("/api/docs/{id}", {
+      params: { path: { id: "doc_a1b2c3" } },
+      body: { unset: ["pinned"] },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses to unset the document's identity, before any handler runs", async () => {
+    const { data, response } = await createTestClient().api.PUT("/api/docs/{id}", {
+      params: { path: { id: "doc_a1b2c3" } },
+      body: { unset: ["id"] },
+    });
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+  });
+
+  it("renames a folder and reads back every document it moved, threads included", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/folders/rename", {
+      body: { from: "finance", to: "money" },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.documents.map((entry) => entry.path)).toEqual([
+      "data/docs/money/mortgage.md",
+      "data/threads/th_x9y8.md",
+    ]);
+  });
+
+  it("refuses a rename into a descendant before the request ever leaves", async () => {
+    const { response } = await createTestClient().api.POST("/api/folders/rename", {
+      body: { from: "finance", to: "finance/old" },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a malformed folder path before it reaches a handler", async () => {
+    const { data, response } = await createTestClient().api.POST("/api/folders/archive", {
+      body: { path: "../etc" },
+    });
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+  });
+
+  it.each([
+    ["/api/folders/archive" as const, "archived"],
+    ["/api/folders/unarchive" as const, "resolved"],
+  ])("flips every document in a folder through %s", async (path, status) => {
+    const { data } = await createTestClient().api.POST(path, { body: { path: "finance" } });
+    expect(data?.documents[0]?.status).toBe(status);
+  });
+
+  /** Rider 7: deleting a folder is user-only, like deleting a document. */
+  it("lets a person delete a folder and refuses the agent, through the same call", async () => {
+    const mine = await createTestClient("user").api.POST("/api/folders/delete", {
+      body: { path: "finance" },
+    });
+    expect(mine.data?.documents).toEqual([{ id: "doc_a1b2c3" }]);
+
+    const theirs = await createTestClient("agent").api.POST("/api/folders/delete", {
+      body: { path: "finance" },
+    });
+    expect(theirs.response.status).toBe(403);
+    if (theirs.error?.code !== "forbidden") throw new Error("expected a forbidden refusal");
+    expect(theirs.error.message).toContain("archives, never deletes");
+  });
+
+  /**
+   * §7: a second ask is answered with the pending reflection rather than
+   * doubled, and `pending` is what a client branches on — narrowed here rather
+   * than read through an optional chain, so the compiler checks the shape.
+   */
+  it("asks for a reflection, and is answered with the pending one the second time", async () => {
+    const client = createTestClient();
+    const first = await client.api.POST("/api/workspace/reflect", {});
+    expect(first.response.status).toBe(202);
+    if (!first.data) throw new Error("expected an ask result");
+    expect(first.data.pending).toBe(false);
+    expect(first.data.since).toBe(REFLECTED_AT);
+
+    const second = await client.api.POST("/api/workspace/reflect", {});
+    expect(second.data?.pending).toBe(true);
+    expect(second.data?.eventId).toBe(first.data.eventId);
+  });
+
+  it("reads the clock, the unreflected count and the digest in one call", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/workspace/reflect", {});
+    expect(error).toBeUndefined();
+    if (!data) throw new Error("expected a reflect status");
+    expect(data.reflected).toBe(REFLECTED_AT);
+    expect(data.changed).toBe(2);
+    expect(data.lastDigest).toBe("th_x9y8");
+    expect(data.quiet).toBe(DEFAULT_REFLECT_QUIET_MINUTES);
+    expect(data.pending).toBeNull();
   });
 });

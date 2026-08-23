@@ -25,7 +25,7 @@ export const searchCorpus = createRoute({
     "Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with " +
     "nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the " +
     "same set with the same semantics as `GET /api/docs`, archived default included, and are " +
-    "declared from the same schema so the two cannot drift; `pinned`, `sort` and `offset` are not " +
+    "declared from the same schema so the two cannot drift; `sort` and `offset` are not " +
     "among them and are ignored if sent (a ranked set has one order and no pages), and neither " +
     "is `isParent`, which §9.2's signed parameter string declares on the collection query alone. " +
     "Each hit is an " +

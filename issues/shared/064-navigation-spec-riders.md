@@ -109,3 +109,20 @@ Checks: `grep -c "No sidebar\|column widens\|pinned: true\|create pinned view" S
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[SHARED-064]` prefix
+
+## Consequence edit applied 2026-08-22 (Phase 41 implementation, orchestrator)
+
+**§5's canonical frontmatter listed six core types and omitted `board`**, while
+rider 2 — signed 2026-08-22 — makes `type: board` a first-class core type with
+behavior the server, the CLI and the UI all give it. Found by CONTRACT-074's
+implementer against the schemas it was writing.
+
+Applied without new sign-off, as a consequence edit rather than a new rule: the
+rider already says a board is a `type: board` document, and §5's list is the
+place that enumerates what the core gives behavior to. Two edits, both in §5:
+
+- `type:`'s comment gains `"board"` between `"view"` and `"template"`.
+- "The **six** values above" becomes "The **seven** values above".
+
+Nothing about the open-string rule changes. An unrecognised type still parses,
+renders and searches (M6).

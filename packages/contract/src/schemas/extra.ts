@@ -22,12 +22,13 @@ import { z } from "@hono/zod-openapi";
  * (SPEC.md §12's M6).
  *
  * Core keys, by contrast, stay closed and validated where they always were.
- * The view keys (`pinned`, `order`, `query`) are deliberately **not** in here —
- * they graduated to first-class core fields (see `doc.ts`), because two of them
- * are server semantics (`pinned` is a filter, `order` is a sort, and a key the
- * server filters and sorts on is by definition not opaque) and because keeping
- * them out preserves this object's one absolute rule: nothing in it ever means
- * anything to the server.
+ * The view and board keys (`order`, `query`, `columns`, `kanban`,
+ * `default-open`) and `stage` are deliberately **not** in here — they are
+ * first-class core fields (see `doc.ts`), because several are server semantics
+ * (`order` is a sort, `stage` is a filter, `default-open` is a value the server
+ * keeps unique across boards, and a key the server sorts, filters or arbitrates
+ * on is by definition not opaque) and because keeping them out preserves this
+ * object's one absolute rule: nothing in it ever means anything to the server.
  */
 
 /**
@@ -83,7 +84,12 @@ export const RESERVED_FRONTMATTER_KEYS = [
   // patch, so an attribution stored there could be rewritten by an ordinary
   // `PUT /api/docs/{id}` (see `./turn-model.ts`).
   "turnModels",
-  // SPEC.md §10 — view documents (first-class core keys, see doc.ts)
+  // SPEC.md §5 — where a document sits in a workflow (rider 5, 2026-08-22).
+  // Reserved because the server filters on it and because a kanban's status
+  // coupling is driven by it: a stage smuggled through `extra` would move a
+  // document's status without going through the write that decides it.
+  "stage",
+  // SPEC.md §10 — view and board documents (first-class core keys, see doc.ts)
   //
   // `column` is deliberately absent (SHARED-066). It named a plugin renderer,
   // `<plugin>/<type>`, and with the plugin surface gone it names nothing — so
@@ -92,9 +98,25 @@ export const RESERVED_FRONTMATTER_KEYS = [
   // here, in `extra`, preserved verbatim and never interpreted: a board written
   // before the removal keeps working, and echoing the document back through an
   // update writes the key out again unchanged.
-  "pinned",
+  //
+  // `pinned` left the same way on 2026-08-22 (rider 2): a board lists its own
+  // columns, so nothing reads `pinned` and it stopped being a core key. A view
+  // written before the removal keeps its key, here, until `corpus upgrade`'s
+  // migration drops it (SPEC.md §2.4).
   "order",
   "query",
+  "columns",
+  "kanban",
+  // **Both spellings, deliberately.** `default-open` is the frontmatter key and
+  // is what a file actually holds; `defaultOpen` is its wire name. Reserving the
+  // file key is the one that matters — `extra` is a client-supplied merge patch,
+  // so an unreserved `default-open` would let an ordinary `PUT /api/docs/{id}`
+  // set the flag while bypassing the arbitration that clears it from every other
+  // board (the hazard `resident` and `origin` are reserved against). The wire
+  // spelling is reserved beside it so the two can never be told apart by a
+  // caller guessing which one this surface polices.
+  "default-open",
+  "defaultOpen",
 ] as const;
 
 const RESERVED_KEY_SET: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);

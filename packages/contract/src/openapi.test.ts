@@ -392,6 +392,9 @@ describe("GET /api/docs parameter grammar", () => {
     "q",
     "type",
     "status",
+    // Rider 5, 2026-08-22: §9.2's own parameter string puts `stage` here,
+    // between the lifecycle status and the archived default it is not.
+    "stage",
     // CONTRACT-012's rider, declared beside the default it lifts.
     "includeArchived",
     "tag",
@@ -404,9 +407,9 @@ describe("GET /api/docs parameter grammar", () => {
     "due",
     "stale",
     "unread",
-    "pinned",
-    // CONTRACT-042's rider, beside `pinned` because both are docs-only: §9.2's
-    // signed `/api/search` parameter string carries neither.
+    // CONTRACT-042's rider, and the one docs-only filter left: §9.2's signed
+    // `/api/search` parameter string does not carry it. (`pinned` sat beside it
+    // until rider 7 removed it from the API on 2026-08-22.)
     "isParent",
     "needs",
     "sort",
@@ -440,7 +443,7 @@ describe("GET /api/docs parameter grammar", () => {
     const param = parameter("/api/docs", "get", "type");
     expect(param?.schema?.type).toBe("string");
     expect(param?.schema?.enum).toBeUndefined();
-    expect(param?.description).toContain("note, thread, view, template, skill, agent-def");
+    expect(param?.description).toContain("note, thread, view, board, template, skill, agent-def");
     expect(param?.description).toContain("a type this build has never heard of");
   });
 
@@ -448,10 +451,46 @@ describe("GET /api/docs parameter grammar", () => {
     expect(parameter("/api/docs", "get", "unread")?.schema?.type).toBe("boolean");
   });
 
-  it("types `pinned` as a boolean and points it at the board's one column-set query", () => {
-    const param = parameter("/api/docs", "get", "pinned");
-    expect(param?.schema?.type).toBe("boolean");
-    expect(param?.description).toContain("pinned=true&type=view&sort=order");
+  it("declares no `pinned`: rider 7 removed it from the API rather than deprecating it", () => {
+    expect(parameter("/api/docs", "get", "pinned")).toBeUndefined();
+    expect(parameter("/api/search", "get", "pinned")).toBeUndefined();
+  });
+
+  it("points `sort=order` at the board bar's one query", () => {
+    expect(parameter("/api/docs", "get", "sort")?.description).toContain("type=board&sort=order");
+  });
+
+  /**
+   * CONTRACT-074's decision, published where a client author reads it: the
+   * sentinel is what makes a kanban's first column — its first stage *and*
+   * everything unstaged (SPEC.md §10) — one request instead of two ORed in the
+   * client. Each clause is pinned separately because each is a separate promise.
+   */
+  describe("the stage filter's null sentinel", () => {
+    const description = (): string => parameter("/api/docs", "get", "stage")?.description ?? "";
+
+    it("types stage as an open string, never an enum: stages are free-form (SPEC.md §5)", () => {
+      expect(parameter("/api/docs", "get", "stage")?.schema?.type).toBe("string");
+      expect(parameter("/api/docs", "get", "stage")?.schema?.enum).toBeUndefined();
+    });
+
+    it("says the values OR together, so a column can ask for more than one", () => {
+      expect(description()).toContain("values OR together");
+    });
+
+    it("names the sentinel and shows the one-request spelling of a first column", () => {
+      expect(description()).toContain("An empty element selects documents with no `stage` at all");
+      expect(description()).toContain("stage=,triage");
+    });
+
+    it("says why it cannot collide, which is the whole reason it is not a word", () => {
+      expect(description()).toContain("non-empty comma-free string");
+      expect(description()).toContain("no document can hold");
+    });
+
+    it("declares it on ranked retrieval too, since the filter sets are one schema", () => {
+      expect(parameter("/api/search", "get", "stage")?.description).toBe(description());
+    });
   });
 
   it("documents the order sort's full tiebreak, so column order is deterministic everywhere", () => {
@@ -612,6 +651,7 @@ describe("the retrieval surface (CONTRACT-022)", () => {
       "q",
       "type",
       "status",
+      "stage",
       "includeArchived",
       "tag",
       "folder",
@@ -640,13 +680,13 @@ describe("the retrieval surface (CONTRACT-022)", () => {
       }
     });
 
-    it.each(["pinned", "sort", "offset", "isParent"])("declares no %s", (name) => {
+    it.each(["sort", "offset", "isParent"])("declares no %s", (name) => {
       expect(parameter(SEARCH_PATH, "get", name)).toBeUndefined();
     });
 
     it("says what happens to an undeclared parameter, since silence is the alternative", () => {
       expect(operation(SEARCH_PATH, "get").description).toContain(
-        "`pinned`, `sort` and `offset` are not among them and are ignored if sent",
+        "`sort` and `offset` are not among them and are ignored if sent",
       );
     });
 
@@ -1795,7 +1835,15 @@ describe("one action, one commit (CONTRACT-037, CONTRACT-048)", () => {
 });
 
 describe("the extra-frontmatter surface (CONTRACT-011)", () => {
-  const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "extra"];
+  const VIEW_AND_EXTRA_KEYS = [
+    "stage",
+    "order",
+    "query",
+    "columns",
+    "kanban",
+    "defaultOpen",
+    "extra",
+  ];
 
   function component(name: string): SchemaNode {
     const found = componentSchemas?.[name];
@@ -2071,6 +2119,30 @@ describe("author attribution", () => {
    * (`DELETE`, `POST .../resolve`) or multipart, where a body field would be
    * impossible or inconsistent. So no request body may carry it either.
    */
+  /**
+   * The one property the sweep below matches by name and must not refuse.
+   * SPEC.md §9.2's folder-acts bullet names the rename's fields itself —
+   * `POST /api/folders/rename` (`{ from, to }`) — and there `from` is a folder
+   * path paired with `to`, which is what makes it a *range* rather than a
+   * sender. Declared rather than pattern-matched away, and pinned below against
+   * its published shape, so the exemption cannot become a place to park a field
+   * that really does carry an actor.
+   */
+  const ACTOR_LOOKALIKES = ["RenameFolderRequest.from"];
+
+  it("keeps the exempted lookalike a folder path, so the exemption cannot hide an actor", () => {
+    const schemas = document.components?.schemas ?? {};
+    for (const entry of ACTOR_LOOKALIKES) {
+      const [component, field] = entry.split(".");
+      const property = (
+        schemas[component ?? ""] as { properties?: Record<string, SchemaNode> } | undefined
+      )?.properties?.[field ?? ""];
+      expect(property?.type, entry).toBe("string");
+      expect(property?.enum, entry).toBeUndefined();
+      expect(property?.description, entry).toContain("folder");
+    }
+  });
+
   it("keeps the acting party out of every request body", () => {
     const schemas = document.components?.schemas ?? {};
     const offenders: string[] = [];
@@ -2085,9 +2157,9 @@ describe("author attribution", () => {
               ? undefined
               : (schemas[name] as { properties?: Record<string, unknown> } | undefined)?.properties;
           for (const field of ["author", "actor", "from"]) {
-            if (properties && field in properties) {
-              offenders.push(`${endpointSignature(method, path)} → ${name}.${field}`);
-            }
+            if (!properties || !(field in properties)) continue;
+            if (ACTOR_LOOKALIKES.includes(`${name ?? ""}.${field}`)) continue;
+            offenders.push(`${endpointSignature(method, path)} → ${name}.${field}`);
           }
         }
       }
@@ -3550,6 +3622,14 @@ describe("§11 warnings reach every mutation response", () => {
     // validated, reconciled, auto-committed — so it reaches §11's warnings by
     // exactly the routes `UpdateDocResponse` does, and shares its shape.
     "PatchDocResponse",
+    // CONTRACT-075: a folder act is a bulk act over every document under a
+    // directory (SPEC.md §9.2, rider 7), landing as one auto-commit — so a
+    // hook that rejects it leaves the whole folder on disk and uncommitted,
+    // the same reach `BulkActionResult` has. Three components rather than one
+    // because the three acts report three different changed fields.
+    "RenameFolderResult",
+    "FolderStatusResult",
+    "DeleteFolderResult",
   ];
 
   /**
@@ -4351,7 +4431,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(20);
+    expect(bodies).toHaveLength(24);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -4421,6 +4501,13 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/turns/{ts}/form": true,
       "POST /api/docs/{id}/unarchive": false,
+      // CONTRACT-075: an act on a folder names the folder, so all four bodies
+      // are mandatory. A bare `POST /api/folders/delete` naming nothing would
+      // be a request with no subject, not a shorthand for anything.
+      "POST /api/folders/archive": true,
+      "POST /api/folders/delete": true,
+      "POST /api/folders/rename": true,
+      "POST /api/folders/unarchive": true,
       "PUT /api/docs/{id}": false,
     });
   });
@@ -5142,5 +5229,279 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     const jobOnly = responseSchema("/api/docs", "post", "422");
     expect(jobOnly?.$ref).toBe("#/components/schemas/UnknownJobError");
     expect(operation("/api/capture", "post").responses?.["422"]).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-074's board surface, pinned against the **generated** document
+ * (CONTRACT-045's rule): a description hand-copied between two components is
+ * only catchable from here, and every claim below is one a client author reads
+ * out of `openapi.json` rather than out of this repository.
+ */
+describe("boards, `stage`, and the end of `pinned` (CONTRACT-074)", () => {
+  const component = (name: string): SchemaNode => {
+    const found = componentSchemas?.[name];
+    if (!found) throw new Error(`No ${name} component in the generated document.`);
+    return found;
+  };
+
+  const BOARD_KEYS = ["stage", "order", "query", "columns", "kanban", "defaultOpen"];
+
+  it.each(["DocFrontmatter", "DocRow"])("requires every board key on %s", (name) => {
+    for (const key of BOARD_KEYS) expect(component(name).required, `${name}.${key}`).toContain(key);
+  });
+
+  /**
+   * One fact asked at two grains is one schema object, so the two sites' prose
+   * is identical by construction — and this is written against the generated
+   * document by name, which is the only form that catches a hand-copied
+   * description.
+   */
+  it.each(BOARD_KEYS)("describes %s identically on the row and the single read", (key) => {
+    expect(component("DocRow").properties?.[key]?.description).toBe(
+      component("DocFrontmatter").properties?.[key]?.description,
+    );
+  });
+
+  it("publishes `board` among the core types wherever a type is described", () => {
+    expect(component("DocRow").properties?.["type"]?.description).toContain("board");
+    expect(parameter("/api/docs", "get", "type")?.description).toContain("board");
+  });
+
+  /**
+   * The CONTRACT-037 invariant at the one place it was most likely to break: a
+   * `KanbanSchema.nullable()` on the row would have rewritten the shared
+   * component for every route referencing it.
+   */
+  it("references `Kanban` through a union, leaving the component plain", () => {
+    expect(component("Kanban").type).toBe("object");
+    expect(component("DocRow").properties?.["kanban"]?.anyOf?.map((branch) => branch.$ref)).toEqual(
+      ["#/components/schemas/Kanban", undefined],
+    );
+  });
+
+  it("publishes the kanban grammar: two fields, a non-empty stage list, two optionals", () => {
+    const kanban = component("Kanban");
+    expect(kanban.properties?.["field"]?.enum).toEqual(["status", "stage"]);
+    expect(kanban.required).toEqual(["field", "stages"]);
+    expect(kanban.properties?.["stages"]?.minItems).toBe(1);
+    expect(kanban.additionalProperties).toBe(false);
+  });
+
+  it("says the server enforces the status map and never the transitions", () => {
+    expect(component("Kanban").description).toContain(
+      "the server enforces the status map, never the transitions",
+    );
+  });
+
+  /**
+   * §7's reflection reads this off the row, and both consumers of the rule are
+   * pointed at the one implementation rather than at a paragraph each.
+   */
+  it("publishes `lastActor` on the row, required, as the two actors", () => {
+    const lastActor = component("DocRow").properties?.["lastActor"];
+    expect(component("DocRow").required).toContain("lastActor");
+    expect(lastActor?.enum).toEqual(["user", "agent"]);
+    expect(lastActor?.description).toContain("isUnreflected");
+    expect(lastActor?.description).toContain("not settable");
+  });
+
+  it("keeps `lastActor` off the frontmatter, since it is not a frontmatter key", () => {
+    expect(component("DocFrontmatter").properties?.["lastActor"]).toBeUndefined();
+  });
+
+  it("removes `pinned` from every published shape, rather than deprecating it", () => {
+    const offenders = Object.entries(componentSchemas ?? {}).filter(
+      ([, schema]) => schema.properties?.["pinned"] !== undefined,
+    );
+    expect(offenders.map(([name]) => name)).toEqual([]);
+  });
+
+  /**
+   * `unset` names file keys because the keys worth removing are ones the core no
+   * longer defines — and those have no wire spelling at all. Published, because
+   * a caller sending `defaultOpen` would otherwise get a silent no-op.
+   */
+  it("publishes `unset`, its file-key spelling, and the three it refuses", () => {
+    const unset = component("UpdateDocRequest").properties?.["unset"];
+    expect(unset?.type).toBe("array");
+    expect(component("UpdateDocRequest").required ?? []).not.toContain("unset");
+    expect(unset?.description).toContain("exactly as the file writes them");
+    expect(unset?.description).toContain("`default-open`, never `defaultOpen`");
+    expect(unset?.description).toContain("`id`, `type` and `created` are refused");
+  });
+
+  it("keeps `unset` off the keyed-write list, since it names its own delta", () => {
+    expect(component("UpdateDocRequest").dependentRequired?.["unset"]).toBeUndefined();
+    expect(component("UpdateDocRequest").dependentRequired?.["body"]).toEqual(["key"]);
+  });
+});
+
+/**
+ * CONTRACT-075. Four routes rather than one verb field, because they answer with
+ * three different result shapes and only one of them can conflict.
+ */
+describe("folder acts (CONTRACT-075)", () => {
+  const FOLDER_PATHS = [
+    "/api/folders/rename",
+    "/api/folders/archive",
+    "/api/folders/unarchive",
+    "/api/folders/delete",
+  ];
+
+  it.each(FOLDER_PATHS)("declares %s as a POST taking a mandatory body", (path) => {
+    expect(operation(path, "post").requestBody?.required).toBe(true);
+  });
+
+  it.each(FOLDER_PATHS)("declares the refusals a caller must handle on %s", (path) => {
+    const responses = operation(path, "post").responses ?? {};
+    expect(Object.keys(responses)).toEqual(expect.arrayContaining(["200", "400", "401", "404"]));
+  });
+
+  /** Rider 7: a rename is the only act that can find something already there. */
+  it("declares 409 on rename alone", () => {
+    expect(operation("/api/folders/rename", "post").responses?.["409"]).toBeDefined();
+    for (const path of FOLDER_PATHS.slice(1)) {
+      expect(operation(path, "post").responses?.["409"], path).toBeUndefined();
+    }
+  });
+
+  /** Rider 7: deleting a folder is user-only, like deleting a document. */
+  it("declares 403 on delete alone, and says the agent archives instead", () => {
+    expect(operation("/api/folders/delete", "post").responses?.["403"]).toBeDefined();
+    expect(operation("/api/folders/delete", "post").description).toContain(
+      "the agent archives, never deletes",
+    );
+    for (const path of FOLDER_PATHS.slice(0, 3)) {
+      expect(operation(path, "post").responses?.["403"], path).toBeUndefined();
+    }
+  });
+
+  it("publishes the path grammar, so a 400 is checkable against the document", () => {
+    const from = componentSchemas?.["RenameFolderRequest"]?.properties?.["from"]?.description ?? "";
+    expect(from).toContain("data/docs");
+    expect(from).toContain("No leading or trailing slash");
+    expect(from).toContain("beginning with a dot");
+    expect(from).toContain("prefix is refused rather than accepted");
+  });
+
+  /** A result row is the id plus the field that changed, and nothing else. */
+  it.each([
+    ["RenameFolderResult", "MovedFolderDoc", ["id", "path"]],
+    ["FolderStatusResult", "FolderStatusChange", ["id", "status"]],
+    ["DeleteFolderResult", "DeletedFolderDoc", ["id"]],
+  ])("answers %s with rows carrying only what changed", (result, row, fields) => {
+    const items = componentSchemas?.[result]?.properties?.["documents"]?.items;
+    expect(items?.$ref).toBe(`#/components/schemas/${row}`);
+    expect(Object.keys(componentSchemas?.[row]?.properties ?? {})).toEqual(fields);
+  });
+
+  /** Archive and unarchive are one shape mirrored, so they share one component. */
+  it("shares one result component between archive and unarchive", () => {
+    const ref = (path: string): string | undefined =>
+      (
+        operation(path, "post").responses?.["200"]?.content?.["application/json"] as
+          { schema?: SchemaNode } | undefined
+      )?.schema?.$ref;
+    expect(ref("/api/folders/archive")).toBe("#/components/schemas/FolderStatusResult");
+    expect(ref("/api/folders/unarchive")).toBe(ref("/api/folders/archive"));
+  });
+
+  it("says an archive moves nothing, which is what makes it reversible", () => {
+    expect(operation("/api/folders/archive", "post").description).toContain("It moves nothing");
+  });
+
+  it("says a rename never changes an id, so every ref keeps resolving", () => {
+    expect(operation("/api/folders/rename", "post").description).toContain("Ids never change");
+  });
+});
+
+/**
+ * CONTRACT-076. One event, one field, two routes — and the two routes share a
+ * path because they are one resource read two ways.
+ */
+describe("workspace.reflect (CONTRACT-076)", () => {
+  const REFLECT_PATH = "/api/workspace/reflect";
+
+  it("declares the ask as a 202, never a 409 on a second one", () => {
+    const responses = operation(REFLECT_PATH, "post").responses ?? {};
+    expect(Object.keys(responses).sort()).toEqual(["202", "400", "401"]);
+    expect(operation(REFLECT_PATH, "post").description).toContain(
+      "never doubled and never refused",
+    );
+  });
+
+  it("takes no body on either method: the window is server state, not a parameter", () => {
+    expect(operation(REFLECT_PATH, "post").requestBody).toBeUndefined();
+    expect(operation(REFLECT_PATH, "get").requestBody).toBeUndefined();
+  });
+
+  it("answers the ask with the event, its window, and whether it was already pending", () => {
+    const result = componentSchemas?.["ReflectAskResult"];
+    expect(result?.required).toEqual(["eventId", "since", "pending"]);
+    expect(result?.properties?.["pending"]?.type).toBe("boolean");
+  });
+
+  it("answers the clock with everything the board bar renders, all required", () => {
+    expect(componentSchemas?.["ReflectStatus"]?.required).toEqual([
+      "reflected",
+      "pending",
+      "changed",
+      "lastDigest",
+      "quiet",
+    ]);
+  });
+
+  /**
+   * The count and the per-row mark are the same predicate, and the published
+   * prose says so by naming the one implementation — otherwise it is a number a
+   * client cannot check its own marks against.
+   */
+  it("states `changed`'s predicate in full, and names the one implementation of it", () => {
+    const changed = componentSchemas?.["ReflectStatus"]?.properties?.["changed"]?.description ?? "";
+    expect(changed).toContain("`lastActor` is not `agent`");
+    expect(changed).toContain("not archived");
+    expect(changed).toContain("the same predicate the UI applies row by row");
+    expect(changed).toContain("isUnreflected");
+  });
+
+  it("says `quiet: 0` disables the automatic path rather than meaning `immediately`", () => {
+    expect(componentSchemas?.["ReflectStatus"]?.properties?.["quiet"]?.description).toContain(
+      "**`0` disables the automatic path**",
+    );
+  });
+
+  /**
+   * The payload shape is declared in the schemas and **not** registered, exactly
+   * as the resident payloads are: no route references one, so a registered name
+   * would publish a component nothing points at. What the generated document
+   * owes a reader is the field name, and `QueueEvent.payload` carries it.
+   */
+  it("registers no payload component, and states the shape where the event is described", () => {
+    expect(Object.keys(componentSchemas ?? {}).filter((name) => name.endsWith("Payload"))).toEqual(
+      [],
+    );
+  });
+
+  it("names the event type wherever an event type is described", () => {
+    expect(componentSchemas?.["QueueEvent"]?.properties?.["type"]?.description).toContain(
+      "workspace.reflect",
+    );
+    expect(componentSchemas?.["QueueEvent"]?.properties?.["payload"]?.description).toContain(
+      "`workspace.reflect` carries `{since}`",
+    );
+  });
+
+  /**
+   * The resource moves on two unrelated things, so a client caching it under
+   * either existing key would miss half its updates. The emitter's rule is
+   * published as a rule rather than as a list, so a write added later inherits
+   * it.
+   */
+  it("publishes the reflect invalidate key, and the union rule behind it", () => {
+    const events = operation("/events", "get").description ?? "";
+    expect(events).toContain('`["reflect"]`');
+    expect(events).toContain('every frame that names `["docs"]` or `["queue"]`');
+    expect(operation(REFLECT_PATH, "get").description).toContain('`["reflect"]` invalidate key');
   });
 });

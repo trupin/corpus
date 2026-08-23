@@ -43,9 +43,12 @@ import { docFilterShape } from "./query.js";
  * **Tolerant queries, like every other read.** These are query schemas, so an
  * unknown parameter is stripped rather than rejected (the strict-bodies,
  * tolerant-reads policy in `./index.ts`). Concretely: a request to
- * `/api/search` carrying `sort=relevance`, `offset=10` or `pinned=true` — the
- * three `GET /api/docs` parameters the signed §9.2 list omits — is **accepted
- * and those parameters are silently ignored**, never a `400`. Ranked retrieval
+ * `/api/search` carrying `sort=relevance` or `offset=10` — the two
+ * `GET /api/docs` parameters the signed §9.2 list omits — is **accepted
+ * and those parameters are silently ignored**, never a `400`. (`pinned=true`
+ * was the third until rider 7 removed it from the API on 2026-08-22; it is now
+ * an unknown parameter like any other, and is stripped for that reason
+ * instead.) Ranked retrieval
  * has one order (its ranking) and returns a top-k, not a page, so there is
  * nothing for them to mean; `schemas/retrieval.test.ts` pins the behaviour so
  * the answer is written down rather than discovered.
