@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -107,20 +107,22 @@ solving either probably teaches the other.
 
 ## Acceptance Criteria
 
-- [ ] The global composer's address card is fully visible inside the search
+- [x] The global composer's address card is fully visible inside the search
       overlay, with its lead and padding intact, at 1280×720 and at the smallest
-      viewport the suite exercises
-- [ ] Whatever bounds it there does **not** squeeze a three-lane list to one
-      visible row — UI-130 tried that and it failed UI-127's compose test
-- [ ] A reader column's width is settled before content is laid out against it,
-      or the content tolerates the change without moving
-- [ ] `settledReader()` in the e2e helpers is no longer needed to hide a product
+      viewport the suite exercises — **closed by UI-142, re-measured here**
+- [x] Whatever bounds it there does **not** squeeze a three-lane list to one
+      visible row — UI-130 tried that and it failed UI-127's compose test —
+      **re-measured here: 4 of 4 rows visible, no scrollbar**
+- [x] A reader column's width is settled before content is laid out against it,
+      or the content tolerates the change without moving — **closed by UI-146 +
+      UI-149, and now asserted per animation frame for both renderers**
+- [x] `settledReader()` in the e2e helpers is no longer needed to hide a product
       fact — either it is deleted, or its docblock says which product behaviour it
-      still legitimately waits for
-- [ ] The reply composer's foot fits at the **default** 336px column width, with
+      still legitimately waits for — **kept, and its docblock now says so**
+- [x] The reply composer's foot fits at the **default** 336px column width, with
       a stated rule for what yields first — the audit's rubric is that controls
       keep their size and variable text truncates (SHARED-057 clause 2)
-- [ ] A browser test measures each, falsified by reverting
+- [x] A browser test measures each, falsified by reverting
 
 ## Technical Design
 
@@ -161,15 +163,136 @@ visible to a unit test.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+**Model: opus.** Chromium via Playwright against the real Vite dev server on
+`CORPUS_UI_PORT=5399`, `npm run build` first. All three findings were re-measured
+before any code was written, because two of the three had been fixed by other
+issues in the meantime and a fix for a defect that is gone is a re-theme.
+
+### Finding 1 — the search panel's clip: **already closed by UI-142, verified**
+
+The card's top against `.compose-panel`'s clip, negative meaning inside, with
+`.address-lead` and the lane list measured beside it:
+
+```
+roster   viewport     card w×h    top    bottom   lanes visible   list scrolls
+ 3       1280×720     581×131.6   −6.3   −48.2    4 of 4          no
+ 3        900×600     581×131.6   −6.3   −48.1    4 of 4          no
+20       1280×720     581×132     −5.9   −48.2    18 of 21        yes
+20        900×600     581×132     −6.0   −48.1    18 of 21        yes
+```
+
+The card is 6px inside the panel at the top and 48px clear at the bottom, at both
+viewports. The lead is drawn (13.9×15.2 at x=382, inside the card). And the
+criterion UI-130's attempt broke — *"must not squeeze a three-lane list to one
+visible row"* — holds: an ordinary three-lane roster shows all four rows with no
+scrollbar. A twenty-lane roster scrolls, which is a roster longer than any card
+can hold and is honest.
+
+The reconciliation note above was right and nothing was changed for this finding.
+
+### Finding 2 — the reader column's async width: **closed by UI-146 + UI-149**
+
+Filed as *"345px at first paint and 558px settled"*. Both causes are gone: UI-146
+stopped the column animating open, and UI-149 removed the reader-open widening
+altogether (rider 3 — a column renders at its chosen width, reading or not).
+
+Sampled `.doc-main`'s width on every animation frame for 4 s, starting **before**
+the row was clicked so the first painted frame is in the record, and recording
+only frames whose width differs from the one before:
+
+```
+conversation via a path column        [{t:154, w:410, x:390}]
+conversation opened in a 336 column   [{t:195, w:306, x:33 }]
+note via a path column                [{t:180, w:410, x:390}]
+note opened in a 336 column           [{t:205, w:306, x:33 }]
+```
+
+One frame each. There is no second width.
+
+`settledReader()` is **kept, not deleted**, and its docblock now says why — the
+criterion's second branch. It no longer hides a product fact; what it still waits
+for is content arriving into a box that already has its measure: an image
+decoding into its reserved space, and a thread's turns rendering. Measured on a
+conversation, the body's first two distinct frames are
+
+```
+{top: 346.7, left: 15, width: 410, closing:  346.7}
+{top: 348.7, left: 15, width: 410, closing: 1032.4}
+```
+
+— 410px wide in both, differing only in what is inside them.
+
+**Test.** `column-open-geometry.spec.ts` asserted this per animation frame for a
+**document** body only. A conversation is a different renderer over a different
+tree, so all three of its tests could pass while a thread reader still moved. A
+fourth test was added for the conversation, with a weaker assertion that is the
+honest one — `assertMeasureNeverMoved`: every frame's `left` and `width` equal the
+first painted frame's, while the interior is allowed to fill in. Falsified by
+running it with `assertNothingMoved` instead, which fails on `closing`
+346.7 → 1032.4: the sampler really is seeing the frames before the turns land, so
+a width that moved in that window would be caught.
+
+### Finding 3 — the reply composer's foot: **`Reply ⌘↵` no longer clips**
+
+Measured at nine widths across `MIN_COLUMN_WIDTH` (240) to `MAX_COLUMN_WIDTH`
+(960), reply composer on a 30-turn conversation, 1280×720:
+
+```
+column   foot rows   address    toggle    hint (shown/whole)   send      send clipped
+ 240        3        140.5 ✓    69.5 ✓     15.9 / 107          50.6 ✓    no
+ 280        2        140.5 ✓    69.5 ✓     55.9 / 107          50.6 ✓    no
+ 336        2        140.5 ✓    69.5 ✓    107.5 / 107 ✓        50.6 ✓    no
+ 440        1        140.5 ✓    69.5 ✓     31.4 / 107          50.6 ✓    no
+ 500        1        140.5 ✓    69.5 ✓     91.4 / 107          50.6 ✓    no
+ 560        1        140.5 ✓    69.5 ✓    107.5 / 107 ✓        50.6 ✓    no
+ 700        1        140.5 ✓    69.5 ✓    107.5 / 107 ✓        50.6 ✓    no
+ 960        1        140.5 ✓    69.5 ✓    107.5 / 107 ✓        50.6 ✓    no
+```
+
+`Reply ⌘↵` is 50.6px wide with `scrollWidth === clientWidth` at every one of
+them, and so is the toggle, and so is the address line. **The clip UI-137
+reported is gone** — its own `flex: none` on the controls and `flex: 1 1 0` on
+the hint is what removed it, and the rule is written out in `thread.css`. Nothing
+was changed here for this finding either.
+
+The stated yield order is what the numbers show. The hint is the only item that
+ever gives, and it gives progressively — whole at 336 and at 560 and wider,
+55.9px at 280, 31.4px at 440 (where the foot is one row and the room is
+tightest), 15.9px at 240. Where it truncates it reveals: the whole sentence is on
+its `title`, which the new test checks whenever `scrollWidth` exceeds
+`clientWidth`. `flex-wrap` is the last valve, and it engages exactly where
+`thread.css` says it does — two rows at 336 and below, three at 240.
+
+**Test.** Five tests in `apps/ui/e2e/composer-press.spec.ts`, one per width,
+asserting that the controls and the address line are unclipped, that nothing is
+painted outside the foot's own box, and that a truncated hint carries its whole
+sentence. Falsified with `flex-wrap: nowrap` and a shrinkable send button: red at
+240 and 336, green at 440 and wider — honest, because a foot only has to yield
+where the room actually runs out.
+
+### What was actually still broken, and where it went
+
+Probing finding 3 turned up the defect UI-157 was filed for, in a state neither
+issue describes: with the composer's foot at the **fold** of the reading surface,
+the first press on any of its controls was swallowed, at every width from 240 to
+960. `:focus-within` pins the composer, the browser gives focus on `mousedown`,
+so the box lifted between the press and its release and the `mouseup` landed
+somewhere else. That is fixed under UI-157 — `apps/ui/src/thread/composerPin.ts`
+— and the measurements are in that issue's log.
+
+### Full suite
+
+`npm run build`, `npm run lint`, `npm run typecheck -w apps/ui -w packages/kit`,
+`vitest run apps/ui packages/kit` (242 files, 4649 tests) and the whole
+Playwright suite all pass.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

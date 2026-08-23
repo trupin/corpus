@@ -9,19 +9,49 @@ function resolve(argv: readonly string[]) {
 
 describe("resolveCommand", () => {
   it("prints top-level help for no arguments", () => {
-    expect(resolve([])).toEqual({ kind: "root-help" });
+    expect(resolve([])).toEqual({ kind: "root-help", helpMode: "full" });
   });
 
   it("prints top-level help for --help and reports the version for --version", () => {
-    expect(resolve(["--help"])).toEqual({ kind: "root-help" });
-    expect(resolve(["-h"])).toEqual({ kind: "root-help" });
+    expect(resolve(["--help"])).toEqual({ kind: "root-help", helpMode: "full" });
+    expect(resolve(["-h"])).toEqual({ kind: "root-help", helpMode: "full" });
     expect(resolve(["--version"])).toEqual({ kind: "version" });
     expect(resolve(["--version=true"])).toEqual({ kind: "version" });
-    expect(resolve(["--help", "--version"])).toEqual({ kind: "root-help" });
+    expect(resolve(["--help", "--version"])).toEqual({ kind: "root-help", helpMode: "full" });
+  });
+
+  it("carries the help mode into root and topic help", () => {
+    expect(resolve(["--help=brief"])).toEqual({ kind: "root-help", helpMode: "brief" });
+    expect(resolve(["--help=full"])).toEqual({ kind: "root-help", helpMode: "full" });
+    // A brief root help still beats `--version`, exactly as bare `--help` does.
+    expect(resolve(["--help=brief", "--version"])).toEqual({
+      kind: "root-help",
+      helpMode: "brief",
+    });
+
+    const topic = resolve(["widget", "--help=brief"]);
+    expect(topic.kind).toBe("topic-help");
+    if (topic.kind !== "topic-help") return;
+    expect(topic.helpMode).toBe("brief");
+    expect(topic.topic.name).toBe("widget");
+  });
+
+  it("refuses an unknown help mode before rendering anything", () => {
+    expect(() => resolve(["--help=short"])).toThrow(UsageError);
+    expect(() => resolve(["widget", "--help=short"])).toThrow(/unknown help mode "short"/);
+  });
+
+  it("never lets --help take the following token as its value", () => {
+    // `bareValue` is what makes this true: were `--help` an ordinary string
+    // flag, `widget` would be read as the mode and the topic would be lost.
+    const resolution = resolve(["--help", "widget"]);
+    expect(resolution.kind).toBe("topic-help");
+    if (resolution.kind !== "topic-help") return;
+    expect(resolution.topic.name).toBe("widget");
   });
 
   it("treats a lone --json as no command at all", () => {
-    expect(resolve(["--json"])).toEqual({ kind: "root-help" });
+    expect(resolve(["--json"])).toEqual({ kind: "root-help", helpMode: "full" });
   });
 
   it("resolves a top-level command and hands the rest of argv to the parser", () => {
@@ -69,7 +99,10 @@ describe("resolveCommand", () => {
   });
 
   it("stops scanning at `--`", () => {
-    expect(resolve(["--", "widget"])).toEqual({ kind: "root-help" });
+    expect(resolve(["--", "widget"])).toEqual({ kind: "root-help", helpMode: "full" });
+    // The help-mode scan stops there too: `--help=brief` past the separator is
+    // a literal token, not a request for brief help.
+    expect(resolve(["--", "--help=brief"])).toEqual({ kind: "root-help", helpMode: "full" });
   });
 
   it("rejects an unknown command with exit code 2 and lists the valid names", () => {

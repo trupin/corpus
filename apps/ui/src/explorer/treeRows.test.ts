@@ -40,12 +40,25 @@ function doc(id: string, title: string, extra: Partial<DocRow> = {}): DocRow {
     title,
     status: "open",
     stale: null,
+    path: "",
     ...extra,
   } as DocRow;
 }
 
-function answered(items: readonly DocRow[], total = items.length): FolderDocs {
-  return { items, total, isPending: false, error: null };
+/**
+ * One folder's answer, with each row stamped as filed **in** that folder unless
+ * it already names a path of its own. Placement is read off `path` (UI-161), so
+ * a listing whose rows carry none would exercise nothing.
+ */
+function answered(folder: string, items: readonly DocRow[], total = items.length): FolderDocs {
+  return {
+    items: items.map((item) =>
+      item.path === "" ? { ...item, path: `data/docs/${folder}/${item.id}.md` } : item,
+    ),
+    total,
+    isPending: false,
+    error: null,
+  };
 }
 
 function build(overrides: Partial<TreeInput> & Pick<TreeInput, "folders">): readonly TreeRow[] {
@@ -68,8 +81,8 @@ describe("shape and order", () => {
         folder("finance", { count: 1, total: 2, children: [folder("finance/tax", { count: 1 })] }),
       ],
       docsByFolder: new Map([
-        ["finance", answered([doc("doc_a", "Alpha")])],
-        ["finance/tax", answered([doc("doc_t", "Return")])],
+        ["finance", answered("finance", [doc("doc_a", "Alpha")])],
+        ["finance/tax", answered("finance/tax", [doc("doc_t", "Return")])],
       ]),
     });
     expect(shape(rows)).toEqual(["f:finance", "f:finance/tax", "d:doc_t", "d:doc_a"]);
@@ -79,8 +92,8 @@ describe("shape and order", () => {
     const rows = build({
       folders: [folder("zeta"), folder("alpha", { count: 2 })],
       docsByFolder: new Map([
-        ["alpha", answered([doc("doc_b", "Beta"), doc("doc_a", "Alpha")])],
-        ["zeta", answered([])],
+        ["alpha", answered("alpha", [doc("doc_b", "Beta"), doc("doc_a", "Alpha")])],
+        ["zeta", answered("zeta", [])],
       ]),
     });
     expect(shape(rows)).toEqual(["f:alpha", "d:doc_a", "d:doc_b", "f:zeta"]);
@@ -89,7 +102,7 @@ describe("shape and order", () => {
   it("draws a collapsed folder's row and nothing under it", () => {
     const rows = build({
       folders: [folder("finance", { count: 1, children: [folder("finance/tax")] })],
-      docsByFolder: new Map([["finance", answered([doc("doc_a", "Alpha")])]]),
+      docsByFolder: new Map([["finance", answered("finance", [doc("doc_a", "Alpha")])]]),
       isExpanded: (path) => path !== "finance",
     });
     expect(shape(rows)).toEqual(["f:finance"]);
@@ -101,6 +114,68 @@ describe("shape and order", () => {
       folders: [folder("a", { children: [folder("a/b", { children: [folder("a/b/c")] })] })],
     });
     expect(rows.map((row) => row.depth)).toEqual([0, 1, 2]);
+  });
+});
+
+/**
+ * UI-161. `folder=` is a path prefix on the wire, so a parent's listing can
+ * carry its descendants' rows — and did, for a whole release. `folderScope:
+ * "self"` asks for the other set, and this is the half that holds whatever the
+ * listing says.
+ */
+describe("a document is drawn under the folder it is filed in, and nowhere else", () => {
+  const nested = {
+    folders: [
+      folder("todos", { count: 1, total: 2, children: [folder("todos/unfiled", { count: 1 })] }),
+    ],
+    docsByFolder: new Map([
+      [
+        "todos",
+        // The prefix answer: `todos` handed its own document *and* its
+        // sub-folder's, exactly as `folder=todos` alone would answer.
+        answered("todos", [
+          doc("doc_own", "Own note"),
+          doc("doc_nested", "Nested note", { path: "data/docs/todos/unfiled/doc_nested.md" }),
+        ]),
+      ],
+      ["todos/unfiled", answered("todos/unfiled", [doc("doc_nested", "Nested note")])],
+    ]),
+  };
+
+  it("keeps a descendant's document out of the parent's rows", () => {
+    expect(shape(build(nested))).toEqual([
+      "f:todos",
+      "f:todos/unfiled",
+      "d:doc_nested",
+      "d:doc_own",
+    ]);
+  });
+
+  it("gives every row a key of its own, whatever the listing carried", () => {
+    const keys = build(nested).map((row) => row.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("counts the folder's own documents in the bound line, not its subtree's", () => {
+    // Two rows arrived and one is drawn, so the line promises one of them.
+    const rows = build({
+      ...nested,
+      docsByFolder: new Map([
+        [
+          "todos",
+          answered(
+            "todos",
+            [
+              doc("doc_own", "Own note"),
+              doc("doc_nested", "Nested note", { path: "data/docs/todos/unfiled/doc_nested.md" }),
+            ],
+            9,
+          ),
+        ],
+      ]),
+      isExpanded: (path: string) => path === "todos",
+    });
+    expect(rows.at(-1)).toMatchObject({ kind: "bound", shown: 1, total: 9 });
   });
 });
 
@@ -137,7 +212,7 @@ describe("the bound", () => {
   it("says so when the listing stopped short of the total (§10)", () => {
     const rows = build({
       folders: [folder("inbox", { count: 900 })],
-      docsByFolder: new Map([["inbox", answered([doc("doc_a", "Alpha")], 900)]]),
+      docsByFolder: new Map([["inbox", answered("inbox", [doc("doc_a", "Alpha")], 900)]]),
     });
     expect(rows.at(-1)).toMatchObject({ kind: "bound", shown: 1, total: 900 });
     expect(boundLabel(1, 900)).toBe("1 of 900 — the listing reached its bound");
@@ -146,7 +221,7 @@ describe("the bound", () => {
   it("stays quiet when the listing is complete", () => {
     const rows = build({
       folders: [folder("inbox", { count: 1 })],
-      docsByFolder: new Map([["inbox", answered([doc("doc_a", "Alpha")])]]),
+      docsByFolder: new Map([["inbox", answered("inbox", [doc("doc_a", "Alpha")])]]),
     });
     expect(rows.some((row) => row.kind === "bound")).toBe(false);
   });
@@ -167,7 +242,10 @@ describe("the marks (rider 1)", () => {
     build({
       folders: [folder("inbox", { count: 1 })],
       docsByFolder: new Map([
-        ["inbox", answered([doc("doc_a", "Alpha", { status: "archived" as DocRow["status"] })])],
+        [
+          "inbox",
+          answered("inbox", [doc("doc_a", "Alpha", { status: "archived" as DocRow["status"] })]),
+        ],
       ]),
       ...input,
     })[1] as TreeRow;
@@ -199,7 +277,9 @@ describe("the marks (rider 1)", () => {
   it("marks the board document of the board being shown", () => {
     const rows = build({
       folders: [folder("boards", { count: 1 })],
-      docsByFolder: new Map([["boards", answered([doc("doc_board", "Files", { type: "board" })])]]),
+      docsByFolder: new Map([
+        ["boards", answered("boards", [doc("doc_board", "Files", { type: "board" })])],
+      ]),
       currentBoardId: "doc_board",
     });
     expect(rows[1]).toMatchObject({ kind: "doc", type: "board", isCurrentBoard: true });

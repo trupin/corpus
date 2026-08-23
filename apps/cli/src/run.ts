@@ -1,7 +1,7 @@
 import { createClient } from "./client.js";
 import { resolveCommand } from "./dispatch.js";
 import { ExitCode, exitCodeFor } from "./errors.js";
-import { renderCommandHelp, renderRootHelp, renderTopicHelp } from "./help.js";
+import { parseHelpMode, renderCommandHelp, renderRootHelp, renderTopicHelp } from "./help.js";
 import { resolveActor } from "./input.js";
 import { bindPositionals, parseFlags, type ParsedInput } from "./parse-args.js";
 import { registry as defaultRegistry } from "./registry/index.js";
@@ -49,7 +49,7 @@ export async function run(options: RunOptions): Promise<ExitCode> {
     const resolution = resolveCommand(registry, options.argv);
 
     if (resolution.kind === "root-help") {
-      out.write(renderRootHelp(registry, { color: out.color }));
+      out.write(renderRootHelp(registry, { color: out.color, mode: resolution.helpMode }));
       return ExitCode.success;
     }
     if (resolution.kind === "version") {
@@ -57,7 +57,7 @@ export async function run(options: RunOptions): Promise<ExitCode> {
       return ExitCode.success;
     }
     if (resolution.kind === "topic-help") {
-      out.write(renderTopicHelp(resolution.topic, { color: out.color }));
+      out.write(renderTopicHelp(resolution.topic, { color: out.color, mode: resolution.helpMode }));
       return ExitCode.success;
     }
 
@@ -71,10 +71,14 @@ export async function run(options: RunOptions): Promise<ExitCode> {
     });
 
     // Help is human text even under `--json`: help is not data (docs/cli.md).
-    if (flags.boolean("help")) {
+    // `--help` carries a mode rather than a boolean, so absence is `undefined`
+    // and bare `--help` is the flag's own `bareValue` — never the next token.
+    const helpMode = flags.string("help");
+    if (helpMode !== undefined) {
       out.write(
         renderCommandHelp(resolution.command, {
           color: out.color,
+          mode: parseHelpMode(helpMode),
           ...(resolution.topic === undefined ? {} : { topic: resolution.topic }),
         }),
       );
@@ -86,7 +90,7 @@ export async function run(options: RunOptions): Promise<ExitCode> {
     }
 
     const args = bindPositionals(resolution.command, positionals);
-    await invoke(resolution.command, { args, flags }, out, options);
+    await invoke(resolution.command, { args, flags }, out, options, registry);
     return ExitCode.success;
   } catch (error) {
     out.fail(error, { verbose });
@@ -99,6 +103,7 @@ async function invoke(
   input: ParsedInput,
   out: Output,
   options: RunOptions,
+  registry: Registry,
 ): Promise<void> {
   const context = {
     args: input.args,
@@ -107,6 +112,7 @@ async function invoke(
     cwd: options.cwd,
     env: options.env,
     version: options.version ?? readPackageVersion(),
+    registry,
   };
 
   if (command.requiresWorkspace === false) {

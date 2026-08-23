@@ -2,6 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 import type { SemanticRetrieval } from "../semantic/index.js";
+import type { StalenessThresholds } from "../docs/index.js";
 import { searchCorpus } from "./search.js";
 
 export interface SearchRoutesOptions {
@@ -13,6 +14,8 @@ export interface SearchRoutesOptions {
    * are mounted still reaches this handler.
    */
   readonly semantic?: SemanticRetrieval | undefined;
+  /** The workspace's staleness ramp (SPEC.md §5, SERVER-133); omitted, 30/90/180. */
+  readonly staleness?: StalenessThresholds | undefined;
 }
 
 /**
@@ -32,7 +35,10 @@ export function mountSearchRoutes(
   const now = options.now ?? Date.now;
   app.openapi(contractRoutes.searchCorpus, async (c) =>
     c.json(
-      await searchCorpus(projection, c.req.valid("query"), now(), { semantic: options.semantic }),
+      await searchCorpus(projection, c.req.valid("query"), now(), {
+        semantic: options.semantic,
+        staleness: options.staleness,
+      }),
       200,
     ),
   );

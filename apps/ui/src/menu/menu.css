@@ -46,6 +46,14 @@
   margin-top: 1px;
 }
 
+/* An item on offer that nothing the user does could arm right now — a gated
+   status word with its why beneath it (`FrontmatterForm`). Shown rather than
+   hidden, dimmed the way every disabled control in the app is. */
+.ctx-menu .ac-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* `.cp-danger` is already dressed in `reader/Reader.css`, beside the sheet that
    emits it; this is its `.ac-item` twin and nothing more. */
 .ac-item.ac-danger {

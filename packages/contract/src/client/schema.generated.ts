@@ -51,7 +51,7 @@ export interface paths {
         };
         /**
          * Query the document collection
-         * @description Structured filters compose with optional full-text search: values OR within a comma-separated parameter and AND across parameters. The default result set excludes `status: archived` (SPEC.md §10) unless `status` is passed explicitly. The thread-only filters — `parent`, `agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md §9.2). `isParent` is not one of them: it selects roots — documents with no parent — for every type, and is the one filter that is **refused** in combination, since `parent=<id>` with `isParent=true` is a contradiction and answers `400`. Every row carries its Attention reasons; rows carry search snippets when `q` is set.
+         * @description Structured filters compose with optional full-text search: values OR within a comma-separated parameter and AND across parameters. The default result set excludes `status: archived` (SPEC.md §10) unless `status` is passed explicitly. The thread-only filters — `parent`, `agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md §9.2). `isParent` is not one of them: it selects roots — documents with no parent — for every type, and is the one filter that is **refused** in combination, since `parent=<id>` with `isParent=true` is a contradiction and answers `400`. `folder` matches a folder and everything under it, threads included through their parents, unless `folderScope=self` narrows it to the documents filed directly in that folder — a modifier, so it too answers `400` when it arrives without a `folder`. Every row carries its Attention reasons; rows carry search snippets when `q` is set.
          */
         get: {
             parameters: {
@@ -72,7 +72,7 @@ export interface paths {
                     includeArchived?: boolean;
                     /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
                     tag?: string;
-                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). */
+                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. */
                     folder?: string;
                     /** @description Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     parent?: string;
@@ -92,6 +92,8 @@ export interface paths {
                     unread?: boolean;
                     /** @description Whether the document is a **child of something** (SPEC.md §9.2). `true` selects **roots** — documents whose `parent` is null or absent — which is what lets a view show top-level documents without their child threads mixed in among them; `false` selects documents that **are** a child. Absent filters nothing, exactly like every other optional filter: there is no default of `true`, so a view that never sets it shows what it always showed. **It does not mean "has children."** A standalone note that nothing hangs off still matches `isParent=true` — the filter asks what a document is *under*, never what is *under it*. The "has at least one child" reading matches the name more literally and was considered and **rejected** (a parents-only view that hid every uncommented note would be nearly empty); the name is the one the user asked for and is kept deliberately, so do not "fix" it into the other meaning. **Not thread-only**, unlike `parent`: a non-thread document has no parent at all, so `isParent=true` genuinely matches it and `isParent=false` genuinely excludes it — an answer, not a no-op, and a mixed top-level list of notes and standalone threads is the point. `parent=<id>` together with `isParent=true` is a contradiction and is **refused with `400`** rather than answered with an empty set: `parent` no-ops for non-thread types, so an intersection would quietly return every root document that is not a thread — a confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely redundant and is accepted. */
                     isParent?: boolean;
+                    /** @description How far under `folder` the listing reaches — a **modifier of `folder`**, meaningless without it. `tree` (the default, and what `folder` has always meant) matches the folder and every descendant, plus the threads whose parent document is filed under it: a folder column shows a folder's work *and* the conversations about it (SPEC.md §10). `self` matches the documents filed **directly** in the folder — a path with no further `/` after the prefix — and inherits nothing, so a thread whose parent sits in the folder while its own file does not is **absent**: a thread is a document, and its own path decides where it is filed. `self` is the explorer's reading, one row per folder with that folder's own documents under it (SPEC.md §10, rider 1), and it is what keeps one document from being drawn under every expanded ancestor at once. `page.total` counts the same set the page draws from at either scope, so a `self` listing's bound line is about the folder's own documents and not its subtree's. **Sent without `folder` it is a `400` naming `folder`**, rather than a silent no-op over the whole corpus: there is no folder for it to stop at. A `folder` naming nothing answers an empty page at either scope, and the root — `folder` spelled as `data/docs` or `/`, since the parameter is non-empty — with `self` is the documents at the top of the tree. */
+                    folderScope?: "tree" | "self";
                     /** @description The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
                     needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
                     /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §10 key — a **board's position among boards** — with the documented tiebreak: `order` with nulls last (a board with no `order` key is placed, never dropped), then `title`, then `id`. The board bar's whole set is therefore one bounded query, `type=board&sort=order`, with each board's `columns`, `kanban` and `defaultOpen` on the rows. */
@@ -348,6 +350,8 @@ export interface paths {
          *     **A write that replaces the `body` must present the document's `key`** (SPEC.md §7): the key names the version you read, and a `body` with no key is a `400` — replacing a block without naming what it replaces is the write that can destroy something silently. **A write that names its own delta needs none** — a tag, a status, `due`, `reviewed`, `evergreen`, or a view key — because it says what it changes and merges with whatever else happened. Sending a key on such a write is welcome and is still checked, so a caller that always presents what it read needs no rule about which fields are which.
          *
          *     **A stale key is a `409`**, carrying the document as it now stands and a fresh key for it — one exchange, never a bare refusal, and never a lost edit: nothing was written and the content is yours to resend. The saved document in a `200` likewise carries the fresh key for the next write, so a writer that keeps writing never has to re-read.
+         *
+         *     **One field on this route is user-only, and it answers `403`**: `origin: null`, the detach (SPEC.md §9.2). A request carrying it under `x-corpus-author: agent` is **rejected** with `403` and writes nothing, because detaching is a person's correction of where their work was filed and an agent that could undo it could quietly move an artifact out of the scope it belongs to. Every other field on this route is open to both parties, so the `403` is about that one key and never about editing.
          */
         put: {
             parameters: {
@@ -394,6 +398,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
                     };
                 };
                 /** @description No such resource. */
@@ -1106,7 +1119,7 @@ export interface paths {
         };
         /**
          * Ranked retrieval across the corpus
-         * @description Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the same set with the same semantics as `GET /api/docs`, archived default included, and are declared from the same schema so the two cannot drift; `sort` and `offset` are not among them and are ignored if sent (a ranked set has one order and no pages), and neither is `isParent`, which §9.2's signed parameter string declares on the collection query alone. Each hit is an **address plus a line of context** — the document id, its title, the heading path of the best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` on a retrieved id. Phase A ranks lexically (FTS5); from Retrieval Phase B, lexical and semantic relevance combine into one list with this exact response shape, and `semanticIndex` reports when that half is not caught up (SPEC.md §9.1) — the response's one Phase B seam, inert today. Read-only; no acting party.
+         * @description Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the same set with the same semantics as `GET /api/docs`, archived default included, and are declared from the same schema so the two cannot drift; `sort` and `offset` are not among them and are ignored if sent (a ranked set has one order and no pages), and neither is `isParent`, which §9.2's signed parameter string declares on the collection query alone. `folderScope` is held back for that same reason and no other, so `folder` here always means the folder and its descendants. Each hit is an **address plus a line of context** — the document id, its title, the heading path of the best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` on a retrieved id. Phase A ranks lexically (FTS5); from Retrieval Phase B, lexical and semantic relevance combine into one list with this exact response shape, and `semanticIndex` reports when that half is not caught up (SPEC.md §9.1) — the response's one Phase B seam, inert today. Read-only; no acting party.
          */
         get: {
             parameters: {
@@ -1123,7 +1136,7 @@ export interface paths {
                     includeArchived?: boolean;
                     /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
                     tag?: string;
-                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). */
+                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. */
                     folder?: string;
                     /** @description Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     parent?: string;
@@ -1331,7 +1344,7 @@ export interface paths {
         put?: never;
         /**
          * Archive every document in a folder
-         * @description Flips `status` to `archived` on every document and thread under `data/docs/<path>` (SPEC.md §9.2, rider 7). **It moves nothing**: archiving a folder is a status act, not a relocation, so the folder stays where it is and every path is unchanged — which is what makes it reversible by `POST /api/folders/unarchive` rather than by remembering where things were. A document already archived is left as it is and is still listed, because the act applied to it. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
+         * @description Flips `status` to `archived` on every document and thread under `data/docs/<path>` (SPEC.md §9.2, rider 7). **It moves nothing**: archiving a folder is a status act, not a relocation, so the folder stays where it is and every path is unchanged — which is what makes it reversible by `POST /api/folders/unarchive` rather than by remembering where things were. A document already archived is left as it is and is still listed, because the act applied to it. A document the flip could not be applied to is named in `refused` with why, and the act stands for every other document — §10's bulk rule, so one file the write lane could not take never refuses the folder. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
          */
         post: {
             parameters: {
@@ -1350,7 +1363,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Every document in the folder, with its status after the act, and any §11 warnings. */
+                /** @description Every document in the folder with its status after the act, the ones the act could not apply to, and any §11 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1405,7 +1418,7 @@ export interface paths {
         put?: never;
         /**
          * Restore every archived document in a folder
-         * @description The inverse flip, back to `status: resolved` — the state archiving already implied (SPEC.md §5) — on every document and thread under `data/docs/<path>`. It moves nothing, for the reason archiving moves nothing. A document that was not archived is left as it is and is still listed. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
+         * @description The inverse flip, back to `status: resolved` — the state archiving already implied (SPEC.md §5) — on every document and thread under `data/docs/<path>`. It moves nothing, for the reason archiving moves nothing. A document that was not archived is left as it is and is still listed, and one the flip could not be applied to is named in `refused` with why. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
          */
         post: {
             parameters: {
@@ -1424,7 +1437,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Every document in the folder, with its status after the act, and any §11 warnings. */
+                /** @description Every document in the folder with its status after the act, the ones the act could not apply to, and any §11 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1479,7 +1492,7 @@ export interface paths {
         put?: never;
         /**
          * Delete a folder and every document in it (user-only)
-         * @description **User-only**, exactly as deleting a document is (SPEC.md §9.2, rider 7): a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (§7). Nothing is hard-deleted from history; git preserves every file and every version of it, and the threads of a deleted document become orphaned records that still name it as `parent` (§9.2). The response lists the ids and nothing more, because there is no field left to report: a client drops those rows. `404` when the folder is unknown. **A `POST`, not a `DELETE`**, for the reason the whole family is: the folder is named in the body because a folder path carries slashes, and a `DELETE` with a body is a request intermediaries are entitled to strip.
+         * @description **User-only**, exactly as deleting a document is (SPEC.md §9.2, rider 7): a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (§7). Nothing is hard-deleted from history; git preserves every file and every version of it, and the threads of a deleted document become orphaned records that still name it as `parent` (§9.2). The response lists the ids and nothing more, because there is no field left to report: a client drops those rows. A document that could not be deleted is named in `refused` with why, and still exists — the delete stands for every other document. `404` when the folder is unknown. **A `POST`, not a `DELETE`**, for the reason the whole family is: the folder is named in the body because a folder path carries slashes, and a `DELETE` with a body is a request intermediaries are entitled to strip.
          */
         post: {
             parameters: {
@@ -1498,7 +1511,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The ids of every document the delete removed, and any §11 warnings. */
+                /** @description The ids of every document the delete removed, the ones it could not remove, and any §11 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -3298,7 +3311,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark a claimed event processed */
+        /**
+         * Mark a claimed event processed
+         * @description Moves the event from `in-progress/` to `processed/`: the agent reporting that the work it claimed is done (SPEC.md §7).
+         *
+         *     `409` when the event is not `in-progress`: only claimed work can be completed, because nobody settles work they did not claim — an event still `pending` was never worked on, and one already in a terminal state was settled once already. A repeat is refused too, and says `already`, so a duplicated call learns that the outcome it wanted is the one on record rather than going to look for a fault. `404` when there is no such event.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3350,6 +3368,15 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -3367,7 +3394,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark a claimed event failed */
+        /**
+         * Mark a claimed event failed
+         * @description Moves the event from `in-progress/` to `failed/`: the agent reporting that the work it claimed could not be done (SPEC.md §7). `failed/` is the recoverable half of giving up — `POST /api/jobs/{id}/retry` picks it up again, where `abandoned/` is the end.
+         *
+         *     `409` when the event is not `in-progress`: only claimed work can be failed, because nobody settles work they did not claim — an event still `pending` was never worked on, and one already in a terminal state was settled once already. A repeat is refused too, and says `already`, so a duplicated call learns that the outcome it wanted is the one on record rather than going to look for a fault. It is also what stops a second `fail` quietly discarding the `reason` it carried, since the first one's annotation was never going to be overwritten. `404` when there is no such event.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3422,6 +3454,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
                     };
                 };
             };
@@ -3537,6 +3578,8 @@ export interface paths {
         /**
          * Abandon an event
          * @description Moves the event to `abandoned/` — the give-up terminal state, distinct from `failed/` which a retry can pick up again (SPEC.md §7). The event file is kept; nothing is deleted.
+         *
+         *     `409` when the event is `processed` or already `abandoned`: only outstanding work can be abandoned, because there is nothing left to give up on once it is done, and `processed/` → `abandoned/` would rewrite the history the kept file exists to be. This is the one settle that is **not** restricted to claimed work — abandoning is the operator's give-up rather than the agent's report, so `pending`, `in-progress`, `deferred` and `failed` events may all be abandoned, which is what lets the console offer it beside `retry` on a failed job. A repeat says `already`. `404` when there is no such event.
          */
         delete: {
             parameters: {
@@ -3587,6 +3630,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
                     };
                 };
             };
@@ -4845,7 +4897,7 @@ export interface components {
             match: boolean;
         };
         PageMeta: {
-            /** @description Total rows matching the query, ignoring pagination. */
+            /** @description Total rows matching the query, ignoring pagination — and ignoring **only** pagination. Every filter the request carried narrows the count exactly as it narrows the page, so the bound line a list draws is always about the set that list is showing. */
             total: number;
             limit: number;
             offset: number;
@@ -5011,7 +5063,7 @@ export interface components {
         };
         Warning: {
             /**
-             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. `stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and the board's `kanban.status` map therefore decided its `status` in the same commit (SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the status it wrote and the board that decided — and, when the document is in more than one kanban over `stage`, the boards that did not decide, since "the one with the lowest `order`" is a rule a caller cannot check from the response alone. It is about the document the request named, unlike the carried pair above, and it is here because the caller asked for one field and got two: a `status` a caller neither sent nor was told about is exactly the effect §11 says must not be learned from `git log`. Silent when the write moved no stage and when no kanban claims the document. A stage the board maps writes that status; any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). `default_open_cleared`: this write set `default-open: true` on a board, and **at most one board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost it in the same commit. One warning per board cleared, naming its id and title. Silent when no other board carried it. The last two are silent when there is nothing to say, and so are the carried pair — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: **no commit stands for this write**, and nothing refused it — the write is on disk and uncommitted, as it is under `commit_failed`, but no hook and no git command said no. The ordinary causes are a workspace that is not a git repository and no `git` on the server's PATH, and the rarer one is a commit that ran and left no `HEAD`; `detail` names which, and the set is the server's to grow. Silent when a save changed no committed bytes: the pipeline agreeing with itself is not a degraded state. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `resolved` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. `resolved` and not `open`: being swept back to the enabled root **is** being unarchived, implicitly rather than by name, so the carried document is given the state SPEC.md §5's ladder gives the one a caller unarchives outright — one move must not hand two skills two different states. One warning per document reconciled, naming its id, its path and the status it was given. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. `stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and the board's `kanban.status` map therefore decided its `status` in the same commit (SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the status it wrote and the board that decided — and, when the document is in more than one kanban over `stage`, the boards that did not decide, since "the one with the lowest `order`" is a rule a caller cannot check from the response alone. It is about the document the request named, unlike the carried pair above, and it is here because the caller asked for one field and got two: a `status` a caller neither sent nor was told about is exactly the effect §11 says must not be learned from `git log`. A stage the board maps writes that status; any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). **It is silent in five cases**, and the last is the common one: when the write moved no stage at all (an autosave re-sending the stored value has moved nothing); when no kanban over `stage` claims the document; when the only board that would claim it is itself **archived**, since a board nobody can see deciding a status is a change with no visible cause; when the document's **root** decides its status rather than its frontmatter — an archived skill is archived because of the folder it sits in (§7), so there is no status here to decide; and when the status the stage decides is the one the write was already going to leave on disk, which is every ordinary move between two stages a board maps the same way. The last is why this is not a warning per drag: it fires when a `status` changed under a caller who asked about `stage`, and not otherwise. `default_open_cleared`: this write set `default-open: true` on a board, and **at most one board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost it in the same commit. One warning per board cleared, naming its id and title. Silent when no other board carried it. The last two are silent when there is nothing to say, and so are the carried pair — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
              * @enum {string}
              */
             code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref" | "carried_skill" | "carried_reconciliation" | "stage_status" | "default_open_cleared";
@@ -5504,8 +5556,10 @@ export interface components {
             to: string;
         };
         FolderStatusResult: {
-            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. */
+            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. A status act lists **every** document under the folder with the status it now has, so one the act was refused is listed here too, carrying the status it kept — `refused` is what says why it kept it. */
             documents: components["schemas"]["FolderStatusChange"][];
+            /** @description **Every document under the folder the act could not apply to**, each with why (SPEC.md §9.2, §10's bulk rule: an act applies to what it can and reports what it could not, and never refuses the whole set because of one document). Empty in the ordinary case. A document named here **did not change** — nothing about it reached the commit — and the act stands for every other document in the folder. It is listed here whether or not it also appears in `documents`, which each result defines for itself: the two halves together say what the document is now and why it is still that. */
+            refused: components["schemas"]["FolderRefusal"][];
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
@@ -5521,6 +5575,15 @@ export interface components {
              */
             status: "open" | "resolved" | "archived";
         };
+        FolderRefusal: {
+            /**
+             * @description The document the act could not apply to.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description Human-readable specifics for this document — the validator's finding, the write error, the reason the file could not be read. Rendered verbatim beside the document; never parsed. Always present: an entry with no reason tells a person nothing to do next. */
+            message: string;
+        };
         FolderPathRequest: {
             /**
              * @description The folder to act on. A folder under `data/docs/`, relative to it: `finance`, `finance/mortgage`. No leading or trailing slash, no empty segment, and no segment beginning with a dot — which rules out `.` and `..` and every document root outside this one. The `data/docs/` prefix is refused rather than accepted, so the path can never be ambiguous. A malformed path is `400` naming the reason; a well-formed path this workspace does not hold is `404`.
@@ -5529,8 +5592,10 @@ export interface components {
             path: string;
         };
         DeleteFolderResult: {
-            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. Deletion reports ids alone, because there is no field left to report: the client drops these rows. */
+            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. Deletion reports ids alone, because there is no field left to report: the client drops these rows. A document the delete was refused is **not** here — it still exists — and is in `refused` instead. */
             documents: components["schemas"]["DeletedFolderDoc"][];
+            /** @description **Every document under the folder the act could not apply to**, each with why (SPEC.md §9.2, §10's bulk rule: an act applies to what it can and reports what it could not, and never refuses the whole set because of one document). Empty in the ordinary case. A document named here **did not change** — nothing about it reached the commit — and the act stands for every other document in the folder. It is listed here whether or not it also appears in `documents`, which each result defines for itself: the two halves together say what the document is now and why it is still that. */
+            refused: components["schemas"]["FolderRefusal"][];
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };

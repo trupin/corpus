@@ -36,6 +36,7 @@ import {
   planDefaultOpenClears,
 } from "./default-open.js";
 import { decideStageStatus, stageStatusWarning } from "./kanban.js";
+import { assertOrderIsABoardPosition, ORDER_RECOVERY_ON_UPDATE } from "./order-rule.js";
 import { assertDocumentKey } from "./key.js";
 import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
@@ -133,6 +134,55 @@ export const CLEARABLE_FRONTMATTER_KEYS = [
   "columns",
   "kanban",
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
+
+/**
+ * **Presentation keys — how a document is *shown*, never what it holds.**
+ *
+ * `updated` is "when this document's content last changed", not "when its bytes
+ * last moved" (SERVER-096). The distinction is not a convenience: §5 runs the
+ * staleness ramp off `max(updated, reviewed)` and §9.2 orders every default
+ * result set newest-updated first, so `updated` is the answer to "when was this
+ * last worked on" on two surfaces at once. A write that changes nothing a
+ * reader could read must not move it — dragging a board column wider is a `PUT`
+ * carrying `{ extra: { width } }` and nothing else
+ * (`apps/ui/src/board/useColumnWidth.ts`), and it used to put that view
+ * document at the head of every list, ahead of documents someone had written
+ * in.
+ *
+ * **The rule for membership**: a key belongs here when changing it changes no
+ * answer to any question about the document — not what it says, not what is
+ * being asked of it, not where it sits in the corpus. `width` (§10: "the chosen
+ * width lives in the view document's frontmatter") is the whole class today,
+ * and one member is the honest count rather than a placeholder: `status`,
+ * `tags`, `due`, `stage`, a board's `columns` and a view's `query` all change
+ * such an answer, and a title change plainly does. If the class stays a
+ * singleton it costs a `Set` lookup, and if a second view-state field is ever
+ * written to a document it has a named home instead of a second special case.
+ *
+ * Deliberately **not** SERVER-095's line, which is `body || title` and decides
+ * whether the agent is woken to reflect. That line is drawn at what the
+ * document *says*, because only prose ripples into other documents. This one is
+ * drawn at what the document *is*, because `updated` is read by the ramp and by
+ * every list. They are neighbours and they differ: renaming a document, moving
+ * it, tagging it or resolving it all move `updated` while only the rename
+ * reflects — and both agree that a column's width is neither.
+ */
+const PRESENTATION_KEYS: ReadonlySet<string> = new Set(["width"]);
+
+/**
+ * Whether writing `key` is an edit of the document's content, and so stamps
+ * `updated` (SPEC.md §5).
+ *
+ * Two exemptions, for two unrelated reasons, in one predicate so no caller can
+ * apply one and forget the other:
+ *
+ * - **`reviewed`** — marking a document "still current" is a committed act that
+ *   is deliberately *not* an edit. Staleness runs from `max(updated, reviewed)`,
+ *   so stamping `updated` here would make review indistinguishable from editing
+ *   and reset the very clock the act is about.
+ * - **{@link PRESENTATION_KEYS}** — a write about how the document is shown.
+ */
+const isContentEdit = (key: string): boolean => key !== "reviewed" && !PRESENTATION_KEYS.has(key);
 
 /**
  * The frontmatter fields the request actually changes. A `PUT` names only what
@@ -576,6 +626,14 @@ export async function updateDocumentLocked(
   // Before anything is reconciled or written, and after `changedFields` has
   // decided the patch really moves `status` at all.
   assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);
+  // Likewise, and for the same reason: `fields` is where "the save would really
+  // write this" is already known, so neither guard has to re-derive it. It is
+  // also what makes this path's no-op exemption free — `fields["order"]` is
+  // `undefined` both for a patch that never named the key and for one that
+  // re-sent the value the file already holds, and the rule (`order-rule.ts`,
+  // shared with creation) treats the two the same because they write the same
+  // nothing.
+  assertOrderIsABoardPosition(id, loaded.row.type, fields["order"], ORDER_RECOVERY_ON_UPDATE);
 
   // §6 step by step: resolve against `oldBody`, map through the diff, write
   // the result back. The engine owns every judgment; this call site owns only
@@ -590,11 +648,10 @@ export async function updateDocumentLocked(
     orphaned: reconciled?.report.orphaned ?? [],
   };
 
-  // SPEC.md §5: marking a document "still current" is a committed act that is
-  // deliberately *not* an edit — staleness runs from `max(updated, reviewed)`,
-  // so stamping `updated` here would make review indistinguishable from
-  // editing and reset the very clock the act is about.
-  const stampUpdated = bodyChanged || Object.keys(fields).some((key) => key !== "reviewed");
+  // SPEC.md §5: `updated` moves when the document's **content** changed. The two
+  // writes that change none of it — a review, and a presentation key — are named
+  // in {@link isContentEdit}, beside the reasoning that keeps them apart.
+  const stampUpdated = bodyChanged || Object.keys(fields).some(isContentEdit);
 
   let nextParsed = setFrontmatterFields(setBody(parsed, nextBody), {
     ...fields,
@@ -619,7 +676,14 @@ export async function updateDocumentLocked(
   const nextStage = stageMoved ? readStage(nextParsed.data) : null;
   const coupling = stageMoved
     ? withSpeculativeDocumentRow(workspace.projection, loaded.path, nextParsed, () =>
-        decideStageStatus(workspace.projection, id, loaded.path, nextStage, workspace.now()),
+        decideStageStatus(
+          workspace.projection,
+          id,
+          loaded.path,
+          nextStage,
+          workspace.now(),
+          workspace.staleness,
+        ),
       )
     : null;
   const coupledStatus = coupling?.status ?? null;

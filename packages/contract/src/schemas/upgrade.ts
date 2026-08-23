@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The on-demand self-upgrade surface (SPEC.md §2.4) — what the UI's check
@@ -48,8 +49,8 @@ import { z } from "@hono/zod-openapi";
  * it.
  */
 
-export const UpgradeCheckSchema = z
-  .object({
+export const UpgradeCheckSchema = openapi(
+  z.object({
     installed: z
       .string()
       .min(1)
@@ -126,8 +127,9 @@ export const UpgradeCheckSchema = z
           "so that every key on this small object is always present, like the two nullable " +
           "fields beside it — one way to say 'nothing', not two.",
       ),
-  })
-  .openapi("UpgradeCheck");
+  }),
+  "UpgradeCheck",
+);
 
 /**
  * The acknowledgement of a started upgrade — accepted, not completed.
@@ -159,8 +161,8 @@ export const UpgradeCheckSchema = z
  * from the HTTP surface at all, and it is what makes SERVER-050's "discoverable
  * path" literally discoverable rather than a path a client has to already know.
  */
-export const UpgradeStartedSchema = z
-  .object({
+export const UpgradeStartedSchema = openapi(
+  z.object({
     started: z
       .literal(true)
       .describe(
@@ -183,8 +185,9 @@ export const UpgradeStartedSchema = z
           "client that shows an upgrade as finished without pointing at this file has told the " +
           "operator less than the upgrade knows.",
       ),
-  })
-  .openapi("UpgradeStarted");
+  }),
+  "UpgradeStarted",
+);
 
 export type UpgradeCheck = z.infer<typeof UpgradeCheckSchema>;
 export type UpgradeStarted = z.infer<typeof UpgradeStartedSchema>;

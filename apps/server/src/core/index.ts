@@ -17,13 +17,23 @@
 // `apps/server`. `core` keeps naming it because `core` is this server's
 // document-model surface, so no caller on this side has to know where the
 // implementation went.
+// The heading scan — where a section starts and ends, and how its address is
+// rendered — followed it there for the same reason (CONTRACT-070). `apps/cli`
+// cannot import this application either, and while the scan lived here the CLI
+// addressed a section with a **copy** of it, guarded by a test that compared
+// source text between the two packages. One scan, in the one package both sides
+// already depend on.
 export {
   codeRanges,
+  enclosingHeadings,
   fencedCodeRanges,
+  headingSections,
   inlineCodeRanges,
   overlapsRange,
+  renderHeadingPath,
   splitLines,
   unterminatedFence,
+  type HeadingSection,
   type Line,
   type OpenFence,
   type TextRange,

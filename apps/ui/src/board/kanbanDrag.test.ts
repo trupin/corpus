@@ -51,7 +51,9 @@ const dragEvent = (): { event: unknown; dropEffect: () => string } => {
 };
 
 function columnsOf(spec: KanbanSpec): readonly BoardColumn[] {
-  return deriveStageColumns(board(spec));
+  const subject = board(spec);
+  // One kanban on the bar, so it is its own deciding board (UI-160).
+  return deriveStageColumns(subject, subject);
 }
 
 describe("dropStateFor", () => {
@@ -106,8 +108,20 @@ describe("changedFieldsMessage", () => {
   const after = (stage: string | null, status: string): never =>
     ({ stage, status }) as unknown as never;
 
-  it("names both fields when the server wrote both", () => {
-    const coupled: Warning[] = [{ code: "stage_status", detail: "…" }];
+  /**
+   * The coupling clause is the **warning's** own text (UI-160): the deciding
+   * board is the lowest-`order` kanban that claims the document, which need not
+   * be this one, and only the server knows which it was.
+   */
+  it("names both fields when the server wrote both, quoting the warning that says why", () => {
+    const coupled: Warning[] = [
+      {
+        code: "stage_status",
+        detail:
+          "stage `done` set status to `resolved`: this document is in the kanban Triage " +
+          "(doc_board_a), whose `kanban.status` map decides a status on entry (SPEC.md §5).",
+      },
+    ];
     expect(
       changedFieldsMessage(
         "Maple Street",
@@ -117,7 +131,8 @@ describe("changedFieldsMessage", () => {
       ),
     ).toBe(
       "“Maple Street” — stage → done, status → resolved. One commit. " +
-        "The board’s `kanban.status` map decided the status.",
+        "stage `done` set status to `resolved`: this document is in the kanban Triage " +
+        "(doc_board_a), whose `kanban.status` map decides a status on entry (SPEC.md §5).",
     );
   });
 
@@ -177,7 +192,7 @@ function mount(spec: KanbanSpec = HOUSING): Harness {
     },
     wire,
     notify,
-    columns: deriveStageColumns(live),
+    columns: deriveStageColumns(live, live),
     rerender: () => {
       rendered.rerender();
     },

@@ -1,7 +1,8 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ViewQuerySchema } from "./doc.js";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **One action, one commit** (SPEC.md §4; §10's "Selecting rows, and acting on
@@ -149,7 +150,7 @@ export const BULK_WHOLE_RESULT_SET_ACTION_NAMES = BULK_ACTION_NAMES.filter(
   (name) => name !== "delete",
 );
 
-export const BulkActionNameSchema = z.enum(BULK_ACTION_NAMES).openapi({
+export const BulkActionNameSchema = openapi(z.enum(BULK_ACTION_NAMES), {
   description:
     "Which act was applied to **this** document. Carried per document rather than once per " +
     "request because a Save may hold a mix of verbs (SPEC.md §4, §10: each row carries its own " +
@@ -324,19 +325,21 @@ const WHOLE_RESULT_SET_DESCRIPTION =
  * once per request, which made a mixed Save inexpressible — and the workaround,
  * one request per verb, is several commits, the one thing §4 forbids.
  */
-export const BulkStagedEntrySchema = z
-  .strictObject({
+export const BulkStagedEntrySchema = openapi(
+  z.strictObject({
     id: DocumentIdSchema.describe(
       "The document this row stages an action against. Thread ids belong here too (threads are " +
         "documents, SPEC.md §6), which is what lets `resolve`/`reopen` ride this route.",
     ),
     action: BulkActionSchema.describe(ENTRY_ACTION_DESCRIPTION),
-  })
-  .openapi("BulkStagedEntry", {
+  }),
+  "BulkStagedEntry",
+  {
     description:
       "One staged row: the document, and the act staged against it. A request holds any number " +
       "of these and any mix of verbs, and applies them as one act and one commit (SPEC.md §4).",
-  });
+  },
+);
 
 /**
  * §10's whole-result-set selection, staged as **one entry**: "one line reading
@@ -364,8 +367,8 @@ export const BulkStagedEntrySchema = z
  * written, so a key or value the collection grammar does not accept is a `400`
  * for the whole request rather than a narrower act nobody asked for.
  */
-export const BulkWholeResultSetEntrySchema = z
-  .strictObject({
+export const BulkWholeResultSetEntrySchema = openapi(
+  z.strictObject({
     query: ViewQuerySchema.describe(
       "The column's query, in the same flat parameter map a `type: view` document stores " +
         '(SPEC.md §10) — `{type: ["note", "view"], tag: "finance"}` ≡ ' +
@@ -383,8 +386,10 @@ export const BulkWholeResultSetEntrySchema = z
         "anyone read before confirming. Rows the act does not apply to come back `refused` with " +
         "`not-applicable`, exactly as an enumerated row would.",
     ),
-  })
-  .openapi("BulkWholeResultSetEntry", { description: WHOLE_RESULT_SET_DESCRIPTION });
+  }),
+  "BulkWholeResultSetEntry",
+  { description: WHOLE_RESULT_SET_DESCRIPTION },
+);
 
 /**
  * The staged set, as a Save sends it.
@@ -410,44 +415,46 @@ export const BulkWholeResultSetEntrySchema = z
  * request, so the caller is not sent in circles (the repo's rule — `409` is for
  * a request the *state* refuses, where no body would help).
  */
-export const BulkActionRequestSchema = z
-  .strictObject({
-    entries: z.array(BulkStagedEntrySchema).describe(ENTRIES_DESCRIPTION),
-    // No `.describe()` here on purpose: the field publishes as a bare `$ref`, so
-    // a description written at the call site would be hoisted onto the shared
-    // component rather than shown beside the field. It lives on the component.
-    wholeResultSet: BulkWholeResultSetEntrySchema.optional(),
-  })
-  .refine(({ entries, wholeResultSet }) => entries.length > 0 || wholeResultSet !== undefined, {
-    message:
-      "A Save with nothing staged is a caller bug: give at least one entry in `entries`, or a " +
-      "`wholeResultSet` entry, or both.",
-    path: ["entries"],
-  })
-  .superRefine(({ entries }, ctx) => {
-    const firstById = new Map<string, string>();
-    entries.forEach((entry, index) => {
-      const first = firstById.get(entry.id);
-      if (first === undefined) {
-        firstById.set(entry.id, entry.action.action);
-        return;
-      }
-      ctx.addIssue({
-        code: "custom",
-        path: ["entries", index, "id"],
-        message:
-          first === entry.action.action
-            ? `\`${entry.id}\` is staged twice. A row carries exactly one staged action ` +
-              "(SPEC.md §10), so name each document once."
-            : `\`${entry.id}\` is staged twice with different actions (\`${first}\` and ` +
-              `\`${entry.action.action}\`). Refused rather than resolved: choosing one would be a ` +
-              "silent choice about someone's documents, and applying both would write one " +
-              "document twice inside an act that is one commit of exactly what changed (SPEC.md " +
-              "§4). Stage each document once.",
+export const BulkActionRequestSchema = openapi(
+  z
+    .strictObject({
+      entries: z.array(BulkStagedEntrySchema).describe(ENTRIES_DESCRIPTION),
+      // No `.describe()` here on purpose: the field publishes as a bare `$ref`, so
+      // a description written at the call site would be hoisted onto the shared
+      // component rather than shown beside the field. It lives on the component.
+      wholeResultSet: BulkWholeResultSetEntrySchema.optional(),
+    })
+    .refine(({ entries, wholeResultSet }) => entries.length > 0 || wholeResultSet !== undefined, {
+      message:
+        "A Save with nothing staged is a caller bug: give at least one entry in `entries`, or a " +
+        "`wholeResultSet` entry, or both.",
+      path: ["entries"],
+    })
+    .superRefine(({ entries }, ctx) => {
+      const firstById = new Map<string, string>();
+      entries.forEach((entry, index) => {
+        const first = firstById.get(entry.id);
+        if (first === undefined) {
+          firstById.set(entry.id, entry.action.action);
+          return;
+        }
+        ctx.addIssue({
+          code: "custom",
+          path: ["entries", index, "id"],
+          message:
+            first === entry.action.action
+              ? `\`${entry.id}\` is staged twice. A row carries exactly one staged action ` +
+                "(SPEC.md §10), so name each document once."
+              : `\`${entry.id}\` is staged twice with different actions (\`${first}\` and ` +
+                `\`${entry.action.action}\`). Refused rather than resolved: choosing one would be a ` +
+                "silent choice about someone's documents, and applying both would write one " +
+                "document twice inside an act that is one commit of exactly what changed (SPEC.md " +
+                "§4). Stage each document once.",
+        });
       });
-    });
-  })
-  .openapi("BulkActionRequest");
+    }),
+  "BulkActionRequest",
+);
 
 /**
  * Why a document the act could not change did not change. Machine readable,
@@ -485,7 +492,7 @@ export const BULK_REFUSAL_REASONS = [
   "write-failed",
 ] as const;
 
-export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
+export const BulkRefusalReasonSchema = openapi(z.enum(BULK_REFUSAL_REASONS), {
   description:
     "Which class of refusal this is. `not-found`: no " +
     "document has that id; the other documents are not the caller's mistake, so it is an entry " +
@@ -512,7 +519,7 @@ const outcomeShape = {
   action: BulkActionNameSchema,
 } as const;
 
-export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActionOutcome", {
+export const BulkActionOutcomeSchema = openapi(z.object(outcomeShape), "BulkActionOutcome", {
   description:
     "One document the act reached, and what was done to it. Carried in `changed` and in " +
     "`alreadyInState`; `BulkActionRefusal` is the same pair plus why it did not change.",
@@ -534,8 +541,8 @@ export const BulkActionOutcomeSchema = z.object(outcomeShape).openapi("BulkActio
  * of named refusals, and a `oneOf` here would make every consumer narrow before
  * it could read the id it already has.
  */
-export const BulkActionRefusalSchema = z
-  .object({
+export const BulkActionRefusalSchema = openapi(
+  z.object({
     ...outcomeShape,
     reason: BulkRefusalReasonSchema,
     message: z
@@ -547,8 +554,9 @@ export const BulkActionRefusalSchema = z
           "title; never parsed. Always present: §10 requires every entry in this part to carry " +
           "its reason, and a class alone does not tell a person what to do next.",
       ),
-  })
-  .openapi("BulkActionRefusal");
+  }),
+  "BulkActionRefusal",
+);
 
 /**
  * §10's three parts, plus what the act as a whole did.
@@ -613,8 +621,8 @@ export const BulkActionRefusalSchema = z
  * single-document `POST /api/docs/{id}/archive` and `/unarchive`, because the
  * behaviour is the single-document write path's and bulk loops through it.
  */
-export const BulkActionResultSchema = z
-  .object({
+export const BulkActionResultSchema = openapi(
+  z.object({
     changed: z
       .array(BulkActionOutcomeSchema)
       .describe(
@@ -671,8 +679,9 @@ export const BulkActionResultSchema = z
           "§11).",
       ),
     warnings: warningsField,
-  })
-  .openapi("BulkActionResult");
+  }),
+  "BulkActionResult",
+);
 
 export type BulkActionName = (typeof BULK_ACTION_NAMES)[number];
 export type BulkAction = z.infer<typeof BulkActionSchema>;

@@ -568,7 +568,7 @@ changes behaviour and nothing below waits on them.
 | SERVER-093 | Nothing reads a history the open window is still holding | done | P1 | SERVER-091 |
 | SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
-| SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
+| SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | done | P2 | — |
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | done | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | done | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
@@ -721,7 +721,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
 | SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
 | UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
-| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | todo | P1 | — |
+| CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | done | P1 | — |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | — |
 
 **Two findings are the user's, not mine to close:**
@@ -1083,7 +1083,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
 | UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
-| UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
+| UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | done | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
 and each filed below in the order a person hits them. The audit also found that
@@ -1230,11 +1230,11 @@ left in a report.
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
-| UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
-| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
-| UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | todo | P1 | UI-150 |
+| UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | done | P1 | UI-145 |
+| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | done | P2 | UI-149 |
+| UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | done | P1 | UI-150 |
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
-| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | todo | P2 | UI-152, SERVER-138 |
+| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
@@ -1271,13 +1271,13 @@ was written for.
 | AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
 | SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
-| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | todo | P2 | — |
+| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | done | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
-| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
+| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | done | P2 | CONTRACT-080, CLI-060 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
-| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
-| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | todo | P3 | CONTRACT-074, SERVER-138 |
+| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | done | P2 | CONTRACT-075, SERVER-136 |
+| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | done | P3 | CONTRACT-074, SERVER-138 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
@@ -1321,13 +1321,21 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | done | P0 | — |
-| CLI-056 | Help text costs an agent more to read than the work it describes | todo | P1 | — |
-| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
-| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
-| CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | todo | P2 | — |
-| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
+| CLI-056 | Help text costs an agent more to read than the work it describes | done | P1 | — |
+| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | done | P2 | — |
+| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | done | P1 | — |
+| CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | done | P2 | — |
+| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | done | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
-| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | todo | P2 | — |
+| CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | done | P2 | — |
+
+**The remaining six ship in v0.20.0, by the user's decision, 2026-08-23** —
+"include Phase 39 in this release, all of it, not just some issues". CLI-056,
+CLI-057, CLI-058, CLI-059, SERVER-133 and CONTRACT-070 are implemented under
+Phase 43's release and keep their rows here. That release therefore has two
+halves and its notes say so, exactly as v0.16.0's did. SHARED-070 was filed the
+same day and asks the question this phase did not: not what costs the most per
+call, but what costs the most over a loop.
 
 
 ## Phase 40 — Your documents stop lying about their status (2026-08-21, v0.17.0 scope)
@@ -1468,3 +1476,78 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-153 | The Reflect control, and what changed since the agent last looked | done | P1 | opus | UI-148, SERVER-137 |
 | CONTRACT-080 | A board reorder is one commit: `POST /api/boards/order` — PR #58's second blocking finding, one vertical (contract, server, kit/UI) | done | P0 | opus | UI-148, SERVER-138 |
 | PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |
+
+## Phase 43 — The tree tells the truth, and a value is changed where it is shown (2026-08-23, user reports)
+
+Two things the user raised on 2026-08-23, one with a screenshot of five
+identical rows and one with a mockup.
+
+**The explorer duplicates a document under every expanded ancestor.** Not a
+collapse bug, though collapsing is what makes it visible: `GET /api/docs?folder=`
+is a **path prefix**, so a parent folder's listing contains every descendant's
+documents, and the tree draws the same document under the parent and under the
+sub-folder with the same React key. React says outright that duplicate keys
+duplicate or omit children. The fix is a listing that stops at the folder
+(CONTRACT-081, SERVER-141) and a tree that draws each document once (UI-161).
+P0, at the user's word.
+
+**Frontmatter is displayed twice and edited in the copy.** The reader draws a
+chip strip that says what the document holds and, below it, a labelled form
+holding the same values. The user wants the chip to be the control — tags with a
+`+` and a per-chip menu, the status picker where the status is shown, the date
+picker on the date. That contradicts §10's "editable as a small form", so it
+needs a rider: SHARED-068 carries the drafted text, **unsigned**, and UI-162
+implements it.
+
+**A document's content fills the document.** The reader carries two widths — the
+column's, in its view document, and the body's own, browser-local — so widening
+a column leaves the text where it was. The user, 2026-08-23: _"I don't want to
+have to resize the document, then the content as well."_ In a column the body
+fills the column and its handle goes. **Full screen keeps its own**, sticky and
+unrelated, with a default wider than a column's — there is no column edge to
+follow there. SHARED-069 carries the rider, **unsigned**, and UI-163 implements
+it.
+
+**This release has a second half, and its notes must say so.** The user folded
+**all** of Phase 39 into it on 2026-08-23 — CLI-056, CLI-057, CLI-058, CLI-059,
+SERVER-133 and CONTRACT-070, what the agent pays to use the CLI. Those rows stay
+in Phase 39. This is the same shape v0.16.0 took, and the same rule applies: the
+headline names both halves rather than pretending they are one idea.
+
+**Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068 and
+SHARED-069 wait on the user's signatures and block nothing else, so UI-162 and
+UI-163 run whenever those signatures arrive. Phase 39's six are independent of
+all of it and run alongside, inside the machine's three-agent cap. SHARED-070 is
+an audit and runs last, so a loop it measures is the one this release ships.
+Critical path: CONTRACT-081 → SERVER-141 → UI-161.
+
+| ID | Title | Status | Priority | Model | Dependencies |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | done | P0 | opus | — |
+| SERVER-141 | List a folder's own documents | done | P0 | opus | CONTRACT-081 |
+| UI-161 | The explorer draws a document under every expanded ancestor | done | P0 | opus | CONTRACT-081, SERVER-141 |
+| SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
+| UI-162 | The chip strip is the frontmatter editor | done | P0 | fable | SHARED-068 |
+| SHARED-069 | A document's content fills the document — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
+| UI-163 | The body fills its column, and full screen keeps its own width | done | P0 | opus | SHARED-069 |
+| SHARED-070 | What else the agent pays for — a measured audit of token cost | done | P1 | fable | — |
+| AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | done | P1 | opus | CLI-056 |
+| UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | done | P2 | opus | CONTRACT-078 |
+| SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |
+| CONTRACT-082 | The CLI pays 23ms a call for routes it never serves (CLI-058 measurement) | done | P1 | opus | — |
+| SERVER-143 | A view accepts an `order` the spec says it does not have (CLI-063 finding) | done | P1 | opus | — |
+| CLI-064 | A batch verb needs a decided exit code before it is worth building (CLI-058 recommendation) — **not in v0.20.0** | todo | P1 | fable | CLI-057, CLI-058 |
+| UI-165 | A column's thread margin cannot be reached by any gesture (UI-163 escalation) — **not in v0.20.0**, needs a user call | todo | P2 | opus | UI-163 |
+| AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document (AGENT-045 finding) — **not in v0.20.0**, needs a user call | todo | P1 | fable | CLI-060 |
+| CLI-066 | A body piped over a socket is dropped silently, exit 0 (SHARED-070 finding) | done | P0 | opus | — |
+| SERVER-145 | A settled event can be settled again, and `queue fail` needs no reason (SHARED-070 finding) | done | P0 | opus | — |
+| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens (SHARED-070) — **not in v0.20.0** | todo | P1 | fable | SHARED-070 |
+| AGENT-048 | The standing style rule is paid twice per context (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
+| AGENT-049 | `queue idle` prints a shape the skill does not promise (SHARED-070) — **not in v0.20.0** | todo | P2 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
+| CLI-065 | `doc list --json` pays 293 tokens a row (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
+| SERVER-146 | One server test failed once under load and was not named — **not in v0.20.0** | todo | P2 | opus | — |
+| CONTRACT-083 | Three queue routes return a 409 they do not declare (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
+| CLI-067 | `queue fail` needs a reason, and two help strings now contradict the server (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
+| UI-166 | What full screen does to a turn's leading and measure (UI-156 recommendation) — **not in v0.20.0** | todo | P2 | opus | UI-156 |
+| INFRA-032 | A tampered generated artifact survives a green local run (CONTRACT-083 finding) — **not in v0.20.0** | todo | P2 | opus | — |

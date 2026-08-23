@@ -160,6 +160,14 @@ export function parseFlags(
       continue;
     }
 
+    // A flag declaring `bareValue` takes its value from the inline form alone.
+    // Reading the next token would make `corpus doc list --help` swallow a
+    // positional and `corpus --help` swallow the command name (CLI-056).
+    if (spec.bareValue !== undefined) {
+      values.set(spec.name, inlineValue ?? spec.bareValue);
+      continue;
+    }
+
     const raw = inlineValue ?? remaining.shift();
     if (raw === undefined) {
       throw new UsageError(`flag --${spec.name} requires a value.`, {

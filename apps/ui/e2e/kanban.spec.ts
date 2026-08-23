@@ -360,7 +360,9 @@ test.describe("setting the field is the way past the graph", () => {
     await expect(reader.locator(".doc-title")).toHaveValue("Maple Street");
 
     // `candidates` does not lead to `done`, and this control does not care.
-    await reader.locator('.fm-field[data-field="stage"] select').selectOption("done");
+    // The stage chip is the control since UI-162: chip, then its menu.
+    await reader.locator('[data-chip="stage"]').click();
+    await page.locator('[data-ctx-menu] [data-act="stage:done"]').click();
 
     await expect(page.locator(".toast")).toContainText("set status to `resolved`");
     await expect(page.locator(".toast")).toContainText("House hunt");
@@ -379,14 +381,16 @@ test.describe("setting the field is the way past the graph", () => {
     await showHouse(page);
 
     await page.locator(`${houseCol("visiting")} .row[data-row-doc="doc_oak"]`).click();
-    const select = page.locator('.pcol .fm-field[data-field="stage"] select').first();
-    await expect(select.locator("optgroup")).toHaveAttribute("label", "House hunt");
-    await expect(select.locator("option")).toHaveText([
-      "Clear the stage",
-      "candidates",
-      "visiting",
-      "offer",
-      "done",
+    await page.locator('.pcol [data-chip="stage"]').first().click();
+    const menu = page.locator("[data-ctx-menu]");
+    await expect(menu.locator(".fm-menu-group")).toHaveText(["House hunt"]);
+    await expect(menu.locator('[role="menuitem"]')).toHaveText([
+      /Clear the stage/,
+      /candidates/,
+      // The current word is marked where it is shown (SPEC.md §10's rider).
+      /✓ visiting/,
+      /offer/,
+      /done/,
     ]);
   });
 });

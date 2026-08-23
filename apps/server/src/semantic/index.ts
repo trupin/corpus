@@ -22,8 +22,12 @@ export {
   CHUNK_TOKEN_BUDGET,
   chunkBody,
   chunkId,
-  renderHeadingPath,
 } from "./chunker.js";
+// The chunk address's display join is the contract's, shared with the CLI's
+// `--section` addressing and the thread context pack (CONTRACT-070). It is
+// re-exported here because this is the surface `threads/context.ts` reads the
+// rest of the chunking vocabulary from.
+export { renderHeadingPath } from "@corpus/contract";
 export type { Chunk, ChunkSource } from "./chunker.js";
 export {
   countPendingChunks,

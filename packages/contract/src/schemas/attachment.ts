@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Attachment plumbing for the two multipart request bodies (SPEC.md §6). Bytes
@@ -15,9 +16,10 @@ import { z } from "@hono/zod-openapi";
  * carries a readable message, and the OpenAPI shape is pinned by hand because
  * "a file" has no Zod primitive.
  */
-export const AttachmentFileSchema = z
-  .custom<File>((value) => value instanceof File, { message: "Expected an uploaded file part." })
-  .openapi({ type: "string", format: "binary" });
+export const AttachmentFileSchema = openapi(
+  z.custom<File>((value) => value instanceof File, { message: "Expected an uploaded file part." }),
+  { type: "string", format: "binary" },
+);
 
 /**
  * The repeated `files` part, normalised to an array.
@@ -33,33 +35,31 @@ export const AttachmentFileSchema = z
  * client. The default lives on purely so a handler reading a fileless multipart
  * body gets an empty array rather than `undefined`.
  */
-export const AttachmentFilesSchema = z
-  .preprocess(
+export const AttachmentFilesSchema = openapi(
+  z.preprocess(
     (value) => (value === undefined || Array.isArray(value) ? value : [value]),
     z.array(AttachmentFileSchema).default([]),
-  )
-  .openapi({
+  ),
+  {
     type: "array",
     items: { type: "string", format: "binary" },
     description:
       "Attached files, sent as repeated `files` parts. Bytes are stored under " +
       "`.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative " +
       "markdown links (SPEC.md §6).",
-  });
+  },
+);
 
 /**
  * Path of an attachment relative to `.corpus/attachments/`. It contains slashes,
  * so servers mount it as a wildcard segment and clients must encode each
  * component rather than the string as a whole.
  */
-export const AttachmentPathSchema = z
-  .string()
-  .min(1)
-  .openapi({
-    description:
-      "Attachment path relative to `.corpus/attachments/`, i.e. " +
-      "`<thread-id>/<turn-ts>/<filename>`. Slash-bearing, so it occupies the rest of the URL path.",
-    example: "th_x9y8/2026-07-19T10:05:00Z/screenshot.png",
-  });
+export const AttachmentPathSchema = openapi(z.string().min(1), {
+  description:
+    "Attachment path relative to `.corpus/attachments/`, i.e. " +
+    "`<thread-id>/<turn-ts>/<filename>`. Slash-bearing, so it occupies the rest of the URL path.",
+  example: "th_x9y8/2026-07-19T10:05:00Z/screenshot.png",
+});
 
 export type AttachmentPath = z.infer<typeof AttachmentPathSchema>;

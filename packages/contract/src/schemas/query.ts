@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ACTORS } from "../actor.js";
 import { ActorSchema } from "./actor.js";
 import { CORE_DOC_TYPES, DOC_STATUSES, docRowBaseShape } from "./doc.js";
@@ -6,6 +6,7 @@ import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { PageMetaSchema, PaginationQuerySchema } from "./pagination.js";
 import { THREAD_AGENT_STATES, ThreadAgentSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * `GET /api/docs` is the single collection query behind every list (SPEC.md
@@ -27,7 +28,7 @@ export const StaleTierSchema = z.enum(STALE_TIERS);
  */
 export const NEEDS_REASONS = ["unread-reply", "form", "due", "stale", "failed-job"] as const;
 
-export const NeedsReasonSchema = z.enum(NEEDS_REASONS).openapi({
+export const NeedsReasonSchema = openapi(z.enum(NEEDS_REASONS), {
   description: "Why a row needs attention (SPEC.md §10).",
 });
 
@@ -58,6 +59,32 @@ export const DOC_SORTS = [
 export const DocSortSchema = z.enum(DOC_SORTS);
 
 export const DEFAULT_DOC_SORT = "-updated" satisfies (typeof DOC_SORTS)[number];
+
+/**
+ * How far under `folder` a collection listing reaches (CONTRACT-081).
+ *
+ * The pair is named rather than spelled as a boolean, because a boolean would
+ * have to pick which way round `true` means and the reader would have to
+ * remember it. `tree` and `self` each name the set being asked for.
+ *
+ * The two sets exist because two surfaces ask the same question differently. A
+ * board's folder column shows a folder's work **and** the conversations about
+ * it, so it wants the whole subtree with threads inherited from their parents —
+ * that is what `folder` has always meant. The explorer draws one row per folder
+ * and asks each folder for its own documents, so it wants exactly one level, and
+ * the tree reading is what makes a document appear under every expanded ancestor
+ * at once.
+ */
+export const FOLDER_SCOPES = ["tree", "self"] as const;
+
+export const FolderScopeSchema = z.enum(FOLDER_SCOPES);
+
+/**
+ * `tree` — the reading `folder` has always had. The default is not a taste
+ * decision: this parameter arrives under a route many callers already use, and
+ * defaulting to `self` would silently narrow every board column in the product.
+ */
+export const DEFAULT_FOLDER_SCOPE = "tree" satisfies (typeof FOLDER_SCOPES)[number];
 
 /** Relative deadline windows, so a client never has to compute "today" itself. */
 export const DUE_KEYWORDS = ["overdue", "today", "week"] as const;
@@ -100,29 +127,22 @@ const queryParam = (name: string) => ({ param: { name, in: "query" as const, req
  *   this shape is a one-line change and no consumer breaks.
  */
 export const docFilterShape = {
-  type: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      ...queryParam("type"),
-      description:
-        `Comma-separated document types; values OR together. Core values: ${CORE_DOC_TYPES.join(", ")}. ` +
-        "Open rather than enumerated because a workspace may hold documents of a type this build " +
-        "has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6).",
-    }),
-  status: z
-    .enum(DOC_STATUSES)
-    .optional()
-    .openapi({
-      ...queryParam("status"),
-      description:
-        "Restrict to a lifecycle status. Omitted, the default result set **excludes** " +
-        "`status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so " +
-        "`status=archived` selects archived documents *only*. To see archived documents " +
-        "**alongside** the rest, use `includeArchived=true` — that is the archived chip, not this " +
-        "parameter.",
-    }),
+  type: openapi(z.string().min(1).optional(), {
+    ...queryParam("type"),
+    description:
+      `Comma-separated document types; values OR together. Core values: ${CORE_DOC_TYPES.join(", ")}. ` +
+      "Open rather than enumerated because a workspace may hold documents of a type this build " +
+      "has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6).",
+  }),
+  status: openapi(z.enum(DOC_STATUSES).optional(), {
+    ...queryParam("status"),
+    description:
+      "Restrict to a lifecycle status. Omitted, the default result set **excludes** " +
+      "`status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so " +
+      "`status=archived` selects archived documents *only*. To see archived documents " +
+      "**alongside** the rest, use `includeArchived=true` — that is the archived chip, not this " +
+      "parameter.",
+  }),
   /**
    * **The null sentinel is an empty element, and it is what makes a kanban's
    * first column one request** (CONTRACT-074's decision, taken here so UI-152
@@ -144,111 +164,86 @@ export const docFilterShape = {
    * exactly the price `tag` already pays for the same separator, and is why
    * `StageValueSchema` refuses one on write.
    */
-  stage: z
-    .string()
-    .optional()
-    .openapi({
-      ...queryParam("stage"),
-      description:
-        "Comma-separated stage values (SPEC.md §5); values OR together like `type` and `tag`, " +
-        "and each is an **exact** match. **An empty element selects documents with no `stage` at " +
-        "all** — the null sentinel — so a kanban's first column, which holds its first stage " +
-        "*and* everything unstaged (SPEC.md §10), is one request: `stage=,triage`. It can never " +
-        "collide with a real stage, because a written stage is a non-empty comma-free string, so " +
-        "the empty element names a value no document can hold. `stage=` on its own therefore " +
-        "selects the unstaged, and omitting the parameter filters nothing at all. Duplicate " +
-        "elements collapse. **Not thread-only**: any document may carry a stage. A kanban over " +
-        "`status` needs none of this — every document has a status — and draws its columns with " +
-        "`status=`.",
-    }),
-  includeArchived: z
-    .stringbool()
-    .optional()
-    .openapi({
-      ...queryParam("includeArchived"),
-      type: "boolean",
-      description:
-        "Lift the default archived exclusion. `true` widens the default result set into the " +
-        "**union** of archived and non-archived documents — the archived chip's " +
-        '"include archived" reading (SPEC.md §10) — where `status=archived` selects archived ' +
-        "documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** " +
-        "and nothing else, so it is a no-op alongside an explicit `status`: `status` already " +
-        "replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
-    }),
-  tag: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      ...queryParam("tag"),
-      description:
-        "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the " +
-        "separator needs no escaping scheme.",
-    }),
-  folder: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      ...queryParam("folder"),
-      description:
-        "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads " +
-        "inherit their parent document's folder (SPEC.md §10).",
-    }),
-  parent: DocumentIdSchema.optional().openapi({
+  stage: openapi(z.string().optional(), {
+    ...queryParam("stage"),
+    description:
+      "Comma-separated stage values (SPEC.md §5); values OR together like `type` and `tag`, " +
+      "and each is an **exact** match. **An empty element selects documents with no `stage` at " +
+      "all** — the null sentinel — so a kanban's first column, which holds its first stage " +
+      "*and* everything unstaged (SPEC.md §10), is one request: `stage=,triage`. It can never " +
+      "collide with a real stage, because a written stage is a non-empty comma-free string, so " +
+      "the empty element names a value no document can hold. `stage=` on its own therefore " +
+      "selects the unstaged, and omitting the parameter filters nothing at all. Duplicate " +
+      "elements collapse. **Not thread-only**: any document may carry a stage. A kanban over " +
+      "`status` needs none of this — every document has a status — and draws its columns with " +
+      "`status=`.",
+  }),
+  includeArchived: openapi(z.stringbool().optional(), {
+    ...queryParam("includeArchived"),
+    type: "boolean",
+    description:
+      "Lift the default archived exclusion. `true` widens the default result set into the " +
+      "**union** of archived and non-archived documents — the archived chip's " +
+      '"include archived" reading (SPEC.md §10) — where `status=archived` selects archived ' +
+      "documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** " +
+      "and nothing else, so it is a no-op alongside an explicit `status`: `status` already " +
+      "replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
+  }),
+  tag: openapi(z.string().min(1).optional(), {
+    ...queryParam("tag"),
+    description:
+      "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the " +
+      "separator needs no escaping scheme.",
+  }),
+  folder: openapi(z.string().min(1).optional(), {
+    ...queryParam("folder"),
+    description:
+      "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads " +
+      "inherit their parent document's folder (SPEC.md §10). How far down it reaches is " +
+      "`folderScope`'s to say on the collection query, which defaults to the tree.",
+  }),
+  parent: openapi(DocumentIdSchema.optional(), {
     ...queryParam("parent"),
     description: `Threads whose \`parent\` is this document id.${THREAD_ONLY}`,
   }),
-  references: DocumentIdSchema.optional().openapi({
+  references: openapi(DocumentIdSchema.optional(), {
     ...queryParam("references"),
     description:
       "Documents whose body contains `[[<id>]]`, read from the projection's `links` table " +
       "(SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip.",
   }),
-  agent: z
-    .enum(THREAD_AGENT_STATES)
-    .optional()
-    .openapi({
-      ...queryParam("agent"),
-      description: `Agent participation state from the thread's frontmatter (SPEC.md §6).${THREAD_ONLY}`,
-    }),
-  author: z
-    .enum(ACTORS)
-    .optional()
-    .openapi({
-      ...queryParam("author"),
-      description: `Author of the thread's last turn — the "awaiting your answer" half of Attention.${THREAD_ONLY}`,
-    }),
-  since: IsoDateTimeSchema.optional().openapi({
+  agent: openapi(z.enum(THREAD_AGENT_STATES).optional(), {
+    ...queryParam("agent"),
+    description: `Agent participation state from the thread's frontmatter (SPEC.md §6).${THREAD_ONLY}`,
+  }),
+  author: openapi(z.enum(ACTORS).optional(), {
+    ...queryParam("author"),
+    description: `Author of the thread's last turn — the "awaiting your answer" half of Attention.${THREAD_ONLY}`,
+  }),
+  since: openapi(IsoDateTimeSchema.optional(), {
     ...queryParam("since"),
     description:
       "ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from " +
       "`due`, which is a calendar date or a keyword.",
   }),
-  due: z
-    .union([IsoDateSchema, DueKeywordSchema])
-    .optional()
-    .openapi({
-      ...queryParam("due"),
-      description:
-        "Either an ISO calendar date (due on or before that date) or one of " +
-        `${DUE_KEYWORDS.join(", ")}. Keywords are resolved server-side against the workspace's clock.`,
-    }),
-  stale: StaleTierSchema.optional().openapi({
+  due: openapi(z.union([IsoDateSchema, DueKeywordSchema]).optional(), {
+    ...queryParam("due"),
+    description:
+      "Either an ISO calendar date (due on or before that date) or one of " +
+      `${DUE_KEYWORDS.join(", ")}. Keywords are resolved server-side against the workspace's clock.`,
+  }),
+  stale: openapi(StaleTierSchema.optional(), {
     ...queryParam("stale"),
     description:
       "Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and " +
       "very-stale. Documents with `evergreen: true` never match.",
   }),
-  unread: z
-    .stringbool()
-    .optional()
-    .openapi({
-      ...queryParam("unread"),
-      type: "boolean",
-      description: `Threads whose last turn is newer than your last-seen mark (SPEC.md §7).${THREAD_ONLY}`,
-    }),
-  needs: NeedsFilterSchema.optional().openapi({
+  unread: openapi(z.stringbool().optional(), {
+    ...queryParam("unread"),
+    type: "boolean",
+    description: `Threads whose last turn is newer than your last-seen mark (SPEC.md §7).${THREAD_ONLY}`,
+  }),
+  needs: openapi(NeedsFilterSchema.optional(), {
     ...queryParam("needs"),
     description:
       "The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons " +
@@ -276,46 +271,71 @@ const { needs: needsFilter, ...filtersBeforeIsParent } = docFilterShape;
  * are tagged finance".
  */
 export const DocsQuerySchema = PaginationQuerySchema.extend({
-  q: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      ...queryParam("q"),
-      description:
-        "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry " +
-        "`snippets`; without `q` every row's `snippets` array is empty.",
-    }),
+  q: openapi(z.string().min(1).optional(), {
+    ...queryParam("q"),
+    description:
+      "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry " +
+      "`snippets`; without `q` every row's `snippets` array is empty.",
+  }),
   ...filtersBeforeIsParent,
-  isParent: z
-    .stringbool()
-    .optional()
-    .openapi({
-      ...queryParam("isParent"),
-      type: "boolean",
-      description:
-        "Whether the document is a **child of something** (SPEC.md §9.2). `true` selects " +
-        "**roots** — documents whose `parent` is null or absent — which is what lets a view show " +
-        "top-level documents without their child threads mixed in among them; `false` selects " +
-        "documents that **are** a child. Absent filters nothing, exactly like every other " +
-        "optional filter: there is no default of `true`, so a view that never sets it shows what " +
-        'it always showed. **It does not mean "has children."** A standalone note that nothing ' +
-        "hangs off still matches `isParent=true` — the filter asks what a document is *under*, " +
-        'never what is *under it*. The "has at least one child" reading matches the name more ' +
-        "literally and was considered and **rejected** (a parents-only view that hid every " +
-        "uncommented note would be nearly empty); the name is the one the user asked for and is " +
-        'kept deliberately, so do not "fix" it into the other meaning. **Not thread-only**, ' +
-        "unlike `parent`: a non-thread document has no parent at all, so `isParent=true` " +
-        "genuinely matches it and `isParent=false` genuinely excludes it — an answer, not a " +
-        "no-op, and a mixed top-level list of notes and standalone threads is the point. " +
-        "`parent=<id>` together with `isParent=true` is a contradiction and is **refused with " +
-        "`400`** rather than answered with an empty set: `parent` no-ops for non-thread types, " +
-        "so an intersection would quietly return every root document that is not a thread — a " +
-        "confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely " +
-        "redundant and is accepted.",
-    }),
+  isParent: openapi(z.stringbool().optional(), {
+    ...queryParam("isParent"),
+    type: "boolean",
+    description:
+      "Whether the document is a **child of something** (SPEC.md §9.2). `true` selects " +
+      "**roots** — documents whose `parent` is null or absent — which is what lets a view show " +
+      "top-level documents without their child threads mixed in among them; `false` selects " +
+      "documents that **are** a child. Absent filters nothing, exactly like every other " +
+      "optional filter: there is no default of `true`, so a view that never sets it shows what " +
+      'it always showed. **It does not mean "has children."** A standalone note that nothing ' +
+      "hangs off still matches `isParent=true` — the filter asks what a document is *under*, " +
+      'never what is *under it*. The "has at least one child" reading matches the name more ' +
+      "literally and was considered and **rejected** (a parents-only view that hid every " +
+      "uncommented note would be nearly empty); the name is the one the user asked for and is " +
+      'kept deliberately, so do not "fix" it into the other meaning. **Not thread-only**, ' +
+      "unlike `parent`: a non-thread document has no parent at all, so `isParent=true` " +
+      "genuinely matches it and `isParent=false` genuinely excludes it — an answer, not a " +
+      "no-op, and a mixed top-level list of notes and standalone threads is the point. " +
+      "`parent=<id>` together with `isParent=true` is a contradiction and is **refused with " +
+      "`400`** rather than answered with an empty set: `parent` no-ops for non-thread types, " +
+      "so an intersection would quietly return every root document that is not a thread — a " +
+      "confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely " +
+      "redundant and is accepted.",
+  }),
+  /**
+   * Published after `isParent` so the two docs-only parameters sit together and
+   * the shared shape stays one spread.
+   *
+   * **Optional rather than `.default()`, deliberately** — the one place this
+   * module departs from `sort`. A zod default is applied before the refinements
+   * run, so a defaulted `folderScope` is indistinguishable from a sent one, and
+   * the rule below ("a scope with nothing to scope is a `400`") could then only
+   * be enforced for `self`. Absent means `tree`; the published `default` says so
+   * in the document, where a client reads it.
+   */
+  folderScope: openapi(FolderScopeSchema.optional(), {
+    ...queryParam("folderScope"),
+    default: DEFAULT_FOLDER_SCOPE,
+    description:
+      "How far under `folder` the listing reaches — a **modifier of `folder`**, meaningless " +
+      "without it. `tree` (the default, and what `folder` has always meant) matches the folder " +
+      "and every descendant, plus the threads whose parent document is filed under it: a folder " +
+      "column shows a folder's work *and* the conversations about it (SPEC.md §10). `self` " +
+      "matches the documents filed **directly** in the folder — a path with no further `/` after " +
+      "the prefix — and inherits nothing, so a thread whose parent sits in the folder while its " +
+      "own file does not is **absent**: a thread is a document, and its own path decides where " +
+      "it is filed. `self` is the explorer's reading, one row per folder with that folder's own " +
+      "documents under it (SPEC.md §10, rider 1), and it is what keeps one document from being " +
+      "drawn under every expanded ancestor at once. `page.total` counts the same set the page " +
+      "draws from at either scope, so a `self` listing's bound line is about the folder's own " +
+      "documents and not its subtree's. **Sent without `folder` it is a `400` naming `folder`**, " +
+      "rather than a silent no-op over the whole corpus: there is no folder for it to stop at. " +
+      "A `folder` naming nothing answers an empty page at either scope, and the root — `folder` " +
+      "spelled as `data/docs` or `/`, since the parameter is non-empty — with `self` is the " +
+      "documents at the top of the tree.",
+  }),
   needs: needsFilter,
-  sort: DocSortSchema.default(DEFAULT_DOC_SORT).openapi({
+  sort: openapi(DocSortSchema.default(DEFAULT_DOC_SORT), {
     ...queryParam("sort"),
     description:
       `Sort key; defaults to \`${DEFAULT_DOC_SORT}\`. \`relevance\` requires \`q\` and is rejected ` +
@@ -348,6 +368,23 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       "`parent=<id>` and `isParent=true` contradict: `parent` asks for the children of a " +
       "document and `isParent=true` asks for documents with no parent. Drop one.",
     path: ["isParent"],
+  })
+  /**
+   * A scope with nothing to scope (CONTRACT-081). `folderScope` narrows what
+   * `folder` matches, so without `folder` it modifies nothing — and the two
+   * readings of answering anyway are both bad: `self` would silently return the
+   * unscoped corpus, and `tree` would look like it had been honoured. The `400`
+   * is the honest code by this file's own rule: naming a `folder` fixes the
+   * request, so the caller is not sent in circles. It applies to `tree` as well
+   * as to `self`, because the mistake is the same one either way and a
+   * parameter that is quietly ignored for one value and enforced for the other
+   * teaches nothing.
+   */
+  .refine((query) => query.folderScope === undefined || query.folder !== undefined, {
+    message:
+      "`folderScope` narrows what `folder` matches and needs a `folder` to narrow. Pass " +
+      "`folder`, or drop `folderScope`.",
+    path: ["folderScope"],
   });
 
 /**
@@ -360,17 +397,18 @@ export const SNIPPET_FIELDS = ["title", "body", "turn"] as const;
 
 export const SnippetFieldSchema = z.enum(SNIPPET_FIELDS);
 
-export const SnippetSegmentSchema = z
-  .object({
+export const SnippetSegmentSchema = openapi(
+  z.object({
     text: z.string(),
     match: z
       .boolean()
       .describe("True for the segments the query matched; render those highlighted."),
-  })
-  .openapi("SnippetSegment");
+  }),
+  "SnippetSegment",
+);
 
-export const SnippetSchema = z
-  .object({
+export const SnippetSchema = openapi(
+  z.object({
     field: SnippetFieldSchema.describe("Which indexed field the excerpt came from."),
     threadId: ThreadIdSchema.optional().describe(
       "Set only for `turn` snippets, naming the thread the matching turn belongs to.",
@@ -378,8 +416,9 @@ export const SnippetSchema = z
     segments: z
       .array(SnippetSegmentSchema)
       .describe("Alternating unmatched/matched runs; concatenating `text` yields the excerpt."),
-  })
-  .openapi("Snippet");
+  }),
+  "Snippet",
+);
 
 /**
  * The §10 thread-row affordances, carried by every row and `null` on rows that
@@ -480,8 +519,8 @@ const threadRowShape = {
  * forms it is still waiting on, and the thread affordances §10's type-aware rows
  * render.
  */
-export const DocRowSchema = z
-  .object({
+export const DocRowSchema = openapi(
+  z.object({
     ...docRowBaseShape,
     stale: StaleTierSchema.nullable().describe(
       `Staleness tier from SPEC.md §5's age ramp (${STALE_TIERS.join(", ")}), driving the row's ` +
@@ -580,17 +619,20 @@ export const DocRowSchema = z
     snippets: z
       .array(SnippetSchema)
       .describe("Search highlights for this row; empty when the query carried no `q`."),
-  })
-  .openapi("DocRow");
+  }),
+  "DocRow",
+);
 
-export const DocListSchema = z
-  .object({ items: z.array(DocRowSchema), page: PageMetaSchema })
-  .openapi("DocList");
+export const DocListSchema = openapi(
+  z.object({ items: z.array(DocRowSchema), page: PageMetaSchema }),
+  "DocList",
+);
 
 export type StaleTier = z.infer<typeof StaleTierSchema>;
 export type NeedsReason = z.infer<typeof NeedsReasonSchema>;
 export type NeedsFilter = z.infer<typeof NeedsFilterSchema>;
 export type DocSort = z.infer<typeof DocSortSchema>;
+export type FolderScope = z.infer<typeof FolderScopeSchema>;
 export type DueKeyword = z.infer<typeof DueKeywordSchema>;
 export type DocsQuery = z.infer<typeof DocsQuerySchema>;
 export type SnippetField = z.infer<typeof SnippetFieldSchema>;

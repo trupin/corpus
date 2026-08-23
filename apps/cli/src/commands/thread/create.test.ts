@@ -109,7 +109,7 @@ describe("corpus thread create", () => {
 
     await runThreadCreate(harness.context, {
       stdin: pipe("I split this into two notes.\n"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     });
 
     const [request] = stub.requests;
@@ -235,7 +235,7 @@ describe("corpus thread create", () => {
     const harness = stubContext(stub, { flags: { parent: "doc_a1b2c3" } });
 
     const error: unknown = await runThreadCreate(harness.context, {
-      stdinIsBodySource: false,
+      stdinKind: "other",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);

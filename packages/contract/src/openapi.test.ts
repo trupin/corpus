@@ -407,10 +407,14 @@ describe("GET /api/docs parameter grammar", () => {
     "due",
     "stale",
     "unread",
-    // CONTRACT-042's rider, and the one docs-only filter left: §9.2's signed
+    // CONTRACT-042's rider, and the one docs-only *filter* left: §9.2's signed
     // `/api/search` parameter string does not carry it. (`pinned` sat beside it
     // until rider 7 removed it from the API on 2026-08-22.)
     "isParent",
+    // CONTRACT-081, published beside `isParent` so the docs-only parameters sit
+    // together and the shared filter shape stays one spread. Not a filter: it
+    // modifies `folder` rather than selecting a set of its own.
+    "folderScope",
     "needs",
     "sort",
   ];
@@ -555,6 +559,72 @@ describe("GET /api/docs parameter grammar", () => {
     it("is declared on the collection query and deliberately not on search", () => {
       expect(parameter("/api/docs", "get", "isParent")).toBeDefined();
       expect(parameter("/api/search", "get", "isParent")).toBeUndefined();
+    });
+  });
+
+  /**
+   * CONTRACT-081. `folderScope` is the difference between a folder column (the
+   * folder's work and the conversations about it) and an explorer row (the
+   * folder's own documents). The published description is what stops the two
+   * readings being re-derived, and the published `default` is what promises
+   * every caller that predates the parameter that its set has not moved.
+   */
+  describe("the folderScope modifier", () => {
+    const description = (): string =>
+      parameter("/api/docs", "get", "folderScope")?.description ?? "";
+
+    it("types it as the two-value enum, never a boolean", () => {
+      const param = parameter("/api/docs", "get", "folderScope");
+      expect(param?.schema?.type).toBe("string");
+      expect(param?.schema?.enum).toEqual(["tree", "self"]);
+      expect(param?.required).toBe(false);
+    });
+
+    /**
+     * The one thing a client author must be able to read off the document: the
+     * parameter narrows nothing until it is sent, so an existing caller's set
+     * is unchanged.
+     */
+    it("publishes `tree` as the default, so an omitted scope is today's behaviour", () => {
+      expect(parameter("/api/docs", "get", "folderScope")?.schema?.default).toBe("tree");
+      expect(description()).toContain("what `folder` has always meant");
+    });
+
+    it("defines `self` as one level, by the document's own path", () => {
+      expect(description()).toContain("**directly** in the folder");
+      expect(description()).toContain("no further `/` after the prefix");
+      expect(description()).toContain("its own path decides where it is filed");
+    });
+
+    it("says a thread is excluded by inheritance, which is the whole difference", () => {
+      expect(description()).toContain("inherits nothing");
+      expect(description()).toContain("**absent**");
+    });
+
+    it("promises the bound line counts the set the page draws from", () => {
+      expect(description()).toContain("`page.total` counts the same set the page draws from");
+    });
+
+    it("states the refusal, so a scope with nothing to scope is not a silent no-op", () => {
+      expect(description()).toContain("Sent without `folder` it is a `400` naming `folder`");
+    });
+
+    it("answers the two edge cases a caller would otherwise have to try", () => {
+      expect(description()).toContain("empty page at either scope");
+      expect(description()).toContain("the root");
+    });
+
+    /**
+     * Held back from ranked retrieval for `isParent`'s reason and no other, and
+     * said out loud there — an omission a reader can look up is a decision, and
+     * one they cannot is a suspected oversight.
+     */
+    it("is declared on the collection query alone, and search says why", () => {
+      expect(parameter("/api/docs", "get", "folderScope")).toBeDefined();
+      expect(parameter("/api/search", "get", "folderScope")).toBeUndefined();
+      expect(operation("/api/search", "get").description).toContain(
+        "`folderScope` is held back for that same reason and no other",
+      );
     });
   });
 
@@ -2173,11 +2243,106 @@ describe("author attribution", () => {
     // CONTRACT-037: the bulk route declares `403` for one of its eight acts —
     // `delete` keeps §9.2's user-only rule, and the refusal is the request's.
     ["/api/docs/bulk", "post"],
+    // CONTRACT-059: the write route is user-only for **one field**, `origin:
+    // null` (SPEC.md §9.2's detach). The route is otherwise open to both
+    // parties, which is exactly why the `403` went undeclared for a release —
+    // the list above was a snapshot of the wholly user-only routes.
+    ["/api/docs/{id}", "put"],
   ])("declares 403 on the user-only route %s %s and says why", (path, method) => {
     const op = operation(path, method);
     expect(op.responses?.["403"]).toBeDefined();
     expect(op.description).toContain(`${ACTOR_HEADER}: agent`);
     expect(op.description).toContain("rejected");
+  });
+
+  /**
+   * CONTRACT-059, and the reason the list above is no longer the only guard.
+   *
+   * `PUT /api/docs/{id}` went a release refusing `origin: null` for an agent
+   * actor while declaring no `403`, and the list above could not have caught it:
+   * it enumerates the routes that are user-only **as routes**, and this one is
+   * user-only in **one field** of an otherwise open body. The published
+   * `UpdateDocRequest.origin` description said "user-only ... refused for an
+   * agent actor" the whole time — the contract stated the behaviour in prose and
+   * omitted it from the machine-readable half, which is precisely the half a
+   * generated handler reads.
+   *
+   * So the rule is derived from the document instead of listed: **a request
+   * field that publishes a user-only refusal implies its operation declares
+   * `403`.** A field added tomorrow is covered with no edit here. The sweep is
+   * request bodies only — a *response* field may well describe a rule enforced
+   * on some other route (`DocRow.origin` and `Thread.resident` both do), and
+   * reading those as declarations for the route that returns them would be a
+   * false positive rather than a catch.
+   */
+  describe("a user-only request field implies its route declares 403", () => {
+    const USER_ONLY = /user-only|refused for an agent/;
+
+    /** Every `<METHOD> <path> → <field>` whose published description says user-only. */
+    function userOnlyRequestFields(): { signature: string; field: string; has403: boolean }[] {
+      const found: { signature: string; field: string; has403: boolean }[] = [];
+
+      const walk = (
+        node: SchemaNode | undefined,
+        signature: string,
+        trail: string,
+        seen: ReadonlySet<string>,
+        has403: boolean,
+      ): void => {
+        if (!node) return;
+        if (node.$ref !== undefined) {
+          const name = node.$ref.split("/").pop() ?? "";
+          if (seen.has(name)) return;
+          walk(componentSchemas?.[name], signature, trail, new Set([...seen, name]), has403);
+          return;
+        }
+        for (const [property, child] of Object.entries(node.properties ?? {})) {
+          const field = trail === "" ? property : `${trail}.${property}`;
+          if (child.description !== undefined && USER_ONLY.test(child.description)) {
+            found.push({ signature, field, has403 });
+          }
+          walk(child, signature, field, seen, has403);
+        }
+        for (const branch of [
+          ...(node.allOf ?? []),
+          ...(node.anyOf ?? []),
+          ...(node.oneOf ?? []),
+        ]) {
+          walk(branch, signature, trail, seen, has403);
+        }
+      };
+
+      for (const [path, item] of Object.entries(document.paths ?? {})) {
+        for (const method of MUTATING_METHODS) {
+          const op = (item as Record<string, Operation> | undefined)?.[method];
+          const media = op?.requestBody?.content?.["application/json"] as
+            { schema?: SchemaNode } | undefined;
+          if (!op || !media?.schema) continue;
+          walk(
+            media.schema,
+            endpointSignature(method, path),
+            "",
+            new Set(),
+            op.responses?.["403"] !== undefined,
+          );
+        }
+      }
+      return found;
+    }
+
+    /** Vacuity guard: a sweep over nothing passes for the wrong reason. */
+    it("finds the user-only request fields the document publishes", () => {
+      expect(userOnlyRequestFields().map((entry) => `${entry.signature} → ${entry.field}`)).toEqual(
+        ["PUT /api/docs/{id} → origin"],
+      );
+    });
+
+    it("declares 403 on every route carrying one", () => {
+      const undeclared = userOnlyRequestFields()
+        .filter((entry) => !entry.has403)
+        .map((entry) => `${entry.signature} → ${entry.field}`);
+      expect(undeclared).toEqual([]);
+    });
   });
 });
 
@@ -2968,6 +3133,101 @@ describe("the deferred queue state (CONTRACT-021)", () => {
 });
 
 /**
+ * CONTRACT-083 — the four settle verbs all refuse a transition, and all four now
+ * say so.
+ *
+ * SERVER-145 made the queue's terminal states terminal. `defer` had carried an
+ * `onlyFrom` rule since SERVER-030 and declared its `409`; `complete`, `fail` and
+ * `abandon` grew one and declared nothing, so for one release the document told a
+ * generated handler that a refusal it will certainly meet cannot happen.
+ *
+ * **This class is not derivable from the document, and that is the finding.**
+ * CONTRACT-059's sweep works because the *trigger* of its `403` is a value in the
+ * request body — `origin: null` — whose own published description states the
+ * rule, so "a user-only request field implies a declared `403`" reads a fact the
+ * document already carries. The trigger here is the event's current status on the
+ * server, which appears in no request (these three take a path id and, for
+ * `fail`, an optional annotation) and in no response either: `QueueEvent`
+ * publishes no `status` field at all. Nothing in the document states which
+ * statuses a verb admits, so no sweep over the document can derive that a `409`
+ * is owed. Making it derivable means publishing the transition table — the server
+ * declaring its own rules — which is SERVER-119's territory and deliberately not
+ * built here. This is that issue's third instance.
+ *
+ * So the guard is an enumeration, and it is honest about being one: the pin below
+ * fails if any of the four declarations is removed.
+ */
+describe("every queue settle verb declares the transition it refuses (CONTRACT-083)", () => {
+  const SETTLE_VERBS = [
+    ["/api/queue/{id}/complete", "post"],
+    ["/api/queue/{id}/fail", "post"],
+    ["/api/queue/{id}/defer", "post"],
+    ["/api/queue/{id}", "delete"],
+  ] as const;
+
+  /** Vacuity guard: the sweep below is worthless if it walks an empty list. */
+  it("covers every route that settles a queue event", () => {
+    const settling = ENDPOINT_INVENTORY.filter(
+      (entry) => entry.includes("/api/queue/{id}") && !entry.includes("/api/queue/{id}/log"),
+    );
+    expect(settling.sort()).toEqual(
+      SETTLE_VERBS.map(([path, method]) => `${method.toUpperCase()} ${path}`).sort(),
+    );
+  });
+
+  it.each(SETTLE_VERBS)("declares 409 on %s %s", (path, method) => {
+    expect(operation(path, method).responses?.["409"]).toBeDefined();
+  });
+
+  /**
+   * The response slot is `CONFLICT_RESPONSE` for all four, so the shape a client
+   * decodes is one shape. A fourth variant here would be four decoders.
+   */
+  it("refuses with one shape, not four", () => {
+    const shapes = SETTLE_VERBS.map(([path, method]) =>
+      JSON.stringify(operation(path, method).responses?.["409"]),
+    );
+    expect(new Set(shapes).size).toBe(1);
+  });
+
+  /**
+   * The prose says what the conflict *is*. "Conflict" alone sends the reader to
+   * the server source, which is the trip the declaration exists to save.
+   */
+  it.each([
+    ["/api/queue/{id}/complete", "post", "only claimed work can be completed"],
+    ["/api/queue/{id}/fail", "post", "only claimed work can be failed"],
+    ["/api/queue/{id}/defer", "post", "only claimed work can be deferred"],
+    ["/api/queue/{id}", "delete", "only outstanding work can be abandoned"],
+  ])("names the rule on %s %s rather than saying 'conflict'", (path, method, rule) => {
+    const description = operation(path, method).description ?? "";
+    expect(description).toContain(rule);
+    expect(description).toContain("`404` when there is no such event");
+  });
+
+  /**
+   * Three verbs refuse the same thing and say it in the same words. `abandon`
+   * refuses a *different* thing — SPEC.md §7's console offers it beside `retry`
+   * on a failed job, so it is admitted from everything but a finished event — and
+   * saying it in the claim rule's words would be a lie in matching prose.
+   */
+  it("shares one sentence across the three claim-only verbs, and marks abandon as the exception", () => {
+    for (const [path, method] of [
+      ["/api/queue/{id}/complete", "post"],
+      ["/api/queue/{id}/fail", "post"],
+      ["/api/queue/{id}/defer", "post"],
+    ] as const) {
+      expect(operation(path, method).description, path).toContain(
+        "`409` when the event is not `in-progress`",
+      );
+    }
+    const abandon = operation("/api/queue/{id}", "delete").description ?? "";
+    expect(abandon).toContain("`409` when the event is `processed` or already `abandoned`");
+    expect(abandon).toContain("not** restricted to claimed work");
+  });
+});
+
+/**
  * CONTRACT-045 — presence, published once and read at two grains.
  *
  * The console strip used to derive `idle` by elimination from the counts, so a
@@ -3729,6 +3989,59 @@ describe("a folder move reports the documents it carried (CONTRACT-047)", () => 
     expect(codeSchema()?.enum).toEqual([...WARNING_CODES]);
     expect(codeSchema()?.enum).toContain("carried_skill");
     expect(codeSchema()?.enum).toContain("carried_reconciliation");
+  });
+
+  /**
+   * CONTRACT-079's audit, pinned on the published document because that is what
+   * a client author reads. Each of the three below was read against its emitter
+   * in `apps/server` and had drifted; a description that says what the server no
+   * longer does is worse than none, because it is the half nobody re-checks.
+   * Each assertion names the corrected fact **and** refuses the old phrasing,
+   * so a revert is a failure rather than a silent regression.
+   */
+  describe("the warning vocabulary says what the server does (CONTRACT-079)", () => {
+    const description = (): string => codeSchema()?.description ?? "";
+
+    /**
+     * The reconciliation writes `resolved`, not `open`
+     * (`RESTORED_STATUS`, `apps/server/src/docs/archive.ts`): being swept back
+     * under the enabled root is being unarchived, so §5's ladder gives the
+     * carried skill the state a named unarchive gives. The published text said
+     * `open` from the day it was written.
+     */
+    it("gives a carried reconciliation the status an unarchive gives", () => {
+      expect(description()).toContain("corrected to `resolved`");
+      expect(description()).toContain("`resolved` and not `open`");
+    });
+
+    /**
+     * `commit_skipped` enumerated two causes as if the list were closed, and one
+     * of the server's three — a commit that ran and left no `HEAD` —
+     * contradicts "no commit was attempted" outright.
+     */
+    it("does not claim a closed list of reasons for a skipped commit", () => {
+      expect(description()).not.toContain("no commit was attempted");
+      expect(description()).toContain("no commit stands for this write");
+      expect(description()).toContain("left no `HEAD`");
+    });
+
+    /**
+     * `stage_status` named two silences and the server has five. Each missing
+     * one matters differently: the archived-board and root-decided cases are
+     * rare and would read as bugs, and the no-op case is the common one —
+     * without it the description implies a warning on every drag between two
+     * stages. The count is asserted **beside** the five clauses, so a sixth
+     * silence added to the server fails here instead of passing on a number
+     * nobody re-read.
+     */
+    it("names every case the stage coupling is silent in", () => {
+      expect(description()).toContain("silent in five cases");
+      expect(description()).toContain("moved no stage at all");
+      expect(description()).toContain("no kanban over `stage` claims the document");
+      expect(description()).toContain("**archived**");
+      expect(description()).toContain("**root** decides its status");
+      expect(description()).toContain("already going to leave on disk");
+    });
   });
 
   /**
@@ -5419,6 +5732,71 @@ describe("folder acts (CONTRACT-075)", () => {
 
   it("says a rename never changes an id, so every ref keeps resolving", () => {
     expect(operation("/api/folders/rename", "post").description).toContain("Ids never change");
+  });
+
+  /**
+   * CONTRACT-078. A folder act plans a write per document and one document can
+   * refuse its own; before this the caller was told what moved and nothing at
+   * all about what did not. The tests below pin the shape, its required-ness,
+   * and — the part that is a decision rather than a field — which acts carry it.
+   */
+  describe("the documents an act could not apply to", () => {
+    it.each(["FolderStatusResult", "DeleteFolderResult"])(
+      "%s names them, as ids with reasons rather than as prose",
+      (result) => {
+        const refused = componentSchemas?.[result]?.properties?.["refused"];
+        expect(refused?.items?.$ref).toBe("#/components/schemas/FolderRefusal");
+        expect(componentSchemas?.[result]?.required).toContain("refused");
+      },
+    );
+
+    it("carries the id and one sentence, and both are required", () => {
+      const refusal = componentSchemas?.["FolderRefusal"];
+      expect(Object.keys(refusal?.properties ?? {})).toEqual(["id", "message"]);
+      expect(refusal?.required).toEqual(["id", "message"]);
+      expect(refusal?.properties?.["message"]?.minLength).toBe(1);
+    });
+
+    /**
+     * The rename is **one directory move**: it applies to every document under
+     * the folder or to none, so no document can refuse one alone. A field no
+     * producer can fill is not free — a client author writes a recovery that can
+     * never run — so the absence is deliberate and is stated in the schema.
+     */
+    it("is absent from the rename result, whose act cannot refuse one document", () => {
+      expect(componentSchemas?.["RenameFolderResult"]?.properties?.["refused"]).toBeUndefined();
+    });
+
+    /** Exactly one way to report it: no warning code was added beside the field. */
+    it("adds no warning code, so a refusal is not reportable twice", () => {
+      const codes = componentSchemas?.["Warning"]?.properties?.["code"]?.enum ?? [];
+      expect(codes.some((code) => code.includes("refus"))).toBe(false);
+      expect([...codes]).toEqual([...WARNING_CODES]);
+    });
+
+    it.each([
+      ["/api/folders/archive", "named in `refused`"],
+      ["/api/folders/unarchive", "named in `refused`"],
+      ["/api/folders/delete", "named in `refused` with why, and still exists"],
+    ])("says so on %s, where a caller reads it", (path, phrase) => {
+      expect(operation(path, "post").description).toContain(phrase);
+    });
+
+    /**
+     * The two shapes disagree about `documents`, and the disagreement is the
+     * whole reason each result says it for itself: a status act reports the
+     * status each document *has*, so a refused one is listed with the status it
+     * kept, while a delete reports what it removed and a refused document is
+     * not among them.
+     */
+    it("says which half of the result a refused document also appears in", () => {
+      expect(
+        componentSchemas?.["FolderStatusResult"]?.properties?.["documents"]?.description,
+      ).toContain("carrying the status it kept");
+      expect(
+        componentSchemas?.["DeleteFolderResult"]?.properties?.["documents"]?.description,
+      ).toContain("is **not** here — it still exists");
+    });
   });
 });
 

@@ -23,6 +23,7 @@ import {
   VALIDATION_RESPONSE,
   UNRESOLVED_REFERENCE_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * `POST /api/threads/{id}/turns` — one of the two routes whose body carries two
@@ -37,7 +38,7 @@ import {
 export const TURN_APPEND_MEDIA_TYPES = DUAL_MEDIA_TYPES;
 
 const ThreadIdParamSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 /**

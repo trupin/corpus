@@ -1,4 +1,4 @@
-import type { Board, KanbanSpec } from "./boardDoc";
+import { compareBoards, type Board, type KanbanSpec } from "./boardDoc";
 import {
   compileQuery,
   folderOfFilter,
@@ -35,6 +35,34 @@ import {
  * duplication is a quotation rather than a second decision.
  */
 export const UNMAPPED_STAGE_STATUS = "open";
+
+/**
+ * **The kanban whose `status` map actually decides** (SERVER-138, UI-160): the
+ * lowest-`order` board over `stage`, in the same order the bar draws.
+ *
+ * §5 says a document's stage decides its status and is silent on which board
+ * decides when two claim the same document. SERVER-138 picked the one a person
+ * looks at first — the lowest `order`, with `GET /api/docs?sort=order`'s
+ * tiebreak, which is exactly {@link compareBoards}. Archived boards decide
+ * nothing there, and are absent here for free: `BOARDS_FILTER` excludes them.
+ *
+ * `null` for a workspace holding no kanban over `stage`.
+ */
+export function decidingStageBoard(boards: readonly Board[]): Board | null {
+  return [...boards].sort(compareBoards).find((board) => board.kanban?.field === "stage") ?? null;
+}
+
+/** What the hedged status chip says a chip cannot claim. */
+export function advisoryStatusTitle(mapped: string, deciding: Board | null): string {
+  const other =
+    deciding === null ? "another kanban over `stage`" : `“${deciding.title}” (${deciding.id})`;
+  return (
+    `Advisory. ${other} is a kanban over \`stage\` with a lower \`order\`, and the ` +
+    "lowest-order board that claims a document is the one whose map decides its status " +
+    `(SPEC.md §5, SERVER-138). Entering this stage writes \`${mapped}\` only for a card that ` +
+    "board does not claim — the response names the board that decided."
+  );
+}
 
 /** How a kanban's columns are drawn when the file names no transitions. */
 export const FUNNEL_HINT = "a drag moves one stage left or right";
@@ -195,6 +223,23 @@ export function stageColumnId(boardId: string, stage: string): string {
  * **Every column of a kanban over `stage` carries that status chip**, because
  * §5 gives every stage one — the map's status, or `open` where the map is
  * silent. See the branch below for why the silent case is drawn muted.
+ *
+ * **And it promises only where this board decides** (UI-160). The deciding board
+ * is the lowest-`order` kanban that claims the card, which need not be the board
+ * being dragged on, so a column on any other kanban over `stage` states what
+ * *this* board's map says and not what will be written. Where that can happen
+ * the chip is hedged — `→ resolved?`, muted, with the reason in its title —
+ * rather than promising a status this drop may not produce.
+ *
+ * **Per column and not per card**, which is the decision UI-160 asked for. A
+ * per-card answer would have to run every other kanban's scope query against
+ * every row in the column, client-side: a second implementation of the filter
+ * grammar in the browser, a request per card or a query the board does not make,
+ * and an answer that would still be a guess at drop time. The per-column
+ * question — "could another board outrank this one?" — is answered exactly by
+ * the board documents the bar already holds, costs nothing, and is never wrong
+ * in the direction that matters: a column that promises is a column no other
+ * kanban can outrank.
  */
 function stageChips(
   scopeChips: readonly ColumnChip[],
@@ -203,6 +248,9 @@ function stageChips(
   holdsUnset: boolean,
   mapped: string | null,
   edges: readonly string[],
+  /** The board that decides, or `null`; hedges every status chip when it is not this one. */
+  decides: boolean,
+  deciding: Board | null,
 ): ColumnChip[] {
   const chips: ColumnChip[] = [
     ...scopeChips,
@@ -216,34 +264,55 @@ function stageChips(
       title: "A document with no stage yet sits in the first column",
     });
   }
-  if (mapped !== null) {
-    chips.push({
-      key: "mapped",
-      label: `→ ${mapped}`,
-      tone: "good",
-      title: "Entering this stage writes this status",
-    });
-  } else if (kanban.field === "stage") {
-    // §5's **second** outcome, drawn because it is an outcome and not a
-    // silence: "a stage with no mapping writes `open`". The column with no
-    // entry in `kanban.status` is the one drop that can reopen resolved work,
-    // and while only mapped stages carried a chip it was also the only drop
-    // with nothing on the head to say so — the board looked like it wrote a
-    // status on some columns and left the document alone on the rest.
-    //
-    // Muted rather than `good`, because the two chips are two different facts:
-    // `→ resolved` is a choice the board's author wrote down, and `→ open` is
-    // what §5 does where they wrote nothing.
-    //
-    // Only for a kanban over `stage`. A kanban over `status` moves the status
-    // field itself, so the coupling never runs on it (the server skips those
-    // boards outright) and a `→ open` on its `resolved` column would be false.
-    chips.push({
-      key: "unmapped",
-      label: `→ ${UNMAPPED_STAGE_STATUS}`,
-      tone: "muted",
-      title: "This board maps no status to this stage, so entering it writes `open` (SPEC.md §5)",
-    });
+  /*
+   * The coupling runs on kanbans over `stage` and on no others. A kanban over
+   * `status` moves the status field itself — the server skips those boards
+   * outright — so its map decides nothing and neither chip below would be true
+   * on it. What the drop writes there is the column's own `status: <value>`
+   * chip, which is already the first one drawn.
+   */
+  if (kanban.field === "stage") {
+    if (mapped !== null && decides) {
+      chips.push({
+        key: "mapped",
+        label: `→ ${mapped}`,
+        tone: "good",
+        title: "Entering this stage writes this status",
+      });
+    } else if (mapped !== null) {
+      chips.push({
+        key: "mapped",
+        label: `→ ${mapped}?`,
+        tone: "muted",
+        title: advisoryStatusTitle(mapped, deciding),
+      });
+    } else if (decides) {
+      // §5's **second** outcome, drawn because it is an outcome and not a
+      // silence: "a stage with no mapping writes `open`". The column with no
+      // entry in `kanban.status` is the one drop that can reopen resolved work,
+      // and while only mapped stages carried a chip it was also the only drop
+      // with nothing on the head to say so — the board looked like it wrote a
+      // status on some columns and left the document alone on the rest.
+      //
+      // Muted rather than `good`, because the two chips are two different facts:
+      // `→ resolved` is a choice the board's author wrote down, and `→ open` is
+      // what §5 does where they wrote nothing.
+      chips.push({
+        key: "unmapped",
+        label: `→ ${UNMAPPED_STAGE_STATUS}`,
+        tone: "muted",
+        title: "This board maps no status to this stage, so entering it writes `open` (SPEC.md §5)",
+      });
+    } else {
+      // The same second outcome, hedged for the reason the mapped chip is: this
+      // board writes `open` here only for a card no lower-`order` kanban claims.
+      chips.push({
+        key: "unmapped",
+        label: `→ ${UNMAPPED_STAGE_STATUS}?`,
+        tone: "muted",
+        title: advisoryStatusTitle(UNMAPPED_STAGE_STATUS, deciding),
+      });
+    }
   }
   if (edges.length === 0) {
     chips.push({
@@ -285,9 +354,19 @@ function stageChips(
  * `viewId` is the **board** document, because that is the file every act on one
  * of these columns edits — its width, its stages, its transitions.
  */
-export function deriveStageColumns(board: Board): readonly BoardColumn[] {
+export function deriveStageColumns(
+  board: Board,
+  /**
+   * The kanban that decides a status ({@link decidingStageBoard}), which is this
+   * board on every workspace holding one kanban. Required rather than defaulted:
+   * a default would have to be "this board decides", and the whole of UI-160 is
+   * that a board must not assume that.
+   */
+  deciding: Board | null,
+): readonly BoardColumn[] {
   const kanban = board.kanban;
   if (kanban === null) return [];
+  const decides = deciding !== null && deciding.id === board.id;
   const { stored, error: queryError } = readStoredQuery(board.query);
   const scope = compileQuery(stored);
   const folder = folderOfFilter(scope.filter);
@@ -310,7 +389,7 @@ export function deriveStageColumns(board: Board): readonly BoardColumn[] {
       kind: "stage",
       filter,
       storedQuery: stored,
-      chips: stageChips(scope.chips, kanban, stage, holdsUnset, mapped, edges),
+      chips: stageChips(scope.chips, kanban, stage, holdsUnset, mapped, edges, decides, deciding),
       sortLabel: sortLabelOf(filter),
       folder,
       width: board.width,

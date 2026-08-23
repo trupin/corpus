@@ -45,6 +45,7 @@ import { DocsQuerySchema, KanbanSchema, type Kanban } from "@corpus/contract";
 import { classifyPath, type ProjectionDb } from "../projection/index.js";
 import type { FilterQuery } from "./filters.js";
 import { matchesQuery } from "./query.js";
+import type { StalenessThresholds } from "./staleness.js";
 import { valueToWire } from "./selection.js";
 
 /**
@@ -188,6 +189,9 @@ export function decideStageStatus(
   relativePath: string,
   stage: string | null,
   nowMs: number,
+  // The workspace's staleness ramp (SERVER-133): a board's scope query may name
+  // `stale=`, and §9.2 promises it means one thing wherever it is asked.
+  thresholds?: StalenessThresholds,
 ): StageCoupling | null {
   // **SERVER-138's rule, where §5 is silent.** A document whose **root** fixes
   // its status has no status in its frontmatter to decide:
@@ -205,7 +209,7 @@ export function decideStageStatus(
   if (classifyPath(relativePath)?.status != null) return null;
 
   const matched = stageKanbanBoards(db).filter((board) =>
-    matchesQuery(db, boardScopeQuery(board.query), docId, nowMs),
+    matchesQuery(db, boardScopeQuery(board.query), docId, nowMs, thresholds),
   );
   const [board, ...alsoMatched] = matched;
   if (board === undefined) return null;

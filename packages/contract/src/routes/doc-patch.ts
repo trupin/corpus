@@ -14,9 +14,11 @@ import {
   VALIDATION_RESPONSE,
   UNKNOWN_JOB_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
+import { PATCH_DOC_PATH } from "./paths.js";
 
 const DocIdParamSchema = z.object({
-  id: DocumentIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(DocumentIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 /**
@@ -72,7 +74,7 @@ export const PATCH_CONFLICT_RESPONSE = jsonContent(
  */
 export const patchDoc = createRoute({
   method: "post",
-  path: "/api/docs/{id}/patch",
+  path: PATCH_DOC_PATH,
   tags: ["docs"],
   summary: "Edit a document's body by anchored exact string replacement",
   description:

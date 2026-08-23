@@ -18,10 +18,11 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /** A job is a queue event being worked, so it is addressed by that event's id (SPEC.md §7). */
 const JobIdParamSchema = z.object({
-  id: EventIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(EventIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 export const listJobs = createRoute({

@@ -109,7 +109,7 @@ export const PATH_KEPT_MESSAGE = "Path kept — the next pick from its origin ro
 export function Board(): ReactElement {
   const surface = useBoardSurface();
   const board = surface.current;
-  const { columns, isPending, error } = useColumns(board);
+  const { columns, isPending, error } = useColumns(board, surface.boards);
   const local = surface.local;
   const createDoc = useCreateDoc();
   const createInColumn = useCreateInColumn();

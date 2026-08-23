@@ -27,7 +27,13 @@ import { normalizeInstant } from "../core/time.js";
 import { SNIPPET_CLOSE, SNIPPET_ELLIPSIS, SNIPPET_OPEN, SNIPPET_TOKENS } from "./fts.js";
 import { toFtsMatchExpression } from "./fts.js";
 import { ANY_REASON_SQL, NEEDS_REASON_SQL, UNREAD_SQL } from "./needs.js";
-import { atOrBeyondSql, stalenessCutoffs, tierParam } from "./staleness.js";
+import {
+  atOrBeyondSql,
+  STALENESS_THRESHOLD_DAYS,
+  stalenessCutoffs,
+  tierParam,
+  type StalenessThresholds,
+} from "./staleness.js";
 
 /** Where documents live, and therefore what `folder` is relative to (SPEC.md §4). */
 export const DOCS_ROOT = "data/docs";
@@ -191,11 +197,21 @@ export interface Compiled {
  */
 export type FilterQuery = Omit<DocsQuery, "sort" | "limit" | "offset">;
 
-export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
+/**
+ * `thresholds` is the workspace's staleness ramp (SERVER-133). It reaches the
+ * SQL as three bound cutoffs and nothing else — {@link atOrBeyondSql} spells no
+ * day count — so a configured ramp changes what a query binds and never what a
+ * projected row holds.
+ */
+export function compileFilters(
+  query: FilterQuery,
+  nowMs: number,
+  thresholds: StalenessThresholds = STALENESS_THRESHOLD_DAYS,
+): Compiled {
   const binder = new Binder();
   const conditions: string[] = [];
   const today = calendarDate(nowMs);
-  const cutoffs = stalenessCutoffs(nowMs);
+  const cutoffs = stalenessCutoffs(nowMs, thresholds);
 
   // Referenced by the Attention columns and the staleness tier every response
   // carries, so always bound. `paramsFor` then hands each statement only the
@@ -239,13 +255,45 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
   }
 
   if (query.folder !== undefined) {
-    // §10 folder scoping: a folder column shows the documents filed there *and*
-    // the conversations about them, so a thread inherits its parent's folder.
-    const prefix = binder.next("folder", likePrefix(folderPathPrefix(query.folder)));
-    conditions.push(
-      `(d.path LIKE ${prefix} ESCAPE '\\' OR EXISTS (
+    // §10 folder scoping, and how far under the folder it reaches (CONTRACT-081).
+    //
+    // The **unescaped** prefix is what the `self` form measures: `likePrefix`
+    // doubles nothing but it *does* insert a backslash before each `%`, `_` and
+    // `\`, and appends the wildcard. `length()` over that literal is therefore a
+    // different number from the number of characters a matching path actually
+    // spends on the prefix — larger by one per escapable character in the folder
+    // name, and by one for the `%`. Measuring the wrong string would start the
+    // `substr` past the first separator, so `instr` would find none, so a folder
+    // whose name contains `%`, `_` or `\` would list its whole subtree under
+    // `self`. Bound as its own parameter rather than computed in SQL for exactly
+    // that reason.
+    const path = folderPathPrefix(query.folder);
+    const prefix = binder.next("folder", likePrefix(path));
+    if (query.folderScope === "self") {
+      // The explorer's reading: the documents filed **directly** here. Nothing
+      // is inherited — a thread is a document and its own path decides where it
+      // is filed, so the `EXISTS` half of the tree form is gone rather than
+      // narrowed. That is what keeps one document from being drawn under every
+      // expanded ancestor at once.
+      //
+      // "Directly" is "no further separator after the prefix". `substr` is
+      // 1-based, so the character after a prefix of `n` is at `n + 1`, and a
+      // path equal to the prefix yields the empty string — `instr` returns 0 and
+      // it matches, which is the right answer for a document filed *at* the
+      // folder path if one ever exists.
+      const length = binder.next("folderLen", path.length);
+      conditions.push(
+        `(d.path LIKE ${prefix} ESCAPE '\\' AND instr(substr(d.path, ${length} + 1), '/') = 0)`,
+      );
+    } else {
+      // `tree`, and the default: a folder column shows the documents filed there
+      // *and* the conversations about them, so a thread inherits its parent's
+      // folder. Byte for byte what `folder` has always meant.
+      conditions.push(
+        `(d.path LIKE ${prefix} ESCAPE '\\' OR EXISTS (
          SELECT 1 FROM documents p WHERE p.id = t.parent_id AND p.path LIKE ${prefix} ESCAPE '\\'))`,
-    );
+      );
+    }
   }
 
   if (query.parent !== undefined) {

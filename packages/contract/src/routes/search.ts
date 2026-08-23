@@ -28,7 +28,8 @@ export const searchCorpus = createRoute({
     "declared from the same schema so the two cannot drift; `sort` and `offset` are not " +
     "among them and are ignored if sent (a ranked set has one order and no pages), and neither " +
     "is `isParent`, which §9.2's signed parameter string declares on the collection query alone. " +
-    "Each hit is an " +
+    "`folderScope` is held back for that same reason and no other, so `folder` here always means " +
+    "the folder and its descendants. Each hit is an " +
     "**address plus a line of context** — the document id, its title, the heading path of the " +
     "best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line " +
     "snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` " +

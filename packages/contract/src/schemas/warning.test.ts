@@ -108,7 +108,7 @@ describe("the warnings carrier", () => {
         code: "carried_reconciliation" as const,
         detail:
           "doc_skill9f2a1c (.claude/skills/demo/helper/SKILL.md) still said `status: archived` " +
-          "under the enabled skills root, so its status was reconciled to `open`",
+          "under the enabled skills root, so its status was reconciled to `resolved`",
       },
     ];
     expect(warningsField.parse(warnings)).toEqual(warnings);

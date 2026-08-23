@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ActorSchema } from "./actor.js";
 import { residentField } from "./agents.js";
 import { TextQuoteSelectorRequestSchema } from "./anchor.js";
@@ -10,6 +10,7 @@ import { turnModelRequestField, turnModelResponseField } from "./turn-model.js";
 import { warningsField } from "./warning.js";
 import { jobField } from "./provenance.js";
 import { requestedWeightField } from "./weight.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Whether the agent participates in a thread (SPEC.md §6, §8). `requested` is
@@ -22,7 +23,7 @@ export const ThreadAgentSchema = z.enum(THREAD_AGENT_STATES);
 
 export const THREAD_STATUSES = ["open", "resolved"] as const;
 
-export const ThreadStatusSchema = z.enum(THREAD_STATUSES).openapi({
+export const ThreadStatusSchema = openapi(z.enum(THREAD_STATUSES), {
   description:
     "Resolved threads collapse in the document view and stop re-triggering the agent (SPEC.md §8).",
 });
@@ -36,17 +37,18 @@ export const ThreadStatusSchema = z.enum(THREAD_STATUSES).openapi({
  * here so the API reads with the locality the file gives up. `./turn-model.ts`
  * carries the decision and what it cost.
  */
-export const TurnSchema = z
-  .object({
+export const TurnSchema = openapi(
+  z.object({
     author: ActorSchema,
     ts: IsoDateTimeSchema,
     body: z.string().describe("Markdown body of the turn, without its `## author · ts` heading."),
     model: turnModelResponseField,
-  })
-  .openapi("Turn");
+  }),
+  "Turn",
+);
 
-export const ThreadSchema = z
-  .object({
+export const ThreadSchema = openapi(
+  z.object({
     id: ThreadIdSchema,
     title: z.string(),
     created: IsoDateTimeSchema,
@@ -62,12 +64,13 @@ export const ThreadSchema = z
     agent: ThreadAgentSchema,
     resident: residentField,
     turns: z.array(TurnSchema),
-  })
-  .openapi("Thread");
+  }),
+  "Thread",
+);
 
 /** Thread list row — the projection's `threads` columns (SPEC.md §9.1). */
-export const ThreadSummarySchema = z
-  .object({
+export const ThreadSummarySchema = openapi(
+  z.object({
     id: ThreadIdSchema,
     title: z.string(),
     status: ThreadStatusSchema,
@@ -80,8 +83,9 @@ export const ThreadSummarySchema = z
     turnCount: z.number().int().min(0),
     lastAuthor: ActorSchema,
     lastTs: IsoDateTimeSchema,
-  })
-  .openapi("ThreadSummary");
+  }),
+  "ThreadSummary",
+);
 
 /**
  * The response of a thread mutation that changes nothing but the thread itself —
@@ -100,9 +104,10 @@ export const ThreadSummarySchema = z
  * server already computes those warnings and, before this shape existed, could
  * only log them (SPEC.md §11: "surfaces loudly — a warning on the API response").
  */
-export const ThreadMutationResponseSchema = z
-  .object({ thread: ThreadSummarySchema, warnings: warningsField })
-  .openapi("ThreadMutationResponse");
+export const ThreadMutationResponseSchema = openapi(
+  z.object({ thread: ThreadSummarySchema, warnings: warningsField }),
+  "ThreadMutationResponse",
+);
 
 /**
  * `requestsAgent` is the *enqueue* signal (SPEC.md §8) — it decides whether a
@@ -131,10 +136,10 @@ export const requestsAgentField = (whenOmitted: string) =>
  * toggle.
  */
 export const requestsAgentFormField = (whenOmitted: string) =>
-  z
-    .stringbool()
-    .optional()
-    .openapi({ type: "boolean", description: requestsAgentDescription(whenOmitted) });
+  openapi(z.stringbool().optional(), {
+    type: "boolean",
+    description: requestsAgentDescription(whenOmitted),
+  });
 
 export const TURN_APPEND_OMITTED_BEHAVIOUR =
   "the server enqueues when the thread is already `engaged`, and otherwise only on an explicit " +
@@ -150,8 +155,8 @@ export const THREAD_CREATE_OMITTED_BEHAVIOUR =
  * `selector: {exact: …}` was meant and got a `200` with a silently unanchored
  * thread — the typo class strictness turns into a `400` naming the key.
  */
-export const CreateThreadRequestSchema = z
-  .strictObject({
+export const CreateThreadRequestSchema = openapi(
+  z.strictObject({
     job: jobField,
     recipient: recipientField,
     parent: DocumentIdSchema.nullable()
@@ -169,8 +174,9 @@ export const CreateThreadRequestSchema = z
     requestsAgent: requestsAgentField(THREAD_CREATE_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
     weight: requestedWeightField,
-  })
-  .openapi("CreateThreadRequest");
+  }),
+  "CreateThreadRequest",
+);
 
 /**
  * The selector, carried through a `multipart/form-data` body where every part
@@ -182,26 +188,28 @@ export const CreateThreadRequestSchema = z
  * single definition of what a selector is; the published shape is a string,
  * because that is what is on the wire.
  */
-const MultipartSelectorSchema = z
-  .preprocess((value) => {
-    if (typeof value !== "string") return value;
-    try {
-      return JSON.parse(value) as unknown;
-    } catch {
-      // Left as the string it is: the object schema below reports it, rather
-      // than this throwing out of a preprocess where no path is attached.
-      return value;
-    }
-  }, TextQuoteSelectorRequestSchema)
-  .optional()
-  .openapi({
+const MultipartSelectorSchema = openapi(
+  z
+    .preprocess((value) => {
+      if (typeof value !== "string") return value;
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        // Left as the string it is: the object schema below reports it, rather
+        // than this throwing out of a preprocess where no path is attached.
+        return value;
+      }
+    }, TextQuoteSelectorRequestSchema)
+    .optional(),
+  {
     type: "string",
     description:
       "Text-quote selector as a JSON object encoded into one part, e.g. " +
       '`{"exact":"assume a 30-year fixed at 6.1%","prefix":"the model we "}`. Same fields and same ' +
       "meaning as the JSON body's `selector`. Omit it to anchor the thread to the whole document, " +
       "or to nothing when `parent` is absent.",
-  });
+  },
+);
 
 /**
  * The attachment form of thread creation (SPEC.md §6, §8) — the composer's *Ask*
@@ -213,30 +221,38 @@ const MultipartSelectorSchema = z
  * but a request carrying neither text nor files creates a thread with an empty
  * first turn, which is nothing at all, and is rejected.
  */
-export const MultipartCreateThreadRequestSchema = z
-  .strictObject({
-    job: jobField,
-    recipient: recipientField,
-    parent: DocumentIdSchema.optional().describe(
-      "Document being commented on. Omitted creates a standalone thread.",
-    ),
-    selector: MultipartSelectorSchema,
-    title: z.string().min(1).optional().describe("Defaults to the anchor quote or the first turn."),
-    text: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Body of the thread's first turn. Optional: a first turn may be attachment-only."),
-    requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
-    model: turnModelRequestField,
-    weight: requestedWeightField,
-    files: AttachmentFilesSchema,
-  })
-  .refine((value) => value.text !== undefined || value.files.length > 0, {
-    message: "A thread's first turn needs `text`, at least one file, or both.",
-    path: ["text"],
-  })
-  .openapi("MultipartCreateThreadRequest");
+export const MultipartCreateThreadRequestSchema = openapi(
+  z
+    .strictObject({
+      job: jobField,
+      recipient: recipientField,
+      parent: DocumentIdSchema.optional().describe(
+        "Document being commented on. Omitted creates a standalone thread.",
+      ),
+      selector: MultipartSelectorSchema,
+      title: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Defaults to the anchor quote or the first turn."),
+      text: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Body of the thread's first turn. Optional: a first turn may be attachment-only.",
+        ),
+      requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
+      model: turnModelRequestField,
+      weight: requestedWeightField,
+      files: AttachmentFilesSchema,
+    })
+    .refine((value) => value.text !== undefined || value.files.length > 0, {
+      message: "A thread's first turn needs `text`, at least one file, or both.",
+      path: ["text"],
+    }),
+  "MultipartCreateThreadRequest",
+);
 
 /**
  * Every thread mutation carries §11's warnings, exactly as the document
@@ -250,8 +266,8 @@ export const MultipartCreateThreadRequestSchema = z
  * loudly — a warning on the API response" would be true of document writes and
  * silently false of thread writes, though both go through one pipeline.
  */
-export const CreateThreadResponseSchema = z
-  .object({
+export const CreateThreadResponseSchema = openapi(
+  z.object({
     thread: ThreadSchema,
     anchorId: AnchorIdSchema.nullable().describe(
       "Anchor written into the parent, when a selector was given.",
@@ -262,47 +278,51 @@ export const CreateThreadResponseSchema = z
         'skill invocation; always null when `requestsAgent` was explicitly false ("note only").',
     ),
     warnings: warningsField,
-  })
-  .openapi("CreateThreadResponse");
+  }),
+  "CreateThreadResponse",
+);
 
-export const AppendTurnRequestSchema = z
-  .strictObject({
+export const AppendTurnRequestSchema = openapi(
+  z.strictObject({
     job: jobField,
     recipient: recipientField,
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
     weight: requestedWeightField,
-  })
-  .openapi("AppendTurnRequest");
+  }),
+  "AppendTurnRequest",
+);
 
 /**
  * The attachment form of the same request (SPEC.md §6). A turn may be
  * attachment-only, so `text` is optional — but a request carrying neither text
  * nor files is nothing at all and is rejected as a validation error.
  */
-export const MultipartAppendTurnRequestSchema = z
-  .strictObject({
-    job: jobField,
-    recipient: recipientField,
-    text: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Markdown body of the turn. Optional: a turn may be attachment-only."),
-    requestsAgent: requestsAgentFormField(TURN_APPEND_OMITTED_BEHAVIOUR),
-    model: turnModelRequestField,
-    weight: requestedWeightField,
-    files: AttachmentFilesSchema,
-  })
-  .refine((value) => value.text !== undefined || value.files.length > 0, {
-    message: "A turn needs `text`, at least one file, or both.",
-    path: ["text"],
-  })
-  .openapi("MultipartAppendTurnRequest");
+export const MultipartAppendTurnRequestSchema = openapi(
+  z
+    .strictObject({
+      job: jobField,
+      recipient: recipientField,
+      text: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Markdown body of the turn. Optional: a turn may be attachment-only."),
+      requestsAgent: requestsAgentFormField(TURN_APPEND_OMITTED_BEHAVIOUR),
+      model: turnModelRequestField,
+      weight: requestedWeightField,
+      files: AttachmentFilesSchema,
+    })
+    .refine((value) => value.text !== undefined || value.files.length > 0, {
+      message: "A turn needs `text`, at least one file, or both.",
+      path: ["text"],
+    }),
+  "MultipartAppendTurnRequest",
+);
 
-export const AppendTurnResponseSchema = z
-  .object({
+export const AppendTurnResponseSchema = openapi(
+  z.object({
     thread: ThreadSummarySchema,
     turn: TurnSchema,
     eventId: EventIdSchema.nullable().describe(
@@ -311,22 +331,24 @@ export const AppendTurnResponseSchema = z
         'always null when `requestsAgent` was explicitly false ("note only", SPEC.md §8).',
     ),
     warnings: warningsField,
-  })
-  .openapi("AppendTurnResponse");
+  }),
+  "AppendTurnResponse",
+);
 
 /**
  * Read state (SPEC.md §7). Marks live server-side in `.corpus/seen.json` and are
  * broadcast over SSE, so unread badges clear everywhere at once rather than only
  * in the tab that did the reading.
  */
-export const MarkSeenRequestSchema = z
-  .strictObject({
+export const MarkSeenRequestSchema = openapi(
+  z.strictObject({
     lastSeenTs: IsoDateTimeSchema.optional().describe(
       "Turn timestamp to mark seen up to. Defaults to the thread's last turn, which is what " +
         "opening a thread means; pass it explicitly only to record a partial read.",
     ),
-  })
-  .openapi("MarkSeenRequest");
+  }),
+  "MarkSeenRequest",
+);
 
 /**
  * `unread` is a genuine boolean rather than `literal(false)`, because a mark can
@@ -338,8 +360,8 @@ export const MarkSeenRequestSchema = z
  * a client trusting it would flicker. This field reports the state the mark
  * actually leaves behind.
  */
-export const MarkSeenResultSchema = z
-  .object({
+export const MarkSeenResultSchema = openapi(
+  z.object({
     threadId: ThreadIdSchema,
     lastSeenTs: IsoDateTimeSchema.describe("The mark now recorded for this thread."),
     unread: z
@@ -351,8 +373,9 @@ export const MarkSeenResultSchema = z
           "partial read leaves later turns unseen, and the badge stays lit. A client updates its " +
           "unread state from this flag, not from the fact that the call succeeded.",
       ),
-  })
-  .openapi("MarkSeenResult");
+  }),
+  "MarkSeenResult",
+);
 
 /**
  * Turn deletion is user-only (SPEC.md §6) and cascades: deleting a thread's last
@@ -360,8 +383,8 @@ export const MarkSeenResultSchema = z
  * the parent's frontmatter. The response names every consequence so the client
  * knows which caches to drop.
  */
-export const DeleteTurnResultSchema = z
-  .object({
+export const DeleteTurnResultSchema = openapi(
+  z.object({
     deletedTurn: z.literal(true),
     deletedThread: z
       .boolean()
@@ -374,8 +397,9 @@ export const DeleteTurnResultSchema = z
         "standalone thread.",
     ),
     warnings: warningsField,
-  })
-  .openapi("DeleteTurnResult");
+  }),
+  "DeleteTurnResult",
+);
 
 export type ThreadAgent = z.infer<typeof ThreadAgentSchema>;
 export type ThreadStatus = z.infer<typeof ThreadStatusSchema>;

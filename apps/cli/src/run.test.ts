@@ -146,6 +146,64 @@ describe("help and version", () => {
   });
 });
 
+describe("--help=brief", () => {
+  it("renders all three levels briefly and exits 0", async () => {
+    const root = await invoke(["--help=brief"], { registry: fixtureRegistry });
+    expect(root.stdout).toContain("Topics:");
+    expect(root.stdout).not.toContain("Global flags:");
+
+    const topic = await invoke(["widget", "--help=brief"], { registry: fixtureRegistry });
+    expect(topic.stdout).toContain("Show one widget.");
+    expect(topic.stdout).not.toContain("A fixture topic standing in");
+
+    const command = await invoke(["widget", "show", "--help=brief"], {
+      registry: fixtureRegistry,
+    });
+    expect(command.stdout).toContain("corpus widget show <id> [flags]");
+    expect(command.stdout).not.toContain("Examples:");
+    expect([root.code, topic.code, command.code]).toEqual([0, 0, 0]);
+  });
+
+  it("costs a fraction of the full text on a real verb", async () => {
+    const words = (text: string): number => text.trim().split(/\s+/).length;
+    const full = await invoke(["doc", "list", "--help"]);
+    const brief = await invoke(["doc", "list", "--help=brief"]);
+    expect(words(brief.stdout)).toBeLessThan(words(full.stdout) / 3);
+    // Every flag name survives the cut — that is the whole point of the mode.
+    for (const flag of ["--needs", "--is-parent", "--sort", "--limit"]) {
+      expect(brief.stdout).toContain(flag);
+    }
+    // …and the prose does not.
+    expect(full.stdout).toContain("SPEC.md §9.2");
+    expect(brief.stdout.length).toBeLessThan(full.stdout.length);
+  });
+
+  it("leaves bare --help exactly as it was", async () => {
+    const bare = await invoke(["doc", "list", "--help"]);
+    const explicit = await invoke(["doc", "list", "--help=full"]);
+    expect(bare.stdout).toBe(explicit.stdout);
+    expect(bare.stdout).toContain("Examples:");
+  });
+
+  it("exits 2 on an unknown mode, at every level", async () => {
+    for (const argv of [["--help=short"], ["doc", "--help=short"], ["doc", "list", "--help=x"]]) {
+      const result = await invoke(argv);
+      expect(result.code, argv.join(" ")).toBe(ExitCode.usageError);
+      expect(result.stderr).toContain("unknown help mode");
+      expect(result.stderr).toContain("--help=brief");
+    }
+  });
+
+  it("does not swallow the token after --help", async () => {
+    // `corpus --help doc` used to be impossible to get wrong because `--help`
+    // was a boolean. Now that it carries a value, the `bareValue` rule is what
+    // keeps `doc` a topic name rather than the help mode.
+    const result = await invoke(["--help", "doc"]);
+    expect(result.code).toBe(ExitCode.success);
+    expect(result.stdout).toContain("corpus doc <verb> [args] [flags]");
+  });
+});
+
 describe("usage errors", () => {
   it("exits 2 for an unknown command, listing the valid names", async () => {
     const result = await invoke(["nosuchtopic"]);

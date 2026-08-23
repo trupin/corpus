@@ -171,9 +171,9 @@ export const checkCommand: WorkspaceCommandSpec = {
       name: "staged",
       type: "boolean",
       description:
-        "Check the content staged in git instead of what is on disk — what a pre-commit hook " +
-        "wants, since the bytes about to be committed are not the bytes in the working tree. " +
-        "Nothing staged means no output and exit 0.",
+        "Check the content staged in git instead of what is on disk. This is what a pre-commit " +
+        "hook wants, since the bytes about to be committed are not the bytes in the working " +
+        "tree. Nothing staged means no output and exit 0.",
     },
   ],
   examples: [

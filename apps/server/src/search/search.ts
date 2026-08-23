@@ -50,6 +50,7 @@ import {
   RELEVANCE_ORDER_BY,
   whereClause,
   type Compiled,
+  type StalenessThresholds,
 } from "../docs/index.js";
 import {
   loadChunkAddresses,
@@ -156,6 +157,13 @@ export interface SearchDeps {
    * which is what a unit test constructing this function directly has.
    */
   readonly semantic?: SemanticRetrieval | undefined;
+  /**
+   * The workspace's staleness ramp (SPEC.md §5, SERVER-133). §9.2 promises a
+   * saved query means one thing wherever it is asked, so ranked retrieval reads
+   * the same configured thresholds the collection query does. Omitted, the
+   * shipped 30/90/180.
+   */
+  readonly staleness?: StalenessThresholds | undefined;
 }
 
 /** The answer when there is nothing to rank; the state word is still owed. */
@@ -182,7 +190,7 @@ export async function searchCorpus(
   deps: SearchDeps = {},
 ): Promise<SearchResults> {
   const loadAddresses = deps.loadAddresses ?? loadChunkAddresses;
-  const compiled = compileFilters(query, nowMs);
+  const compiled = compileFilters(query, nowMs, deps.staleness);
 
   // `q` is required and non-empty by the schema, so the only way here is a
   // query that carried no indexable token (`***`). There is nothing to rank and

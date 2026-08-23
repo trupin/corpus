@@ -155,13 +155,38 @@ test.describe("the reader's shipped stylesheet", () => {
     expect(styles[".doc-body"]?.["font-size"]).toBe("15px");
     // 15px × 1.62.
     expect(styles[".doc-body"]?.["line-height"]).toBe("24.3px");
-    expect(
-      await measureCh(
-        page,
-        `<div class="reader-scroll"><div class="doc-body"><p>body</p></div></div>`,
-        ".doc-body",
-      ),
-    ).toBe(62);
+    // The kit's default measure is still 62ch — a `.doc-body` outside any
+    // column host keeps the shipped typographic measure…
+    expect(await measureCh(page, `<div class="doc-body"><p>body</p></div>`, ".doc-body")).toBe(62);
+    // …but inside a column the measure IS the host's box (SPEC.md §10, rider
+    // signed 2026-08-23, UI-163): `.reader-scroll` sets `--doc-measure: 100%`,
+    // so the body fills the column's content box instead of stopping at a
+    // character count. Asserted at a width well past 62ch — a lingering cap
+    // would bind there and part the body from the box, where a narrow host
+    // would hide it behind a cap that never binds.
+    const filled = await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.innerHTML =
+        '<div class="reader-scroll" style="width:900px">' +
+        '<div class="doc-body"><p>body</p></div></div>';
+      document.body.append(host);
+      const scroll = host.querySelector(".reader-scroll");
+      const body = host.querySelector(".doc-body");
+      if (scroll === null || body === null) {
+        host.remove();
+        return null;
+      }
+      const style = getComputedStyle(scroll);
+      const content =
+        scroll.clientWidth -
+        Number.parseFloat(style.paddingLeft) -
+        Number.parseFloat(style.paddingRight);
+      const width = body.getBoundingClientRect().width;
+      host.remove();
+      return { width, content };
+    });
+    expect(filled).not.toBeNull();
+    expect(Math.abs((filled?.width ?? 0) - (filled?.content ?? -1))).toBeLessThan(1.5);
   });
 
   /**

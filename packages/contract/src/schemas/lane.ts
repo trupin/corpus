@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ThreadIdSchema } from "./id.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Lanes** — the queue's partition, and the one vocabulary every lane-shaped
@@ -112,7 +113,7 @@ export const recipientField = LaneSchema.optional().describe(
  * meaning exactly what it meant before. There is one spelling of each lane and
  * the absent parameter is a default, not a second one.
  */
-export const laneScopeParam = LaneSchema.optional().openapi({
+export const laneScopeParam = openapi(LaneSchema.optional(), {
   param: { name: "scope", in: "query", required: false },
   description:
     "Which lane to consume (SPEC.md §7): `orchestrator`, or the id of a designated root thread. " +

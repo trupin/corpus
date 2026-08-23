@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { DocumentIdSchema } from "../schemas/id.js";
 import { NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * `POST /api/docs/{id}/edit-session/flush` — SPEC.md §4's **close** path, made
@@ -29,7 +30,7 @@ import { NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "
  */
 
 const DocIdParamSchema = z.object({
-  id: DocumentIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(DocumentIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 export const flushEditSession = createRoute({

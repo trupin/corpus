@@ -48,6 +48,11 @@ function row(id: string, title: string, extra: Partial<DocRow> = {}): DocRow {
   return docRowFixture({ id, title, path: `data/docs/finance/${id}.md`, ...extra });
 }
 
+/** A document filed in a named folder, so `folderOf(path)` reads it back. */
+function rowIn(folder: string, id: string, title: string): DocRow {
+  return docRowFixture({ id, title, path: `data/docs/${folder}/${id}.md` });
+}
+
 /**
  * A column on the board, so it really holds **rows**: the keyboard assertion
  * below claims the tree's arrows do not move the board's row cursor, and a
@@ -73,6 +78,12 @@ interface Fixture {
 /**
  * One board carrying `default-open` and no columns — the Files board of the
  * seed, which is what the explorer opens onto.
+ *
+ * **`folder=` here is a path prefix, because that is what the server's is**
+ * (`apps/server/src/docs/filters.ts`: `d.path LIKE 'data/docs/<folder>/%'`).
+ * An exact-match answer is what let UI-161's defect ship — the tree drew one
+ * document under every expanded ancestor and no test could see it, because the
+ * fixture never handed a parent its descendants' rows.
  */
 function fixture(
   options: {
@@ -80,6 +91,13 @@ function fixture(
     readonly docs?: Readonly<Record<string, readonly DocRow[]>>;
     /** `page.total` per folder, when it is larger than the rows returned. */
     readonly totals?: Readonly<Record<string, number>>;
+    /**
+     * Answers the whole subtree even for `folderScope=self` — a server that does
+     * not honour the modifier, which is what the tree's own filter is for.
+     */
+    readonly ignoreFolderScope?: boolean;
+    /** Answers every move `400` with this message, as an occupied destination does. */
+    readonly refuseMove?: string;
   } = {},
 ): Fixture {
   const calls: Recorded[] = [];
@@ -129,10 +147,39 @@ function fixture(
         });
       }
       const wanted = url.searchParams.get("folder");
-      const items = wanted === null ? [] : (docs[wanted] ?? []);
+      const own =
+        url.searchParams.get("folderScope") === "self" && options.ignoreFolderScope !== true;
+      const items =
+        wanted === null
+          ? []
+          : Object.entries(docs)
+              .filter(([key]) => key === wanted || (!own && key.startsWith(`${wanted}/`)))
+              .flatMap(([, value]) => value);
       return json({
         items,
         page: { total: options.totals?.[wanted ?? ""] ?? items.length, limit: 100, offset: 0 },
+      });
+    }
+    /*
+     * Before the document read below, and deliberately: the `{}` fallback and a
+     * greedy `/api/docs/` prefix both answer a route nobody wrote a handler for,
+     * and a move would otherwise be reported as a successful *read* of a
+     * document called `move` (UI-116's lesson).
+     */
+    if (url.pathname.endsWith("/move") && request.method === "POST") {
+      const refusal = options.refuseMove;
+      if (refusal !== undefined) {
+        return json({ code: "validation", message: refusal, issues: [] }, 400);
+      }
+      const id = url.pathname.split("/").at(-2) ?? "";
+      return json({
+        doc: {
+          frontmatter: { ...docRowFixture({ id, title: id }), anchors: {} },
+          body: "",
+          path: `data/docs/archive/${id}.md`,
+          anchors: [],
+        },
+        warnings: [],
       });
     }
     if (url.pathname.startsWith("/api/docs/")) {
@@ -203,7 +250,10 @@ function fixture(
 }
 
 /** Renders the shell with the explorer already open, and expands `finance/`. */
-async function openTree(fixtureOf: Fixture): Promise<ReturnType<typeof userEvent.setup>> {
+async function openTree(
+  fixtureOf: Fixture,
+  root = /finance/,
+): Promise<ReturnType<typeof userEvent.setup>> {
   vi.stubGlobal(
     "localStorage",
     memoryStorage({
@@ -213,7 +263,7 @@ async function openTree(fixtureOf: Fixture): Promise<ReturnType<typeof userEvent
   harness = createCorpusTestHarness({ fetch: fixtureOf.fetch });
   render(<Shell />, { wrapper: harness.Wrapper });
   const user = userEvent.setup();
-  await screen.findByRole("treeitem", { name: /finance/ });
+  await screen.findByRole("treeitem", { name: root });
   return user;
 }
 
@@ -234,15 +284,31 @@ async function treeRowAppears(id: string): Promise<HTMLElement> {
   return treeRow(id);
 }
 
+/**
+ * React reports a duplicate key on `console.error` and renders anyway, so the
+ * defect UI-161 fixes was *printed* by the suite for a whole release rather than
+ * failing it. Every test in this file fails on one.
+ */
+let logged: string[] = [];
+
 beforeEach(() => {
   vi.stubGlobal("localStorage", memoryStorage());
+  logged = [];
+  const passThrough = console.error.bind(console);
+  vi.spyOn(console, "error").mockImplementation((...args: readonly unknown[]) => {
+    logged.push(args.map((arg) => String(arg)).join(" "));
+    passThrough(...args);
+  });
 });
 
 afterEach(() => {
+  const duplicates = logged.filter((line) => line.includes("same key"));
   cleanup();
   harness?.queryClient.clear();
   harness = undefined;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  expect(duplicates).toEqual([]);
 });
 
 describe("the tree", () => {
@@ -295,6 +361,77 @@ describe("the tree", () => {
           call.search.includes("folder=finance") && call.search.includes("includeArchived=true"),
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * UI-161, reported with a screenshot: five identical rows for one document,
+ * under a folder whose own count read `1`.
+ */
+describe("one document, one row", () => {
+  const NESTED = [folder("todos", 1, [folder("todos/unfiled", 1)])] as const;
+  const NESTED_DOCS = {
+    todos: [rowIn("todos", "doc_a", "A note")],
+    "todos/unfiled": [rowIn("todos/unfiled", "doc_b", "B note")],
+  } as const;
+
+  const rowsFor = (id: string): number =>
+    document.querySelectorAll(`[data-tree-doc="${id}"]`).length;
+
+  async function openBoth(wire: Fixture): Promise<ReturnType<typeof userEvent.setup>> {
+    const user = await openTree(wire, /todos/);
+    await user.click(screen.getByRole("treeitem", { name: /todos/ }));
+    await screen.findByRole("treeitem", { name: /unfiled/ });
+    await user.click(screen.getByRole("treeitem", { name: /unfiled/ }));
+    await treeRowAppears("doc_b");
+    return user;
+  }
+
+  it("asks each folder for its own documents, not its subtree's", async () => {
+    const wire = fixture({ folders: [...NESTED], docs: NESTED_DOCS });
+    const user = await openTree(wire, /todos/);
+    await user.click(screen.getByRole("treeitem", { name: /todos/ }));
+    await treeRowAppears("doc_a");
+
+    const listing = wire.calls.find(
+      (call) => call.path === "/api/docs" && call.search.includes("folder=todos"),
+    );
+    expect(listing?.search).toContain("folderScope=self");
+  });
+
+  it("draws a nested document under its own folder and nowhere else, through four collapses", async () => {
+    const wire = fixture({ folders: [...NESTED], docs: NESTED_DOCS });
+    const user = await openBoth(wire);
+
+    for (let round = 0; round < 4; round += 1) {
+      expect(rowsFor("doc_b")).toBe(1);
+      expect(rowsFor("doc_a")).toBe(1);
+      await user.click(screen.getByRole("treeitem", { name: /todos/ }));
+      await waitFor(() => {
+        expect(treeRow("doc_a")).toBeNull();
+      });
+      await user.click(screen.getByRole("treeitem", { name: /todos/ }));
+      await treeRowAppears("doc_b");
+    }
+    expect(rowsFor("doc_b")).toBe(1);
+  });
+
+  /*
+   * The tree's own filter, alone. This server hands a parent its whole subtree
+   * whatever `folderScope` said, which is what the shipped one did — the tree
+   * must still draw each document once, under the folder it is filed in.
+   */
+  it("draws one row even when the server ignores folderScope", async () => {
+    const wire = fixture({ folders: [...NESTED], docs: NESTED_DOCS, ignoreFolderScope: true });
+    await openBoth(wire);
+
+    expect(rowsFor("doc_b")).toBe(1);
+    expect(rowsFor("doc_a")).toBe(1);
+    const unfiled = screen.getByRole("treeitem", { name: /unfiled/ });
+    // Filed under `unfiled`, so its row is drawn after that folder's, not before.
+    expect(unfiled.compareDocumentPosition(treeRow("doc_b"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 });
 
@@ -443,6 +580,73 @@ describe("the document menu", () => {
     expect(screen.getByRole("menuitem", { name: /Open and keep/ })).toBeDefined();
     // "Open here" means "in this column's reader", and the tree is not a column.
     expect(screen.queryByRole("menuitem", { name: /Open here/ })).toBeNull();
+  });
+});
+
+/**
+ * UI-158: `POST /api/docs/{id}/move` was published and implemented, and no
+ * surface reached it — a document filed in the wrong folder could not be fixed
+ * from the one surface that shows the mistake.
+ */
+describe("moving a document from the tree", () => {
+  const FOLDERS = [folder("finance", 3), folder("archive", 0, [folder("archive/2024", 0)])];
+
+  async function menuOnAlpha(wire: Fixture): Promise<ReturnType<typeof userEvent.setup>> {
+    const user = await openTree(wire);
+    await user.click(screen.getByRole("treeitem", { name: /finance/ }));
+    await treeRowAppears("doc_alpha");
+    await user.pointer({ target: treeRow("doc_alpha"), keys: "[MouseRight]" });
+    return user;
+  }
+
+  /** By `data-act`, since a menu item's accessible name carries its meta line too. */
+  const moveItem = (path: string): HTMLElement | null =>
+    document.querySelector<HTMLElement>(`[data-act="move-to:${path}"]`);
+
+  it("offers every folder but the one the document is already in", async () => {
+    await menuOnAlpha(fixture({ folders: FOLDERS }));
+    await waitFor(() => {
+      expect(moveItem("archive")).not.toBeNull();
+    });
+
+    expect(moveItem("archive/2024")).not.toBeNull();
+    // `doc_alpha` is filed in `finance`, and a move to where it already is
+    // writes nothing.
+    expect(moveItem("finance")).toBeNull();
+    expect(moveItem("archive")?.textContent).toContain("Move to archive");
+  });
+
+  it("posts the destination and says the id did not change", async () => {
+    const wire = fixture({ folders: FOLDERS });
+    const user = await menuOnAlpha(wire);
+    await waitFor(() => {
+      expect(moveItem("archive/2024")).not.toBeNull();
+    });
+    await user.click(moveItem("archive/2024") as HTMLElement);
+
+    await waitFor(() => {
+      expect(wire.calls.some((call) => call.path === "/api/docs/doc_alpha/move")).toBe(true);
+    });
+    const move = wire.calls.find((call) => call.path === "/api/docs/doc_alpha/move");
+    expect(move?.method).toBe("POST");
+    expect(move?.body).toEqual({ folder: "archive/2024" });
+
+    const toast = await screen.findByText(/Moved “Alpha note” to archive\/2024\//);
+    expect(toast.textContent).toContain("Its id is unchanged");
+  });
+
+  it("says why a refused move was refused, rather than swallowing it", async () => {
+    const wire = fixture({
+      folders: FOLDERS,
+      refuseMove: "data/docs/archive/doc_alpha.md already exists",
+    });
+    const user = await menuOnAlpha(wire);
+    await waitFor(() => {
+      expect(moveItem("archive")).not.toBeNull();
+    });
+    await user.click(moveItem("archive") as HTMLElement);
+
+    expect(await screen.findByText(/Move to archive\/ failed — .*already exists/)).toBeDefined();
   });
 });
 

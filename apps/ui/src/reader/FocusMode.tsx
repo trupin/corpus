@@ -8,7 +8,7 @@ import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
 import { FOCUS_SURFACE } from "../thread/threadCollapse";
 import { DocView } from "./DocView";
-import { DocWidthContext, useDocWidthSurface } from "./DocWidthContext";
+import { DocWidthContext, useFocusDocWidth } from "./DocWidthContext";
 import { ReaderHead } from "./ReaderHead";
 import { rootEntry, useMemoryNavStack } from "./useNavStack";
 import { useReaderDoc } from "./useReaderDoc";
@@ -88,14 +88,15 @@ function FocusReader({
   const reader = useReaderDoc(current);
 
   /*
-   * Focus mode's own reading measure (SPEC.md §10's width rider), on the same
-   * surface key its folds use: one full-screen reader, one width, distinct from
-   * the column it was opened from. A full viewport and a 560px column are not
-   * the same room, so a width chosen in one would be meaningless in the other —
-   * which is exactly why §10 asks for the control in **both**.
+   * Full screen's own reading measure (SPEC.md §10, rider signed 2026-08-23):
+   * one full-screen reader, one sticky width, shared by every document opened
+   * here — and unrelated to any column's width, because a column's body fills
+   * the column and stores nothing. This is the only surface that still carries
+   * the width control: there is no column edge in full screen, so the body's
+   * own width is the one gesture.
    */
   const rootRef = useRef<HTMLDivElement>(null);
-  const docWidth = useDocWidthSurface(FOCUS_SURFACE, rootRef);
+  const docWidth = useFocusDocWidth(rootRef);
 
   /**
    * The overlay is a live component, not a one-shot (PR #19 review).

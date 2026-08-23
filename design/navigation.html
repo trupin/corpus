@@ -977,6 +977,12 @@ function showMenu(x, y, items) {
 }
 const hideMenu = () => menuEl.classList.remove("open");
 const boardItems = (docId, except) => [{ head: "open in…" }, ...boardIds().filter((b) => b !== except).map((b) => ({ label: esc(DOCS[b].title) + (DOCS[b].defaultOpen ? ' <span class="age">default</span>' : ""), act: () => openOnBoard(b, docId) }))];
+/* Every folder a document can be moved into, deepest included, sorted by path —
+   the destinations "Move to folder…" names. A list and not a dialog: the
+   explorer is already showing them, so naming them as items needs no surface
+   nobody drew, cannot be mistyped, and reaches the keyboard for free. */
+const allFolders = () => [...new Set(Object.values(DOCS).flatMap((d) => d.folder.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"))))].sort((a, b) => a.localeCompare(b));
+
 const serverGap = (what) => () => toast(`“${what}” is a server gap today: no route for it yet. It becomes an issue.`);
 
 function rowMenu(x, y, viewId, docId) {
@@ -1059,7 +1065,7 @@ function treeDocMenu(x, y, docId) {
     { label: "Open in full screen", act: () => openFocus(docId) },
     { head: "open in…" }, ...boardIds().filter((b) => b !== defaultBoard()).map((b) => ({ label: esc(DOCS[b].title), act: () => openFromExplorer(docId, b) })),
     { sep: true },
-    { label: "Move to folder…", act: serverGap("move to folder") },
+    { head: "move to…" }, ...allFolders().filter((f) => f !== DOCS[docId].folder).map((f) => ({ label: esc(f), act: () => { DOCS[docId].folder = f; render(); toast(`Moved “${esc(DOCS[docId].title)}” to ${esc(f)}/. Its id is unchanged, so every link to it still resolves.`); } })),
     { label: "Archive", act: () => { state.status[docId] = "archived"; save(); render(); toast(`Archived “${DOCS[docId].title}”.`); } },
     { label: "Delete", danger: true, act: () => toast("Delete asks first in the real app.") },
   ]);

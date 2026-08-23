@@ -1,7 +1,8 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocStatusSchema } from "./doc.js";
 import { DocumentIdSchema } from "./id.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Folder acts** (SPEC.md §9.2, rider 7 signed 2026-08-22): rename, archive,
@@ -61,55 +62,57 @@ const FOLDER_PATH_DESCRIPTION =
  * this root, and a skill is archived by document (`POST /api/docs/{id}/archive`,
  * which moves its whole folder) rather than by folder.
  */
-export const FolderPathSchema = z
-  .string()
-  .min(1)
-  .superRefine((path, ctx) => {
-    const fail = (message: string): void => {
-      ctx.addIssue({ code: "custom", message });
-    };
-    if (path.startsWith("/") || path.endsWith("/")) {
-      fail(
-        "a folder path carries no leading or trailing slash: it is relative to " +
-          `\`${DOCS_FOLDER_ROOT}/\`, so write \`finance/mortgage\`.`,
-      );
-      return;
-    }
-    if (path.includes("\\")) {
-      fail("a folder path separates segments with `/`, never `\\`.");
-      return;
-    }
-    if (hasControlCharacter(path)) {
-      fail("a folder path carries no control characters.");
-      return;
-    }
-    if (path === DOCS_FOLDER_ROOT || path.startsWith(`${DOCS_FOLDER_ROOT}/`)) {
-      fail(
-        `a folder path here is relative to \`${DOCS_FOLDER_ROOT}/\` — drop the prefix and write ` +
-          "`finance/mortgage`. (`POST /api/docs`'s `folder` accepts both spellings; this one does " +
-          "not, because a rename that guessed wrong moves files.)",
-      );
-      return;
-    }
-    for (const segment of path.split("/")) {
-      if (segment.length === 0) {
+export const FolderPathSchema = openapi(
+  z
+    .string()
+    .min(1)
+    .superRefine((path, ctx) => {
+      const fail = (message: string): void => {
+        ctx.addIssue({ code: "custom", message });
+      };
+      if (path.startsWith("/") || path.endsWith("/")) {
         fail(
-          "a folder path has no empty segment: `finance//mortgage` names nothing under " +
-            `\`${DOCS_FOLDER_ROOT}/\`.`,
+          "a folder path carries no leading or trailing slash: it is relative to " +
+            `\`${DOCS_FOLDER_ROOT}/\`, so write \`finance/mortgage\`.`,
         );
         return;
       }
-      if (segment.startsWith(".")) {
+      if (path.includes("\\")) {
+        fail("a folder path separates segments with `/`, never `\\`.");
+        return;
+      }
+      if (hasControlCharacter(path)) {
+        fail("a folder path carries no control characters.");
+        return;
+      }
+      if (path === DOCS_FOLDER_ROOT || path.startsWith(`${DOCS_FOLDER_ROOT}/`)) {
         fail(
-          `\`${segment}\` is not a folder under \`${DOCS_FOLDER_ROOT}/\`: a path segment does not ` +
-            "begin with a dot, which rules out `.` and `..` and every root outside this one. " +
-            "Skills are archived by document, not by folder.",
+          `a folder path here is relative to \`${DOCS_FOLDER_ROOT}/\` — drop the prefix and write ` +
+            "`finance/mortgage`. (`POST /api/docs`'s `folder` accepts both spellings; this one does " +
+            "not, because a rename that guessed wrong moves files.)",
         );
         return;
       }
-    }
-  })
-  .openapi({ description: FOLDER_PATH_DESCRIPTION, example: "finance/mortgage" });
+      for (const segment of path.split("/")) {
+        if (segment.length === 0) {
+          fail(
+            "a folder path has no empty segment: `finance//mortgage` names nothing under " +
+              `\`${DOCS_FOLDER_ROOT}/\`.`,
+          );
+          return;
+        }
+        if (segment.startsWith(".")) {
+          fail(
+            `\`${segment}\` is not a folder under \`${DOCS_FOLDER_ROOT}/\`: a path segment does not ` +
+              "begin with a dot, which rules out `.` and `..` and every root outside this one. " +
+              "Skills are archived by document, not by folder.",
+          );
+          return;
+        }
+      }
+    }),
+  { description: FOLDER_PATH_DESCRIPTION, example: "finance/mortgage" },
+);
 
 /**
  * One field carrying {@link FolderPathSchema}, with the grammar kept and the
@@ -126,87 +129,162 @@ const RESULT_DOCUMENTS_DESCRIPTION =
   "nothing. Each row carries the id and the field that changed and nothing else — enough to " +
   "update a client in place, so no refetch is needed.";
 
-export const RenameFolderRequestSchema = z
-  .strictObject({
-    from: folderPathField("The folder to rename, as it stands now."),
-    to: folderPathField(
-      "The folder's new path. **Compared exactly**: a rename that differs only in case is a " +
-        "rename, and what a case-insensitive filesystem then does with it is the server's " +
-        "problem, not a different request. `409` when `to` already exists — a rename never " +
-        "merges two folders, because merging is an act nobody asked for and cannot be undone by " +
-        "renaming back.",
+export const RenameFolderRequestSchema = openapi(
+  z
+    .strictObject({
+      from: folderPathField("The folder to rename, as it stands now."),
+      to: folderPathField(
+        "The folder's new path. **Compared exactly**: a rename that differs only in case is a " +
+          "rename, and what a case-insensitive filesystem then does with it is the server's " +
+          "problem, not a different request. `409` when `to` already exists — a rename never " +
+          "merges two folders, because merging is an act nobody asked for and cannot be undone by " +
+          "renaming back.",
+      ),
+    })
+    /**
+     * Refused in the schema rather than in the server, because it needs no state:
+     * a folder cannot become its own descendant, and the two paths in front of us
+     * are the whole of the question.
+     */
+    .refine(
+      (request) => request.to !== request.from && !request.to.startsWith(`${request.from}/`),
+      {
+        message:
+          "`to` is inside `from`: a folder cannot be renamed into itself or into one of its own " +
+          "descendants, because the destination moves with the source and there would be nothing " +
+          "left to land in.",
+        path: ["to"],
+      },
     ),
-  })
-  /**
-   * Refused in the schema rather than in the server, because it needs no state:
-   * a folder cannot become its own descendant, and the two paths in front of us
-   * are the whole of the question.
-   */
-  .refine((request) => request.to !== request.from && !request.to.startsWith(`${request.from}/`), {
-    message:
-      "`to` is inside `from`: a folder cannot be renamed into itself or into one of its own " +
-      "descendants, because the destination moves with the source and there would be nothing " +
-      "left to land in.",
-    path: ["to"],
-  })
-  .openapi("RenameFolderRequest");
+  "RenameFolderRequest",
+);
 
 /**
  * The body of archive, unarchive and delete — one shape, shared, because it is
  * one shape. The description is subject-neutral for that reason: which act it is
  * is the operation you called.
  */
-export const FolderPathRequestSchema = z
-  .strictObject({ path: folderPathField("The folder to act on.") })
-  .openapi("FolderPathRequest");
+export const FolderPathRequestSchema = openapi(
+  z.strictObject({ path: folderPathField("The folder to act on.") }),
+  "FolderPathRequest",
+);
 
-export const MovedFolderDocSchema = z
-  .object({
+export const MovedFolderDocSchema = openapi(
+  z.object({
     id: DocumentIdSchema,
     path: z
       .string()
       .describe("The document's path after the rename, relative to the workspace root."),
-  })
-  .openapi("MovedFolderDoc");
+  }),
+  "MovedFolderDoc",
+);
 
-export const RenameFolderResultSchema = z
-  .object({
+/**
+ * One document the act could not apply to (CONTRACT-078).
+ *
+ * **Why an array on the result rather than a warning code.** A warning's
+ * `detail` is prose and is explicitly never parsed — "every distinction a client
+ * must act on lives in `code`" — and the distinction a client must act on here
+ * is *which document*, which cannot live in an enum. The explorer's folder menu
+ * has to be able to say "eleven of twelve", name the twelfth, and leave that
+ * row alone; a count and an id are structure, not prose. `POST /api/docs/bulk`
+ * already reports its refusals this way, for the same reason.
+ *
+ * **Why no reason class beside the message**, where the bulk result carries one.
+ * Bulk's four classes exist because a bulk request *names* its rows, so two of
+ * them (`not-found`, `not-applicable`) are facts about the caller's own request.
+ * A folder act names a folder and the server enumerates what is under it, so no
+ * refusal here is the caller's mistake and every one has the same remedy: read
+ * the message, fix that document, run the act again. A class would also have to
+ * be guessed from a caught error — a document whose file has vanished and a
+ * document the validator refused arrive as the same kind of throw — and a
+ * misclassification published as a fact is worse than a message that is true.
+ */
+export const FolderRefusalSchema = openapi(
+  z.object({
+    id: DocumentIdSchema.describe("The document the act could not apply to."),
+    message: z
+      .string()
+      .min(1)
+      .describe(
+        "Human-readable specifics for this document — the validator's finding, the write error, " +
+          "the reason the file could not be read. Rendered verbatim beside the document; never " +
+          "parsed. Always present: an entry with no reason tells a person nothing to do next.",
+      ),
+  }),
+  "FolderRefusal",
+);
+
+const RESULT_REFUSED_DESCRIPTION =
+  "**Every document under the folder the act could not apply to**, each with why (SPEC.md §9.2, " +
+  "§10's bulk rule: an act applies to what it can and reports what it could not, and never " +
+  "refuses the whole set because of one document). Empty in the ordinary case. A document named " +
+  "here **did not change** — nothing about it reached the commit — and the act stands for every " +
+  "other document in the folder. It is listed here whether or not it also appears in " +
+  "`documents`, which each result defines for itself: the two halves together say what the " +
+  "document is now and why it is still that.";
+
+/**
+ * A rename carries no `refused`, and that is a property of the act rather than
+ * an omission: it is **one directory move**, so it applies to every document
+ * under the folder or to none of them, and a failure is the request's `4xx`
+ * rather than a document's. A field no producer can fill is not free — a client
+ * author would write a recovery that can never run — so it is absent until an
+ * act exists that can refuse one document out of a rename.
+ */
+export const RenameFolderResultSchema = openapi(
+  z.object({
     documents: z.array(MovedFolderDocSchema).describe(RESULT_DOCUMENTS_DESCRIPTION),
     warnings: warningsField,
-  })
-  .openapi("RenameFolderResult");
+  }),
+  "RenameFolderResult",
+);
 
-export const FolderStatusChangeSchema = z
-  .object({
+export const FolderStatusChangeSchema = openapi(
+  z.object({
     id: DocumentIdSchema,
     status: DocStatusSchema.describe("The document's status after the act."),
-  })
-  .openapi("FolderStatusChange");
+  }),
+  "FolderStatusChange",
+);
 
-export const FolderStatusResultSchema = z
-  .object({
-    documents: z.array(FolderStatusChangeSchema).describe(RESULT_DOCUMENTS_DESCRIPTION),
+export const FolderStatusResultSchema = openapi(
+  z.object({
+    documents: z
+      .array(FolderStatusChangeSchema)
+      .describe(
+        `${RESULT_DOCUMENTS_DESCRIPTION} A status act lists **every** document under the folder ` +
+          "with the status it now has, so one the act was refused is listed here too, carrying " +
+          "the status it kept — `refused` is what says why it kept it.",
+      ),
+    refused: z.array(FolderRefusalSchema).describe(RESULT_REFUSED_DESCRIPTION),
     warnings: warningsField,
-  })
-  .openapi("FolderStatusResult");
+  }),
+  "FolderStatusResult",
+);
 
-export const DeletedFolderDocSchema = z
-  .object({ id: DocumentIdSchema })
-  .openapi("DeletedFolderDoc");
+export const DeletedFolderDocSchema = openapi(
+  z.object({ id: DocumentIdSchema }),
+  "DeletedFolderDoc",
+);
 
-export const DeleteFolderResultSchema = z
-  .object({
+export const DeleteFolderResultSchema = openapi(
+  z.object({
     documents: z
       .array(DeletedFolderDocSchema)
       .describe(
         `${RESULT_DOCUMENTS_DESCRIPTION} Deletion reports ids alone, because there is no field ` +
-          "left to report: the client drops these rows.",
+          "left to report: the client drops these rows. A document the delete was refused is " +
+          "**not** here — it still exists — and is in `refused` instead.",
       ),
+    refused: z.array(FolderRefusalSchema).describe(RESULT_REFUSED_DESCRIPTION),
     warnings: warningsField,
-  })
-  .openapi("DeleteFolderResult");
+  }),
+  "DeleteFolderResult",
+);
 
 export type FolderPath = z.infer<typeof FolderPathSchema>;
+export type FolderRefusal = z.infer<typeof FolderRefusalSchema>;
 export type RenameFolderRequest = z.infer<typeof RenameFolderRequestSchema>;
 export type FolderPathRequest = z.infer<typeof FolderPathRequestSchema>;
 export type MovedFolderDoc = z.infer<typeof MovedFolderDocSchema>;

@@ -1,8 +1,9 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { type AgentPresence, AgentPresenceSchema } from "./agents.js";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
 import { laneScopeParam } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Event types the product itself handles (SPEC.md §7), and they are all of
@@ -119,7 +120,7 @@ export const QUEUE_EVENT_STATUSES = [
   "abandoned",
 ] as const;
 
-export const QueueEventStatusSchema = z.enum(QUEUE_EVENT_STATUSES).openapi({
+export const QueueEventStatusSchema = openapi(z.enum(QUEUE_EVENT_STATUSES), {
   description:
     "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. " +
     "`pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are " +
@@ -144,8 +145,8 @@ export const QueueEventStatusSchema = z.enum(QUEUE_EVENT_STATUSES).openapi({
  * is actually a question: `GET /api/agents` lists the lanes, and the scoped
  * queue verbs consume one.
  */
-export const QueueEventSchema = z
-  .object({
+export const QueueEventSchema = openapi(
+  z.object({
     id: EventIdSchema,
     type: z
       .string()
@@ -183,8 +184,9 @@ export const QueueEventSchema = z
           "shape: a weight is a property of *a request that asked for work*, so any event type " +
           "carries it the same way with no contract change.",
       ),
-  })
-  .openapi("QueueEvent");
+  }),
+  "QueueEvent",
+);
 
 /**
  * How many held events a single claim reports before it starts saying "and N
@@ -230,8 +232,8 @@ export const MAX_IN_PROGRESS_REPORTED = 20;
  * event came from twice, two different ways, would make the console row and the
  * reconciliation row disagree for no reason.
  */
-export const InProgressEventSchema = z
-  .object({
+export const InProgressEventSchema = openapi(
+  z.object({
     id: EventIdSchema,
     type: z
       .string()
@@ -266,8 +268,9 @@ export const InProgressEventSchema = z
           '`comment.created` for **Re: the rate assumption**" is a sentence an agent can hold ' +
           "against its own memory, and a bare event id is not.",
       ),
-  })
-  .openapi("InProgressEvent");
+  }),
+  "InProgressEvent",
+);
 
 /**
  * What the server is currently holding, reported alongside a claim
@@ -293,8 +296,8 @@ export const InProgressEventSchema = z
  * behalf. Nothing here asks for an action; the agent settles what it recognises
  * with the ordinary verbs and leaves the rest alone.
  */
-export const InProgressSetSchema = z
-  .object({
+export const InProgressSetSchema = openapi(
+  z.object({
     events: z
       .array(InProgressEventSchema)
       .max(MAX_IN_PROGRESS_REPORTED)
@@ -324,8 +327,9 @@ export const InProgressSetSchema = z
           "that stops a capped list from reading as a complete one, and a caller must not have to " +
           "compute the one fact that keeps it honest.",
       ),
-  })
-  .openapi("InProgressSet", {
+  }),
+  "InProgressSet",
+  {
     description:
       "What the server still thinks the agent is doing (SPEC.md §7) — reported beside a claim as " +
       "**its own field, never mixed into the claimed events**. The two answer different " +
@@ -334,7 +338,8 @@ export const InProgressSetSchema = z
       "already in `in-progress/` when it arrived. The loop reconciles: settle what you have " +
       "already done with the ordinary verbs, leave what you are still working, and never settle " +
       "an event you cannot account for. The server reports and settles nothing by itself.",
-  });
+  },
+);
 
 /**
  * Result of an atomic batch claim: every `pending/*` event moved to
@@ -352,15 +357,16 @@ export const InProgressSetSchema = z
  * overflow signal exists to prevent; nothing held is `{events: [], total: 0,
  * truncated: false}`.
  */
-export const ClaimBatchSchema = z
-  .object({
+export const ClaimBatchSchema = openapi(
+  z.object({
     events: z.array(QueueEventSchema),
     // Referenced unmodified, deliberately: `.describe()` on a registered schema
     // makes zod-to-openapi carry the component's name onto the derived one and
     // rewrite the shared definition. The prose lives on the component itself.
     inProgress: InProgressSetSchema,
-  })
-  .openapi("ClaimBatch");
+  }),
+  "ClaimBatch",
+);
 
 /**
  * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
@@ -425,8 +431,8 @@ export const AGENT_PRESENCE_WINDOW_SECONDS = MAX_IDLE_TIMEOUT_SECONDS * 2;
  * every `["queue"]` invalidation, and because presence and queue depth are read
  * together — depth matters most in exactly the state where nobody is listening.
  */
-export const QueueStatusSchema = z
-  .object({
+export const QueueStatusSchema = openapi(
+  z.object({
     // Referenced unmodified, deliberately: `.describe()` on a registered schema
     // makes zod-to-openapi carry the component's name onto the derived one and
     // rewrite the shared definition (CONTRACT-037). The prose lives on the
@@ -450,8 +456,9 @@ export const QueueStatusSchema = z
     processed: z.number().int().min(0),
     failed: z.number().int().min(0),
     abandoned: z.number().int().min(0),
-  })
-  .openapi("QueueStatus");
+  }),
+  "QueueStatus",
+);
 
 /**
  * Is an agent there, as of `now`?
@@ -535,8 +542,8 @@ export function agentActivity(
  * deliberate: an agent with nothing to claim has nothing to reconcile against,
  * and the list arrives on the next `200` regardless.
  */
-export const IdleResultSchema = z
-  .object({
+export const IdleResultSchema = openapi(
+  z.object({
     events: z
       .array(QueueEventSchema)
       .min(1)
@@ -545,8 +552,9 @@ export const IdleResultSchema = z
       ),
     // Unmodified, for the reason `ClaimBatchSchema` gives.
     inProgress: InProgressSetSchema,
-  })
-  .openapi("IdleResult");
+  }),
+  "IdleResult",
+);
 
 /**
  * The lane a claim consumes (SPEC.md §7), on `POST /api/queue/claim-all`.
@@ -563,13 +571,14 @@ export const ClaimScopeQuerySchema = z.object({ scope: laneScopeParam });
 
 export const IdleQuerySchema = z.object({
   scope: laneScopeParam,
-  timeout: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_IDLE_TIMEOUT_SECONDS)
-    .default(DEFAULT_IDLE_TIMEOUT_SECONDS)
-    .openapi({
+  timeout: openapi(
+    z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_IDLE_TIMEOUT_SECONDS)
+      .default(DEFAULT_IDLE_TIMEOUT_SECONDS),
+    {
       param: { name: "timeout", in: "query", required: false },
       type: "integer",
       minimum: 1,
@@ -579,7 +588,8 @@ export const IdleQuerySchema = z.object({
         `Seconds to hold the request open, 1–${MAX_IDLE_TIMEOUT_SECONDS} (${MAX_IDLE_TIMEOUT_SECONDS} ` +
         "is also the default; a longer ask is rejected with a 400 validation error, not clamped). " +
         "Parking costs the agent zero tokens: it is blocked on a response, not looping.",
-    }),
+    },
+  ),
 });
 
 /**
@@ -589,8 +599,8 @@ export const IdleQuerySchema = z.object({
  * that anything had been abandoned, which is the one outcome an operator running
  * `corpus queue reap-stale` needs to hear about.
  */
-export const ReapStaleResultSchema = z
-  .object({
+export const ReapStaleResultSchema = openapi(
+  z.object({
     reaped: z
       .array(EventIdSchema)
       .describe("Events recovered from `in-progress/` back to `pending/` after a crashed run."),
@@ -600,8 +610,9 @@ export const ReapStaleResultSchema = z
         "Events the reap gave up on rather than recovering, having exhausted their attempts. They " +
           "are **not** in `reaped`: the two arrays are disjoint, and an empty one is the normal case.",
       ),
-  })
-  .openapi("ReapStaleResult");
+  }),
+  "ReapStaleResult",
+);
 
 /**
  * Body of `POST /api/queue/halt`, and optional in both directions: the whole
@@ -610,15 +621,16 @@ export const ReapStaleResultSchema = z
  * still optional. A supplied reason is recorded beside the timestamp in the
  * `.corpus/HALT` sentinel, so whoever finds the queue stopped can see why.
  */
-export const HaltQueueRequestSchema = z
-  .strictObject({
+export const HaltQueueRequestSchema = openapi(
+  z.strictObject({
     reason: z
       .string()
       .min(1)
       .optional()
       .describe("Human-readable halt reason, recorded in the `.corpus/HALT` sentinel."),
-  })
-  .openapi("HaltQueueRequest");
+  }),
+  "HaltQueueRequest",
+);
 
 /**
  * Body of `POST /api/queue/{id}/defer` (CONTRACT-021).
@@ -636,8 +648,8 @@ export const HaltQueueRequestSchema = z
  * prefix the interim protocol smuggled into a failure reason: the status now
  * carries that meaning, so the text is free to say something useful.
  */
-export const DeferEventRequestSchema = z
-  .strictObject({
+export const DeferEventRequestSchema = openapi(
+  z.strictObject({
     blockedOn: DocumentIdSchema.describe(
       "The document being edited that the work is waiting on. The end of that edit session " +
         "returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the " +
@@ -651,18 +663,20 @@ export const DeferEventRequestSchema = z
         "Human-readable deferral note, shown in the console beside the blocking document. No " +
           "`deferred:` prefix is needed or wanted — the status says that now.",
       ),
-  })
-  .openapi("DeferEventRequest");
+  }),
+  "DeferEventRequest",
+);
 
-export const FailEventRequestSchema = z
-  .strictObject({
+export const FailEventRequestSchema = openapi(
+  z.strictObject({
     reason: z
       .string()
       .min(1)
       .optional()
       .describe("Human-readable failure reason, shown in the console."),
-  })
-  .openapi("FailEventRequest");
+  }),
+  "FailEventRequest",
+);
 
 export type CoreQueueEventType = z.infer<typeof CoreQueueEventTypeSchema>;
 export type IdleResult = z.infer<typeof IdleResultSchema>;

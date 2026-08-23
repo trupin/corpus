@@ -3,6 +3,7 @@ import { contractRoutes } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 import type { SemanticRetrieval } from "../semantic/index.js";
 import { queryDocs } from "./query.js";
+import type { StalenessThresholds } from "./staleness.js";
 import { relatedDocs } from "./related.js";
 import { folderTree } from "./tree.js";
 import { mountDocWriteRoutes } from "./write-routes.js";
@@ -28,6 +29,12 @@ export interface DocsRoutesOptions {
    * the `semanticIndex` word its envelope carries.
    */
   readonly semantic?: SemanticRetrieval | undefined;
+  /**
+   * The workspace's staleness ramp (SPEC.md §5, SERVER-133). Omitted, the
+   * shipped 30/90/180 — which is what a fixture with no opinion about the ramp
+   * wants, and what a workspace whose config carries no `staleness` block gets.
+   */
+  readonly staleness?: StalenessThresholds | undefined;
 }
 
 /**
@@ -48,7 +55,7 @@ export function mountDocsRoutes(
   const now = options.now ?? Date.now;
 
   app.openapi(contractRoutes.listDocs, (c) =>
-    c.json(queryDocs(projection, c.req.valid("query"), now()), 200),
+    c.json(queryDocs(projection, c.req.valid("query"), now(), options.staleness), 200),
   );
 
   app.openapi(contractRoutes.getTree, (c) => c.json(folderTree(projection), 200));

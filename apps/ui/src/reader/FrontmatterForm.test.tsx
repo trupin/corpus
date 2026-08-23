@@ -10,20 +10,31 @@ import {
   setEditSessionClient,
 } from "../editor/editSessionFlush";
 import { AUTOSAVE_DEBOUNCE_MS } from "../editor/useAutosave";
+import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
+import { resetEscapeLayers } from "./useEscapeStack";
 import {
   changedFields,
   FrontmatterForm,
   isDeliberate,
+  normalizedTags,
   tagsToText,
   textToTags,
 } from "./FrontmatterForm";
 
+/**
+ * The chip strip as the frontmatter editor (SPEC.md §10, rider signed
+ * 2026-08-23, UI-162): every chip that names an editable field is the control
+ * for that field, the labelled form is gone, and the write model — one patch,
+ * one write, `isDeliberate` deciding when — is exactly what it was.
+ */
+
 afterEach(() => {
   cleanup();
   // The registry is module state, and an unmount from any test in this file
-  // releases a surface into it (UI-044).
+  // releases a surface into it (UI-044). The escape layers are the menus'.
   resetEditSessionFlush();
+  resetEscapeLayers();
   vi.useRealTimers();
 });
 
@@ -61,11 +72,15 @@ function mount(
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   const notices: string[] = [];
   const form = (shown: Doc) => (
-    <FrontmatterForm
-      doc={shown}
-      selectTitle={options.selectTitle ?? false}
-      onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
-    />
+    // The provider is the app's own menu host (`Shell` mounts it above every
+    // reader): the chips open their menus through it, so the tests do too.
+    <ContextMenuProvider>
+      <FrontmatterForm
+        doc={shown}
+        selectTitle={options.selectTitle ?? false}
+        onNotify={(notice) => notices.push(`${notice.tone}:${notice.message}`)}
+      />
+    </ContextMenuProvider>
   );
   const view = render(form(doc), { wrapper: harness.Wrapper });
   return {
@@ -81,14 +96,37 @@ function mount(
 
 const title = (): HTMLTextAreaElement =>
   screen.getByLabelText<HTMLTextAreaElement>("Document title");
-const tags = (): HTMLInputElement =>
-  screen.getByPlaceholderText<HTMLInputElement>("comma, separated");
-const status = (): HTMLSelectElement =>
-  screen.getByRole<HTMLSelectElement>("combobox", { name: /status/ });
-const due = (): HTMLInputElement =>
-  document.querySelector("input[type='date']") as HTMLInputElement;
 const chip = (): HTMLElement =>
   document.querySelector("[data-save-chip='frontmatter']") as HTMLElement;
+
+const statusChip = (): HTMLButtonElement =>
+  document.querySelector("[data-chip='status']") as HTMLButtonElement;
+const dueChip = (): HTMLButtonElement =>
+  document.querySelector("[data-chip='due']") as HTMLButtonElement;
+const addChip = (): HTMLButtonElement =>
+  document.querySelector("[data-chip='add-tag']") as HTMLButtonElement;
+const tagChip = (tag: string): HTMLButtonElement =>
+  document.querySelector(`[data-chip='tag'][data-tag='${tag}']`) as HTMLButtonElement;
+
+const menu = (): HTMLElement | null => document.querySelector("[data-ctx-menu]");
+const menuItem = (act: string): HTMLButtonElement =>
+  document.querySelector(`[data-ctx-menu] [data-act='${act}']`) as HTMLButtonElement;
+
+/** One chosen status, the way a person chooses it: chip, then menu. */
+function pickStatus(word: string): void {
+  fireEvent.click(statusChip());
+  fireEvent.click(menuItem(`status:${word}`));
+}
+
+/** The tag rename input a chip swaps for, or the `+` chip's empty one. */
+const tagInput = (): HTMLInputElement =>
+  document.querySelector(".fm-chip-input:not([type='date'])") as HTMLInputElement;
+
+/** The due chip, opened: the date field itself. */
+function openDue(): HTMLInputElement {
+  fireEvent.click(dueChip());
+  return document.querySelector("input[type='date']") as HTMLInputElement;
+}
 
 describe("tags round-trip", () => {
   it("renders and parses the comma form", () => {
@@ -96,11 +134,15 @@ describe("tags round-trip", () => {
     expect(textToTags(" finance ,  mortgage , ")).toEqual(["finance", "mortgage"]);
     expect(textToTags("")).toEqual([]);
   });
+
+  it("collapses duplicates and drops empties, first occurrence winning", () => {
+    expect(normalizedTags(["finance", " finance ", "", "tax"])).toEqual(["finance", "tax"]);
+  });
 });
 
 /**
  * UI-093's one decision about *when*, and it is per change rather than per
- * control. A select produces one chosen value; a text field produces one per
+ * control. A menu produces one chosen value; a text field produces one per
  * keystroke; a date input produces both — an empty string while its segments
  * are half-filled, and a whole date when they are not.
  */
@@ -121,13 +163,6 @@ describe("isDeliberate", () => {
     expect(isDeliberate("due", "")).toBe(false);
   });
 });
-
-/*
- * `statusLock` is a one-line predicate in `doc/statusLock.ts` and answers about
- * one status, `archived` (UI-094). What is asserted here is what this
- * form does with the answer — see the archived cases below, which render the
- * control and read its hint.
- */
 
 describe("changedFields", () => {
   it("carries only what changed", () => {
@@ -165,9 +200,9 @@ describe("changedFields", () => {
 
   /**
    * UI-020. Both directions belong to routes this form does not call, and the
-   * guard sits in `changedFields` rather than only on the `<select>` because
-   * every path to the wire — a change, the debounce, the unmount flush, the
-   * reader rebinding and `pagehide` — funnels through here.
+   * guard sits in `changedFields` rather than only on the menu because every
+   * path to the wire — a change, the debounce, the unmount flush, the reader
+   * rebinding and `pagehide` — funnels through here.
    */
   describe("the archive boundary", () => {
     it("never unarchives, which SERVER-039 refuses with a 400 naming the route", () => {
@@ -207,15 +242,6 @@ describe("changedFields", () => {
     });
   });
 
-  /**
-   * Every field a document has is the person's, and `changedFields` sends what
-   * changed.
-   *
-   * It takes no map of locks and strips nothing on the way out. The only lock
-   * is the archive door, it is read straight off the document `changedFields`
-   * already holds, and the guard above is where this suite pins it — so a
-   * second, later strip could only ever disagree with the first.
-   */
   describe("a document whose type nothing recognises", () => {
     const draft = {
       title: "Inbox chores",
@@ -240,22 +266,52 @@ describe("changedFields", () => {
   });
 });
 
-describe("the form has no mode", () => {
-  it("renders every control with no click first", () => {
+describe("the strip is the editor", () => {
+  it("renders every editable value on a chip that is its control", () => {
     mount();
     expect(title().value).toBe("Mortgage options");
-    expect(tags().value).toBe("finance");
-    expect(status().value).toBe("open");
-    expect(due().value).toBe("");
+    expect(tagChip("finance").tagName).toBe("BUTTON");
+    expect(statusChip().textContent).toBe("status: open");
+    // With no due date the chip reads as unset rather than disappearing, so
+    // the field stays reachable.
+    expect(dueChip().textContent).toBe("due: —");
+    expect(addChip().tagName).toBe("BUTTON");
   });
 
-  it("offers no edit chip and no save button", () => {
+  /**
+   * The rider's own sentence: no value in the reader is displayed in one place
+   * and edited in another. The `.fm-form` grid — `TAGS` / `STATUS` / `DUE` —
+   * is gone, and nothing labelled stands beside the strip.
+   */
+  it("draws no second copy of the values below the strip", () => {
     mount();
-    const chips = [...document.querySelectorAll(".fm-chips .chip")].map((each) => each.textContent);
-    expect(chips).toEqual(["note", "finance/", "#finance", "open", "updated 2026-07-02"]);
+    expect(document.querySelector(".fm-form")).toBeNull();
+    expect(document.querySelector(".fm-field")).toBeNull();
+    expect(document.querySelector(".fm-input")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("button", { name: "edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Revert" })).toBeNull();
+  });
+
+  it("keeps type, folder and updated as read-only chips", () => {
+    mount();
+    const readOnly = [...document.querySelectorAll(".fm-chips > span.chip")].map(
+      (each) => each.textContent,
+    );
+    expect(readOnly).toContain("note");
+    expect(readOnly).toContain("finance/");
+    expect(readOnly).toContain("updated 2026-07-02");
+  });
+
+  /** The `+` sits at the end of the tags, not at the end of the strip. */
+  it("keeps the + beside the tags it adds to", () => {
+    mount();
+    const strip = document.querySelector(".fm-chips");
+    const children = [...(strip?.children ?? [])];
+    const lastTag = children.findIndex((each) => each.getAttribute("data-chip") === "tag");
+    expect(children[lastTag + 1]?.getAttribute("data-chip")).toBe("add-tag");
+    const status = children.findIndex((each) => each.getAttribute("data-chip") === "status");
+    expect(status).toBeGreaterThan(lastTag + 1);
   });
 
   /**
@@ -263,51 +319,211 @@ describe("the form has no mode", () => {
    * pointedly not in the reader head, which is at its width limit (UI-135) and
    * already carries the body's.
    */
-  it("carries its own save chip in the strip, reserved so it cannot resize", () => {
+  it("still ends with its reserved save chip", () => {
     mount();
     const element = chip();
     expect(element.closest(".fm-chips")).not.toBeNull();
     expect(element.closest(".reader-head")).toBeNull();
     expect(element.getAttribute("data-reserve")).not.toBe("");
     expect(element.textContent).toBe("");
+    // Last in the strip, in its reserved box.
+    expect(document.querySelector(".fm-chips")?.lastElementChild).toBe(element);
   });
 });
 
-describe("when a change is sent", () => {
-  it("issues the PUT the moment a status is picked", async () => {
+describe("the status chip", () => {
+  it("opens the vocabulary, marks the current word, and writes on choice", async () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    fireEvent.click(statusChip());
+    expect(menu()).not.toBeNull();
+    expect(menuItem("status:open").textContent).toContain("✓ open");
+    expect(menuItem("status:resolved").disabled).toBe(false);
+    // §5's third word is offered and gated: archiving is a route, not a status
+    // flip, and the item says so instead of writing.
+    expect(menuItem("status:archived").disabled).toBe(true);
+    expect(menuItem("status:archived").textContent).toContain("archive from the ⋯ menu");
+
+    fireEvent.click(menuItem("status:resolved"));
     // No timer is advanced past zero: the request cannot be waiting on one.
     await vi.advanceTimersByTimeAsync(0);
 
     expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
     expect(wire.of("PUT")[0]?.body).toEqual({ status: "resolved" });
+    // The choice closed the menu.
+    expect(menu()).toBeNull();
   });
 
-  it("issues the PUT the moment a whole due date arrives", async () => {
+  it("closes on Escape without writing", async () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
-    fireEvent.change(due(), { target: { value: "2026-10-01" } });
+    fireEvent.click(statusChip());
+    expect(menu()).not.toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(menu()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
+    expect(wire.of("PUT")).toHaveLength(0);
+  });
+
+  /**
+   * `statusLock`: the chip still shows the status, and the menu says why
+   * instead of writing — the reason is the predicate's own sentence.
+   */
+  it("says why an archived document's status is not the reader's to set", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount({ doc: ARCHIVED });
+
+    expect(statusChip().textContent).toBe("status: archived");
+    fireEvent.click(statusChip());
+    expect(screen.getByText(/Unarchive in the ⋯ menu/)).toBeDefined();
+    // §5's ladder is still offered — marked at the word the document holds —
+    // and none of it writes: unarchiving returns a document to `resolved` on
+    // its own route, so the menu must not silently write `open`.
+    expect(menuItem("status:archived").textContent).toContain("✓ archived");
+    expect(menuItem("status:open").disabled).toBe(true);
+    expect(menuItem("status:resolved").disabled).toBe(true);
+
+    fireEvent.click(menuItem("status:open"));
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
+    expect(wire.of("PUT")).toHaveLength(0);
+  });
+});
+
+describe("the tag chips", () => {
+  it("removes a tag from its menu, in one immediate write", async () => {
+    vi.useFakeTimers();
+    const doc = docFixture({ frontmatter: { ...DOC.frontmatter, tags: ["finance", "tax"] } });
+    const { wire } = mount({ doc });
+
+    fireEvent.click(tagChip("tax"));
+    fireEvent.click(menuItem("remove-tag"));
+    // A menu choice is a deliberate change: it sends at once.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(wire.of("PUT")).toHaveLength(1);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finance"] });
+  });
+
+  it("renames a tag in place, debounced like the text field it replaces", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount();
+
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("rename-tag"));
+    const input = tagInput();
+    expect(input.value).toBe("finance");
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "fin" } });
+    await vi.advanceTimersByTimeAsync(400);
+    fireEvent.change(input, { target: { value: "finances" } });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS - 1);
+    expect(wire.of("PUT")).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(wire.of("PUT")).toHaveLength(1);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finances"] });
+  });
+
+  it("collapses a rename onto an existing tag rather than writing a duplicate", async () => {
+    vi.useFakeTimers();
+    const doc = docFixture({ frontmatter: { ...DOC.frontmatter, tags: ["finance", "tax"] } });
+    const { wire } = mount({ doc });
+
+    fireEvent.click(tagChip("tax"));
+    fireEvent.click(menuItem("rename-tag"));
+    fireEvent.change(tagInput(), { target: { value: "finance" } });
+    fireEvent.keyDown(tagInput(), { key: "Enter" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(wire.of("PUT")).toHaveLength(1);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finance"] });
+  });
+
+  it("treats a rename to empty as the removal it is", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount();
+
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("rename-tag"));
+    fireEvent.change(tagInput(), { target: { value: "" } });
+    fireEvent.keyDown(tagInput(), { key: "Enter" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(wire.of("PUT")).toHaveLength(1);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: [] });
+  });
+
+  it("adds a tag from the + chip", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount();
+
+    fireEvent.click(addChip());
+    const input = tagInput();
+    expect(input.value).toBe("");
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "mortgage" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(wire.of("PUT")).toHaveLength(1);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finance", "mortgage"] });
+  });
+
+  it("leaves the input on Escape, with the typed value still saving", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount();
+
+    fireEvent.click(addChip());
+    fireEvent.change(tagInput(), { target: { value: "tax" } });
+    fireEvent.keyDown(tagInput(), { key: "Escape" });
+    // Escape leaves the field, exactly as it leaves the title: nothing is
+    // reverted, and the debounce still lands the value.
+    fireEvent.blur(tagInput() ?? document.body);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finance", "tax"] });
+  });
+});
+
+describe("the due chip", () => {
+  it("opens the date field in place, and a whole date sends at once", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount();
+
+    const input = openDue();
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "2026-10-01" } });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(wire.of("PUT")).toHaveLength(1);
     expect(wire.of("PUT")[0]?.body).toEqual({ due: "2026-10-01" });
   });
 
+  it("shows the date it holds", () => {
+    const dated = docFixture({ frontmatter: { ...DOC.frontmatter, due: "2026-10-01" } });
+    mount({ doc: dated });
+    expect(dueChip().textContent).toBe("due: 2026-10-01");
+  });
+
   /**
    * Chromium fires a change per segment of a date field, with `value === ""`
    * until every segment is filled — so "commit every date change" would clear a
-   * stored deadline on the way to typing a new one.
+   * stored deadline on the way to typing a new one. Empty waits out the
+   * debounce, which is also how the picker's Clear lands.
    */
   it("holds an empty due date for the debounce, then clears the deadline", async () => {
     vi.useFakeTimers();
     const dated = docFixture({ frontmatter: { ...DOC.frontmatter, due: "2026-10-01" } });
     const { wire } = mount({ doc: dated });
 
-    fireEvent.change(due(), { target: { value: "" } });
+    const input = openDue();
+    expect(input.value).toBe("2026-10-01");
+    fireEvent.change(input, { target: { value: "" } });
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS - 1);
     expect(wire.of("PUT")).toHaveLength(0);
 
@@ -315,23 +531,10 @@ describe("when a change is sent", () => {
     expect(wire.of("PUT")).toHaveLength(1);
     expect(wire.of("PUT")[0]?.body).toEqual({ due: null });
   });
+});
 
-  it("sends nothing while a tag is being typed, and one request after", async () => {
-    vi.useFakeTimers();
-    const { wire } = mount();
-
-    fireEvent.change(tags(), { target: { value: "finance, m" } });
-    await vi.advanceTimersByTimeAsync(400);
-    fireEvent.change(tags(), { target: { value: "finance, mortgage" } });
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS - 1);
-    expect(wire.of("PUT")).toHaveLength(0);
-
-    await vi.advanceTimersByTimeAsync(2);
-    expect(wire.of("PUT")).toHaveLength(1);
-    expect(wire.of("PUT")[0]?.body).toEqual({ tags: ["finance", "mortgage"] });
-  });
-
-  it("sends nothing while a title is being typed, and one request after", async () => {
+describe("the title", () => {
+  it("sends nothing while it is being typed, and one request after", async () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
@@ -385,17 +588,24 @@ describe("when a change is sent", () => {
 });
 
 describe("one patch, one write", () => {
+  /**
+   * The falsification the issue asks for: two changes inside one debounce
+   * window are one request carrying both — a test that asserted only "a
+   * request was made" would pass with four.
+   */
   it("carries three fields in one request when they change together", async () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
     fireEvent.change(title(), { target: { value: "Mortgage options 2026" } });
-    fireEvent.change(tags(), { target: { value: "finance, mortgage" } });
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("rename-tag"));
+    fireEvent.change(tagInput(), { target: { value: "finance, mortgage" } });
     // The deliberate one sends what is outstanding rather than only its own
     // field: the request is one patch either way, and holding the other two back
     // would mean a second write a moment later for a sitting §4 squashes into
     // one commit regardless.
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
 
     expect(wire.of("PUT")).toHaveLength(1);
@@ -415,8 +625,8 @@ describe("one patch, one write", () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
-    fireEvent.change(due(), { target: { value: "2026-10-01" } });
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    fireEvent.change(openDue(), { target: { value: "2026-10-01" } });
+    pickStatus("resolved");
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
 
     expect(wire.of("PUT").map((call) => call.body)).toEqual([
@@ -429,8 +639,10 @@ describe("one patch, one write", () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
-    fireEvent.change(tags(), { target: { value: "finance, m" } });
-    fireEvent.change(tags(), { target: { value: "finance, tax" } });
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("rename-tag"));
+    fireEvent.change(tagInput(), { target: { value: "finance, m" } });
+    fireEvent.change(tagInput(), { target: { value: "finance, tax" } });
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
 
     expect(wire.of("PUT")).toHaveLength(1);
@@ -450,12 +662,12 @@ describe("one patch, one write", () => {
     const wire = readerTransport({ docs: [DOC], holdWrites: held });
     mount({ wire });
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(wire.of("PUT")).toHaveLength(1);
     });
 
-    fireEvent.change(tags(), { target: { value: "finance, tax" } });
+    fireEvent.change(openDue(), { target: { value: "2026-12-24" } });
     await waitFor(() => {
       expect(chip().textContent).toContain("saving");
     });
@@ -466,7 +678,7 @@ describe("one patch, one write", () => {
     await waitFor(() => {
       expect(wire.of("PUT")).toHaveLength(2);
     });
-    expect(wire.of("PUT")[1]?.body).toEqual({ tags: ["finance", "tax"] });
+    expect(wire.of("PUT")[1]?.body).toEqual({ due: "2026-12-24" });
   });
 
   /** A delta write names what it changes, so it presents no key (SPEC.md §7). */
@@ -474,7 +686,7 @@ describe("one patch, one write", () => {
     vi.useFakeTimers();
     const { wire } = mount();
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await vi.advanceTimersByTimeAsync(0);
 
     const body = wire.of("PUT")[0]?.body as Record<string, unknown>;
@@ -487,13 +699,13 @@ describe("what a landed save does", () => {
   it("says so on the chip and publishes the server's document", async () => {
     const { wire, harness } = mount();
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(chip().textContent).toBe("committed · git ✓");
     });
     expect(wire.of("PUT")).toHaveLength(1);
     /*
-     * Read-your-write: the controls read the document, so a save that only
+     * Read-your-write: the chips read the document, so a save that only
      * invalidated would leave every one of them showing the value the person
      * just changed away from until a refetch landed.
      */
@@ -504,14 +716,14 @@ describe("what a landed save does", () => {
   it("stops holding a value the document now carries", async () => {
     const { wire } = mount();
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(chip().textContent).toBe("committed · git ✓");
     });
     // The prop is still the pre-save document: a form that had kept the value
     // locally would render `resolved`, and one that follows the document renders
     // what it was handed. That is the point — the value lives in one place.
-    expect(status().value).toBe("open");
+    expect(statusChip().textContent).toBe("status: open");
     expect(wire.of("PUT")).toHaveLength(1);
   });
 });
@@ -521,15 +733,18 @@ describe("what a failed save does", () => {
     const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 500 } });
     const { notices } = mount({ wire });
 
-    fireEvent.change(tags(), { target: { value: "finance, tax" } });
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("rename-tag"));
+    fireEvent.change(tagInput(), { target: { value: "finance, tax" } });
+    pickStatus("resolved");
 
     await waitFor(() => {
       expect(chip().textContent).toContain("save failed");
     });
-    // Nothing was discarded: both controls still show what the person set.
-    expect(tags().value).toBe("finance, tax");
-    expect(status().value).toBe("resolved");
+    // Nothing was discarded: the chips still show what the person set — the
+    // strip's values come from the same `valueOf(doc, local)` overlay.
+    expect(tagChip("tax")).not.toBeNull();
+    expect(statusChip().textContent).toBe("status: resolved");
     expect(notices[0]).toContain("error:Save failed");
 
     const retry = screen.getByRole("button", { name: /save failed/ });
@@ -549,7 +764,7 @@ describe("what a failed save does", () => {
    * **A refusal may not outlive its own request** (PR #55 re-review, finding 1).
    *
    * The wedge, measured against a real server before it was fixed: the status
-   * `<select>` is live, the person picks `resolved`, the server answers `400`
+   * control is live, the person picks `resolved`, the server answers `400`
    * naming `body.status`, and the refused value stays in the local map. From
    * then on **every** patch carries it and is refused too — a title typed
    * afterwards could not be saved until the page was reloaded.
@@ -561,14 +776,14 @@ describe("what a failed save does", () => {
       const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 400 } });
       mount({ wire });
 
-      fireEvent.change(status(), { target: { value: "resolved" } });
+      pickStatus("resolved");
       await waitFor(() => {
         expect(chip().textContent).toContain("save failed");
       });
       expect(wire.of("PUT")[0]?.body).toEqual({ status: "resolved" });
-      // The control shows the document again: a value the server will not take
+      // The chip shows the document again: a value the server will not take
       // is not an unsaved edit, and this form is not the place it survives.
-      expect(status().value).toBe("open");
+      expect(statusChip().textContent).toBe("status: open");
 
       fireEvent.change(title(), { target: { value: "Renamed afterwards" } });
       fireEvent.keyDown(title(), { key: "Enter" });
@@ -586,29 +801,16 @@ describe("what a failed save does", () => {
       const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 500 } });
       mount({ wire });
 
-      fireEvent.change(status(), { target: { value: "resolved" } });
+      pickStatus("resolved");
       await waitFor(() => {
         expect(chip().textContent).toContain("save failed");
       });
-      expect(status().value).toBe("resolved");
+      expect(statusChip().textContent).toBe("status: resolved");
     });
   });
 });
 
 describe("archiving is the ⋯ menu's, not this form's", () => {
-  it("shows an archived status, disabled, and says where the way out is", () => {
-    mount({ doc: ARCHIVED });
-    expect(status().value).toBe("archived");
-    expect(status().disabled).toBe(true);
-    expect(screen.getByText(/Unarchive in the ⋯ menu/)).toBeDefined();
-  });
-
-  it("offers no archived destination on a live document", () => {
-    mount();
-    expect([...status().options].map((option) => option.value)).toEqual(["open", "resolved"]);
-    expect(status().disabled).toBe(false);
-  });
-
   it("flushes on the way out without ever carrying status", async () => {
     const { wire, unmount } = mount({ doc: ARCHIVED });
     fireEvent.change(title(), { target: { value: "Renamed while archived" } });
@@ -622,11 +824,17 @@ describe("archiving is the ⋯ menu's, not this form's", () => {
     expect(Object.keys(wire.of("PUT")[0]?.body as object)).not.toContain("status");
   });
 
-  it("leaves every other control live on an archived document", () => {
-    mount({ doc: ARCHIVED });
+  it("leaves every other control live on an archived document", async () => {
+    vi.useFakeTimers();
+    const { wire } = mount({ doc: ARCHIVED });
     expect(title().readOnly).toBe(false);
-    expect(tags().disabled).toBe(false);
-    expect(due().disabled).toBe(false);
+    // The tag menu still removes, and the due chip still opens: the lock is
+    // the status's alone.
+    fireEvent.click(tagChip("finance"));
+    fireEvent.click(menuItem("remove-tag"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wire.of("PUT")[0]?.body).toEqual({ tags: [] });
+    expect(openDue().disabled).toBe(false);
   });
 });
 
@@ -680,7 +888,7 @@ describe("leaving the document", () => {
     const { wire } = mount();
 
     fireEvent.change(title(), { target: { value: "" } });
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
 
     await waitFor(() => {
       expect(wire.of("PUT")).toHaveLength(1);
@@ -722,7 +930,7 @@ describe("the document's edit session", () => {
     const flushEditSession = flusher();
     const { wire, unmount } = mount();
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(wire.of("PUT")).toHaveLength(1);
     });
@@ -753,7 +961,7 @@ describe("the document's edit session", () => {
     const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 500 } });
     const { unmount } = mount({ wire });
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(wire.of("PUT")).toHaveLength(1);
     });
@@ -766,13 +974,13 @@ describe("the document's edit session", () => {
 
 /**
  * **Every field on a document whose type nothing recognises is that person's**
- * — SPEC.md §12's M6 at the frontmatter form.
+ * — SPEC.md §12's M6 at the frontmatter strip.
  *
  * Nothing computes a `status` or a `due` from a document's content, so no
- * control is ever replaced by a statement of a value and no write path is gated
+ * chip is ever replaced by a statement of a value and no write path is gated
  * on one. What is pinned here is that seen from the outside: a `type: todo`
  * document — an unrecognised type real workspaces already hold — gets the same
- * live form a note gets, and its edits reach the wire.
+ * live chips a note gets, and its edits reach the wire.
  */
 describe("a document whose type nothing recognises", () => {
   const todo = (overrides: { status?: DocStatus } = {}): Doc =>
@@ -788,22 +996,19 @@ describe("a document whose type nothing recognises", () => {
       },
     });
 
-  it("renders live controls, with no statement standing in for one", () => {
+  it("renders live chips, with no statement standing in for one", () => {
     mount({ doc: todo() });
 
-    expect(status().disabled).toBe(false);
-    expect(status().value).toBe("open");
-    expect(due().disabled).toBe(false);
-    expect(due().value).toBe("2026-08-04");
-    // Neither field is an `<output>` reading of the document any more.
-    expect(document.querySelector("[data-field='status'] output")).toBeNull();
-    expect(document.querySelector("[data-field='due'] output")).toBeNull();
+    expect(statusChip().disabled).toBe(false);
+    expect(statusChip().textContent).toBe("status: open");
+    expect(dueChip().disabled).toBe(false);
+    expect(dueChip().textContent).toBe("due: 2026-08-04");
   });
 
   it("writes a status it is given, through the ordinary route", async () => {
     const { wire } = mount({ doc: todo() });
 
-    fireEvent.change(status(), { target: { value: "resolved" } });
+    pickStatus("resolved");
     await waitFor(() => {
       expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
     });
@@ -813,7 +1018,7 @@ describe("a document whose type nothing recognises", () => {
   it("writes a deadline it is given, which the server no longer converges away", async () => {
     const { wire } = mount({ doc: todo() });
 
-    fireEvent.change(due(), { target: { value: "2026-12-24" } });
+    fireEvent.change(openDue(), { target: { value: "2026-12-24" } });
     await waitFor(() => {
       expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
     });
@@ -822,16 +1027,18 @@ describe("a document whose type nothing recognises", () => {
 
   /**
    * The one lock there is: archiving is a status set on another route (UI-020,
-   * SERVER-039), so the control is shown and switched off with the way out
-   * named. It applies by **status**, never by type.
+   * SERVER-039), so the vocabulary is shown and gated with the way out named.
+   * It applies by **status**, never by type.
    */
   it("locks its status only for being archived, and says where the act lives", () => {
     mount({ doc: todo({ status: "archived" }) });
 
-    expect(status().value).toBe("archived");
-    expect(status().disabled).toBe(true);
+    expect(statusChip().textContent).toBe("status: archived");
+    fireEvent.click(statusChip());
     expect(screen.getByText(/Unarchive in the ⋯ menu/)).toBeDefined();
+    expect(menuItem("status:open").disabled).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
     // And `due` is not swept up in it — there is no act on `due` on any route.
-    expect(due().disabled).toBe(false);
+    expect(openDue().disabled).toBe(false);
   });
 });

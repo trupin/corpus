@@ -1,3 +1,4 @@
+import type { FolderNode } from "@corpus/contract";
 import { useCreateDoc, useRenameFolder, useTree, type RowNotice } from "@corpus/kit";
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { useBoardSurface } from "../board/BoardsProvider";
@@ -17,6 +18,7 @@ import {
   type ExplorerActs,
 } from "./explorerMenus";
 import { buildTreeRows, type FolderDocs, type TreeRow } from "./treeRows";
+import { moveTargets } from "./moveTargets";
 import { FolderDocsProbe } from "./FolderDocsProbe";
 import "./explorer.css";
 
@@ -42,6 +44,9 @@ import "./explorer.css";
  * switch and a strip write in the same handler would otherwise write the path
  * into the board being left.
  */
+
+/** A stable empty tree, so a loading explorer keeps one folder-list identity. */
+const NO_FOLDERS: readonly FolderNode[] = [];
 
 /** What the head says on the right — the corpus's own size, from the tree. */
 export function corpusCountLabel(total: number): string {
@@ -83,6 +88,10 @@ export function Explorer(): ReactElement | null {
 
   const boards = surface.boards;
   const currentId = surface.current?.id ?? null;
+  // One identity while the tree is loading, so the memos below do not rebuild on
+  // every render against a fresh `[]`.
+  const folders = tree.data?.folders ?? NO_FOLDERS;
+  const destinations = useMemo(() => moveTargets(folders), [folders]);
   const target = useMemo(() => defaultOpenBoard(boards), [boards]);
   const strip = surface.local.strip;
 
@@ -177,12 +186,12 @@ export function Explorer(): ReactElement | null {
             });
           });
       },
+      folders: destinations,
       notify,
     }),
-    [boards, createDoc, createInColumn, navigation, notify, open, surface, target],
+    [boards, createDoc, createInColumn, destinations, navigation, notify, open, surface, target],
   );
 
-  const folders = tree.data?.folders ?? [];
   const rows = useMemo(
     () =>
       buildTreeRows({

@@ -31,6 +31,7 @@ import {
   planDefaultOpenClears,
 } from "./default-open.js";
 import { decideStageStatus, stageStatusWarning } from "./kanban.js";
+import { assertOrderIsABoardPosition, ORDER_RECOVERY_ON_CREATE } from "./order-rule.js";
 import { isIdTaken, loadDocument, toWireDoc } from "./read.js";
 import { findTemplate } from "./templates.js";
 import {
@@ -165,6 +166,10 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
  * core does not define, as frontmatter keys of a brand-new document
  * (CONTRACT-011, widened by CONTRACT-074).
  *
+ * `order` reaches here already refused for anything but a board
+ * ({@link assertOrderIsABoardPosition}, called at the top of
+ * {@link createDocument}), so the only `order` this writes is a board's.
+ *
  * Two rules, both the contract's own. **A key whose value is absent is not
  * written**: `order: null` "is the same as omitting it: no `order` key", and
  * `defaultOpen` defaults to `false` while an absent `default-open` reads as
@@ -238,6 +243,21 @@ export async function createDocument(
   actor: Actor,
   input: CreateDocRequest,
 ): Promise<CreateOutcome> {
+  // The same rule `PUT /api/docs/{id}` enforces, and the same assertion
+  // (`order-rule.ts`): `order` is a board's position, so a view must not be able
+  // to be *born* carrying one either (SERVER-143). Asked of the request's own
+  // field rather than of a computed change — creation has no stored value to
+  // compare against, and every field a create request carries is one the caller
+  // deliberately asked to be written. It guards exactly the value
+  // {@link boardFields} would put in the frontmatter, and it fires here, before
+  // the create lane is taken, so a doomed request never contends for it.
+  assertOrderIsABoardPosition(
+    "the document you are creating",
+    input.type,
+    input.order,
+    ORDER_RECOVERY_ON_CREATE,
+  );
+
   // The type is carried in because §7's other document roots each hold exactly
   // one type: it decides which root an omitted `folder` means, and it is what a
   // named root is checked against (SERVER-122).
@@ -308,7 +328,14 @@ export async function createDocument(
       input.stage === undefined
         ? null
         : withSpeculativeDocumentRow(workspace.projection, path, parsedDoc, () =>
-            decideStageStatus(workspace.projection, id, path, input.stage ?? null, workspace.now()),
+            decideStageStatus(
+              workspace.projection,
+              id,
+              path,
+              input.stage ?? null,
+              workspace.now(),
+              workspace.staleness,
+            ),
           );
     const coupledStatus = coupling?.status ?? null;
     if (coupledStatus !== null && coupledStatus !== fields["status"]) {

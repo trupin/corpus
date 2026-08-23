@@ -124,13 +124,106 @@
   max-width: var(--doc-measure, 66ch);
 }
 
-/* The width rail measures the body, so it takes the body's type and the body's
-   fallback here too — see the note in `Reader.css`. Getting this wrong does not
-   break the drag; it puts the handle a few pixels off the edge it is supposed
-   to be, at the default width only. */
-.focus .doc-width-rail {
+/*
+ * ── The width control (UI-066; SPEC.md §10, rider signed 2026-08-23) ──────
+ *
+ * Full screen's alone now: *"There is no column edge in full screen, so the
+ * body's own width is the one gesture there."* In a column the body fills the
+ * column (`Reader.css`), so these rules moved here from `Reader.css` when the
+ * column reader lost the control.
+ *
+ * **The rail is how the handle knows where the body's edge is.** The default
+ * measure is `66ch` and `ch` is font-dependent, so its pixel value is the
+ * browser's to know. Rather than compute it, this empty box carries the *same*
+ * `max-width` and the *same* type the body carries — so its right edge **is**
+ * the body's right edge, by construction, at the default and at every width
+ * somebody drags to. The type declarations below are therefore load-bearing and
+ * must stay in step with the body. Getting the type wrong does not break the
+ * drag; it puts the handle off the edge it is supposed to sit at, at the default
+ * width only — and 40px of that is enough to put it over the last characters of
+ * a line and to start a drag short (see `.rail-conversation` below, and
+ * `doc-width.spec.ts`, which asserts the two edges meet for both kinds of
+ * body).
+ *
+ * **The handle hangs entirely outside the measure.** `right: -12px` with
+ * `width: 12px` puts it in `[measure, measure + 12px]` — in the gutter, never
+ * over a character — because a strip that straddled the edge would swallow the
+ * click that places a caret at the end of a line. It stays inside
+ * `.focus-scroll`'s 48px of right padding, so it adds no horizontal overflow.
+ *
+ * **It is invisible until you reach for it**, exactly like `.col-resizer` in
+ * `Column.css`: a `role="separator"` strip with a resize cursor that washes
+ * `--accent-wash` on hover and while dragging.
+ *
+ * Nothing here touches any column. A column's width is its view document's
+ * (`board/columnWidth.ts`) — that describes the view and travels with it, while
+ * this describes the viewer and stays in this browser. §10: the two are
+ * unrelated, and neither follows the other.
+ */
+.doc-width-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  /* In step with `.focus .doc-body` — see the note above. */
+  font-family: var(--serif);
   font-size: 16.5px;
   max-width: var(--doc-measure, 66ch);
+  /* The rail is a ruler, not a target: only the handle takes the pointer. */
+  pointer-events: none;
+  /*
+   * Above the editor, and this line is the difference between a handle that
+   * drags and one that does nothing (measured in Chromium, UI-066). `.doc-editor`
+   * is `position: relative` and spans the **whole** of `.doc-main` — only the
+   * `.doc-body` inside it carries the measure — so it is a positioned sibling
+   * later in document order, and it painted over the gutter the handle lives in.
+   * Focus still reached the handle, so the keyboard worked and only the pointer
+   * was dead: a defect a component test cannot see, because hit testing is the
+   * browser's.
+   */
+  z-index: 3;
+}
+
+/*
+ * The one type declaration the rail cannot share with `.focus .doc-body`.
+ *
+ * `.focus .doc-body` says `16.5px` for both kinds of body, so the rail's own
+ * size above is in step with both. The **family** is not: a document's body is
+ * `markdown.css`'s `var(--serif)` and a conversation's is `Reader.css`'s
+ * `.thread-conversation`, `var(--sans)`. A `ch` is wider in the sans, so `66ch`
+ * is 685.94px in a conversation against 605.65px in a note (measured, 1280×720),
+ * and a rail that assumed serif drew its handle 40px inside the body's right
+ * edge — over the last characters of a line, which is the one thing the note
+ * above says the handle must never do — and started a drag 40px short, so the
+ * first press of the control pulled the body in by that much.
+ *
+ * `DocView` passes the flag from the same branch that chooses which body to
+ * render, so the two cannot disagree about what is on screen. That the rail's
+ * edge really is the body's edge is asserted in `doc-width.spec.ts` for both
+ * kinds — the comment above asks these declarations to stay in step, and that
+ * test is what makes the request enforceable.
+ */
+.doc-width-rail.rail-conversation {
+  font-family: var(--sans);
+}
+
+.doc-width-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -12px;
+  width: 12px;
+  cursor: col-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.doc-width-handle:hover,
+.doc-width-handle:focus-visible,
+.doc-width-handle.resizing {
+  background: var(--accent-wash);
+  outline: none;
 }
 
 .focus .turn-markdown {
@@ -143,8 +236,6 @@
    so a related panel left off this list would be 62ch beside a 66ch backlinks. */
 .focus .related,
 .focus .thread-slots,
-.focus .archived-banner,
-.focus .fm-form,
-.focus .fm-actions {
+.focus .archived-banner {
   max-width: var(--doc-measure, 66ch);
 }

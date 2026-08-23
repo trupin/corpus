@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
 import {
   CORE_QUEUE_EVENT_TYPES,
@@ -7,14 +7,15 @@ import {
   type QueueEventStatus,
 } from "./queue.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Every queue event is a job; the console renders one row per job with its live
  * log stream (SPEC.md §7). Full log lines stay in `.corpus/jobs/<eventId>.jsonl`
  * and are fetched over HTTP — SSE only announces that the log grew.
  */
-export const JobSchema = z
-  .object({
+export const JobSchema = openapi(
+  z.object({
     eventId: EventIdSchema,
     type: z
       .string()
@@ -63,15 +64,18 @@ export const JobSchema = z
           "shows its new title on the next read. Null exactly when `blockedOn` is null, or when " +
           "the document it names no longer exists.",
       ),
-  })
-  .openapi("Job");
+  }),
+  "Job",
+);
 
-export const JobLogLineSchema = z
-  .object({ ts: IsoDateTimeSchema, line: z.string() })
-  .openapi("JobLogLine", {
+export const JobLogLineSchema = openapi(
+  z.object({ ts: IsoDateTimeSchema, line: z.string() }),
+  "JobLogLine",
+  {
     description:
       "One line of `.corpus/jobs/<eventId>.jsonl`. Always rendered as plain text, never interpreted.",
-  });
+  },
+);
 
 export const DEFAULT_RECENT_JOBS = 50;
 export const MAX_RECENT_JOBS = 200;
@@ -125,13 +129,9 @@ const StatusSetSchema = z
  * coming**. Raising `recent` moves that boundary without removing it.
  */
 export const JobsQuerySchema = z.object({
-  recent: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_RECENT_JOBS)
-    .default(DEFAULT_RECENT_JOBS)
-    .openapi({
+  recent: openapi(
+    z.coerce.number().int().min(1).max(MAX_RECENT_JOBS).default(DEFAULT_RECENT_JOBS),
+    {
       param: { name: "recent", in: "query", required: false },
       type: "integer",
       minimum: 1,
@@ -146,8 +146,9 @@ export const JobsQuerySchema = z.object({
         "wrong, and its failure is the silent direction — a job that fell out of the window is " +
         "indistinguishable from no job. One document's jobs are bounded by that document's own " +
         "history, so there is nothing here a window needs to protect the caller from.",
-    }),
-  originId: DocumentIdSchema.optional().openapi({
+    },
+  ),
+  originId: openapi(DocumentIdSchema.optional(), {
     param: { name: "originId", in: "query", required: false },
     description:
       "**Restrict to jobs originating from this document or thread** — the `Job.originId` value, " +
@@ -158,7 +159,7 @@ export const JobsQuerySchema = z.object({
       "every matching job, in the same order, with `recent` no longer applied. Omitted, the " +
       "query is the console's list and is unchanged, window and all.",
   }),
-  status: StatusSetSchema.optional().openapi({
+  status: openapi(StatusSetSchema.optional(), {
     param: { name: "status", in: "query", required: false },
     type: "string",
     description:
@@ -171,9 +172,10 @@ export const JobsQuerySchema = z.object({
   }),
 });
 
-export const JobListSchema = z
-  .object({ jobs: z.array(JobSchema).describe("Console rows, most recent first.") })
-  .openapi("JobList");
+export const JobListSchema = openapi(
+  z.object({ jobs: z.array(JobSchema).describe("Console rows, most recent first.") }),
+  "JobList",
+);
 
 /**
  * The console fetches log content over HTTP and refetches on SSE invalidation
@@ -181,34 +183,29 @@ export const JobListSchema = z
  * cursor makes that refetch incremental instead of re-reading the whole file.
  */
 export const JobLogQuerySchema = z.object({
-  cursor: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(0)
-    .openapi({
-      param: { name: "cursor", in: "query", required: false },
-      type: "integer",
-      minimum: 0,
-      default: 0,
-      description:
-        "Lines already held by the caller; pass back `nextCursor` to fetch only new ones.",
-    }),
+  cursor: openapi(z.coerce.number().int().min(0).default(0), {
+    param: { name: "cursor", in: "query", required: false },
+    type: "integer",
+    minimum: 0,
+    default: 0,
+    description: "Lines already held by the caller; pass back `nextCursor` to fetch only new ones.",
+  }),
 });
 
-export const JobLogSchema = z
-  .object({
+export const JobLogSchema = openapi(
+  z.object({
     lines: z.array(JobLogLineSchema).describe("Log lines from `cursor` onwards, oldest first."),
     nextCursor: z
       .number()
       .int()
       .min(0)
       .describe("Cursor to pass on the next fetch; equals the total line count."),
-  })
-  .openapi("JobLog");
+  }),
+  "JobLog",
+);
 
-export const AppendLogRequestSchema = z
-  .strictObject({
+export const AppendLogRequestSchema = openapi(
+  z.strictObject({
     line: z
       .string()
       .min(1)
@@ -216,8 +213,9 @@ export const AppendLogRequestSchema = z
         "One progress line. Rendered as plain text and never interpreted; the server caps its " +
           "length (SPEC.md §7).",
       ),
-  })
-  .openapi("AppendLogRequest");
+  }),
+  "AppendLogRequest",
+);
 
 /**
  * `appended` is a genuine boolean rather than `literal(true)`, because the
@@ -228,8 +226,8 @@ export const AppendLogRequestSchema = z
  * a literal `true` would have the response assert that a dropped line was
  * written. The one field that can be honest here is this one.
  */
-export const AppendLogResultSchema = z
-  .object({
+export const AppendLogResultSchema = openapi(
+  z.object({
     eventId: EventIdSchema,
     appended: z
       .boolean()
@@ -240,8 +238,9 @@ export const AppendLogResultSchema = z
           "is not there. A caller that reports progress from this endpoint reports the flag, not " +
           "the status code.",
       ),
-  })
-  .openapi("AppendLogResult");
+  }),
+  "AppendLogResult",
+);
 
 export type Job = z.infer<typeof JobSchema>;
 export type JobLogLine = z.infer<typeof JobLogLineSchema>;

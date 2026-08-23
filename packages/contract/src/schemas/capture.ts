@@ -1,9 +1,10 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { DocIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { requestsAgentFormField } from "./thread.js";
 import { warningsField } from "./warning.js";
 import { requestedWeightField } from "./weight.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Capture is the composer's "this should live on as a document" action (SPEC.md
@@ -13,8 +14,8 @@ import { requestedWeightField } from "./weight.js";
  * machinery — and exists as one endpoint only so the board can show the new
  * document with its pending-agent indicator without a three-call round trip.
  */
-export const CaptureRequestSchema = z
-  .strictObject({
+export const CaptureRequestSchema = openapi(
+  z.strictObject({
     text: z
       .string()
       .min(1)
@@ -27,11 +28,12 @@ export const CaptureRequestSchema = z
     ),
     weight: requestedWeightField,
     files: AttachmentFilesSchema,
-  })
-  .openapi("CaptureRequest");
+  }),
+  "CaptureRequest",
+);
 
-export const CaptureResultSchema = z
-  .object({
+export const CaptureResultSchema = openapi(
+  z.object({
     docId: DocIdSchema.describe("The created document, filed in `data/docs/inbox/`."),
     threadId: ThreadIdSchema.describe(
       "The whole-document filing thread created alongside it (no anchor).",
@@ -45,8 +47,9 @@ export const CaptureResultSchema = z
     // strictly more ways to warn than either — the same `warningsField`, so the
     // composition reports what its parts would have (SPEC.md §11).
     warnings: warningsField,
-  })
-  .openapi("CaptureResult");
+  }),
+  "CaptureResult",
+);
 
 export type CaptureRequest = z.infer<typeof CaptureRequestSchema>;
 export type CaptureResult = z.infer<typeof CaptureResultSchema>;

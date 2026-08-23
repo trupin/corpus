@@ -7,7 +7,7 @@ import {
 } from "@corpus/contract";
 import { ID_PREFIXES, newId } from "../core/ids.js";
 import { formatInstant } from "../core/time.js";
-import { conflict, notFound } from "../errors.js";
+import { conflict, notFound, type HttpError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import { readHeldInProgress, type HeldSet } from "./held.js";
 import {
@@ -231,6 +231,10 @@ interface TransitionOptions {
    * the move happens — the same in-chain rule, for the same reason, as
    * {@link RequeueOptions.onlyFrom}. `verb` completes the message: "only
    * in-progress work can be deferred".
+   *
+   * Every verb declares one since SERVER-145, and none of them lists its own
+   * target status — which is what makes a repeat a refusal rather than a `200`
+   * that claims a transition nobody made. See {@link CLAIMED_ONLY}.
    */
   readonly onlyFrom?:
     { readonly statuses: readonly QueueEventStatus[]; readonly verb: string } | undefined;
@@ -250,6 +254,65 @@ interface PendingEntry {
 function joinStatuses(statuses: readonly QueueEventStatus[]): string {
   if (statuses.length <= 1) return statuses[0] ?? "";
   return `${statuses.slice(0, -1).join(", ")} or ${statuses[statuses.length - 1] ?? ""}`;
+}
+
+/**
+ * The statuses a **settling** verb accepts: the one the agent holds the work in.
+ *
+ * SPEC.md §7, signed 2026-08-13: "a lane's owner settles its own lane … and
+ * **nobody settles work they did not claim**". A settle is a *report on claimed
+ * work*, not an assertion of a state anyone may make at any time — so the
+ * question the guard asks is "do you hold this event?", and the answer is `no`
+ * for every status but this one, whether the caller asked for the status the
+ * event is already in or a different one. That is one rule rather than two, and
+ * it is the rule §7 states.
+ *
+ * `defer` has declared it since SERVER-030; `complete` and `fail` never did,
+ * which is the whole of SERVER-145: a `processed` event could be re-settled to
+ * `failed` and back with exit 0 each time, and an event **nobody ever claimed**
+ * went straight from `pending/` to `processed/` — the work never done and the
+ * event gone from the queue.
+ */
+const CLAIMED_ONLY: readonly QueueEventStatus[] = ["in-progress"];
+
+/**
+ * The statuses `abandon` accepts — every one but `processed`, and `abandoned`
+ * itself.
+ *
+ * Abandon is the **operator's** give-up rather than the agent's report, so it is
+ * deliberately not {@link CLAIMED_ONLY}: SPEC.md §7's console offers it on a
+ * failed job beside `retry`, `job abandon` calls straight into it, and giving up
+ * on work still queued or still deferred is the same act. What it may not do is
+ * give up on work that is **done**: there is nothing left to abandon, and
+ * `processed/` → `abandoned/` is precisely the history rewrite SERVER-145 is
+ * about. `abandoned` is absent so that a repeat is refused by name — see
+ * {@link refuseTransition}.
+ */
+const ABANDONABLE: readonly QueueEventStatus[] = ["pending", "in-progress", "deferred", "failed"];
+
+/**
+ * The `409` a refused transition carries, in one line — the audit that found
+ * SERVER-145 measured refusals being read in full, so neither branch grows a
+ * second sentence.
+ *
+ * **A repeat says "already", and that is not a softer refusal.** It is still a
+ * `409` and still writes nothing; it says `already` because a caller that
+ * duplicated a settle needs to know the outcome it wanted is the one on record —
+ * which sends it on — where the generic wording would send it looking for a
+ * fault that is not there. A caller asking for a *different* state gets the
+ * generic wording, which names both what the event is and what the verb accepts.
+ */
+function refuseTransition(
+  id: string,
+  from: QueueEventStatus,
+  to: QueueEventStatus,
+  onlyFrom: { readonly statuses: readonly QueueEventStatus[]; readonly verb: string },
+): HttpError {
+  return conflict(
+    from === to
+      ? `queue event ${id} is already ${from}`
+      : `queue event ${id} is ${from}; only ${joinStatuses(onlyFrom.statuses)} work can be ${onlyFrom.verb}`,
+  );
 }
 
 /**
@@ -808,19 +871,41 @@ export class QueueService {
     });
   }
 
+  /**
+   * In-progress → `processed/`: the agent reporting that the work it claimed is
+   * done. {@link CLAIMED_ONLY} carries why every other status is a `409`.
+   */
   async complete(id: string): Promise<StoredEvent> {
-    return this.transition(id, "processed");
+    return this.transition(id, "processed", {
+      onlyFrom: { statuses: CLAIMED_ONLY, verb: "completed" },
+    });
   }
 
+  /**
+   * In-progress → `failed/`: the agent reporting that the work it claimed could
+   * not be done. {@link CLAIMED_ONLY} again — and it is what stops a second
+   * `fail` quietly discarding the reason it carried, since the file the first one
+   * wrote was never going to be overwritten.
+   */
   async fail(id: string, reason?: string): Promise<StoredEvent> {
     // The request field is `reason`, the on-disk field is `error` — one concept,
     // named for its reader on each side (sprint-003 adjudication 7).
-    return this.transition(id, "failed", reason === undefined ? {} : { fields: { error: reason } });
+    return this.transition(id, "failed", {
+      onlyFrom: { statuses: CLAIMED_ONLY, verb: "failed" },
+      ...(reason === undefined ? {} : { fields: { error: reason } }),
+    });
   }
 
-  /** Abandon is a move to `abandoned/`, never a delete: the file is evidence. */
+  /**
+   * Abandon is a move to `abandoned/`, never a delete: the file is evidence.
+   *
+   * Admitted from more than a settle is, and refused from `processed`:
+   * {@link ABANDONABLE} carries the reasoning.
+   */
   async abandon(id: string): Promise<StoredEvent> {
-    return this.transition(id, "abandoned");
+    return this.transition(id, "abandoned", {
+      onlyFrom: { statuses: ABANDONABLE, verb: "abandoned" },
+    });
   }
 
   /**
@@ -845,7 +930,7 @@ export class QueueService {
    */
   async defer(id: string, deferral: DeferralFields): Promise<StoredEvent> {
     return this.transition(id, "deferred", {
-      onlyFrom: { statuses: ["in-progress"], verb: "deferred" },
+      onlyFrom: { statuses: CLAIMED_ONLY, verb: "deferred" },
       fields: {
         blockedOn: deferral.blockedOn,
         ...(deferral.deferReason === undefined ? {} : { deferReason: deferral.deferReason }),
@@ -1200,18 +1285,21 @@ export class QueueService {
       const from = await this.store.locate(id);
       if (from === undefined) throw notFound(`no queue event ${id}`);
       if (options.onlyFrom !== undefined && !options.onlyFrom.statuses.includes(from)) {
-        throw conflict(
-          `queue event ${id} is ${from}; only ${joinStatuses(options.onlyFrom.statuses)} work can be ${options.onlyFrom.verb}`,
-        );
+        throw refuseTransition(id, from, to, options.onlyFrom);
       }
 
       const current = await this.store.readEvent(from, id);
       if (current === undefined) throw notFound(`no queue event ${id}`);
       if (!current.ok) return this.quarantine(id, from, current);
-      // Already there: idempotent, and the file is left exactly as it is — a
-      // second `fail` does not overwrite the reason the first one recorded.
-      // Unreachable for a transition that declares `onlyFrom`, which refuses
-      // above rather than answering a repeat with a 200.
+      // Already there: no move, and the file is left exactly as it is.
+      //
+      // **No verb this service exposes reaches it** since SERVER-145 — all four
+      // declare `onlyFrom` and none admits its own target status, so a repeat is
+      // refused above rather than answered with a `200`. It stays as the floor
+      // under `transition` itself, which is a general mechanism: a future verb
+      // that omits `onlyFrom` gets "nothing happened" rather than a rename of a
+      // file onto itself. Whether a repeat is a refusal or a no-op is the verb's
+      // decision to state, which is the whole of what SERVER-145 settled.
       if (from === to) return current.event;
 
       if (!(await this.store.move(from, to, id))) {
@@ -1233,7 +1321,7 @@ export class QueueService {
       // commit rather than one per document it touched (SERVER-092). Only here,
       // and only for an ending: `claim` begins the work and `retry` puts it back
       // at the start of it, and neither may end a window the agent is still
-      // filling. Reached only past the `from === to` return above, so a second
+      // filling. Reached only past the `onlyFrom` refusal above, so a second
       // `fail` on an already-failed event closes nothing — nothing finished.
       //
       // Nothing is committed either way: `.corpus/queue/` is gitignored, and a

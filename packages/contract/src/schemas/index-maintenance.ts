@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { SemanticIndexStateSchema } from "./retrieval.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The semantic index's own health report (SPEC.md §9.1's verbs bullet, §9.2's
@@ -43,8 +44,8 @@ import { SemanticIndexStateSchema } from "./retrieval.js";
 
 const chunkCount = (what: string) => z.number().int().min(0).describe(what);
 
-export const IndexStatusSchema = z
-  .object({
+export const IndexStatusSchema = openapi(
+  z.object({
     indexed: chunkCount(
       "Content chunks that have a usable vector recorded under `identity`. With `pending` and " +
         "`failed` it accounts for every chunk in the corpus, so there is no separate total: a " +
@@ -117,7 +118,8 @@ export const IndexStatusSchema = z
           "string: a caught-up index explains itself through the counts, and a field that is " +
           "always present has to invent something to say.",
       ),
-  })
-  .openapi("IndexStatus");
+  }),
+  "IndexStatus",
+);
 
 export type IndexStatus = z.infer<typeof IndexStatusSchema>;

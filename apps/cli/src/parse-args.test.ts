@@ -130,6 +130,65 @@ describe("parseCommandInput", () => {
   });
 });
 
+describe("a flag declaring a bareValue", () => {
+  const optional: ParseTarget = {
+    name: "optional",
+    args: [{ name: "target", required: false, description: "A positional." }],
+    flags: [
+      {
+        name: "mode",
+        type: "string",
+        valueName: "mode",
+        bareValue: "full",
+        description: "A flag whose value may be left off.",
+      },
+    ],
+  };
+
+  it("is absent when it is not typed", () => {
+    expect(parseCommandInput(optional, []).flags.string("mode")).toBeUndefined();
+  });
+
+  it("means its bare value when typed with none", () => {
+    expect(parseCommandInput(optional, ["--mode"]).flags.string("mode")).toBe("full");
+  });
+
+  it("takes an inline value", () => {
+    expect(parseCommandInput(optional, ["--mode=brief"]).flags.string("mode")).toBe("brief");
+    // An empty inline value is passed through rather than silently becoming the
+    // bare one: whoever consumes it decides, and `--mode=` is not `--mode`.
+    expect(parseCommandInput(optional, ["--mode="]).flags.string("mode")).toBe("");
+  });
+
+  it("never reads the following token", () => {
+    // The whole reason the field exists: `corpus doc list --help` must print
+    // help, not consume a positional and then complain about a missing one.
+    const parsed = parseCommandInput(optional, ["--mode", "doc-1"]);
+    expect(parsed.flags.string("mode")).toBe("full");
+    expect(parsed.args.optional("target")).toBe("doc-1");
+  });
+
+  it("does not error at the end of argv the way a value-taking flag does", () => {
+    const required: ParseTarget = {
+      name: "required",
+      args: [],
+      flags: [{ name: "mode", type: "string", description: "An ordinary string flag." }],
+    };
+    expect(() => parseCommandInput(required, ["--mode"])).toThrow(/requires a value/);
+    expect(() => parseCommandInput(optional, ["--mode"])).not.toThrow();
+  });
+
+  it("is how the real --help flag is declared", () => {
+    const help = GLOBAL_FLAGS.find((flag) => flag.name === "help");
+    expect(help?.type).toBe("string");
+    expect(help?.bareValue).toBe("full");
+    expect(parse(["doc-1", "--help"]).flags.string("help")).toBe("full");
+    expect(parse(["doc-1", "--help=brief"]).flags.string("help")).toBe("brief");
+    expect(parse(["doc-1"]).flags.string("help")).toBeUndefined();
+    expect(parse(["-h", "doc-1"]).flags.string("help")).toBe("full");
+  });
+});
+
 describe("mergedFlags", () => {
   it("puts the globals in front of the command's own flags", () => {
     const names = mergedFlags(target.flags).map((flag) => flag.name);

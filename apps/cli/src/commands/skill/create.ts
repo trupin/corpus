@@ -1,5 +1,6 @@
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   requireFlag,
   resolveBody,
   splitTags,
@@ -78,7 +79,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything " +
     "after creation is ordinary document work: edit with `corpus doc edit`, disable with " +
     "`corpus doc archive`, and undo a bad edit by writing back the content you want — read the " +
-    "history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.",
+    "history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.\n\n" +
+    BODY_SOURCES_HELP,
   args: [
     {
       name: "name",

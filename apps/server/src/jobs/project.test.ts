@@ -106,7 +106,9 @@ describe("recordJobLine", () => {
     });
 
     // The status follows the queue, never the log: failing the event ages the
-    // console row on its own, with nothing appended to the file.
+    // console row on its own, with nothing appended to the file. Claimed first,
+    // because a settle is defined for claimed work only (SERVER-145).
+    await queue.claimAll();
     await queue.fail(id, "boom");
     expect(ws.db.prepare("SELECT status, last_line FROM jobs").get()).toEqual({
       status: "failed",

@@ -74,6 +74,7 @@ export * from "./health.js";
 export * from "./index-maintenance.js";
 export * from "./inventory.js";
 export * from "./jobs.js";
+export * from "./paths.js";
 export * from "./queue.js";
 export * from "./reflect.js";
 export * from "./dual-media.js";

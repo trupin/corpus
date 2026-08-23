@@ -13,6 +13,7 @@ import {
   DEFAULT_MAX_REQUEST_BYTES,
   type AttachmentLimits,
 } from "./attachments/index.js";
+import { STALENESS_THRESHOLD_DAYS, type StalenessThresholds } from "./docs/staleness.js";
 import { EDIT_ACK_IDLE_MS } from "./edit/index.js";
 import { ConfigError } from "./errors.js";
 import { LogLevelSchema, type LogLevel } from "./logger.js";
@@ -125,6 +126,85 @@ export const ReflectConfigSchema = z.object({
   quiet: z.number().int().min(0).default(DEFAULT_REFLECT_QUIET_MINUTES),
 });
 
+/** One tier's threshold: whole days, at least one, with the shipped fallback. */
+const tierDays = (fallback: number): z.ZodDefault<z.ZodNumber> =>
+  z
+    .number()
+    .int("a staleness threshold is a whole number of days")
+    .min(
+      1,
+      "a staleness threshold is a whole number of days and must be at least 1: a tier that " +
+        "begins at 0 holds every document written today, which is the absence of a ramp rather " +
+        "than a faster one",
+    )
+    .default(fallback);
+
+/**
+ * SPEC.md §5's staleness ramp, in days (SERVER-133).
+ *
+ * §5 has always called 30/90/180 "defaults", and until this block existed
+ * nothing could override them — the only lever was marking reference material
+ * `evergreen` one document at a time, using an opt-out to simulate a threshold.
+ * This makes an existing sentence in the spec true; it changes no behaviour for
+ * a workspace that omits the key.
+ *
+ * **Per workspace, not per document type.** A reference note and a todo do not
+ * age at the same rate and somebody will ask for that — but §5 says "global
+ * thresholds", and a per-type ramp needs a second decision this issue has no
+ * answer for (what a type the core does not recognise ages at, §5's open type).
+ * The simpler one is built; the harder one has somewhere to grow, because a
+ * nested block can take a `perType` key without moving anything.
+ *
+ * **Ascending is a refusal, never a silent sort.** A misordered set is a
+ * statement about a ramp that cannot exist — a tier that begins *before* the one
+ * below it can never be reached — and sorting it would run a workspace on
+ * numbers nobody wrote. `veryStale` is the wire spelling of the `very-stale`
+ * tier: this file is JSON and its other compound keys are `maxFileBytes` and
+ * `idleMs`, so it follows them rather than the tier name.
+ *
+ * The floor is **one day**, not zero: a threshold of zero would put every
+ * document written today at that tier, which is not a faster ramp but the
+ * absence of one.
+ */
+export const StalenessConfigSchema = z
+  .object({
+    aging: tierDays(STALENESS_THRESHOLD_DAYS.aging),
+    stale: tierDays(STALENESS_THRESHOLD_DAYS.stale),
+    veryStale: tierDays(STALENESS_THRESHOLD_DAYS["very-stale"]),
+  })
+  .superRefine((value, ctx) => {
+    for (const [lower, upper] of [
+      ["aging", "stale"],
+      ["stale", "veryStale"],
+    ] as const) {
+      if (value[lower] < value[upper]) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [upper],
+        message:
+          `the staleness thresholds must ascend, and "${lower}" (${String(value[lower])} days) ` +
+          `is not less than "${upper}" (${String(value[upper])} days). SPEC.md §5 ramps a ` +
+          "document fresh → aging → stale → very stale, so each tier begins further back than " +
+          "the one before it; remove the block to use the defaults " +
+          `${String(STALENESS_THRESHOLD_DAYS.aging)}/${String(STALENESS_THRESHOLD_DAYS.stale)}/` +
+          `${String(STALENESS_THRESHOLD_DAYS["very-stale"])}`,
+      });
+    }
+  });
+
+const DEFAULT_STALENESS_BLOCK = {
+  aging: STALENESS_THRESHOLD_DAYS.aging,
+  stale: STALENESS_THRESHOLD_DAYS.stale,
+  veryStale: STALENESS_THRESHOLD_DAYS["very-stale"],
+};
+
+/** The config block in the tier spelling the ramp itself uses. */
+export function stalenessThresholdsOf(
+  block: z.infer<typeof StalenessConfigSchema>,
+): StalenessThresholds {
+  return { aging: block.aging, stale: block.stale, "very-stale": block.veryStale };
+}
+
 export const WorkspaceConfigSchema = z.object({
   version: z.literal(1),
   port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
@@ -147,6 +227,7 @@ export const WorkspaceConfigSchema = z.object({
   embedding: EmbeddingConfigSchema.optional(),
   editAcknowledgment: EditAcknowledgmentConfigSchema.default({ idleMs: EDIT_ACK_IDLE_MS }),
   reflect: ReflectConfigSchema.default({ quiet: DEFAULT_REFLECT_QUIET_MINUTES }),
+  staleness: StalenessConfigSchema.default(DEFAULT_STALENESS_BLOCK),
 });
 
 /**
@@ -232,6 +313,13 @@ export interface ServerConfig {
    * the file has since become unreadable ({@link readQuietMinutes}).
    */
   readonly reflect?: { readonly quiet: number } | undefined;
+  /**
+   * SPEC.md §5's staleness ramp, in days (SERVER-133), in the tier spelling the
+   * ramp uses rather than the config file's. Optional for
+   * {@link editAcknowledgment}'s reason — the fixture literals have no opinion
+   * about it — and omitted means {@link STALENESS_THRESHOLD_DAYS}.
+   */
+  readonly staleness?: StalenessThresholds | undefined;
   /** Warnings worth surfacing at boot that are not fatal (e.g. a weak token). */
   readonly warnings: readonly string[];
 }
@@ -434,6 +522,7 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     embedding: embedding.settings,
     editAcknowledgment: config.editAcknowledgment,
     reflect: config.reflect,
+    staleness: stalenessThresholdsOf(config.staleness),
     warnings,
   };
 }

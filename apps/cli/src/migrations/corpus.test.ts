@@ -29,7 +29,7 @@ function write(root: string, relative: string, contents: string): void {
 }
 
 describe("readWorkspaceCorpus", () => {
-  it("reads every document under data/docs, nested, in path order", () => {
+  it("reads every document under data/docs, nested, in path order", async () => {
     const root = tempRoot();
     write(
       root,
@@ -39,7 +39,7 @@ describe("readWorkspaceCorpus", () => {
     write(root, "data/docs/inbox/note.md", "---\nid: doc_n\ntype: note\ntitle: N\n---\n");
     write(root, "data/docs/deep/nested/board.md", "---\nid: doc_b\ntype: board\n---\n");
 
-    const corpus = readWorkspaceCorpus(root, "data");
+    const corpus = await readWorkspaceCorpus(root, "data");
 
     expect(corpus.root).toBe(root);
     expect(corpus.documents.map((document) => document.path)).toEqual([
@@ -51,27 +51,29 @@ describe("readWorkspaceCorpus", () => {
     expect(corpus.documents.map((document) => document.type)).toEqual(["board", "note", "view"]);
   });
 
-  it("honours a non-default dataDir", () => {
+  it("honours a non-default dataDir", async () => {
     const root = tempRoot();
     write(root, "corpus-data/docs/x.md", "---\nid: doc_x\ntype: view\n---\n");
     write(root, "data/docs/y.md", "---\nid: doc_y\ntype: view\n---\n");
 
-    expect(readWorkspaceCorpus(root, "corpus-data").documents.map((d) => d.id)).toEqual(["doc_x"]);
+    expect((await readWorkspaceCorpus(root, "corpus-data")).documents.map((d) => d.id)).toEqual([
+      "doc_x",
+    ]);
   });
 
-  it("is an empty corpus when there is no docs tree at all", () => {
-    expect(readWorkspaceCorpus(tempRoot(), "data").documents).toEqual([]);
+  it("is an empty corpus when there is no docs tree at all", async () => {
+    expect((await readWorkspaceCorpus(tempRoot(), "data")).documents).toEqual([]);
   });
 
-  it("ignores files that are not markdown", () => {
+  it("ignores files that are not markdown", async () => {
     const root = tempRoot();
     write(root, "data/docs/views/a.md", "---\nid: doc_a\ntype: view\n---\n");
     write(root, "data/docs/views/notes.txt", "---\nid: doc_t\ntype: view\n---\n");
 
-    expect(readWorkspaceCorpus(root, "data").documents.map((d) => d.id)).toEqual(["doc_a"]);
+    expect((await readWorkspaceCorpus(root, "data")).documents.map((d) => d.id)).toEqual(["doc_a"]);
   });
 
-  it("skips a file it cannot parse rather than failing the whole read", () => {
+  it("skips a file it cannot parse rather than failing the whole read", async () => {
     const root = tempRoot();
     write(root, "data/docs/views/broken.md", "no frontmatter at all\n");
     write(root, "data/docs/views/unterminated.md", "---\nid: doc_u\n");
@@ -81,10 +83,10 @@ describe("readWorkspaceCorpus", () => {
     // The migration report is advice, not validation: `corpus doc check` owns
     // "this file is broken", and an upgrade that refused over an unrelated one
     // would report no migration at the one moment it is asked for it.
-    expect(readWorkspaceCorpus(root, "data").documents.map((d) => d.id)).toEqual(["doc_g"]);
+    expect((await readWorkspaceCorpus(root, "data")).documents.map((d) => d.id)).toEqual(["doc_g"]);
   });
 
-  it("keeps the frontmatter exactly as written, undefaulted", () => {
+  it("keeps the frontmatter exactly as written, undefaulted", async () => {
     const root = tempRoot();
     write(
       root,
@@ -92,7 +94,7 @@ describe("readWorkspaceCorpus", () => {
       "---\nid: doc_a\ntype: view\npinned: true\norder: 2\n---\n",
     );
 
-    const [document] = readWorkspaceCorpus(root, "data").documents;
+    const [document] = (await readWorkspaceCorpus(root, "data")).documents;
     expect(document?.frontmatter).toEqual({ id: "doc_a", type: "view", pinned: true, order: 2 });
     // No status key on disk means no status key here — never the default.
     expect(document?.frontmatter.status).toBeUndefined();
@@ -100,31 +102,31 @@ describe("readWorkspaceCorpus", () => {
 });
 
 describe("parseFrontmatter", () => {
-  it("reads a plain block", () => {
-    expect(parseFrontmatter("---\na: 1\n---\nbody")).toEqual({ a: 1 });
+  it("reads a plain block", async () => {
+    expect(await parseFrontmatter("---\na: 1\n---\nbody")).toEqual({ a: 1 });
   });
 
-  it("tolerates a BOM and CRLF line endings", () => {
-    expect(parseFrontmatter("﻿---\r\na: 1\r\n---\r\nbody")).toEqual({ a: 1 });
+  it("tolerates a BOM and CRLF line endings", async () => {
+    expect(await parseFrontmatter("﻿---\r\na: 1\r\n---\r\nbody")).toEqual({ a: 1 });
   });
 
-  it("reads an empty block as a document with no keys", () => {
-    expect(parseFrontmatter("---\n---\nbody")).toEqual({});
+  it("reads an empty block as a document with no keys", async () => {
+    expect(await parseFrontmatter("---\n---\nbody")).toEqual({});
   });
 
-  it("refuses a file with no leading fence", () => {
-    expect(parseFrontmatter("a: 1\n---\n")).toBeNull();
+  it("refuses a file with no leading fence", async () => {
+    expect(await parseFrontmatter("a: 1\n---\n")).toBeNull();
   });
 
-  it("refuses an unterminated block", () => {
-    expect(parseFrontmatter("---\na: 1\n")).toBeNull();
+  it("refuses an unterminated block", async () => {
+    expect(await parseFrontmatter("---\na: 1\n")).toBeNull();
   });
 
-  it("refuses frontmatter that is not a mapping", () => {
-    expect(parseFrontmatter("---\n- one\n- two\n---\n")).toBeNull();
+  it("refuses frontmatter that is not a mapping", async () => {
+    expect(await parseFrontmatter("---\n- one\n- two\n---\n")).toBeNull();
   });
 
-  it("stops at the first closing fence, so a body's own --- is body", () => {
-    expect(parseFrontmatter("---\na: 1\n---\nbefore\n---\nafter\n")).toEqual({ a: 1 });
+  it("stops at the first closing fence, so a body's own --- is body", async () => {
+    expect(await parseFrontmatter("---\na: 1\n---\nbefore\n---\nafter\n")).toEqual({ a: 1 });
   });
 });

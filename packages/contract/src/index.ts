@@ -6,16 +6,18 @@
 // The client entry point is deliberately a separate subpath so browser bundles
 // pull in the client without the route definitions and their Hono dependency.
 
-// `code.js` and `turns.js` are not API shapes: they are the rules of the
-// **on-disk** format that more than one side has to read the same way — which
-// bytes are code, and which lines delimit a turn (SPEC.md §5, §6). They live
-// here for the reason `schemas/form.ts`'s fence grammar does: the server refuses
-// or reports a body that breaks them and the composer wants to say so before the
-// round trip, `apps/ui` cannot import `apps/server`, and a second scanner is a
-// scanner that drifts (CONTRACT-044).
+// `code.js`, `turns.js` and `headings.js` are not API shapes: they are the rules
+// of the **on-disk** format that more than one side has to read the same way —
+// which bytes are code, which lines delimit a turn, and where a heading's
+// section starts and ends (SPEC.md §5, §6). They live here for the reason
+// `schemas/form.ts`'s fence grammar does: the server refuses or reports a body
+// that breaks them and the composer wants to say so before the round trip,
+// `apps/ui` cannot import `apps/server`, `apps/cli` cannot either, and a second
+// scanner is a scanner that drifts (CONTRACT-044, CONTRACT-070).
 
 export * from "./actor.js";
 export * from "./code.js";
+export * from "./headings.js";
 export * from "./openapi.js";
 export * from "./query-keys.js";
 export * from "./routes/index.js";

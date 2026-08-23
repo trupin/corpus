@@ -168,16 +168,18 @@ test.describe("a document whose type this build does not recognise", () => {
     const corpus = await stubCorpus(page, [VIEW, TODO, NOTE]);
     await openTodo(page);
 
-    // Live controls, not statements of a value computed from the items: nothing
+    // Live chips, not statements of a value computed from the items: nothing
     // in this build reads a status or a deadline off a document's own content.
-    const form = page.locator(".reader .fm-form");
-    const status = form.locator("[data-field='status'] select");
-    const due = form.locator("[data-field='due'] input[type='date']");
+    // The chips ARE the controls since UI-162 — no labelled form stands beside
+    // the strip.
+    const status = page.locator(".reader [data-chip='status']");
+    const due = page.locator(".reader [data-chip='due']");
     await expect(status).toBeEnabled();
     await expect(due).toBeEnabled();
-    await expect(form.locator("output")).toHaveCount(0);
+    await expect(page.locator(".reader .fm-form")).toHaveCount(0);
 
-    await status.selectOption("resolved");
+    await status.click();
+    await page.locator('[data-ctx-menu] [data-act="status:resolved"]').click();
     await expect.poll(async () => (await corpus.doc(TODO.id))?.status).toBe("resolved");
   });
 

@@ -919,3 +919,271 @@ describe("a hand-authored profile keeps working after the requirement lands", ()
     expect(payload.issues.map((issue) => issue.path)).toEqual(["body.extra.description"]);
   });
 });
+
+/**
+ * SPEC.md §5 and §9.2, SERVER-096: `updated` is *when the content changed*, not
+ * *when the bytes moved*. The ramp reads it (`max(updated, reviewed)`) and every
+ * default list orders by it, so a write about how a document is drawn must
+ * leave it where it was. See `PRESENTATION_KEYS` in `update.ts` for the class
+ * and the rule for joining it.
+ */
+describe("PUT /api/docs/{id} — `updated` is when the content changed", () => {
+  /** A `type: view` with a stored width, as `useColumnWidth` writes it. */
+  async function withWidth(name: string): Promise<{ id: string; path: string }> {
+    ws = createWriteWorkspace(name);
+    ws.reproject();
+    const created = await createDoc(ws, { type: "view", title: "Open threads" });
+    ws.advance(SQUASH_IDLE_MS);
+    await putDoc(ws, created.id, { extra: { width: 444 } });
+    return created;
+  }
+
+  const updatedOf = (path: string): unknown => parseDocument(ws.read(path)).data["updated"];
+
+  it("leaves `updated` where it was for a width-only save, and still writes and commits it", async () => {
+    const created = await withWidth("update-width-only");
+    const before = updatedOf(created.path);
+    const head = ws.head();
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, { extra: { width: 725 } });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    // The resize is on disk and in the history — the width still syncs to every
+    // browser (§10). Only the timestamp stays put.
+    expect(parsed.data["width"]).toBe(725);
+    expect(parsed.data["updated"]).toBe(before);
+    expect(ws.head()).not.toBe(head);
+    expect(ws.log("%s")[0]).toContain("doc edit: Open threads");
+  });
+
+  it("clears a width without moving `updated` either", async () => {
+    const created = await withWidth("update-width-clear");
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, { extra: { width: null } });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    expect(parsed.data["width"]).toBeUndefined();
+    expect(parsed.data["updated"]).toBe(before);
+  });
+
+  it("moves `updated` when a real edit rides along with the width", async () => {
+    const created = await withWidth("update-width-with-edit");
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, {
+      extra: { width: 725 },
+      title: "Open threads, all folders",
+    });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    expect(parsed.data["width"]).toBe(725);
+    expect(parsed.data["updated"]).not.toBe(before);
+  });
+
+  // Every other field class this route can write is *substance*: it changes an
+  // answer to a question about the document, so it stamps. Asserted as a matrix
+  // rather than one case, so a later exemption cannot be added quietly.
+  it.each([
+    ["title", { title: "Renamed" }],
+    ["body", { body: "a real edit" }],
+    ["tags", { addTags: ["finance"] }],
+    ["status", { status: "resolved" }],
+    ["due", { due: "2026-09-01" }],
+    ["evergreen", { evergreen: true }],
+    ["query", { query: { type: "thread" } }],
+    ["stage", { stage: "doing" }],
+    ["an extra key that is not width", { extra: { colour: "accent" } }],
+  ])("still moves `updated` for %s", async (label, patch) => {
+    const created = await withWidth(`update-stamps-${label.replace(/\W+/g, "-")}`);
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, patch);
+
+    expect(response.status).toBe(200);
+    expect(updatedOf(created.path)).not.toBe(before);
+  });
+
+  it("does not reorder the projection's default list — the ordering §9.2 publishes", async () => {
+    ws = createWriteWorkspace("update-width-ordering");
+    ws.reproject();
+    const view = await createDoc(ws, { type: "view", title: "Open threads" });
+    ws.advance(SQUASH_IDLE_MS);
+    const note = await createDoc(ws, { type: "note", title: "Written in", body: "words" });
+
+    const listed = async (): Promise<string[]> => {
+      const response = await ws.request("/api/docs?limit=10");
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as { items: { id: string }[] };
+      return payload.items.map((item) => item.id);
+    };
+
+    // Newest-updated first, so the note the person wrote leads.
+    expect((await listed()).slice(0, 2)).toEqual([note.id, view.id]);
+
+    ws.advance(SQUASH_IDLE_MS);
+    await putDoc(ws, view.id, { extra: { width: 725 } });
+
+    expect((await listed()).slice(0, 2)).toEqual([note.id, view.id]);
+  });
+});
+
+/**
+ * SPEC.md §10, rider 2 (signed 2026-08-22) and SERVER-143: **`order` is a
+ * board's position among boards, and nothing else.**
+ *
+ * `POST /api/boards/order` refused a non-board from the day the rider landed.
+ * `PUT /api/docs/{id}` did not, and it is the general write path every client
+ * uses — so `corpus doc edit <view-id> --order 5` answered `200` and put a
+ * meaningless number on a saved query, undoing the migration CLI-061 had just
+ * told people to run.
+ *
+ * The half of this that is easy to get wrong is the second describe below: a
+ * document that already carries the key from before the rule must keep reading,
+ * keep listing and keep being clearable. A refusal on write that becomes a
+ * refusal on read strands exactly the documents the rider exists to clean up.
+ */
+describe("PUT /api/docs/{id} — `order` is a board's position", () => {
+  it("refuses an `order` on a view, naming the field and the rule", async () => {
+    ws = createWriteWorkspace("update-order-view");
+    ws.reproject();
+    const view = await createDoc(ws, { type: "view", title: "Open threads" });
+    const head = ws.head();
+
+    const response = await putDoc(ws, view.id, { order: 5 });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      code: string;
+      issues: { path: string; message: string }[];
+    };
+    expect(body.code).toBe("bad_request");
+    const issue = body.issues[0];
+    expect(issue?.path).toBe("body.order");
+    expect(issue?.message).toContain("not a board");
+    expect(issue?.message).toContain("§10");
+    // Nothing was written and nothing was committed: the refusal costs no edit.
+    expect(parseDocument(ws.read(view.path)).data["order"]).toBeUndefined();
+    expect(ws.head()).toBe(head);
+  });
+
+  it("refuses it on a note too — the rule is the type, not the word `view`", async () => {
+    ws = createWriteWorkspace("update-order-note");
+    ws.reproject();
+    const note = await createDoc(ws, { type: "note", title: "Mortgage options" });
+
+    const response = await putDoc(ws, note.id, { order: 5 });
+
+    expect(response.status).toBe(400);
+    expect(parseDocument(ws.read(note.path)).data["order"]).toBeUndefined();
+  });
+
+  it("still lets a board carry one", async () => {
+    ws = createWriteWorkspace("update-order-board");
+    ws.reproject();
+    const board = await createDoc(ws, { type: "board", title: "Work" });
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, board.id, { order: 20 });
+
+    expect(response.status).toBe(200);
+    expect(parseDocument(ws.read(board.path)).data["order"]).toBe(20);
+  });
+});
+
+describe("PUT /api/docs/{id} — a view that already carries `order`", () => {
+  /** A `type: view` whose file already carries `order: 5`, as Phase 41 left it. */
+  function legacy(name: string): { id: string; path: string } {
+    ws = createWriteWorkspace(name);
+    const path = "data/docs/views/legacy.md";
+    ws.write(
+      path,
+      [
+        "---",
+        "id: doc_legacyview",
+        "type: view",
+        "title: Everything open",
+        "created: 2026-07-01T00:00:00Z",
+        "updated: 2026-07-01T00:00:00Z",
+        "tags: []",
+        "status: open",
+        "anchors: {}",
+        "query:",
+        "  status: open",
+        "order: 5",
+        "---",
+        "",
+        "A saved query from before boards were documents.",
+        "",
+      ].join("\n"),
+    );
+    ws.git("add", "-A", "--", "data");
+    ws.git("commit", "-m", "seed the legacy view");
+    ws.reproject();
+    return { id: "doc_legacyview", path };
+  }
+
+  it("still reads and still lists", async () => {
+    const view = legacy("update-order-legacy-read");
+
+    const read = await ws.request(`/api/docs/${view.id}`);
+    expect(read.status).toBe(200);
+    expect(DocSchema.parse(await read.json()).frontmatter.order).toBe(5);
+
+    const listed = await ws.request("/api/docs?limit=10");
+    expect(listed.status).toBe(200);
+    const items = ((await listed.json()) as { items: { id: string }[] }).items;
+    expect(items.map((item) => item.id)).toContain(view.id);
+  });
+
+  it("stays editable — a save re-sending the stored `order` is the no-op it always was", async () => {
+    const view = legacy("update-order-legacy-autosave");
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, view.id, { order: 5, title: "Everything still open" });
+
+    // Deliberate: the guard refuses *putting* an order on a view, never
+    // *carrying* one. An autosave that echoes the frontmatter it was shown must
+    // not lock the document the migration is meant to fix.
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(view.path));
+    expect(parsed.data["order"]).toBe(5);
+    expect(parsed.data["title"]).toBe("Everything still open");
+  });
+
+  it("refuses a save that moves the stored `order` to another number", async () => {
+    const view = legacy("update-order-legacy-move");
+
+    const response = await putDoc(ws, view.id, { order: 9 });
+
+    expect(response.status).toBe(400);
+    expect(parseDocument(ws.read(view.path)).data["order"]).toBe(5);
+  });
+
+  it("clears with `order: null` — the migration's own instruction", async () => {
+    const view = legacy("update-order-legacy-null");
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, view.id, { order: null });
+
+    expect(response.status).toBe(200);
+    expect(parseDocument(ws.read(view.path)).data["order"]).toBeUndefined();
+  });
+
+  it("clears with `unset`, which is what `corpus doc edit --unset order` sends", async () => {
+    const view = legacy("update-order-legacy-unset");
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, view.id, { unset: ["order"] });
+
+    expect(response.status).toBe(200);
+    expect(parseDocument(ws.read(view.path)).data["order"]).toBeUndefined();
+  });
+});

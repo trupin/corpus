@@ -1,7 +1,7 @@
 import { useDocs, type DocsFilter } from "@corpus/kit";
 import { useMemo } from "react";
 import type { Board } from "./boardDoc";
-import { deriveStageColumns } from "./kanban";
+import { decidingStageBoard, deriveStageColumns } from "./kanban";
 import { missingColumn, toBoardColumn, type BoardColumn } from "./viewDoc";
 
 /**
@@ -52,14 +52,21 @@ export interface BoardColumns {
  * `columns`: a workspace with no board documents has nothing to resolve against,
  * and the bar is already saying what to do about it.
  */
-export function useColumns(board: Board | null): BoardColumns {
+export function useColumns(board: Board | null, boards: readonly Board[]): BoardColumns {
   const docs = useDocs(VIEWS_FILTER);
   const items = docs.data?.items;
   const columnIds = board === null || board.kanban !== null ? null : board.columnIds;
 
+  /*
+   * Which kanban decides a status is a fact about the **bar**, not about one
+   * board (UI-160, SERVER-138), so it is read here where the whole list is and
+   * handed down. A column that derived it alone could only ever assume it.
+   */
+  const deciding = useMemo(() => decidingStageBoard(boards), [boards]);
+
   const stages = useMemo(
-    () => (board === null || board.kanban === null ? null : deriveStageColumns(board)),
-    [board],
+    () => (board === null || board.kanban === null ? null : deriveStageColumns(board, deciding)),
+    [board, deciding],
   );
 
   const resolved = useMemo(() => {

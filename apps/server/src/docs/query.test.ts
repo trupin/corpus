@@ -12,8 +12,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatInstant } from "../core/time.js";
 import { EXCERPT_LENGTH } from "../projection/index.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
+import { compileFilters, whereClause } from "./filters.js";
 import { UNANSWERED_FORM_COUNT_SQL } from "./needs.js";
 import { UNREAD_THREADS_SQL, folderPathPrefix, queryDocs } from "./query.js";
+import type { StalenessThresholds } from "./staleness.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -297,6 +299,122 @@ describe("structured filters", () => {
     expect(run({ folder: "nope" })).toEqual({
       items: [],
       page: { total: 0, limit: 50, offset: 0 },
+    });
+  });
+
+  /**
+   * `folderScope` (CONTRACT-081, SERVER-141): a **modifier of `folder`**, and
+   * the difference between a folder column and an explorer row. `tree` is what
+   * `folder` has always meant; `self` is the folder's own documents, so one
+   * document is not drawn under every expanded ancestor at once.
+   *
+   * Its own workspace, because the assertions are about paths and the shared one
+   * has no folder containing both a document and a same-named sub-folder with
+   * a name a `LIKE` pattern would have to escape.
+   */
+  describe("folderScope", () => {
+    let scoped: Workspace;
+
+    const at = (params: Record<string, string>): DocList =>
+      queryDocs(scoped.db, DocsQuerySchema.parse({ limit: "200", ...params }), NOW);
+    const rows = (params: Record<string, string>): string[] =>
+      at(params)
+        .items.map((item) => item.id)
+        .sort();
+
+    beforeAll(() => {
+      scoped = createWorkspace("folder-scope");
+      scoped.doc({ id: "doc_root", path: "data/docs/root.md" });
+      scoped.doc({ id: "doc_owna", path: "data/docs/todos/a.md" });
+      scoped.doc({ id: "doc_ownb", path: "data/docs/todos/b.md" });
+      scoped.doc({ id: "doc_deep", path: "data/docs/todos/unfiled/deep.md" });
+      scoped.doc({ id: "doc_deeper", path: "data/docs/todos/unfiled/more/deeper.md" });
+      // A folder whose name carries every character `likePrefix` escapes, plus
+      // the `%` wildcard: `@folderLen` measured over the escaped literal would
+      // be four characters too long here, and the sub-folder's document would
+      // reappear under `self`.
+      scoped.doc({ id: "doc_oddown", path: "data/docs/50%_off\\deals/own.md" });
+      scoped.doc({ id: "doc_odddeep", path: "data/docs/50%_off\\deals/sub/deep.md" });
+      // Filed in `data/threads/`, parented into `todos/` — `tree` inherits it,
+      // `self` does not, because a thread's own path decides where it is filed.
+      scoped.thread({ id: "th_abouta", parent: "doc_owna" });
+      scoped.reproject();
+    });
+
+    afterAll(() => {
+      scoped.close();
+    });
+
+    it("lists only the folder's own documents at `self`", () => {
+      expect(rows({ folder: "todos", folderScope: "self" })).toEqual(["doc_owna", "doc_ownb"]);
+    });
+
+    it("inherits nothing at `self` — a thread's own path decides where it is filed", () => {
+      expect(rows({ folder: "todos", folderScope: "tree" })).toContain("th_abouta");
+      expect(rows({ folder: "todos", folderScope: "self" })).not.toContain("th_abouta");
+    });
+
+    it("is `tree` when the parameter is absent, byte for byte", () => {
+      expect(rows({ folder: "todos" })).toEqual([
+        "doc_deep",
+        "doc_deeper",
+        "doc_owna",
+        "doc_ownb",
+        "th_abouta",
+      ]);
+      expect(rows({ folder: "todos", folderScope: "tree" })).toEqual(rows({ folder: "todos" }));
+      // The same SQL, not merely the same rows: `tree` is today's clause
+      // untouched, which a reading of the diff cannot promise.
+      const sqlFor = (params: Record<string, string>): string =>
+        whereClause(compileFilters(DocsQuerySchema.parse(params), NOW));
+      expect(sqlFor({ folder: "todos", folderScope: "tree" })).toBe(sqlFor({ folder: "todos" }));
+      expect(sqlFor({ folder: "todos" })).toContain("t.parent_id");
+      expect(sqlFor({ folder: "todos" })).not.toContain("instr(");
+      expect(sqlFor({ folder: "todos", folderScope: "self" })).toContain("instr(");
+      expect(sqlFor({ folder: "todos", folderScope: "self" })).not.toContain("t.parent_id");
+    });
+
+    it("counts the set the page draws from, at both scopes", () => {
+      // The bound line on an explorer row is about the folder's own documents,
+      // not its subtree's — which only holds if the COUNT statement carries the
+      // same condition the page statement does.
+      const self = at({ folder: "todos", folderScope: "self" });
+      expect(self.page.total).toBe(self.items.length);
+      expect(self.page.total).toBe(2);
+
+      const tree = at({ folder: "todos", folderScope: "tree" });
+      expect(tree.page.total).toBe(tree.items.length);
+      expect(tree.page.total).toBe(5);
+
+      // And through paging, where `total` is the only thing that can disagree.
+      const paged = at({ folder: "todos", folderScope: "self", limit: "1" });
+      expect(paged.items).toHaveLength(1);
+      expect(paged.page.total).toBe(2);
+    });
+
+    it("escapes a folder name holding `%`, `_` and a backslash", () => {
+      expect(rows({ folder: "50%_off\\deals", folderScope: "self" })).toEqual(["doc_oddown"]);
+      expect(rows({ folder: "50%_off\\deals", folderScope: "tree" })).toEqual([
+        "doc_odddeep",
+        "doc_oddown",
+      ]);
+      // The wildcard is not live: no other folder is reachable through it.
+      expect(rows({ folder: "50%_off\\deals", folderScope: "self" })).not.toContain("doc_owna");
+    });
+
+    it("gives `self` the top of the tree at the root, however the root is spelled", () => {
+      expect(rows({ folder: "/", folderScope: "self" })).toEqual(["doc_root"]);
+      expect(rows({ folder: "data/docs", folderScope: "self" })).toEqual(["doc_root"]);
+      expect(rows({ folder: "/", folderScope: "tree" })).toContain("doc_deeper");
+    });
+
+    it("answers an empty page at either scope for a folder naming nothing", () => {
+      for (const folderScope of ["self", "tree"]) {
+        expect(at({ folder: "nowhere", folderScope })).toMatchObject({
+          items: [],
+          page: { total: 0 },
+        });
+      }
     });
   });
 
@@ -764,6 +882,60 @@ describe("staleness", () => {
       expect(at("very-stale")).toEqual(["doc_oneeighty"]);
     } finally {
       boundary.close();
+    }
+  });
+
+  /**
+   * SPEC.md §5 calls 30/90/180 "defaults"; SERVER-133 made the word true. This
+   * is the test that would catch the failure mode `dataDir` recorded — a key
+   * parsed, resolved, and then read by nothing at all.
+   */
+  it("ramps on the workspace's configured thresholds, not on the shipped ones", () => {
+    const tuned = createWorkspace("tuned-ramp");
+    try {
+      tuned.doc({ id: "doc_tenday", updated: daysAgo(10) });
+      tuned.doc({ id: "doc_twentyday", updated: daysAgo(20) });
+      tuned.doc({ id: "doc_twentyfiveday", updated: daysAgo(25) });
+      tuned.reproject();
+
+      const at = (tier: string, thresholds?: StalenessThresholds): string[] =>
+        queryDocs(tuned.db, DocsQuerySchema.parse({ stale: tier }), NOW, thresholds)
+          .items.map((item) => item.id)
+          .sort();
+
+      // Nothing is a month old, so the shipped ramp has nothing to say.
+      expect(at("aging")).toEqual([]);
+
+      const tighter: StalenessThresholds = { aging: 7, stale: 14, "very-stale": 21 };
+      expect(at("aging", tighter)).toEqual(["doc_tenday", "doc_twentyday", "doc_twentyfiveday"]);
+      expect(at("stale", tighter)).toEqual(["doc_twentyday", "doc_twentyfiveday"]);
+      expect(at("very-stale", tighter)).toEqual(["doc_twentyfiveday"]);
+
+      // The tier a row *reports* moves with the filter that selects it — one
+      // predicate, so no surface can offer a reason another has retired.
+      const tiers = (thresholds?: StalenessThresholds): Record<string, string | null> =>
+        Object.fromEntries(
+          queryDocs(tuned.db, DocsQuerySchema.parse({ limit: "200" }), NOW, thresholds).items.map(
+            (item) => [item.id, item.stale],
+          ),
+        );
+      expect(tiers()["doc_twentyfiveday"]).toBeNull();
+      expect(tiers(tighter)).toMatchObject({
+        doc_tenday: "aging",
+        doc_twentyday: "stale",
+        doc_twentyfiveday: "very-stale",
+      });
+
+      // And the Attention reason follows the same numbers.
+      const flagged = queryDocs(
+        tuned.db,
+        DocsQuerySchema.parse({ limit: "200" }),
+        NOW,
+        tighter,
+      ).items.filter((item) => item.attention.includes("stale"));
+      expect(flagged.map((item) => item.id).sort()).toEqual(["doc_twentyday", "doc_twentyfiveday"]);
+    } finally {
+      tuned.close();
     }
   });
 

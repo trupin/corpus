@@ -1,5 +1,6 @@
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   MODEL_FLAG,
   requireBody,
   resolveTurnModel,
@@ -112,7 +113,8 @@ export const replyCommand: WorkspaceCommandSpec = {
     "**`--model` states what wrote the turn**, and only an agent's turn may carry one (SPEC.md " +
     "§10). It is a record of what ran, not a request for anything to run, and it is recorded " +
     "verbatim; omit it and the turn carries no model at all, which reads as nothing rather than " +
-    "as a guess.",
+    "as a guess.\n\n" +
+    BODY_SOURCES_HELP,
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [...bodyFlags("The turn body"), MODEL_FLAG, JOB_FLAG],
   examples: [

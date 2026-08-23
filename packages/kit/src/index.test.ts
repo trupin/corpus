@@ -59,6 +59,7 @@ const RUNTIME_SURFACE = [
   "useUpdateDoc",
   "useUpdateDocById",
   "useSetDocArchived",
+  "useMoveDoc",
   "useCreateDoc",
   "useCapture",
   "useCreateThread",

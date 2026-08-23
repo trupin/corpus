@@ -161,6 +161,25 @@
   z-index: 2;
 }
 
+/* **The pin never arrives inside the press that causes it** (UI-157).
+
+   Focus is given on `mousedown`, so on a composer whose foot is below the fold
+   the rule above fired between the press and its release: the box lifted to the
+   bottom of the reading surface, `mouseup` landed on whatever was now under the
+   pointer, and no `click` was dispatched at all. Measured at 336px, the address
+   line moved 43px and the popover did not open; at 440px the toggle took focus,
+   moved 19px, and did not toggle.
+
+   `composerPin.ts` sets this attribute on `pointerdown` — and only on a composer
+   that is *not already* pinned, so a composer holding a draft is left exactly
+   where it is — and clears it on `pointerup`. The composer arrives a moment
+   later instead of a moment earlier, which is the whole of the change: nothing
+   moves under a pointer that is pressing. */
+.composer[data-composer-pressing] {
+  position: static;
+  z-index: auto;
+}
+
 .composer {
   margin-top: 9px;
   display: flex;

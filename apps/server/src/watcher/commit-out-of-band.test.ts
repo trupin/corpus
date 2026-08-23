@@ -21,7 +21,11 @@ import {
 import { createRecordingCommitter } from "../git/git-fixture.js";
 import { silentLogger } from "../logger.js";
 import { openProjection, populateFromFiles, type ProjectionDb } from "../projection/index.js";
-import { createOutOfBandCommitter, outOfBandSubject } from "./commit-out-of-band.js";
+import {
+  createOutOfBandCommitter,
+  outOfBandSubject,
+  type CommitOutOfBandChanges,
+} from "./commit-out-of-band.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "./self-writes.js";
 import { startWatcher, type WatcherHandle } from "./watcher.js";
 
@@ -37,6 +41,7 @@ let db: ProjectionDb;
 let bus: InvalidationBus;
 let selfWrites: SelfWriteRegistry;
 let committer: AutoCommitter;
+let outOfBand: WatchedCommitter;
 let watcher: WatcherHandle | undefined;
 
 const abs = (relativePath: string): string => join(workspace, ...relativePath.split("/"));
@@ -88,6 +93,57 @@ const log = (): string[] =>
 const porcelain = (): string => git("status", "--porcelain", "--", "data").trim();
 
 /**
+ * The out-of-band committer the watcher is given, plus a signal for **when a
+ * document's change has actually been committed** (SERVER-140).
+ *
+ * A test that has just written a file out of band has to know when the watcher
+ * saw it. Polling `git log` against a budget is how this file used to ask, and
+ * what that budget really bounds is fsevents delivery under load — see
+ * {@link waitForLog}, whose own note records that delivery outrunning
+ * {@link WAIT} once in five full-suite runs. A test that fails because the
+ * operating system was slow has failed for a reason unrelated to what it
+ * asserts.
+ *
+ * This asks the watcher instead. The promise resolves from inside the committer
+ * the watcher itself calls, at the instant that commit landed: no interval, no
+ * budget of the test's own, and the only bound left is vitest's own test
+ * timeout — the right bound for a genuine hang and the wrong one for a slow
+ * disk.
+ */
+interface WatchedCommitter {
+  readonly commit: CommitOutOfBandChanges;
+  /**
+   * Resolves once a batch naming `docId` has been committed — immediately if one
+   * already has. Each call consumes one such commit, so waiting twice waits for
+   * two.
+   */
+  committed(docId: string): Promise<void>;
+}
+
+function watchedOutOfBandCommitter(inner: CommitOutOfBandChanges): WatchedCommitter {
+  const waiting = new Map<string, () => void>();
+  const arrived = new Set<string>();
+  return {
+    commit: async (changes) => {
+      await inner(changes);
+      for (const change of changes) {
+        const resolve = waiting.get(change.docId);
+        if (resolve === undefined) {
+          arrived.add(change.docId);
+          continue;
+        }
+        waiting.delete(change.docId);
+        resolve();
+      }
+    },
+    committed: (docId) =>
+      arrived.delete(docId)
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => waiting.set(docId, resolve)),
+  };
+}
+
+/**
  * Boots as the real server does: repopulate the projection from what the test
  * seeded, then watch — with the same out-of-band committer `app.ts` builds over
  * the server's one git writer.
@@ -95,6 +151,9 @@ const porcelain = (): string => git("status", "--porcelain", "--", "data").trim(
 async function startWatching(): Promise<void> {
   populateFromFiles(db);
   committer = createAutoCommitter({ git: createGit(workspace), logger: silentLogger });
+  outOfBand = watchedOutOfBandCommitter(
+    createOutOfBandCommitter({ git: committer, logger: silentLogger }),
+  );
   watcher = startWatcher({
     db,
     bus,
@@ -102,7 +161,7 @@ async function startWatching(): Promise<void> {
     logger: silentLogger,
     debounceMs: 25,
     maxBatchMs: 150,
-    commitOutOfBand: createOutOfBandCommitter({ git: committer, logger: silentLogger }),
+    commitOutOfBand: outOfBand.commit,
   });
   await watcher.ready;
   // chokidar's `ready` says the initial scan finished, not that every
@@ -186,26 +245,64 @@ describe("an out-of-band edit is committed for itself (SPEC.md §4, SERVER-090)"
     expect(git("show", "HEAD:data/docs/mortgage.md")).toContain("Rate is 6.4%.");
   });
 
+  /**
+   * SPEC.md §4's rule, and the one this file exists for: a person's edit made
+   * outside the server is committed **as the person's**, so the mutation that
+   * follows cannot carry those bytes under its own author.
+   *
+   * **The interleaving is decided here rather than timed** (SERVER-140). Two
+   * things used to be left to the clock, and under a full parallel suite both
+   * of them lost — the test failed on one of four `npm test -w apps/server`
+   * runs, in 806 ms, which is an assertion and not a budget running out:
+   *
+   * - *When the person's change had been committed* was asked by polling
+   *   `git log` against {@link WAIT}'s budget. What that budget bounds is
+   *   fsevents delivery under load, which no test can predict —
+   *   {@link waitForLog}'s own note records it being outrun once in five full
+   *   runs, which is why other tests here were handed {@link PATIENT}. More
+   *   patience is a bigger guess, not a decision. This waits on the watcher's
+   *   own signal instead: `committed` resolves inside the committer the watcher
+   *   calls, at the instant that commit landed.
+   * - *Whether the watcher could still commit something* while the mutation ran
+   *   was left to luck, and that is the failure. `collectDocument` records an
+   *   out-of-band commit for **every** event it processes — a duplicate
+   *   delivery of a save it has already committed included — and that commit
+   *   stages the working tree as it stands when it **runs**, not as it stood
+   *   when the flush observed it. A late duplicate whose commit is still waiting
+   *   on the git lock when the mutation's own write lands therefore stages the
+   *   mutation's bytes under `user`, and no amount of waiting removes it. The
+   *   watcher is closed before the mutation instead: `close()` clears the
+   *   pending batch, awaits the commit chain and stops chokidar, so there is no
+   *   second writer left to interleave with.
+   *
+   * Closing does **not** close the commit window (`watcher.ts`'s `close`), which
+   * is what keeps the last assertion real: the person's window is still open,
+   * and it is the agent's commit that closes and relabels it.
+   *
+   * Everything before that point is unchanged and still real — a real chokidar
+   * delivery, a real projection, a real commit authored `user`.
+   */
   it("never lets a later mutation carry the person's bytes under its own author", async () => {
     write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
     seedCommit("seed");
     await startWatching();
 
     write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nMine."));
-    await waitForLog((lines) => {
-      expect(lines[0]).toContain("user|");
-    });
+    await outOfBand.committed("doc_mortgage");
+    expect(log()[0]).toContain("user|");
+
+    await watcher?.close();
+    watcher = undefined;
 
     // Now the agent writes — the mutation that used to sweep the paragraph
     // above into its own commit, under its own name.
-    write(
-      "data/docs/mortgage.md",
-      doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nMine.\n\nIts."),
-    );
-    selfWrites.record(
-      abs("data/docs/mortgage.md"),
-      doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nMine.\n\nIts."),
-    );
+    const mutated = doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nMine.\n\nIts.");
+    // Registered **before** the bytes land, which is what `SelfWriteRegistry`
+    // documents and what `applyOperations` does. The old order here — write,
+    // then record — was the test disagreeing with the product about when a
+    // self-write becomes claimable.
+    selfWrites.record(abs("data/docs/mortgage.md"), mutated);
+    write("data/docs/mortgage.md", mutated);
     const outcome = await committer.commit({
       docId: "doc_mortgage",
       actor: "agent",

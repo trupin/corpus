@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * SPEC.md §11's warnings: things that went wrong around a mutation without
@@ -52,6 +53,24 @@ import { z } from "@hono/zod-openapi";
  *
  * Response-side only. There is deliberately no request-side counterpart: a
  * client never tells the server what to warn about.
+ *
+ * ## Where the last two members came from (CONTRACT-079)
+ *
+ * `stage_status` and `default_open_cleared` were added during Phase 41 **from
+ * `apps/server`'s workspace**, by SERVER-138, rather than through an issue in
+ * this domain. The enum is closed and both of that issue's acceptance criteria
+ * require the response to name what the write changed, so routing two members
+ * through a separate contract issue would have cost a serialization for no
+ * decision. The generated artifacts moved in the same commit as the schema and
+ * the breach was flagged in the commit and PR bodies; PR #58's reviewer judged
+ * the call right and asked only that the contract's own history record it.
+ * This paragraph is that record, and it is the exception rather than the rule:
+ * a member added here is a published vocabulary change, and the next one goes
+ * through this domain.
+ *
+ * The descriptions below were audited against their emitters on 2026-08-23
+ * (CONTRACT-079), and three had drifted from what the server does. Each is
+ * corrected in place and noted where the correction is not self-evident.
  */
 export const WARNING_CODES = [
   "commit_failed",
@@ -64,12 +83,16 @@ export const WARNING_CODES = [
   "default_open_cleared",
 ] as const;
 
-export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
+export const WarningCodeSchema = openapi(z.enum(WARNING_CODES), {
   description:
     "`commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — " +
     "the write is on disk and uncommitted. " +
-    "`commit_skipped`: no commit was attempted, because the workspace is not a git repository or " +
-    "no `git` is on the server's PATH. " +
+    "`commit_skipped`: **no commit stands for this write**, and nothing refused it — the write is " +
+    "on disk and uncommitted, as it is under `commit_failed`, but no hook and no git command " +
+    "said no. The ordinary causes are a workspace that is not a git repository and no `git` on " +
+    "the server's PATH, and the rarer one is a commit that ran and left no `HEAD`; `detail` names " +
+    "which, and the set is the server's to grow. Silent when a save changed no committed bytes: " +
+    "the pipeline agreeing with itself is not a degraded state. " +
     "`orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the " +
     "body, so its thread is detached (SPEC.md §6). " +
     "`unresolved_ref`: a `[[ref]]` in the body names no document. " +
@@ -80,11 +103,14 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "move, and which way its enablement went. " +
     "`carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree " +
     "with where it now sits — a stale `status: archived`, left by a previous independent archive " +
-    "of that nested skill, corrected to `open` because the folder move landed it back under the " +
-    "enabled root, where frontmatter is what status is read from. One warning per document " +
-    "reconciled, naming its id and the key. It arises on unarchive only: the archived root reads " +
-    "status from the root itself and never consults the key, so a move in that direction leaves " +
-    "the key exactly as its author wrote it. " +
+    "of that nested skill, corrected to `resolved` because the folder move landed it back under " +
+    "the enabled root, where frontmatter is what status is read from. `resolved` and not `open`: " +
+    "being swept back to the enabled root **is** being unarchived, implicitly rather than by " +
+    "name, so the carried document is given the state SPEC.md §5's ladder gives the one a caller " +
+    "unarchives outright — one move must not hand two skills two different states. One warning " +
+    "per document reconciled, naming its id, its path and the status it was given. It arises on " +
+    "unarchive only: the archived root reads status from the root itself and never consults the " +
+    "key, so a move in that direction leaves the key exactly as its author wrote it. " +
     "`stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and " +
     "the board's `kanban.status` map therefore decided its `status` in the same commit " +
     "(SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the " +
@@ -93,9 +119,18 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     '`order`" is a rule a caller cannot check from the response alone. It is about the document ' +
     "the request named, unlike the carried pair above, and it is here because the caller asked " +
     "for one field and got two: a `status` a caller neither sent nor was told about is exactly " +
-    "the effect §11 says must not be learned from `git log`. Silent when the write moved no " +
-    "stage and when no kanban claims the document. A stage the board maps writes that status; " +
-    "any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). " +
+    "the effect §11 says must not be learned from `git log`. A stage the board maps writes that " +
+    "status; any other stage, a stage the board does not draw included, writes `open` " +
+    "(SPEC.md §5). **It is silent in five cases**, and the last is the common one: when the write " +
+    "moved no stage at all (an autosave re-sending the stored value has moved nothing); when no " +
+    "kanban over `stage` claims the document; when the only board that would claim it is itself " +
+    "**archived**, since a board nobody can see deciding a status is a change with no visible " +
+    "cause; when the document's **root** decides its status rather than its frontmatter — an " +
+    "archived skill is archived because of the folder it sits in (§7), so there is no status here " +
+    "to decide; and when the status the stage decides is the one the write was already going to " +
+    "leave on disk, which is every ordinary move between two stages a board maps the same way. " +
+    "The last is why this is not a warning per drag: it fires when a `status` changed under a " +
+    "caller who asked about `stage`, and not otherwise. " +
     "`default_open_cleared`: this write set `default-open: true` on a board, and **at most one " +
     "board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost " +
     "it in the same commit. One warning per board cleared, naming its id and title. Silent when " +
@@ -112,8 +147,8 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "it did get says the act moved its folder.",
 });
 
-export const WarningSchema = z
-  .object({
+export const WarningSchema = openapi(
+  z.object({
     code: WarningCodeSchema,
     detail: z
       .string()
@@ -122,8 +157,9 @@ export const WarningSchema = z
           "unresolved ref, the carried document's id and path. Rendered verbatim in the console; " +
           "never parsed, which is why every distinction a client must act on lives in `code`.",
       ),
-  })
-  .openapi("Warning");
+  }),
+  "Warning",
+);
 
 /**
  * The carrier itself, spread into every mutation response. Always present and

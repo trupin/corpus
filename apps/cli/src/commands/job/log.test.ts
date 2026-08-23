@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, exitCodeFor, UsageError } from "../../errors.js";
+import { ExitCode, exitCodeFor, isCliError, UsageError } from "../../errors.js";
 import { pipe, unreadable } from "../../testing/stdin.js";
 import {
   closeStubServers,
@@ -41,7 +41,7 @@ describe("corpus job log", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
 
     const harness = stubContext(stub, { args: ARGS });
-    await runJobLog(harness.context, { stdin: pipe("step 2\n"), stdinIsBodySource: true });
+    await runJobLog(harness.context, { stdin: pipe("step 2\n"), stdinKind: "fifo" });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "null")).toEqual({ line: "step 2" });
     expect(harness.stdout()).toBe("");
@@ -73,7 +73,7 @@ describe("corpus job log", () => {
     const harness = stubContext(stub, { args: ARGS });
     const error: unknown = await runJobLog(harness.context, {
       stdin: pipe("\n"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(UsageError);
@@ -90,11 +90,42 @@ describe("corpus job log", () => {
     const harness = stubContext(stub, { args: ARGS });
     const error: unknown = await runJobLog(harness.context, {
       stdin: unreadable(),
-      stdinIsBodySource: false,
+      stdinKind: "other",
     }).catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(UsageError);
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(stub.requests).toHaveLength(0);
+  });
+
+  /**
+   * CLI-066: the socket is refused **by name**. The generic "no line to append"
+   * told a `spawnSync({ input })` caller to pipe the line in, which is precisely
+   * what it had done — over the one transport that is never read.
+   */
+  it("names the socket rather than asking for the line that was already piped", async () => {
+    const stub = await startStubServer(jsonResponder(201, APPENDED));
+    const harness = stubContext(stub, { args: ARGS });
+
+    const error: unknown = await runJobLog(harness.context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    expect(String(error)).not.toContain("no line to append");
+    // The line is mandatory, so `< /dev/null` is not offered as a repair.
+    expect(isCliError(error) ? (error.hint ?? "") : "").not.toContain("< /dev/null");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("still logs the positional under a socket — the agent's own call, untouched", async () => {
+    const stub = await startStubServer(jsonResponder(201, APPENDED));
+    const harness = stubContext(stub, { args: { ...ARGS, line: "reading the thread" } });
+
+    await runJobLog(harness.context, { stdin: unreadable(), stdinKind: "socket" });
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "{}")).toEqual({ line: "reading the thread" });
   });
 });

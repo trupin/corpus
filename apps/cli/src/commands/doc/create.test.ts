@@ -6,7 +6,7 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
-import { pipe } from "../../testing/stdin.js";
+import { pipe, unreadable } from "../../testing/stdin.js";
 import { createCommand, runDocCreate } from "./create.js";
 import { DOC } from "./fixtures.js";
 
@@ -28,7 +28,7 @@ describe("corpus doc create", () => {
       actor: "user",
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     const [request] = stub.requests;
     expect(request?.method).toBe("POST");
@@ -48,7 +48,7 @@ describe("corpus doc create", () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, { flags: { type: "note", title: "T" } });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object)).toEqual([
       "type",
@@ -61,7 +61,7 @@ describe("corpus doc create", () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, { flags: { type: "note", title: "T" } });
 
-    await runDocCreate(harness.context, { stdin: pipe(body), stdinIsBodySource: true });
+    await runDocCreate(harness.context, { stdin: pipe(body), stdinKind: "fifo" });
 
     expect((JSON.parse(stub.requests[0]?.body ?? "") as { body: string }).body).toBe(body);
   });
@@ -73,7 +73,7 @@ describe("corpus doc create", () => {
       actor: "agent",
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.headers["x-corpus-author"]).toBe("agent");
   });
@@ -82,7 +82,7 @@ describe("corpus doc create", () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, { flags: { type: "note", title: "T" }, json: true });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(JSON.parse(harness.stdout())).toEqual(CREATED);
   });
@@ -91,7 +91,7 @@ describe("corpus doc create", () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, { flags: { title: "T" } });
 
-    const error: unknown = await runDocCreate(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocCreate(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -111,7 +111,7 @@ describe("corpus doc create", () => {
       flags: { type: "note", title: "T", folder: "does/not/exist" },
     });
 
-    const error: unknown = await runDocCreate(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocCreate(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -138,7 +138,7 @@ describe("corpus doc create", () => {
       actor: "agent",
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.headers["x-corpus-author"]).toBe("agent");
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
@@ -164,7 +164,7 @@ describe("corpus doc create", () => {
       actor: "agent",
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
       type: "board",
@@ -191,7 +191,7 @@ describe("corpus doc create", () => {
       },
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
       type: "board",
@@ -220,7 +220,7 @@ describe("corpus doc create", () => {
       },
     });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object).sort()).toEqual(
       ["type", "title", "folder", "evergreen", "query"].sort(),
@@ -231,7 +231,7 @@ describe("corpus doc create", () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, { flags: { type: "note", title: "T", stage: "triage" } });
 
-    await runDocCreate(harness.context, { stdinIsBodySource: false });
+    await runDocCreate(harness.context, { stdinKind: "other" });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
       type: "note",
@@ -253,7 +253,7 @@ describe("corpus doc create", () => {
     ]) {
       const harness = stubContext(stub, { flags: { type: "view", title: "T", ...flags } });
       const error: unknown = await runDocCreate(harness.context, {
-        stdinIsBodySource: false,
+        stdinKind: "other",
       }).catch((cause: unknown) => cause);
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     }
@@ -286,7 +286,7 @@ describe("corpus doc create", () => {
         actor: "agent",
       });
 
-      await runDocCreate(harness.context, { stdinIsBodySource: false });
+      await runDocCreate(harness.context, { stdinKind: "other" });
 
       expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
         type: "agent-def",
@@ -304,7 +304,7 @@ describe("corpus doc create", () => {
         json: true,
       });
 
-      await runDocCreate(harness.context, { stdinIsBodySource: false });
+      await runDocCreate(harness.context, { stdinKind: "other" });
 
       expect(JSON.parse(harness.stdout())).toEqual(created);
     });
@@ -315,7 +315,7 @@ describe("corpus doc create", () => {
         flags: { type: "agent-def", title: "Critic", folder: ".claude/agents" },
       });
 
-      await runDocCreate(harness.context, { stdinIsBodySource: false });
+      await runDocCreate(harness.context, { stdinKind: "other" });
 
       expect(JSON.parse(stub.requests[0]?.body ?? "")).toMatchObject({
         folder: ".claude/agents",
@@ -328,7 +328,7 @@ describe("corpus doc create", () => {
         flags: { type: "agent-def", title: "About Analyst", folder: "inbox" },
       });
 
-      await runDocCreate(harness.context, { stdinIsBodySource: false });
+      await runDocCreate(harness.context, { stdinKind: "other" });
 
       // Not dropped, not rewritten to the type's root, not refused here.
       expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
@@ -351,7 +351,7 @@ describe("corpus doc create", () => {
       });
 
       const error: unknown = await runDocCreate(harness.context, {
-        stdinIsBodySource: false,
+        stdinKind: "other",
       }).catch((cause: unknown) => cause);
 
       expect(exitCodeFor(error)).toBe(ExitCode.serverError);
@@ -368,7 +368,7 @@ describe("corpus doc create", () => {
       const stub = await startStubServer(jsonResponder(201, CREATED));
       for (const type of ["note", "view", "template", "skill", "todos/todo"]) {
         const harness = stubContext(stub, { flags: { type, title: "T" } });
-        await runDocCreate(harness.context, { stdinIsBodySource: false });
+        await runDocCreate(harness.context, { stdinKind: "other" });
       }
 
       const bodies = stub.requests.map((request) => JSON.parse(request.body ?? "") as unknown);
@@ -402,7 +402,7 @@ describe("corpus doc create", () => {
         flags: { type: "thread", title: "Fin thread", folder: "finance" },
       });
 
-      await runDocCreate(harness.context, { stdinIsBodySource: false });
+      await runDocCreate(harness.context, { stdinKind: "other" });
 
       expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
         type: "thread",
@@ -452,6 +452,57 @@ describe("corpus doc create", () => {
       // passed it, and that says nothing about the one file both readers share.
       expect(example?.description).not.toContain("SPEC.md §10");
       expect(example?.description).not.toContain("no separate registry");
+    });
+  });
+});
+
+describe("corpus doc create — a body on a socket (CLI-066)", () => {
+  /**
+   * CLI-066 — the socket that swallowed five documents.
+   *
+   * The SHARED-070 audit ran this verb through `spawnSync(…, { input })`, which
+   * hands the child a socketpair on fd 0. A socket is never read (CLI-007: an
+   * agent harness leaves one there that never ends), and treating "not read" as
+   * "not offered" wrote the note template's empty scaffold into the document at exit 0 with the caller's bytes verifiably
+   * absent. The refusal below is decided by `fstat` alone — `unreadable()` rejects
+   * on the first read, so "nothing was blocked on" is an assertion here rather
+   * than a timeout.
+   */
+  it("refuses rather than creating the document with the template body", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, { flags: { type: "note", title: "CLI-066 probe" } });
+
+    const error: unknown = await runDocCreate(harness.context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    // The whole point: the document that used to be written is not written.
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("still creates a body-less document when the caller said so with < /dev/null", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, { flags: { type: "note", title: "Deliberately empty" } });
+
+    await runDocCreate(harness.context, { stdin: unreadable(), stdinKind: "other" });
+
+    expect(stub.requests).toHaveLength(1);
+    expect(JSON.parse(stub.requests[0]?.body ?? "{}")).not.toHaveProperty("body");
+  });
+
+  it("does not refuse a caller that named -m, whatever fd 0 happens to be", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      flags: { type: "note", title: "T", message: "the body, stated outright" },
+    });
+
+    await runDocCreate(harness.context, { stdin: unreadable(), stdinKind: "socket" });
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "{}")).toMatchObject({
+      body: "the body, stated outright",
     });
   });
 });

@@ -125,4 +125,5 @@ export type { RelatedDeps } from "./related.js";
 export { mountDocsRoutes } from "./routes.js";
 export type { DocsRoutesOptions } from "./routes.js";
 export { STALENESS_THRESHOLD_DAYS, STALE_TIER_SQL, stalenessCutoffs } from "./staleness.js";
+export type { StalenessThresholds } from "./staleness.js";
 export { folderTree } from "./tree.js";

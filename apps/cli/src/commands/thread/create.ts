@@ -1,6 +1,7 @@
 import { UsageError } from "../../errors.js";
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   MODEL_FLAG,
   parseTriStateBoolean,
   requireBody,
@@ -190,7 +191,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +
     "(SPEC.md §10) — the same flag `corpus thread reply` takes, since both write a turn. It " +
     "records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, " +
-    "which reads as nothing rather than as a guess.",
+    "which reads as nothing rather than as a guess.\n\n" +
+    BODY_SOURCES_HELP,
   args: [],
   flags: [
     {

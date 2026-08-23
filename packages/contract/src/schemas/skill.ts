@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Skills as documents (SPEC.md §7) — the wire shapes of the one skill operation
@@ -41,17 +42,16 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  */
 export const SKILL_NAME_MAX_LENGTH = 64;
 
-export const SkillNameSchema = z
-  .string()
-  .regex(SKILL_NAME_PATTERN)
-  .max(SKILL_NAME_MAX_LENGTH)
-  .openapi({
+export const SkillNameSchema = openapi(
+  z.string().regex(SKILL_NAME_PATTERN).max(SKILL_NAME_MAX_LENGTH),
+  {
     description:
       "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its " +
       `frontmatter. Lowercase letters, digits and single hyphens, at most ${String(SKILL_NAME_MAX_LENGTH)} ` +
       "characters — it becomes a directory name, and no real skill name comes close to the bound.",
     example: "orchestrate",
-  });
+  },
+);
 
 /**
  * Skill creation (SPEC.md §7 — skill genesis, "recurring patterns become
@@ -80,8 +80,8 @@ export const SkillNameSchema = z
  * later goes through `PUT /api/docs/{id}` — a skill is an ordinary document, so
  * creation is the only verb that has to be skills-specific.
  */
-export const SkillCreateRequestSchema = z
-  .strictObject({
+export const SkillCreateRequestSchema = openapi(
+  z.strictObject({
     name: SkillNameSchema,
     description: z
       .string()
@@ -108,8 +108,9 @@ export const SkillCreateRequestSchema = z
           "the agent then edits like any other document.",
       ),
     tags: z.array(z.string()).optional().describe("Defaults to no tags."),
-  })
-  .openapi("SkillCreateRequest");
+  }),
+  "SkillCreateRequest",
+);
 
 export type SkillName = z.infer<typeof SkillNameSchema>;
 export type SkillCreateRequest = z.infer<typeof SkillCreateRequestSchema>;

@@ -1,6 +1,7 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema } from "./id.js";
 import { docFilterShape } from "./query.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Retrieval (SPEC.md §7 Retrieval discipline, §9.2): `GET /api/search` and
@@ -129,32 +130,26 @@ export const semanticIndexField = SemanticIndexStateSchema.optional().describe(
  * (including the archived default)" true by construction rather than by review.
  */
 export const SearchQuerySchema = z.object({
-  q: z
-    .string()
-    .min(1)
-    .openapi({
-      param: { name: "q", in: "query", required: true },
-      description:
-        "The query, and the only required parameter. Phase A matches it lexically (FTS5) across " +
-        "document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from " +
-        "Phase B the same string is also matched semantically and the two relevances combine into " +
-        "one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything.",
-    }),
+  q: openapi(z.string().min(1), {
+    param: { name: "q", in: "query", required: true },
+    description:
+      "The query, and the only required parameter. Phase A matches it lexically (FTS5) across " +
+      "document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from " +
+      "Phase B the same string is also matched semantically and the two relevances combine into " +
+      "one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything.",
+  }),
   ...docFilterShape,
-  limit: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(RETRIEVAL_MAX_LIMIT)
-    .default(RETRIEVAL_DEFAULT_LIMIT)
-    .openapi({
+  limit: openapi(
+    z.coerce.number().int().min(1).max(RETRIEVAL_MAX_LIMIT).default(RETRIEVAL_DEFAULT_LIMIT),
+    {
       param: { name: "limit", in: "query", required: false },
       description:
         `How many hits to return (1–${RETRIEVAL_MAX_LIMIT}, default ${RETRIEVAL_DEFAULT_LIMIT}). ` +
         "Lower than the list endpoints' cap on purpose: retrieval is read by an agent that pays " +
         "for every line, and a top-ten is what a ranked list is for. There is no `offset` — a " +
         "ranked result set is a top-k, not a page; widen `limit` or narrow the filters.",
-    }),
+    },
+  ),
 });
 
 /**
@@ -166,8 +161,8 @@ export const SearchQuerySchema = z.object({
  * is meaningless without the corpus it was computed against, the order already
  * carries it, and Phase B recomputes it from a different combination anyway.
  */
-export const SearchHitSchema = z
-  .object({
+export const SearchHitSchema = openapi(
+  z.object({
     id: DocumentIdSchema.describe(
       "The document the passage lives in — a thread id for a hit inside a thread, since threads " +
         "are documents (SPEC.md §6). One hit per document: a document matching in several places " +
@@ -191,8 +186,9 @@ export const SearchHitSchema = z
           "prints one hit per row. It is a *taste* of the passage and never the passage: no client " +
           "should try to reconstruct content from it, and no server should widen it into one.",
       ),
-  })
-  .openapi("SearchHit");
+  }),
+  "SearchHit",
+);
 
 /**
  * The search envelope. Deliberately **not** `{items, page}` like `DocList`:
@@ -200,8 +196,8 @@ export const SearchHitSchema = z
  * exist here, and a `total` over a relevance ranking is a number with no use —
  * the tail of a ranked list is not more results, it is worse ones.
  */
-export const SearchResultsSchema = z
-  .object({
+export const SearchResultsSchema = openapi(
+  z.object({
     hits: z
       .array(SearchHitSchema)
       .describe(
@@ -209,8 +205,9 @@ export const SearchResultsSchema = z
           "order. Empty when nothing matched — an empty ranking, never an error.",
       ),
     semanticIndex: semanticIndexField,
-  })
-  .openapi("SearchResults");
+  }),
+  "SearchResults",
+);
 
 /**
  * Why a document is related (SPEC.md §9.2). Phase A produces `linked` and
@@ -233,34 +230,28 @@ export const RelationSchema = z
 
 /** `GET /api/docs/{id}/related`'s parameters — a cap and the archived flag, and nothing else. */
 export const RelatedQuerySchema = z.object({
-  limit: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(RETRIEVAL_MAX_LIMIT)
-    .default(RETRIEVAL_DEFAULT_LIMIT)
-    .openapi({
+  limit: openapi(
+    z.coerce.number().int().min(1).max(RETRIEVAL_MAX_LIMIT).default(RETRIEVAL_DEFAULT_LIMIT),
+    {
       param: { name: "limit", in: "query", required: false },
       description:
         `How many related documents to return (1–${RETRIEVAL_MAX_LIMIT}, default ` +
         `${RETRIEVAL_DEFAULT_LIMIT}) — the same frugal cap ranked search uses, for the same reason.`,
-    }),
+    },
+  ),
   // Not shared with `docFilterShape.includeArchived`, deliberately: that
   // description is written around `status`, which this route does not take, so
   // reusing it would publish a sentence about a parameter that is not here. The
   // *rule* is the same one, and says so.
-  includeArchived: z
-    .stringbool()
-    .optional()
-    .openapi({
-      param: { name: "includeArchived", in: "query", required: false },
-      type: "boolean",
-      description:
-        "Lift the default archived exclusion. Archived documents are left out of the related set " +
-        "by default, like every list (SPEC.md §10); `true` widens it into the **union**. Archiving " +
-        "is organizational rather than deletion, so an archived neighbour is still a real relation " +
-        "— it is just not what an agent expanding from a live document usually wants first.",
-    }),
+  includeArchived: openapi(z.stringbool().optional(), {
+    param: { name: "includeArchived", in: "query", required: false },
+    type: "boolean",
+    description:
+      "Lift the default archived exclusion. Archived documents are left out of the related set " +
+      "by default, like every list (SPEC.md §10); `true` widens it into the **union**. Archiving " +
+      "is organizational rather than deletion, so an archived neighbour is still a real relation " +
+      "— it is just not what an agent expanding from a live document usually wants first.",
+  }),
 });
 
 /**
@@ -269,8 +260,8 @@ export const RelatedQuerySchema = z.object({
  * document's opening text, never the stored multi-line list excerpt and never a
  * body.
  */
-export const RelatedDocSchema = z
-  .object({
+export const RelatedDocSchema = openapi(
+  z.object({
     id: DocumentIdSchema.describe(
       "The related document. Always a document that exists: the `links` table deliberately stores " +
         "references to documents that have not been created yet (SPEC.md §9.1), and handing the " +
@@ -285,12 +276,13 @@ export const RelatedDocSchema = z
           "slice: this one is collapsed to one line so a client prints one row per line.",
       ),
     relation: RelationSchema,
-  })
-  .openapi("RelatedDoc");
+  }),
+  "RelatedDoc",
+);
 
 /** The related envelope; no paging, for the same reason ranked search has none. */
-export const RelatedDocsSchema = z
-  .object({
+export const RelatedDocsSchema = openapi(
+  z.object({
     related: z
       .array(RelatedDocSchema)
       .describe(
@@ -298,8 +290,9 @@ export const RelatedDocsSchema = z
           "and empty when nothing relates to it.",
       ),
     semanticIndex: semanticIndexField,
-  })
-  .openapi("RelatedDocs");
+  }),
+  "RelatedDocs",
+);
 
 export type SemanticIndexState = z.infer<typeof SemanticIndexStateSchema>;
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;

@@ -648,13 +648,35 @@ describe("at most one board carries `default-open` (SPEC.md §10, rider 2)", () 
 describe("`unset` removes a frontmatter key (SPEC.md §9.2)", () => {
   it("removes a core key and an extra one in the same commit as the rest of the patch", async () => {
     ws = createWriteWorkspace("unset-keys");
-    const doc = await createDoc(ws, {
-      type: "view",
-      title: "Finance",
-      folder: "views",
-      order: 3,
-      extra: { pinned: true, column: "board/kanban" },
-    });
+    // Seeded on disk rather than created through the API, because this is
+    // precisely a **pre-rider-2 view**: it carries `pinned` and `order`, which
+    // no view may be given any more (SERVER-143). That is the document the
+    // migration exists for, and writing the file is the only way to have one.
+    const doc = { id: "doc_legacyfinance", path: "data/docs/views/finance.md" };
+    ws.write(
+      doc.path,
+      [
+        "---",
+        `id: ${doc.id}`,
+        "type: view",
+        "title: Finance",
+        "created: 2026-07-01T00:00:00Z",
+        "updated: 2026-07-01T00:00:00Z",
+        "tags: []",
+        "status: open",
+        "anchors: {}",
+        "order: 3",
+        "pinned: true",
+        "column: board/kanban",
+        "---",
+        "",
+        "A saved query from before boards were documents.",
+        "",
+      ].join("\n"),
+    );
+    ws.git("add", "-A", "--", "data");
+    ws.git("commit", "-m", "seed the legacy view");
+    ws.reproject();
     ws.advance(60_000);
     const commitsBefore = ws.log("%s").length;
 

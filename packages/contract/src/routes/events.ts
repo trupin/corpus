@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { describeQueryKeyVocabulary, QUERY_KEY_NAMES } from "../query-keys.js";
 import { VALIDATION_RESPONSE } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * The SSE invalidation stream (SPEC.md §9.2). Documented here so the contract
@@ -49,16 +50,13 @@ export const streamEvents = createRoute({
   security: [],
   request: {
     query: z.object({
-      token: z
-        .string()
-        .min(1)
-        .openapi({
-          param: { name: "token", in: "query", required: true },
-          description:
-            "Workspace bearer token; a query parameter because EventSource cannot set headers. " +
-            "Accepted for v1 under the localhost bind (SPEC.md §2.1) — a remote-server deployment " +
-            "must replace this transport (see the route's contract docblock) before leaving loopback.",
-        }),
+      token: openapi(z.string().min(1), {
+        param: { name: "token", in: "query", required: true },
+        description:
+          "Workspace bearer token; a query parameter because EventSource cannot set headers. " +
+          "Accepted for v1 under the localhost bind (SPEC.md §2.1) — a remote-server deployment " +
+          "must replace this transport (see the route's contract docblock) before leaving loopback.",
+      }),
     }),
   },
   responses: {
@@ -66,7 +64,7 @@ export const streamEvents = createRoute({
       description: "An open event stream.",
       content: {
         "text/event-stream": {
-          schema: z.string().openapi({
+          schema: openapi(z.string(), {
             description:
               "SSE frames; `event: invalidate` frames carry an `InvalidatePayload` as JSON data.",
           }),

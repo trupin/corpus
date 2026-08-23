@@ -644,6 +644,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // SPEC.md §7's quiet window: every mutation reports itself and its acting
       // party, and the service decides what that means.
       reflect: reflectService,
+      // SPEC.md §5's ramp, as this workspace configured it (SERVER-133). The
+      // write path reads it only through the saved queries two of its verbs run.
+      staleness: config.staleness,
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with
@@ -672,7 +675,13 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger, bus });
     mountIndexRoutes(app, indexMaintenance);
 
-    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
+    mountDocsRoutes(app, deps.projection, {
+      now,
+      mutex,
+      workspace: docsWorkspace,
+      semantic,
+      staleness: config.staleness,
+    });
 
     // SPEC.md §9.2's folder acts (SERVER-136). Mounted beside the document
     // surface and sharing its lanes: a folder act writes the same files
@@ -684,7 +693,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // collection query it filters identically to, so it mounts here rather than
     // with the file-backed surface — and inside this block, because a server
     // built without a database has no index to rank.
-    mountSearchRoutes(app, deps.projection, { now, semantic });
+    mountSearchRoutes(app, deps.projection, { now, semantic, staleness: config.staleness });
 
     const threadsWorkspace: ThreadsWorkspace = {
       ...docsWorkspace,

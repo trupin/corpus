@@ -45,8 +45,15 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
   {
     name: "help",
     alias: "h",
-    type: "boolean",
-    description: "Show help for the current topic or command and exit.",
+    type: "string",
+    valueName: "mode",
+    bareValue: "full",
+    description:
+      "Show help for the current topic or command and exit. Bare `--help` gives the full text: " +
+      "prose, whole flag descriptions, worked examples. `--help=brief` gives the synopsis and " +
+      "one line per argument and flag — the first sentence of each, so the two registers cannot " +
+      "disagree — and nothing else. The value is inline-only, so `corpus doc list --help` " +
+      "swallows nothing after it.",
   },
   {
     name: "version",

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { countWords, gloss, MAX_GLOSS_WORDS } from "../gloss.js";
 import { fixtureRegistry, noopHandler } from "./fixtures.js";
+import { GLOBAL_FLAGS } from "./globals.js";
 import { registry } from "./index.js";
 import type { CommandSpec, Registry } from "./types.js";
 import { collectRegistryProblems, RegistryValidationError, validateRegistry } from "./validate.js";
@@ -239,6 +241,77 @@ describe("collectRegistryProblems", () => {
     expect(problems).toContain("corpus Empty has no summary");
     expect(problems).toContain("corpus Empty declares no verbs");
     expect(problems).toContain('corpus dup declares "probe" twice');
+  });
+});
+
+describe("the gloss rule", () => {
+  const words = (count: number): string =>
+    `${Array.from({ length: count }, () => "word").join(" ")}.`;
+
+  it("accepts an opening sentence at the cap and refuses the one past it", () => {
+    const atCap = registryOf([
+      command({
+        flags: [
+          {
+            name: "long",
+            type: "boolean",
+            description: `${words(MAX_GLOSS_WORDS)} And a second sentence nobody measures.`,
+          },
+        ],
+      }),
+    ]);
+    expect(collectRegistryProblems(atCap)).toEqual([]);
+
+    const overCap = registryOf([
+      command({
+        flags: [
+          {
+            name: "long",
+            type: "boolean",
+            description: `${words(MAX_GLOSS_WORDS + 1)} And a second sentence.`,
+          },
+        ],
+      }),
+    ]);
+    const problems = collectRegistryProblems(overCap);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain(`corpus probe flag "--long" opens with a 31-word sentence`);
+    expect(problems[0]).toContain("--help=brief");
+  });
+
+  it("measures a positional argument by the same rule", () => {
+    const problems = collectRegistryProblems(
+      registryOf([
+        command({
+          args: [
+            { name: "id", required: true, description: `${words(MAX_GLOSS_WORDS + 5)} More.` },
+          ],
+        }),
+      ]),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('corpus probe argument "id" opens with a 35-word sentence');
+  });
+
+  it("holds the global flags to it too, since brief help prints them", () => {
+    // They are not declared by any command, so nothing else in this file would
+    // ever reach them.
+    for (const flag of GLOBAL_FLAGS) {
+      expect(countWords(gloss(flag.description))).toBeLessThanOrEqual(MAX_GLOSS_WORDS);
+    }
+  });
+
+  it("refuses a bareValue on a flag that takes no string value", () => {
+    const problems = collectRegistryProblems(
+      registryOf([
+        command({
+          flags: [{ name: "loud", type: "boolean", bareValue: "full", description: "A boolean." }],
+        }),
+      ]),
+    );
+    expect(problems).toEqual([
+      'corpus probe flag "--loud" declares a bareValue but is not a string flag',
+    ]);
   });
 });
 

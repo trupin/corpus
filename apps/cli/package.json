@@ -20,6 +20,7 @@
     "dist"
   ],
   "scripts": {
+    "bench:startup": "tsx scripts/bench-startup.ts",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/bin/corpus.js",
     "corpus": "node dist/bin/corpus.js",
     "dev": "tsx src/bin/corpus.ts",

@@ -37,6 +37,50 @@ export const fixtureEverythingCommand: WorkspaceCommandSpec = {
   handler: noopHandler,
 };
 
+/**
+ * A command whose prose is written the way the real registry's is: a paragraph
+ * per flag, opening with a sentence that stands alone. Deliberately **not** part
+ * of {@link fixtureRegistry} — it exists so the `--help=brief` tests can show a
+ * gloss differing from the description it came from, without adding a verb to
+ * every dispatcher and docs snapshot (CLI-056).
+ */
+export const fixtureProseCommand: WorkspaceCommandSpec = {
+  name: "expound",
+  summary: "Say a great deal about very little.",
+  description:
+    "A paragraph that `--help=brief` drops entirely, because a caller recalling a flag name has " +
+    "no use for it. Full help still prints every word of it.",
+  args: [
+    {
+      name: "target",
+      required: true,
+      description:
+        "The thing to expound upon. Named by id, and read from the workspace before anything " +
+        "is written.",
+    },
+  ],
+  flags: [
+    {
+      name: "depth",
+      type: "number",
+      default: 2,
+      description:
+        "How far to go. Deeper runs cost more and are rarely what a caller wanted, so the " +
+        "default is shallow.",
+    },
+    {
+      name: "aside",
+      type: "string",
+      repeated: true,
+      description:
+        "**A digression to include**, repeatably. Each one is rendered after the main text and " +
+        "before the closing summary.",
+    },
+  ],
+  examples: [{ command: "corpus expound doc-1", description: "Expound upon doc-1." }],
+  handler: noopHandler,
+};
+
 export const fixtureStandaloneCommand: CommandSpec = {
   name: "bootstrap",
   summary: "Run without a workspace or a server.",
@@ -84,6 +128,8 @@ export interface TestContextOptions {
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly version?: string;
+  /** Defaults to {@link fixtureRegistry}; pass the real one to test against it. */
+  readonly registry?: Registry;
 }
 
 export interface TestContext {
@@ -117,6 +163,7 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
       cwd: options.cwd ?? process.cwd(),
       env: options.env ?? {},
       version: options.version ?? "0.0.0-test",
+      registry: options.registry ?? fixtureRegistry,
     },
   };
 }

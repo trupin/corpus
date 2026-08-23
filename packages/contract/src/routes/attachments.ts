@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { AttachmentPathSchema } from "../schemas/attachment.js";
 import { NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * Attachment bytes (SPEC.md §6, §9.2). Declared so the contract describes the
@@ -20,7 +21,7 @@ export const getAttachment = createRoute({
     "sniffed from the file, so images render inline in the UI and other files download as chips.",
   request: {
     params: z.object({
-      path: AttachmentPathSchema.openapi({ param: { name: "path", in: "path", required: true } }),
+      path: openapi(AttachmentPathSchema, { param: { name: "path", in: "path", required: true } }),
     }),
   },
   responses: {
@@ -28,7 +29,7 @@ export const getAttachment = createRoute({
       description: "The attachment bytes.",
       content: {
         "application/octet-stream": {
-          schema: z.string().openapi({ type: "string", format: "binary" }),
+          schema: openapi(z.string(), { type: "string", format: "binary" }),
         },
       },
     },

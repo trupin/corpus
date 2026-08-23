@@ -544,13 +544,19 @@ function createStubApp() {
     );
   });
   app.openapi(contractRoutes.archiveFolder, (c) =>
-    c.json({ documents: [{ id: row.id, status: "archived" as const }], warnings: [] }, 200),
+    c.json(
+      { documents: [{ id: row.id, status: "archived" as const }], refused: [], warnings: [] },
+      200,
+    ),
   );
   app.openapi(contractRoutes.unarchiveFolder, (c) =>
-    c.json({ documents: [{ id: row.id, status: "resolved" as const }], warnings: [] }, 200),
+    c.json(
+      { documents: [{ id: row.id, status: "resolved" as const }], refused: [], warnings: [] },
+      200,
+    ),
   );
   app.openapi(contractRoutes.deleteFolder, (c) =>
-    c.json({ documents: [{ id: row.id }], warnings: [] }, 200),
+    c.json({ documents: [{ id: row.id }], refused: [], warnings: [] }, 200),
   );
 
   // SPEC.md §10, rider 2 (CONTRACT-080). The handler renumbers what it parsed,

@@ -9,6 +9,7 @@ import {
   DocsQuerySchema,
   DocSortSchema,
   DueKeywordSchema,
+  FOLDER_SCOPES,
   NEEDS_FILTERS,
   NEEDS_REASONS,
   NeedsFilterSchema,
@@ -353,6 +354,70 @@ describe("parent and isParent=true are refused together", () => {
     ["isParent with an unrelated filter", { isParent: "true", type: "note" }],
   ])("accepts %s", (_label, query) => {
     expect(DocsQuerySchema.safeParse(query).success).toBe(true);
+  });
+});
+
+/**
+ * CONTRACT-081. `folderScope` modifies `folder`; it selects nothing on its own.
+ * The tests below hold three things a reading of the schema cannot: that the
+ * absent parameter stays absent (so today's callers keep today's set), that the
+ * scope alone is refused rather than answered over the corpus, and that the
+ * refusal covers `tree` as well as `self`.
+ */
+describe("the folderScope modifier", () => {
+  it.each(FOLDER_SCOPES)("accepts folderScope=%s alongside a folder", (scope) => {
+    expect(DocsQuerySchema.parse({ folder: "finance", folderScope: scope })).toMatchObject({
+      folder: "finance",
+      folderScope: scope,
+    });
+  });
+
+  it("rejects a scope it does not define, rather than falling back to the tree", () => {
+    expect(DocsQuerySchema.safeParse({ folder: "finance", folderScope: "recursive" }).success).toBe(
+      false,
+    );
+  });
+
+  /**
+   * The default is `tree`, and it is **not** applied by the schema: a zod
+   * default would run before the refinement and make a sent scope
+   * indistinguishable from an absent one. Absent means `tree` to the server,
+   * and the published parameter carries `default: "tree"` to say so.
+   */
+  it("leaves folderScope absent rather than materialising the default", () => {
+    expect("folderScope" in DocsQuerySchema.parse({ folder: "finance" })).toBe(false);
+  });
+
+  it("keeps a folder-only query exactly as it was before this parameter existed", () => {
+    expect(DocsQuerySchema.parse({ folder: "finance" })).toEqual({
+      folder: "finance",
+      limit: 50,
+      offset: 0,
+      sort: DEFAULT_DOC_SORT,
+    });
+  });
+
+  it.each(FOLDER_SCOPES)("refuses folderScope=%s with no folder, naming folder", (scope) => {
+    const result = DocsQuerySchema.safeParse({ folderScope: scope });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("`folder`");
+    expect(result.error?.issues[0]?.path).toEqual(["folderScope"]);
+  });
+
+  it("does not answer the unscoped corpus to a request that asked for one folder", () => {
+    expect(DocsQuerySchema.safeParse({ folderScope: "self" }).data).toBeUndefined();
+  });
+
+  it("composes with the rest of the grammar", () => {
+    expect(
+      DocsQuerySchema.parse({
+        folder: "finance",
+        folderScope: "self",
+        type: "note",
+        isParent: "true",
+        sort: "title",
+      }),
+    ).toMatchObject({ folder: "finance", folderScope: "self", type: "note", isParent: true });
   });
 });
 

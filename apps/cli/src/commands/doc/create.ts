@@ -1,5 +1,6 @@
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   parseTriStateBoolean,
   requireFlag,
   resolveBody,
@@ -123,7 +124,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "rather than implied by `--type view`, because this verb defaults nothing per type. Prints " +
     "the new id and path, and prints on its own line any second effect the write had — a stage " +
     "that decided a status (§5's coupling), a `default-open` taken off another board. `--json` " +
-    "emits the server's `{doc, warnings}` response unchanged.",
+    "emits the server's `{doc, warnings}` response unchanged.\n\n" +
+    BODY_SOURCES_HELP,
   args: [],
   flags: [
     {
@@ -145,7 +147,7 @@ export const createCommand: WorkspaceCommandSpec = {
       valueName: "path",
       description:
         "Folder under `data/docs/`, as a bare name (`finance`) or the full prefix " +
-        "(`data/docs/finance`); a type SPEC.md §7 gives its own document root may instead name " +
+        "(`data/docs/finance`). A type SPEC.md §7 gives its own document root may instead name " +
         "that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` " +
         "declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an " +
         "explicit folder wins over that default. **`--type thread` is the exception at both " +

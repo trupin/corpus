@@ -2,7 +2,7 @@ import type { Doc } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
-import { pipe } from "../../testing/stdin.js";
+import { pipe, unreadable } from "../../testing/stdin.js";
 import {
   closeStubServers,
   jsonResponder,
@@ -65,7 +65,7 @@ describe("corpus skill create", () => {
       actor: "agent",
     });
 
-    await runSkillCreate(harness.context, { stdinIsBodySource: false });
+    await runSkillCreate(harness.context, { stdinKind: "other" });
 
     const [request] = stub.requests;
     expect(request?.method).toBe("POST");
@@ -85,7 +85,7 @@ describe("corpus skill create", () => {
       flags: { description: "Triage the inbox." },
     });
 
-    await runSkillCreate(harness.context, { stdinIsBodySource: false });
+    await runSkillCreate(harness.context, { stdinKind: "other" });
 
     expect(Object.keys(requestBody(stub.requests[0]?.body))).toEqual(["name", "description"]);
   });
@@ -98,7 +98,7 @@ describe("corpus skill create", () => {
       flags: { description: "Run it.", title: "Weekly review", tags: "loop, memory" },
     });
 
-    await runSkillCreate(harness.context, { stdin: pipe(body), stdinIsBodySource: true });
+    await runSkillCreate(harness.context, { stdin: pipe(body), stdinKind: "fifo" });
 
     expect(requestBody(stub.requests[0]?.body)).toEqual({
       name: "weekly-review",
@@ -115,7 +115,7 @@ describe("corpus skill create", () => {
     for (const flags of [{}, { description: "" }]) {
       const harness = stubContext(stub, { args: { name: "triage" }, flags });
       const error: unknown = await runSkillCreate(harness.context, {
-        stdinIsBodySource: false,
+        stdinKind: "other",
       }).catch((cause: unknown) => cause);
 
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -140,7 +140,7 @@ describe("corpus skill create", () => {
       });
 
       const error: unknown = await runSkillCreate(harness.context, {
-        stdinIsBodySource: false,
+        stdinKind: "other",
       }).catch((cause: unknown) => cause);
 
       expect(exitCodeFor(error)).toBe(ExitCode.serverError);
@@ -163,7 +163,7 @@ describe("corpus skill create", () => {
     });
 
     const error: unknown = await runSkillCreate(harness.context, {
-      stdinIsBodySource: false,
+      stdinKind: "other",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.serverError);
@@ -182,7 +182,7 @@ describe("corpus skill create", () => {
       flags: { description: "Run it." },
     });
 
-    await runSkillCreate(harness.context, { stdinIsBodySource: false });
+    await runSkillCreate(harness.context, { stdinKind: "other" });
 
     expect(harness.stdout()).toContain("warning: commit_failed");
   });
@@ -195,7 +195,7 @@ describe("corpus skill create", () => {
       json: true,
     });
 
-    await runSkillCreate(harness.context, { stdinIsBodySource: false });
+    await runSkillCreate(harness.context, { stdinKind: "other" });
 
     expect(JSON.parse(harness.stdout())).toEqual(CREATED);
   });
@@ -241,5 +241,35 @@ describe("the skill create command spec", () => {
     expect(text).not.toContain("skill rollback");
     expect(text).toContain("corpus doc edit");
     expect(text).toContain("corpus doc diff");
+  });
+});
+
+describe("corpus skill create — a body on a socket (CLI-066)", () => {
+  /**
+   * CLI-066 — the socket that swallowed five documents.
+   *
+   * The SHARED-070 audit ran this verb through `spawnSync(…, { input })`, which
+   * hands the child a socketpair on fd 0. A socket is never read (CLI-007: an
+   * agent harness leaves one there that never ends), and treating "not read" as
+   * "not offered" wrote the skill template's scaffold into SKILL.md at exit 0 with the caller's bytes verifiably
+   * absent. The refusal below is decided by `fstat` alone — `unreadable()` rejects
+   * on the first read, so "nothing was blocked on" is an assertion here rather
+   * than a timeout.
+   */
+  it("refuses rather than installing a skill whose body the caller replaced", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      args: { name: "weekly-review" },
+      flags: { description: "Run the weekly review over the corpus." },
+    });
+
+    const error: unknown = await runSkillCreate(harness.context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    expect(stub.requests).toHaveLength(0);
   });
 });

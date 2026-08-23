@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema } from "./id.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Edit acknowledgment** (SPEC.md §4, rider signed 2026-08-02) — the wire half
@@ -77,16 +78,13 @@ export const EMPTY_TREE_OBJECT_ID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
  * inline primitives with one documented shape, rather than one shared component
  * with a hazard.
  */
-export const CommitShaSchema = z
-  .string()
-  .regex(/^[0-9a-f]{7,64}$/)
-  .openapi({
-    description:
-      "A git commit sha — 7–64 lowercase hex characters, abbreviated or full. Only a sha: named " +
-      "revisions (`HEAD~1`, tags, branch names) are rejected with a `400`, because every range a " +
-      "caller holds comes from a `doc.edited` event and every one of those is a sha.",
-    example: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
-  });
+export const CommitShaSchema = openapi(z.string().regex(/^[0-9a-f]{7,64}$/), {
+  description:
+    "A git commit sha — 7–64 lowercase hex characters, abbreviated or full. Only a sha: named " +
+    "revisions (`HEAD~1`, tags, branch names) are rejected with a `400`, because every range a " +
+    "caller holds comes from a `doc.edited` event and every one of those is a sha.",
+  example: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
+});
 
 /**
  * What changed in a document across a commit range, in the three numbers git
@@ -110,8 +108,8 @@ export const CommitShaSchema = z
  * `DocDiff` that reports `truncated: true` still reports the real size of the
  * change, which is how a caller knows how much it is not looking at.
  */
-export const DocChangeStatsSchema = z
-  .object({
+export const DocChangeStatsSchema = openapi(
+  z.object({
     commits: z
       .number()
       .int()
@@ -135,8 +133,9 @@ export const DocChangeStatsSchema = z
       .int()
       .min(0)
       .describe("Lines removed across the range, path-scoped to this document's file."),
-  })
-  .openapi("DocChangeStats");
+  }),
+  "DocChangeStats",
+);
 
 /**
  * The two ways a user edit session ends (SPEC.md §4). Closed: the server has
@@ -350,7 +349,7 @@ export const DOC_DIFF_MAX_CHARS = 16000;
  * was given (CLI-026).
  */
 export const DocDiffQuerySchema = z.object({
-  from: CommitShaSchema.optional().openapi({
+  from: openapi(CommitShaSchema.optional(), {
     param: { name: "from", in: "query", required: false },
     description:
       "Base of the range, **exclusive** — `git diff from..to`. Omit it to use the newest commit " +
@@ -362,7 +361,7 @@ export const DocDiffQuerySchema = z.object({
       "document's previous state. Must be a commit sha: a named revision is a `400` naming this " +
       "parameter.",
   }),
-  to: CommitShaSchema.optional().openapi({
+  to: openapi(CommitShaSchema.optional(), {
     param: { name: "to", in: "query", required: false },
     description:
       "Head of the range, **inclusive**. Omit it to use the newest commit that touched this " +
@@ -387,8 +386,8 @@ export const DocDiffQuerySchema = z.object({
  * statement quantitative, so the caller knows the scale of what it is missing
  * rather than only that something is missing.
  */
-export const DocDiffSchema = z
-  .object({
+export const DocDiffSchema = openapi(
+  z.object({
     id: DocumentIdSchema.describe("The document the diff is for."),
     path: z
       .string()
@@ -447,8 +446,9 @@ export const DocDiffSchema = z
           "(`showing 16000 of 42311 characters`) and decide whether to narrow the range and ask " +
           "again.",
       ),
-  })
-  .openapi("DocDiff");
+  }),
+  "DocDiff",
+);
 
 export type CommitSha = z.infer<typeof CommitShaSchema>;
 export type DocChangeStats = z.infer<typeof DocChangeStatsSchema>;

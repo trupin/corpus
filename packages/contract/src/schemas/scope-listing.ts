@@ -1,6 +1,7 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocStatusSchema } from "./doc.js";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **What is in a scope** — the answer `GET /api/threads/{id}/scope` gives
@@ -117,8 +118,8 @@ export const ScopeMemberViaSchema = z
  * One line per hit (SPEC.md §7's retrieval discipline): enough to recognise the
  * member and to open it, never its body.
  */
-export const ScopeMemberSchema = z
-  .object({
+export const ScopeMemberSchema = openapi(
+  z.object({
     id: DocumentIdSchema.describe(
       "The member's id — a `th_` id for a thread, a `doc_` id for a document. Open it with the " +
         "verb `kind` names.",
@@ -133,15 +134,16 @@ export const ScopeMemberSchema = z
         "listed, and this field is what tells a reader it is archived.",
     ),
     via: ScopeMemberViaSchema,
-  })
-  .openapi("ScopeMember");
+  }),
+  "ScopeMember",
+);
 
 /**
  * The listing. `thread` is the root and the lane's name, restated at the top so
  * a caller holding only the body knows whose scope it is reading.
  */
-export const ThreadScopeSchema = z
-  .object({
+export const ThreadScopeSchema = openapi(
+  z.object({
     thread: ThreadIdSchema.describe(
       "The designated thread this is the scope of — the root, and the name of the lane every " +
         "member's events are stamped with (SPEC.md §7). It is also `members[0].id`.",
@@ -168,8 +170,9 @@ export const ThreadScopeSchema = z
           "enumerated, and a count would cost the very enumeration it forbids. A caller that " +
           "needs one particular member reads it by id.",
       ),
-  })
-  .openapi("ThreadScope");
+  }),
+  "ThreadScope",
+);
 
 export type ScopeMemberKind = z.infer<typeof ScopeMemberKindSchema>;
 export type ScopeMemberVia = z.infer<typeof ScopeMemberViaSchema>;

@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The **key** a document read hands out and a body-replacing write presents back
@@ -189,11 +190,12 @@ const DOCUMENT_KEY_DESCRIPTION =
  * undefaulted object" invariant is what keeps the component namespace to
  * resources. `./weight.ts` sets the same precedent for the same reason.
  */
-export const DocumentKeySchema = z
-  .string()
-  .regex(DOCUMENT_KEY_PATTERN, "not a document key — read the document and send back its `key`")
-  .openapi({ example: "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3" })
-  .describe(DOCUMENT_KEY_DESCRIPTION);
+export const DocumentKeySchema = openapi(
+  z
+    .string()
+    .regex(DOCUMENT_KEY_PATTERN, "not a document key — read the document and send back its `key`"),
+  { example: "3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3" },
+).describe(DOCUMENT_KEY_DESCRIPTION);
 
 /** The read-side field: on `Doc`, and so on every route that returns one. */
 export const documentKeyResponseField = DocumentKeySchema.describe(

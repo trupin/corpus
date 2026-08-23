@@ -183,7 +183,7 @@ function createServer() {
   });
 
   app.openapi(contractRoutes.listDocs, (c) => {
-    const { limit, offset, q, isParent } = c.req.valid("query");
+    const { limit, offset, q, isParent, folderScope } = c.req.valid("query");
     return c.json(
       {
         items: [
@@ -203,8 +203,13 @@ function createServer() {
             origin: null,
             lastActor: "user" as const,
             // The handler echoes the parsed query so the test can assert what
-            // the typed client actually put on the wire.
-            excerpt: `isParent=${isParent === undefined ? "absent" : String(isParent)}`,
+            // the typed client actually put on the wire. Two parameters share
+            // the slot, each spelling `absent` when it was not sent — which is
+            // the assertion that matters for both: an omitted parameter must
+            // reach the server omitted, never materialised as a default.
+            excerpt:
+              `isParent=${isParent === undefined ? "absent" : String(isParent)} ` +
+              `folderScope=${folderScope ?? "absent"}`,
             order: null,
             query: null,
             columns: null,
@@ -618,10 +623,27 @@ function createServer() {
     );
   });
   app.openapi(contractRoutes.archiveFolder, (c) =>
-    c.json({ documents: [{ id: frontmatter.id, status: "archived" as const }], warnings: [] }, 200),
+    c.json(
+      {
+        documents: [{ id: frontmatter.id, status: "archived" as const }],
+        refused: [],
+        warnings: [],
+      },
+      200,
+    ),
   );
   app.openapi(contractRoutes.unarchiveFolder, (c) =>
-    c.json({ documents: [{ id: frontmatter.id, status: "resolved" as const }], warnings: [] }, 200),
+    c.json(
+      {
+        // One document under the folder the act could not apply to
+        // (CONTRACT-078): the caller is told which, and the act still stands
+        // for the one it did apply to.
+        documents: [{ id: frontmatter.id, status: "resolved" as const }],
+        refused: [{ id: "doc_locked", message: "the file could not be written" }],
+        warnings: [],
+      },
+      200,
+    ),
   );
   app.openapi(contractRoutes.deleteFolder, (c) => {
     if (c.req.header(ACTOR_HEADER) === "agent") {
@@ -630,7 +652,7 @@ function createServer() {
         403,
       );
     }
-    return c.json({ documents: [{ id: frontmatter.id }], warnings: [] }, 200);
+    return c.json({ documents: [{ id: frontmatter.id }], refused: [], warnings: [] }, 200);
   });
 
   /** Reflection (CONTRACT-076): a fresh ask, then the pending one. */
@@ -824,8 +846,8 @@ describe("the typed collection query", () => {
    * answer.
    */
   it.each([
-    [true, "isParent=true"],
-    [false, "isParent=false"],
+    [true, "isParent=true folderScope=absent"],
+    [false, "isParent=false folderScope=absent"],
   ])("puts isParent=%s on the wire as a boolean", async (isParent, echoed) => {
     const { data, error } = await createTestClient().api.GET("/api/docs", {
       params: { query: { isParent } },
@@ -836,7 +858,7 @@ describe("the typed collection query", () => {
 
   it("sends nothing when isParent is not asked for, so the server filters nothing", async () => {
     const { data } = await createTestClient().api.GET("/api/docs", { params: { query: {} } });
-    expect(data?.items[0]?.excerpt).toBe("isParent=absent");
+    expect(data?.items[0]?.excerpt).toBe("isParent=absent folderScope=absent");
   });
 
   it("refuses `parent` with `isParent=true` at the route, naming the parameter", async () => {
@@ -848,12 +870,43 @@ describe("the typed collection query", () => {
     expect(JSON.stringify(error)).toContain("isParent");
   });
 
+  /**
+   * CONTRACT-081, end to end over the mounted definitions: the explorer's
+   * request has to survive the typed client, the route's validator and the
+   * handler's read of it. The three cases are the three things that can go
+   * wrong — the scope never arrives, the scope arrives when nobody asked for
+   * one, or a scope with no folder is answered instead of refused.
+   */
+  it("puts folderScope=self on the wire beside the folder it narrows", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folder: "finance", folderScope: "self" } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.items[0]?.excerpt).toBe("isParent=absent folderScope=self");
+  });
+
+  it("sends nothing when no scope is asked for, so a folder still means its tree", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folder: "finance" } },
+    });
+    expect(data?.items[0]?.excerpt).toBe("isParent=absent folderScope=absent");
+  });
+
+  it("refuses a scope with no folder at the route, naming the missing parameter", async () => {
+    const { data, error, response } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folderScope: "self" } },
+    });
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+    expect(JSON.stringify(error)).toContain("folder");
+  });
+
   it("allows `parent` with `isParent=false`, which is redundant rather than contradictory", async () => {
     const { data, error } = await createTestClient().api.GET("/api/docs", {
       params: { query: { parent: "doc_a1b2c3", isParent: false } },
     });
     expect(error).toBeUndefined();
-    expect(data?.items[0]?.excerpt).toBe("isParent=false");
+    expect(data?.items[0]?.excerpt).toBe("isParent=false folderScope=absent");
   });
 });
 
@@ -1704,12 +1757,37 @@ describe("the board, folder and reflection surface through the typed client", ()
     expect(data?.documents[0]?.status).toBe(status);
   });
 
+  /**
+   * CONTRACT-078. A folder act applies to what it can (§10), and until this
+   * field the one document it could not was reported nowhere: the explorer's
+   * folder menu could not say "one of two", and the id it needed to leave alone
+   * was in a server log. Read through the typed client, because the shape is
+   * what a consumer compiles against — a `detail` string on a warning would
+   * have carried the same words and none of this.
+   */
+  it("names the document a folder act could not apply to, with a reason", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/folders/unarchive", {
+      body: { path: "finance" },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.documents).toHaveLength(1);
+    expect(data?.refused).toEqual([{ id: "doc_locked", message: "the file could not be written" }]);
+  });
+
+  it("carries an empty refusal list on the ordinary act, never an absent one", async () => {
+    const { data } = await createTestClient().api.POST("/api/folders/archive", {
+      body: { path: "finance" },
+    });
+    expect(data?.refused).toEqual([]);
+  });
+
   /** Rider 7: deleting a folder is user-only, like deleting a document. */
   it("lets a person delete a folder and refuses the agent, through the same call", async () => {
     const mine = await createTestClient("user").api.POST("/api/folders/delete", {
       body: { path: "finance" },
     });
     expect(mine.data?.documents).toEqual([{ id: "doc_a1b2c3" }]);
+    expect(mine.data?.refused).toEqual([]);
 
     const theirs = await createTestClient("agent").api.POST("/api/folders/delete", {
       body: { path: "finance" },

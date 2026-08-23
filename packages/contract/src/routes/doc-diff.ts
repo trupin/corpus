@@ -12,6 +12,7 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * `GET /api/docs/{id}/diff` — the read behind `corpus doc diff <id>`
@@ -32,7 +33,7 @@ import {
  */
 
 const DocIdParamSchema = z.object({
-  id: DocumentIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(DocumentIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 export const getDocDiff = createRoute({

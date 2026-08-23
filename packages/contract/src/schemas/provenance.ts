@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ThreadIdSchema } from "./id.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Provenance**: the job a write serves, and the conversation a document came
@@ -41,11 +42,9 @@ import { ThreadIdSchema } from "./id.js";
  * it cost a lost edit; here the cost is an unfiled document, so this field asks
  * and does not insist.
  */
-export const jobField = z
-  .string()
-  .regex(/^evt_/, "a job id looks like `evt_…`")
-  .optional()
-  .openapi({
+export const jobField = openapi(
+  z.string().regex(/^evt_/, "a job id looks like `evt_…`").optional(),
+  {
     description:
       "The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to " +
       "**the thread the event itself names** and records that as the created document's `origin`, " +
@@ -57,7 +56,8 @@ export const jobField = z
       "no event is a `422` rather than a silent omission: a caller that got the id wrong wanted " +
       "the attribution, and dropping it quietly would leave it believing it had one.",
     example: "evt_a1b2c3d4",
-  });
+  },
+);
 
 /**
  * The thread a document came from, or `null` — **server-assigned, and read-only
@@ -75,7 +75,7 @@ export const jobField = z
  * suggests otherwise — "clearable" reads like "clearable for good", and it is
  * not.
  */
-export const originField = ThreadIdSchema.nullable().openapi({
+export const originField = openapi(ThreadIdSchema.nullable(), {
   description:
     "The thread this document came from (SPEC.md §7 scope, §9.2 provenance), or null when it " +
     "came from no job. **Server-assigned**: recorded once, from the job the creating write " +
@@ -102,16 +102,14 @@ export const originField = ThreadIdSchema.nullable().openapi({
  * unchanged in substance: no caller can set an origin. What changed is only
  * where it is refused.
  */
-export const originDetachField = ThreadIdSchema.nullable()
-  .optional()
-  .openapi({
-    description:
-      "Detach: clears this document's `origin`, removing it from its conversation's scope " +
-      "(SPEC.md §9.2). **`null` is the only accepted value** — an origin is never set by a " +
-      "caller, and a request naming a thread here is a `400` — and it is **user-only**, refused " +
-      "for an agent actor. A detached document may be claimed again by a later write that names " +
-      "a job, so this is a correction rather than a lock.",
-  });
+export const originDetachField = openapi(ThreadIdSchema.nullable().optional(), {
+  description:
+    "Detach: clears this document's `origin`, removing it from its conversation's scope " +
+    "(SPEC.md §9.2). **`null` is the only accepted value** — an origin is never set by a " +
+    "caller, and a request naming a thread here is a `400` — and it is **user-only**, refused " +
+    "for an agent actor. A detached document may be claimed again by a later write that names " +
+    "a job, so this is a correction rather than a lock.",
+});
 
 // The `422`'s shape lives in `./error.ts` with the rest of the `ApiError`
 // union: a client that narrows on `code` has to be able to reach it, and a

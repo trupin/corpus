@@ -122,10 +122,16 @@ export interface DetectMigrationsOptions {
  * throws for a workspace's sake: an upgrade that failed because a document was
  * malformed would be a worse outcome than an upgrade that reported one migration
  * fewer.
+ *
+ * Asynchronous only because the frontmatter parser it reads with is loaded on
+ * first use rather than at startup — see `corpus.ts` and CLI-058. Every detector
+ * itself is synchronous and pure.
  */
-export function detectMigrations(options: DetectMigrationsOptions): readonly DetectedMigration[] {
+export async function detectMigrations(
+  options: DetectMigrationsOptions,
+): Promise<readonly DetectedMigration[]> {
   const context: MigrationContext = {
-    corpus: options.corpus ?? readWorkspaceCorpus(options.root, options.dataDir),
+    corpus: options.corpus ?? (await readWorkspaceCorpus(options.root, options.dataDir)),
     actor: options.actor,
   };
   const found: DetectedMigration[] = [];

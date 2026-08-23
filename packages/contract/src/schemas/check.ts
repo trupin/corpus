@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema } from "./id.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The wire form of the corpus validator (SPEC.md §11) — the shapes behind
@@ -80,7 +81,7 @@ export const CHECK_ERROR_CODES: readonly CheckCode[] = CHECK_CODES.filter(
 
 export const CHECK_SEVERITIES = ["error", "warning"] as const;
 
-export const CheckCodeSchema = z.enum(CHECK_CODES).openapi({
+export const CheckCodeSchema = openapi(z.enum(CHECK_CODES), {
   description:
     "Which §11 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned " +
     "thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other twelve " +
@@ -88,14 +89,14 @@ export const CheckCodeSchema = z.enum(CHECK_CODES).openapi({
   example: "ref-unresolved",
 });
 
-export const CheckSeveritySchema = z.enum(CHECK_SEVERITIES).openapi({
+export const CheckSeveritySchema = openapi(z.enum(CHECK_SEVERITIES), {
   description:
     "`error` fails the check (the CLI's exit 6); `warning` is reported and does not. Derivable " +
     "from `code`, and sent anyway so a consumer never has to hold the partition itself.",
 });
 
-export const CheckFindingSchema = z
-  .object({
+export const CheckFindingSchema = openapi(
+  z.object({
     code: CheckCodeSchema,
     severity: CheckSeveritySchema,
     // A plain nullable string, never a validated id: `id-prefix-mismatch` and
@@ -115,11 +116,12 @@ export const CheckFindingSchema = z
     detail: z
       .string()
       .describe("Human-readable specifics, rendered verbatim by `corpus doc check`; never parsed."),
-  })
-  .openapi("CheckFinding");
+  }),
+  "CheckFinding",
+);
 
-export const CheckReportSchema = z
-  .object({
+export const CheckReportSchema = openapi(
+  z.object({
     ok: z
       .boolean()
       .describe(
@@ -134,8 +136,9 @@ export const CheckReportSchema = z
           "Unrelated to the `Warning` shape mutation responses carry for a rejected auto-commit — " +
           "this route writes nothing and can produce none.",
       ),
-  })
-  .openapi("CheckReport");
+  }),
+  "CheckReport",
+);
 
 /**
  * One document handed to the checker as bytes rather than by id — the `--staged`
@@ -146,8 +149,8 @@ export const CheckReportSchema = z
  * `{ok: false, error}`), which is what `toCheckDocument` returns. This is what
  * it takes.
  */
-export const CheckDocumentInputSchema = z
-  .object({
+export const CheckDocumentInputSchema = openapi(
+  z.object({
     path: z
       .string()
       .min(1)
@@ -162,8 +165,9 @@ export const CheckDocumentInputSchema = z
         "The whole file, frontmatter and body, exactly as it would be written. Empty is legal and " +
           "reports as unparseable frontmatter, which is what saving it would do.",
       ),
-  })
-  .openapi("CheckDocumentInput");
+  }),
+  "CheckDocumentInput",
+);
 
 /**
  * Ids **exclusive-or** content pairs, enforced by the schema itself rather than

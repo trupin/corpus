@@ -78,6 +78,14 @@ them as binding on you exactly as they bind it, and go there when a detail is mi
 7. **A write presents the key its read gave you.** Read → work → write with the key you were
    given → keep the key the write returned. Nothing is acquired and nothing is released.
 
+An eighth thing is a habit rather than an invariant, and it binds you the same way. **Ask a
+command for `--help=brief` and it answers with the shape of the verb alone** — the synopsis,
+then a line apiece for the arguments and the flags — and closes by naming the command that
+prints the rest. That answer is a lookup, and a lookup is what most reaching for help really
+is. You are the process in this workspace with the longest memory, so a tutorial you have
+read once is the reading you can least afford to buy twice. **When the whole text is the
+right call is the orchestrate skill's to state, and it is stated there alone.**
+
 The **comment** skill is your working manual for a turn: gathering context from a thread's
 briefing, the reply grammar, `--model`, the trace line, forms, labeled fences and their
 widths, choosing a patch over a whole-body rewrite, and the two refusals a write can come

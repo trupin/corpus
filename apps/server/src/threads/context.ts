@@ -10,13 +10,14 @@
 // **Two halves.**
 //
 // - The **parent side** is the passage the conversation is about, and it comes
-//   from `core/headings.ts` — never from the chunk tables. A section larger than
-//   `CHUNK_CHAR_BUDGET` is *split* into several chunks (`semantic/chunker.ts`),
-//   so a chunk is a fragment of a section by construction and assembling "the
-//   whole enclosing section" out of chunks cannot satisfy its own name
-//   (sprint-022 C2). `headingSections(body)` answers it in one fence-aware scan,
-//   from the same source the chunker and the search address use, so the three
-//   can never disagree about what a heading is.
+//   from the contract's heading scan — never from the chunk tables. A section
+//   larger than `CHUNK_CHAR_BUDGET` is *split* into several chunks
+//   (`semantic/chunker.ts`), so a chunk is a fragment of a section by
+//   construction, and assembling "the whole enclosing section" out of chunks
+//   cannot satisfy its own name (sprint-022 C2). `headingSections(body)`
+//   answers it in one fence-aware scan, from the same source the chunker and
+//   the search address use, so the three can never disagree about what a
+//   heading is.
 // - The **related side** is the same two graphs `GET /api/docs/{id}/related`
 //   fuses — the `links` table and the semantic index — through the *same*
 //   primitives (`fuseRankings`, `overFetchLimit`, `notArchivedSql`). No new RRF,
@@ -50,12 +51,13 @@ import {
   CONTEXT_MAX_EXCERPTS,
   CONTEXT_MAX_QUOTE_CHARS,
   CONTEXT_MAX_SECTION_CHARS,
+  headingSections,
   type ContextExcerpt,
   type ContextPack,
+  type HeadingSection,
   type Relation,
   type SemanticIndexState,
 } from "@corpus/contract";
-import { headingSections, type HeadingSection } from "../core/headings.js";
 import { toOneLine } from "../core/one-line.js";
 import {
   findDocumentRow,
@@ -309,7 +311,7 @@ function readAnchor(db: ProjectionDb, anchorId: string, parent: LoadedDocument):
  */
 function sectionAt(sections: readonly HeadingSection[], offset: number): HeadingSection {
   const found = sections.find((section) => offset >= section.start && offset < section.end);
-  return found ?? sections[sections.length - 1] ?? { headings: [], start: 0, end: 0 };
+  return found ?? sections[sections.length - 1] ?? { headings: [], level: 0, start: 0, end: 0 };
 }
 
 /**

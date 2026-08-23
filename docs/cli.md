@@ -19,6 +19,8 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus reflect`](#corpus-reflect)
 - [`corpus search`](#corpus-search)
 - [`corpus upgrade`](#corpus-upgrade)
+- [`corpus board`](#corpus-board)
+  - [`corpus board order`](#corpus-board-order)
 - [`corpus db`](#corpus-db)
   - [`corpus db doctor`](#corpus-db-doctor)
   - [`corpus db rebuild`](#corpus-db-rebuild)
@@ -98,20 +100,28 @@ no arguments prints the top-level help and exits `0`.
 `--help` is a deliberate exception to `--json`: combining them still prints human-readable
 help, because help is documentation rather than data.
 
+Each of those three levels has two registers. Bare `--help` is the full text and is the
+default. `--help=brief` prints the synopsis and one line per argument and flag — the first
+sentence of each description, and nothing else — for a caller recalling a name rather than
+learning a command. The two cannot disagree: the brief line _is_ the opening sentence of the
+full one, and the registry refuses to load if any description opens with a sentence too long
+to serve as a gloss. This reference always shows the full text, because the whole description
+is on the page already.
+
 ## Global flags
 
 These are merged into every command; a command may not declare a flag that shadows one.
 
-| Flag                   | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--from <user\|agent>` | string  | —       | Who is acting, and therefore the git author of the server's auto-commit: `user` or `agent`. Defaults to `user`; set `CORPUS_FROM=agent` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.                                                                                                       |
-| `--json`               | boolean | `false` | Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr. The error carries `code`, `message` and `hint` — the recovery, in the same words a person is shown — plus `details` and `changed` where they apply. `hint` is always present and is `null` when there is no follow-up beyond the message, so absence never has to be guessed at. |
-| `--workspace <path>`   | string  | —       | Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.                                                                                                                                                                                                                                                                             |
-| `--timeout <ms>`       | number  | `10000` | How long to wait for the workspace server before reporting it unreachable (exit 4).                                                                                                                                                                                                                                                                                                  |
-| `--verbose`            | boolean | `false` | Include the stack trace when an unexpected internal error occurs.                                                                                                                                                                                                                                                                                                                    |
-| `--no-color`           | boolean | `false` | Never emit ANSI colour. Implied whenever stdout is not a TTY.                                                                                                                                                                                                                                                                                                                        |
-| `-h, --help`           | boolean | `false` | Show help for the current topic or command and exit.                                                                                                                                                                                                                                                                                                                                 |
-| `--version`            | boolean | `false` | Print the version of the `corpus` tool and exit.                                                                                                                                                                                                                                                                                                                                     |
+| Flag                   | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--from <user\|agent>` | string  | —       | Who is acting, and therefore the git author of the server's auto-commit: `user` or `agent`. Defaults to `user`; set `CORPUS_FROM=agent` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.                                                                                                        |
+| `--json`               | boolean | `false` | Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr. The error carries `code`, `message` and `hint` — the recovery, in the same words a person is shown — plus `details` and `changed` where they apply. `hint` is always present and is `null` when there is no follow-up beyond the message, so absence never has to be guessed at.  |
+| `--workspace <path>`   | string  | —       | Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.                                                                                                                                                                                                                                                                              |
+| `--timeout <ms>`       | number  | `10000` | How long to wait for the workspace server before reporting it unreachable (exit 4).                                                                                                                                                                                                                                                                                                   |
+| `--verbose`            | boolean | `false` | Include the stack trace when an unexpected internal error occurs.                                                                                                                                                                                                                                                                                                                     |
+| `--no-color`           | boolean | `false` | Never emit ANSI colour. Implied whenever stdout is not a TTY.                                                                                                                                                                                                                                                                                                                         |
+| `-h, --help[=<mode>]`  | string  | —       | Show help for the current topic or command and exit. Bare `--help` gives the full text: prose, whole flag descriptions, worked examples. `--help=brief` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so `corpus doc list --help` swallows nothing after it. |
+| `--version`            | boolean | `false` | Print the version of the `corpus` tool and exit.                                                                                                                                                                                                                                                                                                                                      |
 
 ## `corpus agents`
 
@@ -375,6 +385,8 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 
 **A data migration is reported, never performed.** A release that stops reading a frontmatter key leaves every existing workspace written for the release before it, and SPEC.md §2.4 answers that with a report rather than a silent rewrite. The run ends with a `migrations` section, listed apart from the updates and the conflicts: one block per migration, a line saying what the tool no longer reads, then the commands that perform it, ready to paste — and every one of them is safe to run twice. The section says `none` when nothing fires. A migration never changes the exit code: it is the agent's work, not the upgrade's failure. Under `--json` it is the `migrations` array. `--check` reports it too, against the tool installed now.
 
+**A skill that names a command this tool does not have is reported as well.** A verb the tool removes lives on in every skill the workspace has edited, and until now the agent found out by running it. After the sync, the workspace's `CLAUDE.md`, `README.md`, `.claude/skills/` and `.claude/agents/` are read for `corpus …` commands the installed registry does not carry, and each is printed with its file, its line and the help that lists what the topic does have. A citation the sync just repaired is already gone and is not reported. It changes no exit code, and under `--json` it is the `staleCitations` array.
+
 **The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started from the board runs detached and its last act restarts the server the browser was talking to, so the file is the only place the answer can still be read afterwards. It is truncated at the start of every run and ends in one `report:` line carrying the whole result as JSON.
 
 Run outside a workspace it still upgrades the tool, and says that the template sync and the restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or a mirror instead of `trupin/corpus`.
@@ -409,6 +421,56 @@ One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest
 
 ```
 corpus upgrade --json
+```
+
+## `corpus board`
+
+Acts on the board bar as a set — today, its order.
+
+A board is a document (SPEC.md §10), so everything that happens to **one** board happens through `corpus doc`: `corpus doc create --type board` makes one, `corpus doc edit` writes its `columns`, its `kanban` block and its title, and `corpus doc archive` takes it off the bar. This topic is for the acts whose subject is the **bar itself**, and there is one of them.
+
+`order` renumbers every board named, in the order given, and lands the whole renumbering as the single auto-commit §4 requires — rider 2's _reordering boards writes `order` on every board, in one commit_. Doing the same with `corpus doc edit <id> --order N` per board makes one commit only while §4's window happens to stay open across the writes, which is not a property anything can rely on.
+
+### `corpus board order`
+
+Set the order of the board bar, in one act and one commit.
+
+Renumbers the boards named to `1 … n`, in the order given, through `POST /api/boards/order` — and lands every write as the **single** auto-commit SPEC.md §4 requires, which is rider 2's _reordering boards writes `order` on every board, in one commit_. The alternative is `corpus doc edit <id> --order N` per board, and that makes one commit only by accident: §4's window folds a party's consecutive writes, so it holds only until the window closes between two of them. Here it is a property of the act.
+
+**Name the whole bar, first tab first.** The positions come from the list — the first board is given `1`, the next `2` — so there is no way to spell a contradiction, no gap and no tie to resolve. A board already sitting at the number it would be given is **not** written: a write that changes nothing still stamps `updated` and lands a line in the log, so a bar dragged back where it started writes nothing at all.
+
+**It names the bar, not the corpus.** Boards the list does not name keep the `order` they carry, which is what lets a caller that shows only unarchived boards state its own order without inventing positions for boards nobody can see.
+
+One row per board, in the order asked for: the id, the position it **now** carries, and `moved` or `unchanged`. Then one line naming the single commit — count the `moved` rows rather than the ids you sent when reporting how many boards moved. **All or nothing**: an id that names no document is a `404` and an id that names something other than a `type: board` document is a `400`, both refused before anything is written, so no caller ever sees half an order. An id named twice is a `400` too — a board has one position, so a repeat cannot be resolved into an order.
+
+```
+corpus board order <id…> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                       |
+| -------- | -------- | --------------------------------------------------------------------------------- |
+| `id…`    | yes      | The boards, in the order the bar should be in — first tab first. Each named once. |
+
+**Examples**
+
+Put Inbox first, Attention second, Files third. One act, one commit, and only the boards whose position actually changed are written.
+
+```
+corpus board order doc_inbox doc_attention doc_files --from agent
+```
+
+The single sha the reorder landed as — `git show` it to see every board it wrote. Null when no board had to move.
+
+```
+corpus board order doc_attention doc_inbox --json | jq -r .commit
+```
+
+Reverse the bar: read the boards in their current order, hand them back reversed. The list is the order, so nothing has to compute positions.
+
+```
+corpus doc list --type board --sort order --json | jq -r '.items[].id' | tail -r | xargs corpus board order --from agent
 ```
 
 ## `corpus db`
@@ -537,9 +599,9 @@ corpus doc check [id…] [flags]
 
 **Flags**
 
-| Flag       | Type    | Default | Description                                                                                                                                                                                                        |
-| ---------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--staged` | boolean | `false` | Check the content staged in git instead of what is on disk — what a pre-commit hook wants, since the bytes about to be committed are not the bytes in the working tree. Nothing staged means no output and exit 0. |
+| Flag       | Type    | Default | Description                                                                                                                                                                                                               |
+| ---------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--staged` | boolean | `false` | Check the content staged in git instead of what is on disk. This is what a pre-commit hook wants, since the bytes about to be committed are not the bytes in the working tree. Nothing staged means no output and exit 0. |
 
 **Examples**
 
@@ -573,6 +635,8 @@ Create a document.
 
 A type and a title are the whole requirement (SPEC.md §10's zero-form creation); everything else the server fills in, including the id, which is immutable thereafter. The body comes from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and omitting all three is legal: the server pre-fills from the type's `template` document when one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. **An explicit `--folder` wins over that default**, which is what keeps a document _about_ a persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. **What that costs is addressability, and it costs all of it**: a persona is loaded and resolved from `.claude/agents/` alone, so an `agent-def` written anywhere else answers to neither `@<name>` nor `corpus thread designate --agent`, under its filename stem or its title alike — it is a note about a persona rather than one. A root of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) and never a folder beneath it; a root named that way must hold the type asked for, so `--type note --folder .claude/agents` is a `400` rather than a note the corpus would index as a persona. **`--type thread` is placed by neither rule**: a thread is flat at `data/threads/<id>.md`, named by its id (SPEC.md §4), so an omitted `--folder` is not the inbox and an explicit one is still checked but never changes where it lands — and a thread is normally created by `corpus thread create`. `--type skill` is the one type whose own root is out of reach here: `.claude/skills` indexes `SKILL.md` files alone, as does the archived root beside it, so naming either as a `--folder` is a `400` and a skill created with no `--folder` lands in the inbox like anything else — `corpus skill create` owns genesis at `<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in `data/docs/finance/`. A folder the server rejects is reported verbatim rather than pre-validated here. `--columns`, `--kanban`, `--default-open`, `--order`, `--query` and `--stage` write the SPEC.md §10 **board and view keys** at creation, so `--type board --columns a,b --default-open true` is a whole board in one command and `--type board --kanban '…'` is a whole kanban — the board bar picks either up over SSE with no reload. A `type: view` document is a saved query and nothing more: what puts it on a board is that board's `--columns`, never a key on the view. A column the board's own “＋ New list” would have written carries `--folder views --evergreen true`, which is what the seed columns look like and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit rather than implied by `--type view`, because this verb defaults nothing per type. Prints the new id and path, and prints on its own line any second effect the write had — a stage that decided a status (§5's coupling), a `default-open` taken off another board. `--json` emits the server's `{doc, warnings}` response unchanged.
 
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
+
 ```
 corpus doc create [flags]
 ```
@@ -583,7 +647,7 @@ corpus doc create [flags]
 | ------------------------------ | ------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--type <type>`                | string              | —       | Document type: `note`, `view`, `board`, `template`, `skill`, `agent-def`, or any other value this workspace uses (SPEC.md §5 — the field is an open string). Required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `--title <text>`               | string              | —       | The document's title. Required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `--folder <path>`              | string              | —       | Folder under `data/docs/`, as a bare name (`finance`) or the full prefix (`data/docs/finance`); a type SPEC.md §7 gives its own document root may instead name that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an explicit folder wins over that default. **`--type thread` is the exception at both ends**: a thread is placed flat at `data/threads/<id>.md` before this flag is consulted (SPEC.md §4), so a folder sent with one is validated and then has no effect.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `--folder <path>`              | string              | —       | Folder under `data/docs/`, as a bare name (`finance`) or the full prefix (`data/docs/finance`). A type SPEC.md §7 gives its own document root may instead name that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an explicit folder wins over that default. **`--type thread` is the exception at both ends**: a thread is placed flat at `data/threads/<id>.md` before this flag is consulted (SPEC.md §4), so a folder sent with one is validated and then has no effect.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `--tags <a,b>`                 | string              | —       | Comma-separated tags. Blank entries are dropped; defaults to no tags.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `--due <yyyy-mm-dd>`           | string              | —       | Optional deadline, surfaced in Attention and in filters.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `--evergreen <true\|false>`    | string              | —       | Opt the document out of staleness from the start. Defaults to `false`; a board column is created with `true`, because a column is configuration rather than content and a six-month-old Inbox column is not something to review.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -771,6 +835,8 @@ The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmat
 **Replacing the body means presenting the document's `--key`** (SPEC.md §7). Read the document with `corpus doc show <id>`, which prints the key, and present that key here: a body edit without one is refused before anything is sent (exit 2), because a write that replaces a block says nothing about what it changes and is the one that can destroy silently. If the document moved on between that read and this write, the key is stale and the write is **refused with exit 9** — carrying the document as it now stands and a fresh key, so no second read is needed: reconcile against what is printed and run the same command again with the fresh key. **That retry is the mechanism working, not a failure.** Every write that lands prints the fresh key on the line after the confirmation, so a chain of edits costs one read at the start rather than one between every pair.
 
 **A write that names its own delta needs no key**, and none of them started asking for one: `--add-tag`, `--remove-tag`, `--status`, `--due`, `--reviewed`, `--evergreen`, `--extra`, `--extra-json`, `--unset` and the board keys all merge with whatever else happened rather than overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them anyway is welcome and is still checked, so a caller that always sends what it read needs no rule about which fields are which.
+
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
 
 ```
 corpus doc edit <id> [flags]
@@ -1040,15 +1106,15 @@ corpus doc patch <id> [flags]
 
 **Flags**
 
-| Flag                | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--old <text>`      | string  | —       | The excerpt to replace, quoted **exactly** as the body holds it — the same bytes `corpus doc show <id>` printed. Whitespace and indentation are significant. It must occur exactly once unless `--all` is passed; anything else is refused with exit 10, naming the count. Cannot be combined with `--old-file`.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `--new <text>`      | string  | —       | What to put in `--old`'s place. **Required, and may be empty**: `--new ''` deletes the quoted text, which is why an omitted flag is a usage error rather than a deletion. Equal to `--old` it is a no-op — answered normally, nothing written, no commit. Cannot be combined with `--new-file`.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `--old-file <path>` | string  | —       | Read the excerpt from this file, byte for byte — the route with no shell quoting and no JSON escaping in it at all. The file is only read. Its trailing newline is part of the excerpt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `--new-file <path>` | string  | —       | Read the replacement from this file, byte for byte. The file is only read, and its trailing newline is part of the replacement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `--stdin`           | boolean | `false` | Read the whole request from stdin as one JSON object — `{"old": "…", "new": "…"}`, optionally with `"all": true`. It is the request rather than a third spelling of one field, so it takes no other patch flag. Newlines inside the strings are `\n`; when that escaping is the awkward part, `--old-file` and `--new-file` need none.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `--all`             | boolean | `false` | Replace **every** occurrence instead of requiring the excerpt to be unique. Occurrences are found left to right and never overlap, and the success line says how many were replaced. It lifts uniqueness, never the requirement to match: an excerpt occurring zero times is refused whether or not this is set.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `--job <evt_…>`     | string  | —       | The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the thread that work came from and records it as the created document's `origin`, which is what makes a conversation's artifacts findable. Set `CORPUS_JOB=evt_…` once when you claim an event and every write in that session carries it; this flag still wins over the variable. **Omitting it is not an error** — the write lands and records no origin, so forgetting costs provenance and never correctness. **Naming an event that does not exist, or one already settled, is refused** (exit 5, the server's `422`): a caller that mistyped a job id wanted the attribution, and quietly dropping it would leave it believing it had one. |
+| Flag                | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--old <text>`      | string  | —       | The excerpt to replace, quoted **exactly** as the body holds it — the same bytes `corpus doc show <id>` printed. Whitespace and indentation are significant. It must occur exactly once unless `--all` is passed; anything else is refused with exit 10, naming the count. Cannot be combined with `--old-file`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `--new <text>`      | string  | —       | What to put in `--old`'s place. **Required, and may be empty**: `--new ''` deletes the quoted text, which is why an omitted flag is a usage error rather than a deletion. Equal to `--old` it is a no-op — answered normally, nothing written, no commit. Cannot be combined with `--new-file`.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--old-file <path>` | string  | —       | Read the excerpt from this file, byte for byte — the route with no shell quoting and no JSON escaping in it at all. The file is only read. Its trailing newline is part of the excerpt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `--new-file <path>` | string  | —       | Read the replacement from this file, byte for byte. The file is only read, and its trailing newline is part of the replacement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--stdin`           | boolean | `false` | Read the whole request from stdin as one JSON object — `{"old": "…", "new": "…"}`, optionally with `"all": true`. It is the request rather than a third spelling of one field, so it takes no other patch flag. Newlines inside the strings are `\n`; when that escaping is the awkward part, `--old-file` and `--new-file` need none. **Stdin is read only when it is a heredoc or a pipe.** A **socket** — what `spawn`, `exec` and `spawnSync({ input })` give a child, and what an agent harness leaves on fd 0 — is never read, because it never ends and the read would hang. A socket here is refused by name (exit 2, nothing sent) rather than reported as an empty stdin, since a caller that piped the request in over one did send it. |
+| `--all`             | boolean | `false` | Replace **every** occurrence instead of requiring the excerpt to be unique. Occurrences are found left to right and never overlap, and the success line says how many were replaced. It lifts uniqueness, never the requirement to match: an excerpt occurring zero times is refused whether or not this is set.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `--job <evt_…>`     | string  | —       | The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to the thread that work came from and records it as the created document's `origin`, which is what makes a conversation's artifacts findable. Set `CORPUS_JOB=evt_…` once when you claim an event and every write in that session carries it; this flag still wins over the variable. **Omitting it is not an error** — the write lands and records no origin, so forgetting costs provenance and never correctness. **Naming an event that does not exist, or one already settled, is refused** (exit 5, the server's `422`): a caller that mistyped a job id wanted the attribution, and quietly dropping it would leave it believing it had one.         |
 
 **Examples**
 
@@ -1158,7 +1224,7 @@ corpus doc related doc_a1b2c3 --json
 
 ### `corpus doc show`
 
-Read a document — all of it, its heading paths, or one section byte for byte.
+Read one document or several — all of it, its heading paths, or one section byte for byte.
 
 Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date.
 
@@ -1174,17 +1240,21 @@ These two flags narrow **what you read**, not what crosses the wire: the request
 
 The §10 **board and workflow keys** print when the document carries them, and only then: `stage`, `order`, `default-open`, `columns`, and a `kanban` block flattened to its field, its stages, its graph and its status map. A board therefore shows its whole configuration here, and an ordinary note is not made five lines longer by the existence of boards.
 
+**Several ids read several documents in one call.** The saving is _processes, not bytes_: each id is still its own request, but one `corpus` invocation costs ~159 ms of startup before it does anything, against ~10 ms for a round trip, so five ids in one call is **189 ms rather than 797 ms** (measured). The documents come back in the order asked for, one at a time, each under a `──── <id> ────` rule; a repeated id is read once. `--json` is then a JSON **array** of the same payloads, in the same order, so a caller reads element `.frontmatter.id` rather than parsing a rule. **An id that names nothing does not lose the others**: every document that was found is printed, the missing ids are named together afterwards, and the exit code is the same `404`/exit 5 a single missing id has always given — so exit 0 means all found and exit 5 means at least one was not. `--json` carries them at `.error.details.missing`, with what was read at `.details.found`. At most 200 ids at once, the same ceiling one listing has; more than that is refused before any request. Any _other_ failure — an unreachable server, a rejected token — ends the read where it happens rather than spending the remaining round trips.
+
+`--headings` and `--section` read inside **one** document, so they take one id and refuse several (exit 2). Two sections joined by a separator are no longer either document's bytes, which is the one property `--section` exists to have.
+
 The human rendering is a summary: the whole payload — including those keys and any non-core `extra` frontmatter — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
 
 ```
-corpus doc show <id> [flags]
+corpus doc show <id…> [flags]
 ```
 
 **Arguments**
 
-| Argument | Required | Description        |
-| -------- | -------- | ------------------ |
-| `id`     | yes      | The document's id. |
+| Argument | Required | Description                                                                        |
+| -------- | -------- | ---------------------------------------------------------------------------------- |
+| `id…`    | yes      | The document's id. Several read several documents in one call, in the order given. |
 
 **Flags**
 
@@ -1200,6 +1270,18 @@ Read a document before editing or commenting on it: header, its `key`, anchored 
 
 ```
 corpus doc show doc_a1b2c3
+```
+
+Three documents, one process. Each arrives under a `──── <id> ────` rule, in the order asked for — one startup instead of three, measured at 189 ms against 797 ms for five.
+
+```
+corpus doc show doc_a1b2c3 doc_d4e5f6 doc_g7h8i9
+```
+
+A missing id does not lose the ones that were found: the array on stdout holds every document that was read, the missing ids arrive on stderr at `.error.details.missing`, and the exit code is 5.
+
+```
+corpus doc show doc_a1b2c3 doc_nosuchid --json | jq -r '.[].frontmatter.title'
 ```
 
 The document's addresses, one per line — `Mortgage options`, `Mortgage options › Rates`, `Mortgage options › Escrow` — without reading a word of it.
@@ -1593,7 +1675,7 @@ corpus job list --recent 5 --json
 
 Append a progress line to a job's log.
 
-Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and answers nothing in human mode: this is called many times while working one job. Omit the line and it is read from stdin instead — but only when stdin is a pipe or a heredoc, never from a terminal or from the socket an agent harness hands down, where waiting for a line nobody is sending would hang the job (that case is a usage error, exit 2). Newlines inside the line are preserved and sent as one request — the server owns the file's framing. Under `--json` the response carries `appended`, which is `false` when the log has hit its size cap and the line was dropped. An unknown event id is a server error (exit 5).
+Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and answers nothing in human mode: this is called many times while working one job. Omit the line and it is read from stdin instead — but only when stdin is a pipe or a heredoc, never from a terminal and never from a **socket**, which is what `spawn`, `exec`, `spawnSync({ input })` and an agent harness all hand a child: waiting for a line nobody is sending would hang the job, so a socket with no line argument is refused by name (exit 2, nothing appended) rather than logged as an empty step. Newlines inside the line are preserved and sent as one request — the server owns the file's framing. Under `--json` the response carries `appended`, which is `false` when the log has hit its size cap and the line was dropped. An unknown event id is a server error (exit 5).
 
 ```
 corpus job log <event-id> [line] [flags]
@@ -1648,15 +1730,17 @@ corpus job retry evt_9f2a
 
 Park on, claim and settle the agent's event queue.
 
-The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and **a settle is only ever accepted from the agent that claimed the work** — SPEC.md §7's rule, so a retried `complete` or `fail` is a conflict (exit 5) rather than a second success. `corpus queue in-progress` is how to find out what you still hold before settling. `defer` is the fourth, non-terminal outcome: work the agent parked because a person is editing the document it needs waits rather than failing, and returns to `pending` by itself when that session ends (SPEC.md §7 — a judgement, not a refusal). `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
 
 **The queue is partitioned into lanes** (SPEC.md §7), and two verbs take one: `idle` and `claim-all` accept `--thread <th_…>` to consume the lane of a conversation with a resident agent. Omitting it is the orchestrator's lane, which is what every caller written before lanes existed already meant. A scoped call sees only its own lane; the orchestrator's sees its own plus every lane nobody is listening on — so two agents working at once read disjoint sets, and a conversation whose agent is absent is still answered, by the orchestrator, rather than left. `corpus agents` lists the lanes and says who is on them; **holding a scoped `idle` is the whole of what makes a resident present** — nothing here registers an agent, because there is nothing to register.
 
 ### `corpus queue abandon`
 
-Give up on an event for good.
+Give up on an event for good, from any state but processed.
 
 Moves the event to `abandoned/` — the terminal give-up state, distinct from `failed/` which a retry can pick up again. Nothing is deleted: the event file is kept where the audit trail can still see it.
+
+It is the one settle that is **not** restricted to claimed work, because it is the operator's give-up rather than the agent's report: a `pending`, `in-progress`, `deferred` or `failed` event can all be abandoned, which is what lets the console offer it beside `retry` on a failed job. What it may not do is give up on work that is **done** — abandoning a `processed` event is a conflict (exit 5), since there is nothing left to give up on and the move would rewrite the history the kept file exists to be. A repeat is refused too, and says `already`.
 
 ```
 corpus queue abandon <event-id> [flags]
@@ -1726,9 +1810,13 @@ corpus queue claim-all --thread th_4b8e2c
 
 ### `corpus queue complete`
 
-Mark a claimed event processed.
+Mark work you claimed processed — completing anything else is refused.
 
-Moves the event from `in-progress/` to `processed/`. Idempotent: completing an already-completed event is not an error, so a duplicated call after a retry exits 0 like the first. The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
+Moves the event from `in-progress/` to `processed/`. **Only claimed work can be completed:** an event you did not claim, or one already settled, is a conflict (exit 5) and nothing moves.
+
+That is SPEC.md §7's rule — nobody settles work they did not claim — and it is **not** idempotent. A second `complete` after a retry does not exit 0 like the first; it is refused, and the refusal says `already`, which is how a duplicated call learns the outcome it wanted is the one on record. Reconcile with `corpus queue in-progress` when you are not sure what you still hold.
+
+The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
 
 ```
 corpus queue complete <event-id> [flags]
@@ -1778,10 +1866,10 @@ corpus queue defer <event-id> [flags]
 
 **Flags**
 
-| Flag                    | Type   | Default | Description                                                                                                                                                                          |
-| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--blocked-on <doc-id>` | string | —       | **Required.** The document a person is editing that the work is waiting on. That session ending is what returns this event to `pending`, so naming the wrong document waits forever. |
-| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                                       |
+| Flag                    | Type   | Default | Description                                                                                                                                                                           |
+| ----------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--blocked-on <doc-id>` | string | —       | **Required** — the document a person is editing that the work is waiting on. That session ending is what returns this event to `pending`, so naming the wrong document waits forever. |
+| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                                        |
 
 **Examples**
 
@@ -1805,9 +1893,13 @@ corpus queue defer evt_9f2a --blocked-on doc_a1b2c3 --json
 
 ### `corpus queue fail`
 
-Mark a claimed event failed.
+Mark work you claimed failed, saying why in the required --reason.
 
-Moves the event to `failed/`, where the console can retry it — the recoverable half of giving up (`abandon` is the other). A bare `fail` sends no request body at all; `--reason` records why, and is shown in the console.
+Moves the event to `failed/`, where the console can retry it — the recoverable half of giving up (`abandon` is the other). **`--reason` is required and checked before any request is sent**, and **only claimed work can be failed:** an event you did not claim, or one already settled, is a conflict (exit 5).
+
+The reason is the whole record of why the work stopped — it is what an operator reads in the failed row, and nothing else carries it. A missing or empty one is a usage error (exit 2) with nothing sent, so the failed row can never exist with nothing to say for itself. Use `corpus queue abandon` when there is genuinely nothing to add.
+
+It is **not** idempotent (SPEC.md §7 — nobody settles work they did not claim). A second `fail` is refused rather than accepted, which is also what stops it quietly discarding the new reason it carried: the first annotation was never going to be overwritten.
 
 ```
 corpus queue fail <event-id> [flags]
@@ -1821,9 +1913,9 @@ corpus queue fail <event-id> [flags]
 
 **Flags**
 
-| Flag              | Type   | Default | Description                                                              |
-| ----------------- | ------ | ------- | ------------------------------------------------------------------------ |
-| `--reason <text>` | string | —       | Why the event failed. Omitted entirely when not given, never sent empty. |
+| Flag              | Type   | Default | Description                                                                                                                                                                |
+| ----------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reason <text>` | string | —       | **Required** — why the event failed, shown in the console's failed row. An empty or whitespace value is refused the same way a missing one is, before any request is sent. |
 
 **Examples**
 
@@ -1833,10 +1925,10 @@ Fail an event and say why.
 corpus queue fail evt_9f2a --reason "the parent document was deleted"
 ```
 
-Fail without an annotation.
+Machine-readable form: the event as one JSON value.
 
 ```
-corpus queue fail evt_9f2a
+corpus queue fail evt_9f2a --reason "the API it needs is down" --json
 ```
 
 ### `corpus queue halt`
@@ -2133,6 +2225,8 @@ The created file carries **both** frontmatter vocabularies, which is what makes 
 
 The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, and undo a bad edit by writing back the content you want — read the history with `corpus doc diff <id>`, then `corpus doc edit <id> --key <key>`.
 
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
+
 ```
 corpus skill create <name> [flags]
 ```
@@ -2232,6 +2326,8 @@ The three creation shapes of SPEC.md §6, chosen by which flags are present. `--
 **The quote is not resolved here.** The CLI never reads the parent document and never computes the surrounding context: it sends the text you quoted, and the server locates it (SPEC.md §6). A quote the document **does not contain** is not a refusal — the thread is created and comes back with the `orphaned_anchor` warning appended to the printed line, because an orphaned anchor is a normal state of a living corpus. A quote the document contains **more than once** is a different matter and **is refused**, `400` (exit 5), nothing written: the request names several passages and there is nothing to choose between them, so an error you can see beats a conversation silently anchored to the wrong one. Disambiguate with `--prefix`/`--suffix` — the text immediately before and after the occurrence you mean, copied from the document — so that prefix, quote and suffix together occur exactly once; framing that is itself repeated is refused the same way. The framing only picks the occurrence and is **not** stored: the server reads the anchor's context off the document's own bytes. An unknown `--parent` is a `404` (exit 5). Anchoring rewrites the parent's frontmatter, but it **names its own delta** — one anchor added — so this verb presents no key and is never refused for a document someone else is writing (SPEC.md §7); an anchor whose quote has moved is refused on its own terms, above. Prints the new thread's id, where it landed, and any enqueued event; `--json` emits the server's `{thread, anchorId, eventId, warnings}` response unchanged.
 
 **`--model` states what wrote the first turn**, and only an agent's turn may carry one (SPEC.md §10) — the same flag `corpus thread reply` takes, since both write a turn. It records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, which reads as nothing rather than as a guess.
+
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
 
 ```
 corpus thread create [flags]
@@ -2422,6 +2518,8 @@ Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comm
 **Two body shapes are refused rather than written** (`400`, exit 5, nothing appended), and the refusal names the offending line. A body that leaves a code fence open would swallow every later turn in the thread into it, leaving them on disk but invisible to the board, the projection and the agent — close it with a line holding nothing but the backtick run. A body carrying a bare `## user · <ts>` or `## agent · <ts>` line would be read as SPEC.md §6's turn delimiter and split the message into turns attributed to someone who never wrote them. Both apply to every actor: neither failure depends on who typed it. Quoting either shape is ordinary content and is accepted — a fence opened wider and closed on its own line, and a turn heading inside a fence, an inline code span or a block quote, all go through untouched.
 
 **`--model` states what wrote the turn**, and only an agent's turn may carry one (SPEC.md §10). It is a record of what ran, not a request for anything to run, and it is recorded verbatim; omit it and the turn carries no model at all, which reads as nothing rather than as a guess.
+
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
 
 ```
 corpus thread reply <id> [flags]
@@ -2682,6 +2780,8 @@ One thing is repaired rather than compared: a workspace initialized before a que
 One more repair needs no baseline and makes no commit: a workspace created before Corpus took git's **background maintenance** out of its repository has it back on. Since git 2.29 every `git commit` ends by spawning a detached `git maintenance run --auto`, and a repack racing the server's commits can leave the object store permanently corrupt. Any missing setting is written here, because `corpus init` runs once and a workspace made last week is in that state now. The repository is never **packed** here — an upgrade may run with the server up, and packing beside the sole writer is the race being repaired; packing happens at `corpus server start` and in `corpus workspace maintain`.
 
 **Data migrations are reported, never performed.** A release that stops reading a frontmatter key leaves every existing workspace written for the release before it, so the report ends with a `migrations` section: one block per migration, a line saying what the tool no longer reads, and the commands that perform it, ready to paste (SPEC.md §2.4). The section says `none` when nothing fires, and a migration never changes the exit code — it is work for the agent, not a failure of the upgrade. Under `--json` it is the `migrations` array. Every command in it is safe to run twice.
+
+**Stale command references are reported too, and only the ones this run could not fix.** A verb the tool removes lives on in every skill the workspace has edited, and the agent finds out by running it. So once the sync is done, the workspace's `CLAUDE.md`, `README.md`, `.claude/skills/` and `.claude/agents/` are read for `corpus …` commands the installed registry does not have, and each one is printed with its file, its line, the line itself and the help that lists what the topic does have. Only code is read — a fenced block or an inline span — and a sentence saying a verb was removed is prose about a command rather than an instruction to run it, so it is left alone. The section is silent when there is nothing, changes no exit code, and appears under `--json` as `staleCitations`. Nothing here is edited: these files are the workspace's, and the repair is `corpus doc edit`.
 
 This command and `corpus init` are the only two that write workspace files directly and commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the server stopped, because a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them. With the server running, the watcher treats the writes as ordinary out-of-band edits and re-projects. Every other document mutation goes through the server — the rule is not soft.
 

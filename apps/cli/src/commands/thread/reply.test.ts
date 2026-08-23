@@ -10,7 +10,7 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
-import { pipe } from "../../testing/stdin.js";
+import { pipe, unreadable } from "../../testing/stdin.js";
 import { replyCommand, runThreadReply } from "./reply.js";
 
 const ARGS = { id: "th_a1b2c3" };
@@ -44,7 +44,7 @@ describe("corpus thread reply", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
     const harness = stubContext(stub, { args: ARGS, actor: "agent" });
 
-    await runThreadReply(harness.context, { stdin: pipe("filed it\n"), stdinIsBodySource: true });
+    await runThreadReply(harness.context, { stdin: pipe("filed it\n"), stdinKind: "fifo" });
 
     const [request] = stub.requests;
     expect(request?.method).toBe("POST");
@@ -75,13 +75,13 @@ describe("corpus thread reply", () => {
       flags: { message: "from -m", file: "answer.md" },
       cwd: dir,
     });
-    await runThreadReply(inline.context, { stdin: pipe("from stdin"), stdinIsBodySource: true });
+    await runThreadReply(inline.context, { stdin: pipe("from stdin"), stdinKind: "fifo" });
 
     const fromFile = stubContext(stub, { args: ARGS, flags: { file: "answer.md" }, cwd: dir });
-    await runThreadReply(fromFile.context, { stdin: pipe("from stdin"), stdinIsBodySource: true });
+    await runThreadReply(fromFile.context, { stdin: pipe("from stdin"), stdinKind: "fifo" });
 
     const fromStdin = stubContext(stub, { args: ARGS });
-    await runThreadReply(fromStdin.context, { stdin: pipe("from stdin"), stdinIsBodySource: true });
+    await runThreadReply(fromStdin.context, { stdin: pipe("from stdin"), stdinKind: "fifo" });
 
     expect(stub.requests.map((request) => bodyOf(request.body)["body"])).toEqual([
       "from -m",
@@ -95,7 +95,7 @@ describe("corpus thread reply", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
     const harness = stubContext(stub, { args: ARGS });
 
-    await runThreadReply(harness.context, { stdin: pipe(body), stdinIsBodySource: true });
+    await runThreadReply(harness.context, { stdin: pipe(body), stdinKind: "fifo" });
 
     expect(bodyOf(stub.requests[0]?.body)["body"]).toBe(body);
   });
@@ -104,7 +104,7 @@ describe("corpus thread reply", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
 
     const inline = stubContext(stub, { args: ARGS, flags: { message: "" } });
-    const first: unknown = await runThreadReply(inline.context, { stdinIsBodySource: false }).catch(
+    const first: unknown = await runThreadReply(inline.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
     expect(exitCodeFor(first)).toBe(ExitCode.usageError);
@@ -112,7 +112,7 @@ describe("corpus thread reply", () => {
     const piped = stubContext(stub, { args: ARGS });
     const second: unknown = await runThreadReply(piped.context, {
       stdin: pipe(""),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
     expect(exitCodeFor(second)).toBe(ExitCode.usageError);
 
@@ -283,7 +283,7 @@ describe("corpus thread reply", () => {
 
       const error: unknown = await runThreadReply(harness.context, {
         stdin,
-        stdinIsBodySource: true,
+        stdinKind: "fifo",
       }).catch((cause: unknown) => cause);
 
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -308,5 +308,34 @@ describe("corpus thread reply", () => {
       // No enum, ever.
       expect(text).toContain("nothing here validates against a list");
     });
+  });
+});
+
+describe("corpus thread reply — a body on a socket (CLI-066)", () => {
+  /**
+   * CLI-066 — the socket that swallowed five documents.
+   *
+   * The SHARED-070 audit ran this verb through `spawnSync(…, { input })`, which
+   * hands the child a socketpair on fd 0. A socket is never read (CLI-007: an
+   * agent harness leaves one there that never ends), and treating "not read" as
+   * "not offered" wrote nothing at all, under a message that told the caller to pipe the body in at exit 0 with the caller's bytes verifiably
+   * absent. The refusal below is decided by `fstat` alone — `unreadable()` rejects
+   * on the first read, so "nothing was blocked on" is an assertion here rather
+   * than a timeout.
+   */
+  it("names the socket instead of asking for the body that was already sent", async () => {
+    const stub = await startStubServer(jsonResponder(201, APPENDED));
+    const harness = stubContext(stub, { args: ARGS, actor: "agent" });
+
+    const error: unknown = await runThreadReply(harness.context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    // The old refusal said "pipe it in", which is exactly what the caller did.
+    expect(String(error)).not.toContain("no reply body to send");
+    expect(stub.requests).toHaveLength(0);
   });
 });

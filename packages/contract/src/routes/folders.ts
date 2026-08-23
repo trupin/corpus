@@ -83,8 +83,10 @@ export const archiveFolder = createRoute({
     "relocation, so the folder stays where it is and every path is unchanged — which is what " +
     "makes it reversible by `POST /api/folders/unarchive` rather than by remembering where " +
     "things were. A document already archived is left as it is and is still listed, because the " +
-    "act applied to it. `404` when the folder is unknown. One action, one commit (§4), authored " +
-    "by the acting party.",
+    "act applied to it. A document the flip could not be applied to is named in `refused` with " +
+    "why, and the act stands for every other document — §10's bulk rule, so one file the write " +
+    "lane could not take never refuses the folder. `404` when the folder is unknown. One action, " +
+    "one commit (§4), authored by the acting party.",
   request: {
     headers: ActorHeaderSchema,
     body: {
@@ -96,7 +98,8 @@ export const archiveFolder = createRoute({
   responses: {
     200: jsonContent(
       FolderStatusResultSchema,
-      "Every document in the folder, with its status after the act, and any §11 warnings.",
+      "Every document in the folder with its status after the act, the ones the act could not " +
+        "apply to, and any §11 warnings.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -113,8 +116,9 @@ export const unarchiveFolder = createRoute({
     "The inverse flip, back to `status: resolved` — the state archiving already implied (SPEC.md " +
     "§5) — on every document and thread under `data/docs/<path>`. It moves nothing, for the " +
     "reason archiving moves nothing. A document that was not archived is left as it is and is " +
-    "still listed. `404` when the folder is unknown. One action, one commit (§4), authored by " +
-    "the acting party.",
+    "still listed, and one the flip could not be applied to is named in `refused` with why. " +
+    "`404` when the folder is unknown. One action, one commit (§4), authored by the acting " +
+    "party.",
   request: {
     headers: ActorHeaderSchema,
     body: {
@@ -126,7 +130,8 @@ export const unarchiveFolder = createRoute({
   responses: {
     200: jsonContent(
       FolderStatusResultSchema,
-      "Every document in the folder, with its status after the act, and any §11 warnings.",
+      "Every document in the folder with its status after the act, the ones the act could not " +
+        "apply to, and any §11 warnings.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
@@ -145,7 +150,9 @@ export const deleteFolder = createRoute({
     "deletes (§7). Nothing is hard-deleted from history; git preserves every file and every " +
     "version of it, and the threads of a deleted document become orphaned records that still " +
     "name it as `parent` (§9.2). The response lists the ids and nothing more, because there is " +
-    "no field left to report: a client drops those rows. `404` when the folder is unknown. " +
+    "no field left to report: a client drops those rows. A document that could not be deleted " +
+    "is named in `refused` with why, and still exists — the delete stands for every other " +
+    "document. `404` when the folder is unknown. " +
     "**A `POST`, not a `DELETE`**, for the reason the whole family is: the folder is named in " +
     "the body because a folder path carries slashes, and a `DELETE` with a body is a request " +
     "intermediaries are entitled to strip.",
@@ -160,7 +167,8 @@ export const deleteFolder = createRoute({
   responses: {
     200: jsonContent(
       DeleteFolderResultSchema,
-      "The ids of every document the delete removed, and any §11 warnings.",
+      "The ids of every document the delete removed, the ones it could not remove, and any §11 " +
+        "warnings.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,

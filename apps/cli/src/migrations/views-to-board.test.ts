@@ -25,11 +25,11 @@ function corpusOf(...documents: readonly DocumentOnDisk[]): WorkspaceCorpus {
   return { root: "/workspace", documents };
 }
 
-function detect(
+async function detect(
   corpus: WorkspaceCorpus,
   actor: "user" | "agent" = "user",
-): DetectedMigration | undefined {
-  return detectMigrations({ root: "/workspace", dataDir: "data", actor, corpus }).find(
+): Promise<DetectedMigration | undefined> {
+  return (await detectMigrations({ root: "/workspace", dataDir: "data", actor, corpus })).find(
     (migration) => migration.id === "views-to-board",
   );
 }
@@ -48,8 +48,8 @@ const seedViews = [
 ];
 
 describe("views-to-board", () => {
-  it("fires on pinned views with no board, and builds one that opens", () => {
-    const migration = detect(corpusOf(...seedViews));
+  it("fires on pinned views with no board, and builds one that opens", async () => {
+    const migration = await detect(corpusOf(...seedViews));
 
     expect(migration?.statement).toContain("3 view documents");
     expect(migration?.statement).toContain("no board document in this workspace");
@@ -63,9 +63,9 @@ describe("views-to-board", () => {
     expect(migration?.optional).toEqual([]);
   });
 
-  it("does not fire when every pinned view is already a board's column", () => {
+  it("does not fire when every pinned view is already a board's column", async () => {
     expect(
-      detect(
+      await detect(
         corpusOf(
           ...seedViews,
           document({
@@ -78,18 +78,22 @@ describe("views-to-board", () => {
     ).toBeUndefined();
   });
 
-  it("does not fire on views that carry neither key", () => {
+  it("does not fire on views that carry neither key", async () => {
     expect(
-      detect(corpusOf(document({ id: "doc_a", type: "view", title: "A", query: { folder: "x" } }))),
+      await detect(
+        corpusOf(document({ id: "doc_a", type: "view", title: "A", query: { folder: "x" } })),
+      ),
     ).toBeUndefined();
   });
 
-  it("does not fire on a corpus with no view documents at all", () => {
-    expect(detect(corpusOf(document({ id: "doc_n", type: "note", title: "N" })))).toBeUndefined();
+  it("does not fire on a corpus with no view documents at all", async () => {
+    expect(
+      await detect(corpusOf(document({ id: "doc_n", type: "note", title: "N" }))),
+    ).toBeUndefined();
   });
 
-  it("fires on `order` alone, and on `pinned: true` alone", () => {
-    const migration = detect(
+  it("fires on `order` alone, and on `pinned: true` alone", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_ordered", type: "view", title: "Ordered", order: 4 }),
         document({ id: "doc_pinned", type: "view", title: "Pinned", pinned: true }),
@@ -99,8 +103,8 @@ describe("views-to-board", () => {
     expect(migration?.commands[0]).toContain("--columns doc_ordered,doc_pinned");
   });
 
-  it("treats `pinned: false` with no order as tidy-up, never as stranded", () => {
-    const migration = detect(
+  it("treats `pinned: false` with no order as tidy-up, never as stranded", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true, order: 1 }),
         document({ id: "doc_off", type: "view", title: "Off", pinned: false }),
@@ -112,8 +116,8 @@ describe("views-to-board", () => {
     expect(migration?.optional).toEqual(["corpus doc edit doc_off --unset pinned --unset order"]);
   });
 
-  it("offers a listed view's leftover keys as tidy-up too", () => {
-    const migration = detect(
+  it("offers a listed view's leftover keys as tidy-up too", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_stranded", type: "view", title: "Stranded", pinned: true }),
         document({ id: "doc_listed", type: "view", title: "Listed", pinned: true, order: 9 }),
@@ -130,8 +134,8 @@ describe("views-to-board", () => {
     ]);
   });
 
-  it("orders the columns by order, nulls last, then title, then id", () => {
-    const migration = detect(
+  it("orders the columns by order, nulls last, then title, then id", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_z", type: "view", title: "Zulu", pinned: true }),
         document({ id: "doc_a", type: "view", title: "Alpha", pinned: true }),
@@ -148,11 +152,11 @@ describe("views-to-board", () => {
     );
   });
 
-  it("counts an archived board as listing its views", () => {
+  it("counts an archived board as listing its views", async () => {
     // The board can be restored; telling the operator to build a second one over
     // the same views would be the wrong answer.
     expect(
-      detect(
+      await detect(
         corpusOf(
           document({ id: "doc_a", type: "view", title: "A", pinned: true }),
           document({
@@ -167,8 +171,8 @@ describe("views-to-board", () => {
     ).toBeUndefined();
   });
 
-  it("extends the default-open board when several exist", () => {
-    const migration = detect(
+  it("extends the default-open board when several exist", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true }),
         document({ id: "doc_first", type: "board", title: "First", order: 1, columns: ["doc_x"] }),
@@ -186,8 +190,8 @@ describe("views-to-board", () => {
     expect(migration?.commands[0]).toBe("corpus doc edit doc_open --columns doc_y,doc_a");
   });
 
-  it("prefers a live board over an archived one", () => {
-    const migration = detect(
+  it("prefers a live board over an archived one", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true }),
         document({
@@ -205,10 +209,10 @@ describe("views-to-board", () => {
     expect(migration?.commands[0]).toBe("corpus doc edit doc_live --columns doc_a");
   });
 
-  it("creates a board rather than writing columns onto a kanban", () => {
+  it("creates a board rather than writing columns onto a kanban", async () => {
     // A kanban's columns are derived one per stage and are not view documents
     // (rider 6): `--columns` on one writes a key it does not render.
-    const migration = detect(
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true }),
         document({
@@ -223,8 +227,8 @@ describe("views-to-board", () => {
     expect(migration?.commands[0]).toContain("corpus doc create --type board");
   });
 
-  it("never repeats a column already on the board", () => {
-    const migration = detect(
+  it("never repeats a column already on the board", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true, order: 1 }),
         document({ id: "doc_board", type: "board", title: "B", columns: ["doc_a", "doc_b"] }),
@@ -235,20 +239,20 @@ describe("views-to-board", () => {
     expect(migration).toBeUndefined();
   });
 
-  it("skips a view with no id, because no command can name it", () => {
+  it("skips a view with no id, because no command can name it", async () => {
     expect(
-      detect(corpusOf(document({ type: "view", title: "Nameless", pinned: true }))),
+      await detect(corpusOf(document({ type: "view", title: "Nameless", pinned: true }))),
     ).toBeUndefined();
   });
 
-  it("ignores `order: null`, which is the key carrying nothing", () => {
+  it("ignores `order: null`, which is the key carrying nothing", async () => {
     expect(
-      detect(corpusOf(document({ id: "doc_a", type: "view", title: "A", order: null }))),
+      await detect(corpusOf(document({ id: "doc_a", type: "view", title: "A", order: null }))),
     ).toBeUndefined();
   });
 
-  it("writes --from agent into every command when the agent ran the upgrade", () => {
-    const migration = detect(
+  it("writes --from agent into every command when the agent ran the upgrade", async () => {
+    const migration = await detect(
       corpusOf(
         document({ id: "doc_a", type: "view", title: "A", pinned: true }),
         document({ id: "doc_off", type: "view", title: "Off", pinned: false }),
@@ -266,11 +270,11 @@ describe("views-to-board", () => {
     ]);
   });
 
-  it("ignores a board's own `order`, which is live", () => {
+  it("ignores a board's own `order`, which is live", async () => {
     // `--order` survived rider 7 with a new meaning: a board's position among
     // boards. A board carrying one is not a document to migrate.
     expect(
-      detect(corpusOf(document({ id: "doc_board", type: "board", title: "B", order: 3 }))),
+      await detect(corpusOf(document({ id: "doc_board", type: "board", title: "B", order: 3 }))),
     ).toBeUndefined();
   });
 });

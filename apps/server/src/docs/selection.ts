@@ -115,5 +115,10 @@ export function resolveWholeResultSet(
   workspace: DocsWorkspace,
   entry: BulkWholeResultSetEntry,
 ): string[] {
-  return queryDocIds(workspace.projection, compileSelectionQuery(entry.query), workspace.now());
+  return queryDocIds(
+    workspace.projection,
+    compileSelectionQuery(entry.query),
+    workspace.now(),
+    workspace.staleness,
+  );
 }
