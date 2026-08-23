@@ -13,7 +13,24 @@
 // "the server stores and returns these keys and never interprets them". This
 // module only decides what is *representable* on the wire.
 
-import { RESERVED_FRONTMATTER_KEYS, ViewQuerySchema, type ViewQuery } from "@corpus/contract";
+import { z } from "@hono/zod-openapi";
+import {
+  DocumentIdSchema,
+  KanbanSchema,
+  RESERVED_FRONTMATTER_KEYS,
+  ViewQuerySchema,
+  type Kanban,
+  type ViewQuery,
+} from "@corpus/contract";
+
+/**
+ * A board's `columns` as the contract declares it — the list of view ids, in
+ * order. Built here rather than exported by the contract because the contract
+ * spells it inline on three request/response shapes and the *reader* needs the
+ * bare array schema; the element type is the contract's own, which is the part
+ * that must not drift.
+ */
+const ColumnsSchema = z.array(DocumentIdSchema);
 
 /**
  * Core frontmatter keys, as the contract enumerates them. Imported rather than
@@ -113,9 +130,72 @@ export function readExtraFrontmatter(
   return extra;
 }
 
-/** `pinned` is a two-state key: the file says `true` or it does not (SPEC.md §10). */
-export const readPinned = (data: Readonly<Record<string, unknown>>): boolean =>
-  data["pinned"] === true;
+/**
+ * **The frontmatter key is `default-open`; `defaultOpen` is its wire spelling**
+ * (CONTRACT-074). A two-state key: the file says `true` or it does not, so
+ * absent and `false` are one state and nothing has to tell them apart.
+ *
+ * The wire spelling is *reserved* beside the file one (`extra.ts`) but is never
+ * read here: a document whose YAML says `defaultOpen: true` carries a key the
+ * core does not define under a name it refuses to route into `extra`, which is
+ * exactly the "you spelled it the wire way" state, and reading it would make the
+ * two spellings interchangeable on disk.
+ */
+export const readDefaultOpen = (data: Readonly<Record<string, unknown>>): boolean =>
+  data["default-open"] === true;
+
+/**
+ * `stage` as a string, or `null` when the file carries no usable one (SPEC.md
+ * §5).
+ *
+ * **A comma is not refused here.** The write boundary refuses one
+ * (`StageValueSchema`, and `docs/create.ts` / `docs/update.ts` name the filter in
+ * the message), because a stage carrying the `stage=` separator could never be
+ * filtered for. A *read* reports what the file holds: a hand-edited stage with a
+ * comma in it is a document a person must be able to see and repair, and hiding
+ * it would leave them editing a value no reader ever showed them.
+ */
+export function readStage(data: Readonly<Record<string, unknown>>): string | null {
+  const value = data["stage"];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/**
+ * A board's `columns` — the ids of the `type: view` documents it renders, in
+ * display order (SPEC.md §10, rider 2) — or `null` when the file carries no
+ * usable list.
+ *
+ * Parsed with the contract's own id schema for the reason {@link readViewQuery}
+ * documents: a hand-edited `columns: [1, 2]` reads as "no columns" rather than
+ * as a value the response schema cannot describe. An entry that is not a
+ * document id makes the **whole** key unusable rather than being dropped
+ * quietly — a board silently missing one column is a board a person cannot tell
+ * from a board that never had it.
+ */
+export function readColumns(data: Readonly<Record<string, unknown>>): string[] | null {
+  const value = data["columns"];
+  if (value === undefined || value === null) return null;
+  const parsed = ColumnsSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * A board's `kanban` block (SPEC.md §10, rider 6), or `null` when the file
+ * carries no well-formed one.
+ *
+ * The contract's own strict schema decides, so the block a reader is shown is
+ * the block the write boundary would have accepted — and a hand-edited graph
+ * naming a stage the board does not declare reads as "no kanban" rather than as
+ * a board whose columns cannot be drawn. That tolerance is the read path's, not
+ * the write path's: `POST /api/docs` and `PUT /api/docs/{id}` refuse the same
+ * bytes with a `400` naming the field.
+ */
+export function readKanban(data: Readonly<Record<string, unknown>>): Kanban | null {
+  const value = data["kanban"];
+  if (value === undefined || value === null) return null;
+  const parsed = KanbanSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * `order` as a number, or `null` when the file carries no usable one. Any finite
@@ -142,24 +222,41 @@ export function readViewQuery(data: Readonly<Record<string, unknown>>): ViewQuer
 }
 
 /**
- * The wire fields CONTRACT-011 added, read off one frontmatter mapping.
+ * The view and board wire fields, read off one frontmatter mapping — the exact
+ * set `viewAndBoardFrontmatterShape` publishes on both the list row and the
+ * single read (CONTRACT-011, widened to the board keys by CONTRACT-074).
  *
- * Four, not five (SHARED-066): a `column` reference named a plugin renderer,
- * and with no plugin surface it names nothing. There is no reader for it here
- * any more, and that is what routes an old view's `column:` into `extra` — the
- * key is no longer reserved, so {@link readExtraFrontmatter} keeps it verbatim
- * and the server never looks at it again.
+ * Five, not four: `order` and `query` are a view's or a board's, and `columns`,
+ * `kanban` and `defaultOpen` are a board's own. Two keys that used to be here
+ * are gone rather than deprecated — `column` named a plugin renderer
+ * (SHARED-066) and `pinned` put a view on the board (rider 2, 2026-08-22) — and
+ * neither has a reader any more. That absence is what routes an old file's
+ * `column:` or `pinned:` into `extra`: the keys are no longer reserved, so
+ * {@link readExtraFrontmatter} keeps them verbatim and the server never looks at
+ * them again, until `corpus upgrade` names the migration that drops them
+ * (SPEC.md §2.4, CLI-061).
+ *
+ * **`stage` is deliberately not in here.** It is a §5 field carried by every
+ * document, not a view or board key, and the contract declares it at the top
+ * level of both response shapes — so it is read beside this object rather than
+ * inside it ({@link readStage}).
  */
-export type ViewFrontmatter = {
-  readonly pinned: boolean;
+export type BoardFrontmatter = {
   readonly order: number | null;
   readonly query: ViewQuery | null;
+  readonly columns: string[] | null;
+  readonly kanban: Kanban | null;
+  readonly defaultOpen: boolean;
   readonly extra: Record<string, unknown>;
 };
 
-export const readViewFrontmatter = (data: Readonly<Record<string, unknown>>): ViewFrontmatter => ({
-  pinned: readPinned(data),
+export const readBoardFrontmatter = (
+  data: Readonly<Record<string, unknown>>,
+): BoardFrontmatter => ({
   order: readOrder(data),
   query: readViewQuery(data),
+  columns: readColumns(data),
+  kanban: readKanban(data),
+  defaultOpen: readDefaultOpen(data),
   extra: readExtraFrontmatter(data),
 });

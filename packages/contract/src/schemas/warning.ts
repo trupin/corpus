@@ -60,6 +60,8 @@ export const WARNING_CODES = [
   "unresolved_ref",
   "carried_skill",
   "carried_reconciliation",
+  "stage_status",
+  "default_open_cleared",
 ] as const;
 
 export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
@@ -83,7 +85,23 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "reconciled, naming its id and the key. It arises on unarchive only: the archived root reads " +
     "status from the root itself and never consults the key, so a move in that direction leaves " +
     "the key exactly as its author wrote it. " +
-    "Both are silent when there is nothing to say — an act that carried no other skill document " +
+    "`stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and " +
+    "the board's `kanban.status` map therefore decided its `status` in the same commit " +
+    "(SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the " +
+    "status it wrote and the board that decided — and, when the document is in more than one " +
+    'kanban over `stage`, the boards that did not decide, since "the one with the lowest ' +
+    '`order`" is a rule a caller cannot check from the response alone. It is about the document ' +
+    "the request named, unlike the carried pair above, and it is here because the caller asked " +
+    "for one field and got two: a `status` a caller neither sent nor was told about is exactly " +
+    "the effect §11 says must not be learned from `git log`. Silent when the write moved no " +
+    "stage, when no kanban claims the document, and when the stage is one the deciding board " +
+    "does not draw — that last one writes no status either. " +
+    "`default_open_cleared`: this write set `default-open: true` on a board, and **at most one " +
+    "board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost " +
+    "it in the same commit. One warning per board cleared, naming its id and title. Silent when " +
+    "no other board carried it. " +
+    "The last two are silent when there is nothing to say, and so are the carried pair — an act " +
+    "that carried no other skill document " +
     "emits neither, and a carried document whose frontmatter needed no correction emits " +
     "`carried_skill` alone. Neither ever describes a document whose **own archive or unarchive " +
     "landed in this act**: that document is the response's own subject on the single-document " +

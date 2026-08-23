@@ -1,6 +1,6 @@
-// The write path's CONTRACT-011 surface: §7's view keys, and every frontmatter
-// key the core does not define, through `POST /api/docs` and
-// `PUT /api/docs/{id}`.
+// The write path's board surface: §5's `stage`, §10's view and board keys, and
+// every frontmatter key the core does not define, through `POST /api/docs` and
+// `PUT /api/docs/{id}` (CONTRACT-011, CONTRACT-074).
 //
 // The extra-frontmatter cases deliberately carry `type: todo` — a type this
 // build has never heard of. §5 leaves `type` an open string and §12's M6 makes
@@ -50,20 +50,23 @@ async function list(query: string): Promise<DocList> {
 const rowOf = (docs: DocList, id: string): DocRow | undefined =>
   docs.items.find((item) => item.id === id);
 
-describe("POST /api/docs with view keys", () => {
+describe("POST /api/docs with view and board keys", () => {
   it("writes them as top-level YAML keys and reads them back on both routes", async () => {
     ws = createWriteWorkspace("view-create", { sprint: "s026" });
     const created = await createDoc(ws, {
       type: "view",
       title: "Finance",
       folder: "views",
-      pinned: true,
+      stage: "triage",
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      // The `column` key a pre-SHARED-066 board carried. It is no longer a core
-      // field, so it travels as extra frontmatter and lands as a plain YAML key
-      // beside the others — which is what makes an old view round-trip.
-      extra: { column: "board/kanban" },
+      columns: ["doc_seedinbox"],
+      defaultOpen: true,
+      // The `column` key a pre-SHARED-066 board carried, and the `pinned` key a
+      // pre-rider-2 view did. Neither is a core field any more, so both travel
+      // as extra frontmatter and land as plain YAML keys beside the others —
+      // which is what makes an old view round-trip.
+      extra: { column: "board/kanban", pinned: true },
     });
 
     const text = ws.read(created.path);
@@ -82,30 +85,64 @@ describe("POST /api/docs with view keys", () => {
       // §9.2's provenance, in canonical key order right after the §5 block
       // (SERVER-110). `null` on a document no job created, which is most of them.
       "origin: null",
-      "pinned: true",
+      "stage: triage",
       "order: 20",
       "query:",
       "  folder: finance",
       "  type:",
       "    - note",
       "    - thread",
+      "columns:",
+      "  - doc_seedinbox",
+      "default-open: true",
       "column: board/kanban",
+      "pinned: true",
     ]);
 
     const frontmatter = (created.body["frontmatter"] ?? {}) as Record<string, unknown>;
-    expect(frontmatter["pinned"]).toBe(true);
+    expect(frontmatter["stage"]).toBe("triage");
     expect(frontmatter["order"]).toBe(20);
     expect(frontmatter["query"]).toEqual({ folder: "finance", type: ["note", "thread"] });
+    expect(frontmatter["columns"]).toEqual(["doc_seedinbox"]);
+    // The wire spells it `defaultOpen`; the file spells it `default-open`, and
+    // neither spelling ever reaches `extra` (both are reserved).
+    expect(frontmatter["defaultOpen"]).toBe(true);
+    expect(frontmatter["default-open"]).toBeUndefined();
     expect(frontmatter["column"]).toBeUndefined();
-    expect(frontmatter["extra"]).toEqual({ column: "board/kanban" });
+    expect(frontmatter["extra"]).toEqual({ column: "board/kanban", pinned: true });
 
-    const row = rowOf(await list("pinned=true&type=view&sort=order"), created.id);
+    const row = rowOf(await list("type=view&sort=order"), created.id);
     expect(row).toMatchObject({
-      pinned: true,
+      stage: "triage",
       order: 20,
       query: { folder: "finance", type: ["note", "thread"] },
-      extra: { column: "board/kanban" },
+      columns: ["doc_seedinbox"],
+      defaultOpen: true,
+      extra: { column: "board/kanban", pinned: true },
     });
+  });
+
+  /**
+   * A stage carrying a comma could never be filtered for: `stage=` is a
+   * comma-separated OR list, so the value would be unreachable and a kanban
+   * column drawn from it would silently show the wrong documents
+   * (CONTRACT-074's `StageValueSchema`). The refusal names the filter, because
+   * "no commas" is a rule nobody would guess the reason for.
+   */
+  it("refuses a stage carrying a comma, naming the filter that makes it unusable", async () => {
+    ws = createWriteWorkspace("stage-comma", { sprint: "s026" });
+    const response = await ws.request("/api/docs", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${"tkn_0123456789abcdef0123456789abcdef"}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ type: "note", title: "Comma", stage: "in review, blocked" }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { issues?: { path: string; message: string }[] };
+    const issue = body.issues?.find((entry) => entry.path.includes("stage"));
+    expect(issue?.message).toContain("GET /api/docs?stage=");
   });
 
   it("writes no key for a value the request omits or nulls", async () => {
@@ -113,18 +150,28 @@ describe("POST /api/docs with view keys", () => {
     const created = await createDoc(ws, {
       type: "note",
       title: "Plain",
-      // `false` and absent are one state for `pinned`; `null` is "no key" for
-      // the other three (CONTRACT-011).
-      pinned: false,
+      // `false` and absent are one state for `defaultOpen`; `null` is "no key"
+      // for the rest (CONTRACT-011, CONTRACT-074).
+      defaultOpen: false,
+      stage: null,
       order: null,
       query: null,
+      columns: null,
+      kanban: null,
     });
     const text = ws.read(created.path);
-    for (const key of ["pinned", "order", "query"]) {
+    for (const key of ["default-open", "stage", "order", "query", "columns", "kanban"]) {
       expect(text).not.toContain(`${key}:`);
     }
     const row = rowOf(await list("type=note"), created.id);
-    expect(row).toMatchObject({ pinned: false, order: null, query: null });
+    expect(row).toMatchObject({
+      defaultOpen: false,
+      stage: null,
+      order: null,
+      query: null,
+      columns: null,
+      kanban: null,
+    });
   });
 
   it("keeps the shipped seed views round-tripping through the create route", async () => {
@@ -133,15 +180,16 @@ describe("POST /api/docs with view keys", () => {
       ws.write(`data/docs/views/${name}`, readFileSync(join(SEED_VIEWS_DIR, name), "utf8"));
     }
     ws.reproject();
-    const board = await list("pinned=true&type=view&sort=order");
+    const board = await list("type=view&sort=order");
     expect(board.items.map((item) => [item.title, item.order, item.query])).toEqual([
       ["Attention", 1, { needs: "me" }],
       ["Inbox", 2, { folder: "inbox" }],
       ["Open threads", 3, { type: "thread", status: "open" }],
     ]);
-    expect(board.items.every((item) => item.pinned && Object.keys(item.extra).length === 0)).toBe(
-      true,
-    );
+    // The seeds still carry the `pinned: true` a pre-rider-2 workspace wrote;
+    // it is `extra` now, verbatim, until AGENT-042 reseeds and CLI-061's
+    // migration drops it (SPEC.md §2.4).
+    expect(board.items.every((item) => item.extra["pinned"] === true)).toBe(true);
   });
 });
 
@@ -398,7 +446,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       type: "view",
       title: "Threads",
       folder: "views",
-      pinned: true,
+      stage: "triage",
       query: { type: "thread", status: "open" },
       extra: { lane: "doing" },
     });
@@ -408,7 +456,7 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     ws.advance(60_000);
     // Same values, and the query's keys in the other order — one value, not two.
     const response = await putDoc(ws, created.id, {
-      pinned: true,
+      stage: "triage",
       query: { status: "open", type: "thread" },
       extra: { lane: "doing", gone: null },
     });
@@ -423,42 +471,55 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
       type: "view",
       title: "Finance",
       folder: "views",
-      pinned: true,
+      stage: "triage",
       order: 30,
       extra: { column: "board/kanban" },
     });
     ws.advance(60_000);
-    // `order` is a core view key and clears with `null`; a stale `column` is an
-    // extra key, so it clears through the merge patch that owns it.
+    // `order` and `stage` are core keys and clear with `null`; a stale `column`
+    // is an extra key, so it clears through the merge patch that owns it.
     expect(
-      (await putDoc(ws, created.id, { order: null, due: null, extra: { column: null } })).status,
+      (
+        await putDoc(ws, created.id, {
+          order: null,
+          stage: null,
+          due: null,
+          extra: { column: null },
+        })
+      ).status,
     ).toBe(200);
 
     const text = ws.read(created.path);
     expect(text).not.toContain("order:");
+    expect(text).not.toContain("stage:");
     expect(text).not.toContain("column:");
     // §5's canonical block keeps its `due: null`; only the §10 keys are cleared.
     expect(text).toContain("due: null");
-    expect(text).toContain("pinned: true");
 
-    const row = rowOf(await list("pinned=true"), created.id);
-    expect(row).toMatchObject({ pinned: true, order: null, extra: {} });
+    const row = rowOf(await list("type=view"), created.id);
+    expect(row).toMatchObject({ stage: null, order: null, extra: {} });
   });
 
-  it("writes `pinned: false` as itself, since the key has no null state", async () => {
+  /**
+   * `defaultOpen` is the one core key whose wire spelling and file spelling
+   * differ, and `false` removes the key rather than writing the negative: the
+   * two states are one, so the file says `default-open` exactly on the board
+   * that is the default.
+   */
+  it("writes `default-open` for `defaultOpen: true` and removes it for `false`", async () => {
     ws = createWriteWorkspace("view-unpin", { sprint: "s026" });
     const created = await createDoc(ws, {
-      type: "view",
+      type: "board",
       title: "Finance",
       folder: "views",
-      pinned: true,
+      defaultOpen: true,
       order: 30,
     });
+    expect(ws.read(created.path)).toContain("default-open: true");
     ws.advance(60_000);
-    expect((await putDoc(ws, created.id, { pinned: false })).status).toBe(200);
-    expect(ws.read(created.path)).toContain("pinned: false");
-    expect(rowOf(await list("pinned=false"), created.id)?.pinned).toBe(false);
-    expect(rowOf(await list("pinned=true"), created.id)).toBeUndefined();
+    expect((await putDoc(ws, created.id, { defaultOpen: false })).status).toBe(200);
+    expect(ws.read(created.path)).not.toContain("default-open");
+    expect(rowOf(await list("type=board"), created.id)?.defaultOpen).toBe(false);
   });
 
   it("refuses to shadow a core key through `extra`, leaving the file untouched", async () => {
@@ -468,5 +529,45 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     const response = await putDoc(ws, created.id, { extra: { status: "archived" } });
     expect(response.status).toBe(400);
     expect(ws.read(created.path)).toBe(before);
+  });
+});
+
+/**
+ * SPEC.md §9.1's `last_actor` — §4's attribution, as a row column, and what §7's
+ * reflection reads to decide what is unreflected.
+ *
+ * Three writers, three sources: the mutation's own acting party, the watcher's
+ * `user` for a change from outside the server, and — after a rebuild, when every
+ * row is re-derived from files — the git author §4 wrote the commit as. The last
+ * one is the claim worth a real repository: the projection is derived, so the
+ * fact has to survive being thrown away.
+ */
+describe("documents.last_actor", () => {
+  it("follows the acting party of each write, and survives a rebuild through git", async () => {
+    ws = createWriteWorkspace("last-actor", { identity: true });
+    const byAgent = await createDoc(ws, { type: "note", title: "Filed" }, "agent");
+    const byUser = await createDoc(ws, { type: "note", title: "Written" }, "user");
+
+    const actors = async (): Promise<Record<string, string>> =>
+      Object.fromEntries((await list("type=note")).items.map((item) => [item.id, item.lastActor]));
+
+    expect(await actors()).toMatchObject({ [byAgent.id]: "agent", [byUser.id]: "user" });
+
+    // A person edits the document the agent filed: the column follows the write.
+    ws.advance(60_000);
+    expect((await putDoc(ws, byAgent.id, { tags: ["mine"] })).status).toBe(200);
+    expect((await actors())[byAgent.id]).toBe("user");
+
+    // And the agent edits the one the person wrote.
+    ws.advance(60_000);
+    expect(
+      (await putDoc(ws, byUser.id, { tags: ["theirs"] }, { "x-corpus-author": "agent" })).status,
+    ).toBe(200);
+    expect((await actors())[byUser.id]).toBe("agent");
+
+    // Throw the whole projection away. Every row comes back from the files, and
+    // `last_actor` comes back from the commit author §4 recorded.
+    ws.reproject();
+    expect(await actors()).toMatchObject({ [byAgent.id]: "user", [byUser.id]: "agent" });
   });
 });

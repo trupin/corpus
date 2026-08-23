@@ -44,6 +44,8 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "title",
     "path",
     "status",
+    "stage",
+    "last_actor",
     "tags_json",
     "created",
     "updated",
@@ -52,9 +54,9 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "evergreen",
     "origin",
     "body_excerpt",
-    "pinned",
     "sort_order",
     "query_json",
+    "board_json",
     "extra_json",
   ],
   threads: [
@@ -569,6 +571,82 @@ describe("openProjection", () => {
       expect(columnsOf(migrated.sqlite, "documents")).not.toContain("column_ref");
       // Repopulated from the files, so the drop cost the workspace nothing.
       expect(migrated.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_kept" }]);
+    } finally {
+      migrated.close();
+    }
+  });
+
+  /**
+   * SERVER-138, and it is the lesson v19 \u2192 v20 already records read in the
+   * other direction: **the nullability of a new column is not a reason to skip
+   * the bump.** `stage` and `board_json` are nullable, so a v20 database would
+   * have gone on accepting a shorter INSERT while nothing read them back;
+   * `last_actor` is `NOT NULL`, so a v20 database would have failed every insert
+   * instead. Supersede-and-repopulate is the only path either has.
+   *
+   * Built the way the case above is: a current database with the v21 columns
+   * taken back out and the stamp rewound, because what a v20 database has that a
+   * v21 does not is exactly `pinned`, the absence of these three, and the stamp.
+   */
+  it("adds `stage`, `last_actor` and `board_json` when a v20 database is opened (20 \u2192 21)", () => {
+    const config = makeConfig();
+    writeFileSync(
+      join(config.workspaceRoot, "data", "docs", "doc_staged.md"),
+      [
+        "---",
+        "id: doc_staged",
+        "type: note",
+        "title: T",
+        "created: 2026-01-01T00:00:00Z",
+        "updated: 2026-01-01T00:00:00Z",
+        "stage: triage",
+        "---",
+        "",
+        "Body.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const v20 = openProjection(config);
+    // SQLite cannot drop a column a `UNIQUE` index rides on without a rebuild,
+    // so the v20 shape is reconstructed as its own table.
+    v20.sqlite.exec("ALTER TABLE documents RENAME TO documents_v21");
+    v20.sqlite.exec(`CREATE TABLE documents (
+      id TEXT PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL, tags_json TEXT NOT NULL, created TEXT, updated TEXT, due TEXT,
+      reviewed TEXT, evergreen INTEGER NOT NULL, origin TEXT, body_excerpt TEXT NOT NULL,
+      pinned INTEGER NOT NULL, sort_order REAL, query_json TEXT, extra_json TEXT NOT NULL)`);
+    v20.sqlite.exec(`INSERT INTO documents
+      (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
+       origin, body_excerpt, pinned, sort_order, query_json, extra_json)
+      SELECT id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
+             origin, body_excerpt, 0, sort_order, query_json, extra_json FROM documents_v21`);
+    v20.sqlite.exec("DROP TABLE documents_v21");
+    expect(columnsOf(v20.sqlite, "documents")).toContain("pinned");
+    expect(columnsOf(v20.sqlite, "documents")).not.toContain("stage");
+    v20.prepare("UPDATE meta SET value = ? WHERE key = ?").run("20", META_SCHEMA_VERSION);
+    v20.close();
+
+    const migrated = openProjection(config);
+    try {
+      expect(
+        (
+          migrated.prepare("SELECT value FROM meta WHERE key = ?").get(META_SCHEMA_VERSION) as {
+            value: string;
+          }
+        ).value,
+      ).toBe(String(SCHEMA_VERSION));
+      const columns = columnsOf(migrated.sqlite, "documents");
+      expect(columns).not.toContain("pinned");
+      expect(columns).toContain("stage");
+      expect(columns).toContain("last_actor");
+      expect(columns).toContain("board_json");
+      // Repopulated from the files, with the new columns filled — not merely
+      // present and empty, which is what a bump nobody made would have left.
+      expect(migrated.prepare("SELECT id, stage, last_actor FROM documents").all()).toEqual([
+        { id: "doc_staged", stage: "triage", last_actor: "user" },
+      ]);
     } finally {
       migrated.close();
     }

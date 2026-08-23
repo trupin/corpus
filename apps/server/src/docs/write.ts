@@ -387,6 +387,13 @@ export type MutationPlan = {
      * does **not** close a window" list.
      */
     readonly act?: ActCommit | undefined;
+    /**
+     * Paths this plan moved away from that the filesystem can no longer tell
+     * apart from where they went — see `CommitRequest.forget`. Set by the folder
+     * rename when the destination differs from the source only in case, and by
+     * nothing else.
+     */
+    readonly forget?: readonly string[] | undefined;
   } | null;
   readonly keys: readonly QueryKey[];
   /**
@@ -1374,6 +1381,7 @@ export async function finishMutation(
           subject: plan.commit.subject,
           paths: plan.stage,
           ...(plan.commit.anchors === undefined ? {} : { anchors: plan.commit.anchors }),
+          ...(plan.commit.forget === undefined ? {} : { forget: plan.commit.forget }),
           ...(squash === undefined ? {} : { squash }),
           // Tells the committer this commit's subject *names* an act, so the
           // close below leaves it alone rather than relabelling it an editing
@@ -1432,7 +1440,9 @@ export async function finishMutation(
   }
   for (const path of plan.project) {
     if (classifyPath(path) === null) continue;
-    projectDocument(workspace.projection, abs(workspace, path));
+    // SPEC.md §9.1's `last_actor`: the acting party this mutation carried, which
+    // is the same party §4 authors the commit as.
+    projectDocument(workspace.projection, abs(workspace, path), request.actor);
   }
 
   const measured: QueryKey[] = [...plan.keys];

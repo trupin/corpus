@@ -41,4 +41,4 @@ export * from "./time.js";
 export * from "./title.js";
 export * from "./turn-model.js";
 export * from "./turns.js";
-export * from "./view-frontmatter.js";
+export * from "./board-frontmatter.js";

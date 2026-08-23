@@ -10,6 +10,7 @@
 import { REPOPULATED_TABLES } from "./schema.js";
 import { enumerateDocuments } from "./roots.js";
 import { projectDocument, type ProjectionOutcome } from "./project-document.js";
+import { readLastActors } from "./last-actor.js";
 import { projectRuntime } from "./project-runtime.js";
 import type { ProjectionDb } from "./db.js";
 
@@ -86,13 +87,18 @@ export function populateFromFiles(db: ProjectionDb): PopulateReport {
   let links = 0;
 
   const files = enumerateDocuments(db.config.workspaceRoot);
+  // SPEC.md §9.1's `last_actor`, read from the one place a rebuild can still
+  // find it: §4 authored every auto-commit as the acting party. One `git log`
+  // for the whole workspace, taken before the transaction opens so a slow
+  // history is not held across the writes (`./last-actor.ts`).
+  const lastActors = readLastActors(db.config.workspaceRoot);
 
   db.transaction(() => {
     clearProjection(db);
     for (const file of files) {
       let outcome: ProjectionOutcome;
       try {
-        outcome = projectDocument(db, file.absPath);
+        outcome = projectDocument(db, file.absPath, lastActors.actorFor(file.path));
       } catch (error) {
         // The path comes from the enumeration rather than from the projection,
         // because the file that could not be read is exactly the file whose

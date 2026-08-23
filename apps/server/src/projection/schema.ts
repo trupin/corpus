@@ -170,8 +170,26 @@
  * projection carries a dead `column_ref` forever. The repopulation costs one
  * pass over the files and carries the embeddings across, and the frontmatter
  * key itself survives on disk as extra frontmatter.
+ *
+ * 20 → 21 (SERVER-138): `documents.pinned` is **dropped**, and `stage`,
+ * `last_actor` and `board_json` **arrive** — §9.1's column list as rider 7
+ * rewrote it on 2026-08-22. A board is a `type: board` document listing its own
+ * columns, so nothing puts a view on a board any more and `pinned` names
+ * nothing; `stage` is §5's workflow position and a `GET /api/docs` filter;
+ * `board_json` is `columns`/`kanban`/`defaultOpen`; `last_actor` is §4's acting
+ * party, which §7's reflection reads off the row.
+ *
+ * **The bump is what makes any of it reach an existing workspace**, and the
+ * nullability of the new columns is not a reason to skip it — the lesson v19→v20
+ * already records, in the other direction. Two of the three new columns are
+ * nullable, so a v20 database would have gone on accepting a shorter INSERT
+ * while nothing read them back; `last_actor` is `NOT NULL`, so a v20 database
+ * would have failed every insert instead. Either way supersede-and-repopulate is
+ * the only path a DDL change has, so the version is what carries it. The
+ * repopulation reads `last_actor` from git (`./last-actor.ts`), which is where
+ * §4 recorded the same fact all along.
  */
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -237,18 +255,21 @@ export const REPOPULATED_TABLES = [
  * Columns are positional for `snippet()`: 0 `ref`, 1 `kind`, 2 `doc_id`,
  * 3 `title`, 4 `body`.
  *
- * **`documents` carries four columns past §9.1's list** — `pinned`,
- * `sort_order`, `query_json`, `extra_json` (CONTRACT-011, SERVER-026). §9.1
- * enumerated the columns the queries of the day needed; §10 then made a board
- * column *be* a pinned view document, and `pinned` is a `GET /api/docs` filter
- * while `order` is one of its sort keys. A filter and a sort cannot be answered
+ * **`documents` is §9.1's column list exactly, as rider 7 rewrote it on
+ * 2026-08-22** — `id, type, title, path, status, stage, last_actor, tags_json,
+ * created, updated, due, reviewed, evergreen, body_excerpt, sort_order,
+ * query_json, board_json, extra_json`, plus `origin` (§9.2's provenance,
+ * SHARED-043). The reasoning §9.1 states, and the reasoning that put the older
+ * ones here, is one reasoning: a **filter** and a **sort** cannot be answered
  * from the files at request time without one read per row — the N+1 the
- * collection query exists to avoid — so they are columns. `query_json` and
- * `extra_json` ride along because the board reads its whole column set, queries
- * and all, from that one bounded response. Every one of them is still
- * *derived*: `db rebuild` reconstructs all four from frontmatter, and nothing
- * durable lives here. `sort_order` is spelled apart from the frontmatter key
- * because `order` is SQL.
+ * collection query exists to avoid — so `stage` is a column, and so is
+ * `sort_order`. `query_json`, `board_json` and `extra_json` ride along because
+ * the board reads its whole column set, queries and all, from that one bounded
+ * response. `last_actor` is §4's attribution, which §7's reflection reads off
+ * the row. Every one of them is still *derived*: `db rebuild` reconstructs all
+ * of them from the workspace, `last_actor` from the commit author §4 wrote it
+ * as. `sort_order` is spelled apart from the frontmatter key because `order` is
+ * SQL.
  *
  * **`turns.has_form` is §6's form grammar, evaluated once at projection time**
  * (SERVER-029). `needs=form` has to ask "does this turn carry a form somebody
@@ -329,6 +350,18 @@ CREATE TABLE documents (
   title TEXT NOT NULL,
   path TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL,
+  -- SPEC.md §5's workflow position (rider 5, 2026-08-22). A column because it is
+  -- a GET /api/docs filter and a kanban draws a column per value: answering
+  -- stage= from the files would be one read per row, the N+1 the collection
+  -- query exists to avoid. NULL is the document's own answer, not a missing
+  -- value -- it is what puts a document in a kanban's first column.
+  stage TEXT,
+  -- SPEC.md §4's attribution, as a row column (§9.1). The acting party of this
+  -- document's last write, and never NULL: 'user' is the honest answer for a
+  -- document the server has never written and for an out-of-band edit, because
+  -- a change nobody attributed to the agent is a person's. §7's reflection reads
+  -- it to decide what is unreflected.
+  last_actor TEXT NOT NULL,
   tags_json TEXT NOT NULL,
   created TEXT,
   updated TEXT,
@@ -341,9 +374,16 @@ CREATE TABLE documents (
   -- walk that had to open files would put a read per hop on the enqueue path.
   origin TEXT,
   body_excerpt TEXT NOT NULL,
-  pinned INTEGER NOT NULL,
   sort_order REAL,
   query_json TEXT,
+  -- The three board keys as one JSON object -- columns, kanban, defaultOpen --
+  -- or NULL for the documents (nearly all of them) that carry none of them. One
+  -- column rather than three because they are read together or not at all: the
+  -- board reads its whole column set from one bounded query, and a kanban block
+  -- is a nested object no column shape describes. The one field SQL reaches into
+  -- is $.defaultOpen, through json_extract, which is how the arbitration finds
+  -- the boards it has to clear.
+  board_json TEXT,
   extra_json TEXT NOT NULL
 );
 
@@ -521,7 +561,7 @@ CREATE INDEX documents_status ON documents (status);
 CREATE INDEX documents_updated ON documents (updated);
 CREATE INDEX documents_created ON documents (created);
 CREATE INDEX documents_due ON documents (due);
-CREATE INDEX documents_pinned ON documents (pinned);
+CREATE INDEX documents_stage ON documents (stage);
 CREATE INDEX threads_parent_id ON threads (parent_id);
 CREATE INDEX threads_last_ts ON threads (last_ts);
 CREATE INDEX turns_thread_idx ON turns (thread_id, idx);

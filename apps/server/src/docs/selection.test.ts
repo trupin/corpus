@@ -42,9 +42,9 @@ describe("compiling a stored query into the collection query", () => {
   });
 
   it("carries booleans and numbers through in their wire spelling", () => {
-    expect(compileSelectionQuery({ includeArchived: true, pinned: false })).toMatchObject({
+    expect(compileSelectionQuery({ includeArchived: true, isParent: false })).toMatchObject({
       includeArchived: true,
-      pinned: false,
+      isParent: false,
     });
     expect(compileSelectionQuery({ limit: 5 })).toMatchObject({ limit: 5 });
   });

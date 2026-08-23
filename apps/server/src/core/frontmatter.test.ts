@@ -51,7 +51,16 @@ describe("FileFrontmatterSchema", () => {
    */
   it("produces core values the contract's wire schema accepts unmodified", () => {
     const defaulted = FileFrontmatterSchema.parse(CORE);
-    const wire = { ...defaulted, pinned: false, order: null, query: null, extra: {} };
+    const wire = {
+      ...defaulted,
+      stage: null,
+      order: null,
+      query: null,
+      columns: null,
+      kanban: null,
+      defaultOpen: false,
+      extra: {},
+    };
     expect(DocFrontmatterSchema.safeParse(wire).success).toBe(true);
     // Nothing the file schema produced needed changing to get there.
     const parsed = DocFrontmatterSchema.parse(wire) as Record<string, unknown>;

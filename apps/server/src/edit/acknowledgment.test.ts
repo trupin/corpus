@@ -593,7 +593,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     ["a status", { status: "resolved" }],
     ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
     ["a view query", { query: { type: "thread", status: "open" } }],
-    ["a board position", { order: 3, pinned: true }],
+    ["a board position", { order: 3, columns: ["doc_seedinbox"] }],
     ["a due date", { due: "2026-09-01" }],
     ["nothing at all — a save that names no change (§9.2)", {}],
   ];
@@ -767,9 +767,9 @@ describe("only a content edit opens a session (SERVER-095)", () => {
   });
 
   it("keeps one session across the frontmatter writes a reader makes while editing", async () => {
-    // Dragging a column, pinning, retagging mid-sitting: none of them opens a
-    // second session, and none of them ends the one that is open. The person
-    // wrote once, so the agent is woken once.
+    // Dragging a column, reordering the board, retagging mid-sitting: none of
+    // them opens a second session, and none of them ends the one that is open.
+    // The person wrote once, so the agent is woken once.
     const ws = workspace("ack-interleaved-fm", { editAckIdleMs: IDLE_MS });
     const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "one\n" });
     pastTheSquashWindow(ws);
@@ -777,7 +777,7 @@ describe("only a content edit opens a session (SERVER-095)", () => {
     await edit(ws, doc.id, "one\ntwo\n");
     expect((await putDoc(ws, doc.id, { extra: { width: 444 } })).status).toBe(200);
     expect((await putDoc(ws, doc.id, { extra: { width: 725 } })).status).toBe(200);
-    expect((await putDoc(ws, doc.id, { pinned: true })).status).toBe(200);
+    expect((await putDoc(ws, doc.id, { order: 4 })).status).toBe(200);
 
     ws.advance(IDLE_MS * 2);
     await vi.waitFor(() => {

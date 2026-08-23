@@ -27,7 +27,8 @@ import {
   documentTitle,
   DocumentParseError,
   parseDocument,
-  readViewFrontmatter,
+  readBoardFrontmatter,
+  readStage,
   type ParsedDocument,
 } from "../core/index.js";
 import { normalizeInstant } from "../core/time.js";
@@ -227,11 +228,15 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     // because `origin` was a legal `extra` key before it was reserved and a
     // corpus that predates the field must stay readable.
     origin: originOrNull(data["origin"]),
-    // §7's view keys, plus every frontmatter key the core does not define, read
-    // by the same functions the projection uses for the list row (CONTRACT-011). Shared rather than
-    // restated for the reason the nullable timestamps above document: one file
-    // read through two routes must not answer two different things.
-    ...readViewFrontmatter(data),
+    // SPEC.md §5's workflow position, read beside the view and board keys rather
+    // than inside them: it is a field every document may carry, not a board key.
+    stage: readStage(data),
+    // §10's view and board keys, plus every frontmatter key the core does not
+    // define, read by the same functions the projection uses for the list row
+    // (CONTRACT-011, CONTRACT-074). Shared rather than restated for the reason
+    // the nullable timestamps above document: one file read through two routes
+    // must not answer two different things.
+    ...readBoardFrontmatter(data),
   };
 }
 

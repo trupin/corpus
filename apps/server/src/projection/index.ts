@@ -47,6 +47,13 @@ export {
   collectUnindexableFiles,
 } from "./unindexable.js";
 export type { DoctorWarningKind } from "./unindexable.js";
+export {
+  DEFAULT_LAST_ACTOR,
+  LAST_ACTOR_MAX_BUFFER,
+  parseLastActorLog,
+  readLastActors,
+} from "./last-actor.js";
+export type { LastActorIndex } from "./last-actor.js";
 export { clearProjection, populateFromFiles } from "./populate.js";
 export type { PopulateReport, SkippedFile } from "./populate.js";
 export {
@@ -57,6 +64,7 @@ export {
   readDocumentIdentity,
   removeDocument,
   syntheticDocumentId,
+  withSpeculativeDocumentRow,
 } from "./project-document.js";
 export type { DocumentCounts, DocumentIdentity, ProjectionOutcome } from "./project-document.js";
 export {
