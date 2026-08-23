@@ -30,7 +30,7 @@ export interface BoardCommands {
   readonly openRowAtCursor: (fullScreen: boolean) => void;
   /** `←`/`→`, `[`/`]`: switches the active column, clamped at both ends. */
   readonly switchColumn: (delta: -1 | 1) => void;
-  /** `⇧←`/`⇧→`: moves the active column by writing the view documents' `order`. */
+  /** `⇧←`/`⇧→`: moves the active column by rewriting the board document's `columns`. */
   readonly moveActiveColumn: (delta: -1 | 1) => void;
   /** `f`: toggles focus mode on the open document; a no-op when nothing is open. */
   readonly toggleFocusMode: () => void;

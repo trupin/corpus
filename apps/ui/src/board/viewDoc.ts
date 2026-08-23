@@ -2,14 +2,16 @@ import type { DocRow } from "@corpus/contract";
 import { readStoredWidth } from "./columnWidth";
 
 /**
- * The view-document contract, read (SPEC.md §10 — "a column IS a `type: view`
- * document with `pinned: true`").
+ * The view-document contract, read (SPEC.md §10, rider 2 — "a view document is a
+ * saved query and nothing more").
  *
- * Everything a column *is* — its title, its query, its board position, its
- * width — lives in that document's frontmatter and reaches the client as
- * first-class fields on the collection row (CONTRACT-011). This module turns
- * one such row into the shape the board renders, and nothing here invents a
- * column: a board with no pinned view documents has no columns, by construction.
+ * Everything a column *is* — its title, its query, its width — lives in that
+ * document's frontmatter and reaches the client as first-class fields on the
+ * collection row (CONTRACT-011). What it is **not** is where the column sits:
+ * `pinned` and a view's `order` were removed rather than deprecated (rider 2,
+ * signed 2026-08-22), and a column's place is now its index in the board
+ * document's `columns`. This module turns one view row into the shape the board
+ * renders, and nothing here invents a column.
  *
  * **What is validated here and what is not.** The wire type says `query` is a
  * flat map of scalars and arrays of scalars, but the file on disk is
@@ -32,10 +34,16 @@ export interface ColumnChip {
 }
 
 export interface BoardColumn {
-  /** The view document's id. The column has no identity of its own. */
+  /**
+   * This column's place on the board — the view document's id, or `<id>#<n>`
+   * where the board lists the same view more than once. It is the `data-col`,
+   * the React key and the key its browser-local state is filed under, so two
+   * copies of one view are two columns rather than one column drawn twice.
+   */
   readonly id: string;
+  /** The view document this column renders. Two slots may share one. */
+  readonly viewId: string;
   readonly title: string;
-  readonly order: number | null;
   readonly kind: ColumnKind;
   /**
    * The stored query compiled to wire form — every value a string, arrays
@@ -60,10 +68,20 @@ export interface BoardColumn {
   /**
    * Why this column cannot be rendered from its own document, or `null`. Set
    * only for defects the *client* can see (a `query` that is not a map, a value
-   * a query string cannot carry); a query the server refuses surfaces through
-   * the column's own failed request instead.
+   * a query string cannot carry, an id that resolves to no view document at
+   * all); a query the server refuses surfaces through the column's own failed
+   * request instead.
    */
   readonly error: string | null;
+  /**
+   * The board lists this id and no `type: view` document answers to it.
+   *
+   * Distinct from a *broken* view document, because the acts differ: a broken
+   * one is fixed by editing the file the card names, and a missing one is fixed
+   * by taking it off the board. So the card offers what applies and nothing
+   * else — there is no document behind it to rename, re-query or open.
+   */
+  readonly missing: boolean;
 }
 
 /** Rendered as the `.sort` label; pagination is not a filter the user set. */
@@ -199,22 +217,22 @@ function folderOfFilter(filter: Readonly<Record<string, string>>): string | null
 }
 
 /**
- * One pinned view document, as a column.
+ * One view document, as a column of the board that lists it.
  *
  * Never throws and never drops the column: a defect becomes `error`, which the
  * board renders in place. A column that vanishes because its own frontmatter is
  * wrong is the failure mode this shape exists to prevent.
  */
-export function toBoardColumn(row: DocRow): BoardColumn {
+export function toBoardColumn(slotId: string, row: DocRow): BoardColumn {
   const { stored, error: queryError } = readStoredQuery(row.query);
   const compiled = compileQuery(stored);
   const folder = folderOfFilter(compiled.filter);
   const sort = compiled.filter["sort"] ?? DEFAULT_SORT;
 
   return {
-    id: row.id,
+    id: slotId,
+    viewId: row.id,
     title: row.title,
-    order: row.order,
     kind: folder !== null ? "folder" : "view",
     filter: compiled.filter,
     storedQuery: stored,
@@ -223,25 +241,34 @@ export function toBoardColumn(row: DocRow): BoardColumn {
     folder,
     width: readStoredWidth(row.extra),
     error: queryError ?? compiled.error,
+    missing: false,
   };
 }
 
 /**
- * The documented tiebreak (CONTRACT-011): `order` ascending with **nulls last**
- * — a view with no `order` key is placed, never dropped — then `title`, then
- * `id`, so the same column set renders in the same sequence on every load.
+ * A column the board lists and the corpus cannot answer for.
  *
- * The server sorts by exactly this rule under `sort=order`. Re-applying it here
- * is belt and braces, and is what makes the ordering testable without a server.
+ * The id is kept as the title on purpose: it is the only thing known about this
+ * column, and it is exactly what a person needs in order to find the line in the
+ * board document — or to hand it to `corpus doc show`.
  */
-export function compareColumns(left: BoardColumn, right: BoardColumn): number {
-  if (left.order !== right.order) {
-    if (left.order === null) return 1;
-    if (right.order === null) return -1;
-    return left.order - right.order;
-  }
-  if (left.title !== right.title) return left.title < right.title ? -1 : 1;
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+export function missingColumn(slotId: string, viewId: string): BoardColumn {
+  return {
+    id: slotId,
+    viewId,
+    title: viewId,
+    kind: "view",
+    filter: {},
+    storedQuery: {},
+    chips: [],
+    sortLabel: "",
+    folder: null,
+    width: null,
+    error:
+      "this board lists it as a column, and no `type: view` document with that id could be read " +
+      "— it may have been archived or deleted",
+    missing: true,
+  };
 }
 
 /**

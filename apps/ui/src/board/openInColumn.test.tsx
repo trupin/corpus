@@ -18,10 +18,11 @@ import { toBoardColumn, type BoardColumn } from "./viewDoc";
 
 afterEach(cleanup);
 
-/** A column built the way the board builds one: from a pinned view document. */
+/** A column built the way the board builds one: a view document a board lists. */
 function column(id: string, query: Record<string, string>, title = id): BoardColumn {
   return toBoardColumn(
-    docRowFixture({ id, title, type: "view", pinned: true, query, path: "data/docs/views/v.md" }),
+    id,
+    docRowFixture({ id, title, type: "view", query, path: "data/docs/views/v.md" }),
   );
 }
 

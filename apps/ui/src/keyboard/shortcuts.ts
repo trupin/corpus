@@ -60,6 +60,12 @@ export interface ShortcutContext {
   readonly openCompose: () => void;
   readonly openSearch: () => void;
   readonly toggleCheatSheet: () => void;
+  /**
+   * `⌘1`…`⌘9`: shows the nth board **in bar order**, 0-based. A workspace with
+   * fewer boards than the digit pressed does nothing — the bar is the authority
+   * on how many there are.
+   */
+  readonly showNthBoard: (index: number) => void;
   /** The board's imperative surface, published through `BoardCommandsProvider`. */
   readonly board: BoardCommands;
 }
@@ -269,6 +275,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     description: "move column",
     run: (context, event) => {
       context.board.moveActiveColumn(chordDirection(event));
+    },
+  },
+  {
+    id: "boards.switch",
+    /**
+     * One entry, nine keys — the cheat sheet shows `⌘1…⌘9` as the prototype's
+     * legend does, and the digit pressed is read off the event exactly as the
+     * directional pairs read their direction.
+     */
+    chords: [{ keys: ["1", "2", "3", "4", "5", "6", "7", "8", "9"], mod: true, label: "⌘1…⌘9" }],
+    scope: "board",
+    group: "columns",
+    description: "show the nth board",
+    run: (context, event) => {
+      context.showNthBoard(Number(event.key) - 1);
     },
   },
   {

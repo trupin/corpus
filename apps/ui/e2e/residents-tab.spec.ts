@@ -20,7 +20,6 @@ const THREADS_VIEW: StubRow = {
   title: "Threads",
   path: "data/docs/views/threads.md",
   query: { type: ["thread"] },
-  pinned: true,
   order: 1,
 };
 

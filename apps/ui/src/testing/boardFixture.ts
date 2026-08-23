@@ -27,8 +27,17 @@ export interface BoardTransport {
 }
 
 export interface BoardTransportOptions {
-  /** Rows returned for the pinned-view query (`pinned=true`). */
+  /** Rows returned for the view query (`type=view`) — the board's columns. */
   readonly views?: readonly DocRow[];
+  /**
+   * Rows returned for the board query (`type=board&sort=order`).
+   *
+   * Omitted, one board is synthesised listing every row in {@link views}, in the
+   * order given — which is what almost every board test wants and what the seed
+   * ships. Give it explicitly to test the bar itself, an empty board, or a board
+   * naming a view that is not there.
+   */
+  readonly boards?: readonly DocRow[];
   /** Rows returned for any other `/api/docs` query, keyed by the search string. */
   readonly rows?: Readonly<Record<string, readonly DocRow[]>>;
   /** Rows returned for a query with no entry in `rows`. */
@@ -38,11 +47,13 @@ export interface BoardTransportOptions {
   readonly failing?: Readonly<Record<string, number>>;
 }
 
-/** A pinned `type: view` document, as the collection returns one. */
+/** The board a fixture synthesises when the test names none. */
+export const DEFAULT_BOARD_ID = "doc_board_default";
+
+/** A `type: view` document, as the collection returns one (no `pinned`, no `order`). */
 export function viewRow(overrides: Partial<DocRow> = {}): DocRow {
   return docRowFixture({
     type: "view",
-    pinned: true,
     evergreen: true,
     origin: null,
     path: "data/docs/views/a.md",
@@ -50,8 +61,26 @@ export function viewRow(overrides: Partial<DocRow> = {}): DocRow {
   });
 }
 
+/** A `type: board` document, as the collection returns one (CONTRACT-074). */
+export function boardRow(overrides: Partial<DocRow> = {}): DocRow {
+  return docRowFixture({
+    id: DEFAULT_BOARD_ID,
+    type: "board",
+    title: "Board",
+    path: `data/docs/boards/${DEFAULT_BOARD_ID}.md`,
+    order: 1,
+    columns: [],
+    ...overrides,
+  });
+}
+
 function collection(items: readonly DocRow[]): unknown {
   return { items, page: { total: items.length, limit: 50, offset: 0 } };
+}
+
+/** One board listing every seeded view, in the order the test gave them. */
+function synthesisedBoard(options: BoardTransportOptions): DocRow {
+  return boardRow({ columns: (options.views ?? []).map((view) => view.id) });
 }
 
 export function boardTransport(options: BoardTransportOptions = {}): BoardTransport {
@@ -78,8 +107,17 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
     }
 
     if (url.pathname === "/api/docs" && request.method === "GET") {
-      const isViews = url.searchParams.get("pinned") === "true";
-      if (isViews) return json(collection(options.views ?? []));
+      const type = url.searchParams.get("type");
+      /*
+       * The two structural queries the board issues (UI-148): the bar's boards,
+       * and every view document the showing board resolves its `columns`
+       * against. Matched ahead of `rows` so a test that seeds a column's
+       * contents cannot accidentally answer the board's own query.
+       */
+      if (type === "board") return json(collection(options.boards ?? [synthesisedBoard(options)]));
+      if (type === "view" && url.searchParams.get("sort") === null) {
+        return json(collection(options.views ?? []));
+      }
       const keyed = options.rows?.[url.search];
       return json(collection(keyed ?? options.defaultRows ?? []));
     }

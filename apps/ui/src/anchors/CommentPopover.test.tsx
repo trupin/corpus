@@ -459,8 +459,32 @@ describe("moving the comment composer", () => {
     drag([100, 100], [[400, 400]]);
     expect(at()).not.toEqual({ top: "120px", left: "80px" });
 
-    reopen({ top: 640, left: 300, quote: "another passage entirely" });
-    expect(at()).toEqual({ top: "640px", left: "300px" });
+    reopen({ top: 300, left: 300, quote: "another passage entirely" });
+    expect(at()).toEqual({ top: "300px", left: "300px" });
+  });
+
+  /**
+   * **The box the host placed may not fit where it was placed** (UI-148).
+   *
+   * The clamp used to apply to a move and never to the opening, so a selection
+   * near the foot of the window opened a popover whose Send button sat below it
+   * — reachable by `⌘↵` and by nothing a pointer could press.
+   */
+  it("opens inside the window when the selection leaves no room below it", () => {
+    const { reopen } = open();
+    sized(320, 200);
+    reopen({ top: window.innerHeight - 40, left: 300, quote: "a passage at the foot" });
+    expect(at()).toEqual({
+      top: `${String(window.innerHeight - 200 - POPOVER_EDGE_MARGIN)}px`,
+      left: "300px",
+    });
+  });
+
+  it("leaves a box that fits exactly where the host put it", () => {
+    const { reopen } = open();
+    sized(320, 200);
+    reopen({ top: 100, left: 120, quote: "a passage with room under it" });
+    expect(at()).toEqual({ top: "100px", left: "120px" });
   });
 });
 

@@ -16,8 +16,6 @@ function view(extra: Readonly<Record<string, unknown>> = {}) {
     type: "view",
     title: "Inbox",
     path: "data/docs/views/inbox.md",
-    pinned: true,
-    order: 1,
     query: { folder: "inbox" },
     extra,
   };
@@ -81,10 +79,11 @@ test.describe("column width", () => {
         mine: "keep me",
         width: 352,
       });
+    // The width write touched `extra` and nothing else: the view's own query and
+    // title are as seeded (a view has no `pinned` and no `order` since rider 2).
     const stored = await corpus.doc("doc_view_inbox");
     expect(stored?.query).toEqual({ folder: "inbox" });
-    expect(stored?.pinned).toBe(true);
-    expect(stored?.order).toBe(1);
+    expect(stored?.title).toBe("Inbox");
   });
 
   test("the chosen width survives a reload, from the document and not from storage", async ({

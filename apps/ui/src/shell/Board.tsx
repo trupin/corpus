@@ -9,9 +9,10 @@ import {
   type RowNotice,
 } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useBoardSurface } from "../board/BoardsProvider";
 import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";
-import { nextOrder, reinsert } from "../board/columnOrder";
+import { reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
@@ -33,9 +34,8 @@ import {
   useRegisterBoardNavigation,
   type BoardNavigation,
 } from "../board/openInColumn";
-import { openDocId, useBoardLocalState } from "../board/useBoardLocalState";
+import { openDocId } from "../board/useBoardLocalState";
 import { useColumns } from "../board/useColumns";
-import { useColumnOrder } from "../board/useColumnOrder";
 import { useCreateInColumn } from "../board/useCreateInColumn";
 import type { BoardColumn } from "../board/viewDoc";
 import { FocusMode } from "../reader/FocusMode";
@@ -45,25 +45,28 @@ import "./Board.css";
 import "../board/Column.css";
 
 /**
- * The board (SPEC.md §10): a horizontally scrolling strip of columns with snap
- * scrolling, and a trailing ghost column that never lets it be a blank screen.
+ * The showing board (SPEC.md §10): a horizontally scrolling strip of columns
+ * with snap scrolling, and a trailing ghost column that never lets it be a blank
+ * screen.
  *
- * **Columns are documents.** Nothing here decides what the board holds — the
- * corpus does, through pinned `type: view` documents. Reordering, renaming,
- * re-querying, pinning and unpinning are all writes to those documents, which
- * is what makes the layout auto-committed, stewardable by the agent, and the
- * same in a second browser. The only state this component keeps for itself is
- * the state that is genuinely about *this* browser: where each list is scrolled
- * and which document each column has open.
+ * **Boards and columns are documents.** Nothing here decides what the board
+ * holds — the corpus does, through a `type: board` document listing the ids of
+ * `type: view` documents (rider 2). Reordering, adding and removing a column
+ * write the *board* document; renaming and re-querying write the *view*. That is
+ * what makes the layout auto-committed, stewardable by the agent, and the same
+ * in a second browser. The only state this component keeps for itself is the
+ * state that is genuinely about *this* browser: where each list is scrolled and
+ * which document each column has open.
  *
- * The scroller stays in `shell/` because `.board` is one of the shell's three
- * regions (top bar · board · console); everything a column *is* lives in
+ * The scroller stays in `shell/` because `.board` is one of the shell's regions
+ * (top bar · board bar · board · console); everything a column *is* lives in
  * `../board/`.
  */
 export function Board(): ReactElement {
-  const { columns, isPending, error } = useColumns();
-  const local = useBoardLocalState();
-  const columnOrder = useColumnOrder();
+  const surface = useBoardSurface();
+  const board = surface.current;
+  const { columns, isPending, error } = useColumns(board?.columnIds ?? null);
+  const local = surface.local;
   const createDoc = useCreateDoc();
   const createInColumn = useCreateInColumn();
   const updateDoc = useUpdateDocById();
@@ -93,7 +96,7 @@ export function Board(): ReactElement {
     reveal?: RevealTarget | undefined;
   } | null>(null);
 
-  const board = useRef<HTMLElement>(null);
+  const boardEl = useRef<HTMLElement>(null);
   /** Set by the board's own `drop`; a drag that ends anywhere else persists nothing. */
   const dropped = useRef(false);
   /** The column set as it stood when the drag began — what the move is computed against. */
@@ -158,7 +161,7 @@ export function Board(): ReactElement {
 
   useEffect(() => {
     if (scrollTo === null) return;
-    const element = board.current?.querySelector<HTMLElement>(`.col[data-col="${scrollTo}"]`);
+    const element = boardEl.current?.querySelector<HTMLElement>(`.col[data-col="${scrollTo}"]`);
     if (element === null || element === undefined) return;
     // jsdom implements no layout and therefore no `scrollIntoView`.
     if (typeof element.scrollIntoView === "function") {
@@ -231,21 +234,16 @@ export function Board(): ReactElement {
       if (moving.current) return;
       moving.current = true;
       const title = source[fromIndex]?.title ?? "";
+      const boardTitle = board?.title ?? "";
       try {
-        const written = await columnOrder.move(
-          source.map((column) => ({ id: column.id, order: column.order })),
-          fromIndex,
-          toIndex,
-        );
-        if (written === 0) {
+        const wrote = await surface.moveColumn(fromIndex, toIndex);
+        if (!wrote) {
           setPreview(null);
           return;
         }
         toast({
           tone: "info",
-          message: `List moved — “${title}” reordered; ${String(written)} view document${
-            written === 1 ? "" : "s"
-          } updated and committed.`,
+          message: `List moved — “${title}” reordered on “${boardTitle}”; the board document was updated and committed.`,
         });
       } catch (cause) {
         setPreview(null);
@@ -254,13 +252,13 @@ export function Board(): ReactElement {
         moving.current = false;
       }
     },
-    [columnOrder, toast],
+    [board, surface, toast],
   );
 
   const active = useActiveColumn(ordered);
   const activeColumnId = active.id;
   const activeColumn = ordered[active.index] ?? null;
-  const cursor = useRowCursor({ board, activeColumnId });
+  const cursor = useRowCursor({ board: boardEl, activeColumnId });
 
   /**
    * The document the active column has open, if any — `e` and `f` act on it in
@@ -443,7 +441,7 @@ export function Board(): ReactElement {
       archiveTarget,
       openContextMenu: openRowMenu,
       focusReply: () => {
-        if (focusReplyComposer(replyRoot(board.current, activeColumnId)) === "none") {
+        if (focusReplyComposer(replyRoot(boardEl.current, activeColumnId)) === "none") {
           toast({ tone: "info", message: "No thread to reply to on this document." });
         }
       },
@@ -523,7 +521,7 @@ export function Board(): ReactElement {
       verb: string,
     ) => {
       try {
-        await updateDoc.mutateAsync({ id: column.id, changes });
+        await updateDoc.mutateAsync({ id: column.viewId, changes });
         toast({ tone: "info", message });
       } catch (cause) {
         toast({ tone: "error", message: `${verb} failed — ${(cause as Error).message}` });
@@ -532,36 +530,51 @@ export function Board(): ReactElement {
     [toast, updateDoc],
   );
 
+  /**
+   * The ghost column's two writes (SPEC.md §10, rider 2): the view document, and
+   * then its id on this board's `columns`.
+   *
+   * They are two commits rather than one — the wire has no multi-document write
+   * — and the order matters: the board may only list an id that exists, so a
+   * failure between them leaves a view document nothing lists rather than a
+   * board naming a document that is not there.
+   */
   const chooseNewList = useCallback(
     async (choice: NewListChoice) => {
       setPicker(null);
+      if (board === null) {
+        toast({ tone: "error", message: "No board is showing — a column has nowhere to go." });
+        return;
+      }
       try {
-        const response = await createDoc.mutateAsync(columnRequest(choice, nextOrder(columns)));
-        setScrollTo(response.doc.frontmatter.id);
+        const response = await createDoc.mutateAsync(columnRequest(choice));
+        const docId = response.doc.frontmatter.id;
+        await surface.addColumn(docId);
+        setScrollTo(docId);
         toast({
           tone: "info",
-          message: `Pinned — a view document was created for “${choice.title}” (pinned: true, order: last).`,
+          message: `Added to “${board.title}” — a view document was created for “${choice.title}” and listed on the board.`,
         });
       } catch (cause) {
-        toast({ tone: "error", message: `Pin failed — ${(cause as Error).message}` });
+        toast({ tone: "error", message: `New list failed — ${(cause as Error).message}` });
       }
     },
-    [columns, createDoc, toast],
+    [board, createDoc, surface, toast],
   );
 
   return (
     <main
-      ref={board}
+      ref={boardEl}
       className="board"
       aria-label="Document lists"
       onDragOver={(event) => {
-        if (dragId === null || board.current === null) return;
+        if (dragId === null || boardEl.current === null) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         const next = previewOrder(
           ordered.map((column) => column.id),
           dragId,
-          measureColumns(board.current),
+          measureColumns(boardEl.current),
           event.clientX,
         );
         setPreview((current) =>
@@ -579,6 +592,32 @@ export function Board(): ReactElement {
           <p className="col-card-body">{error.message}</p>
         </div>
       )}
+
+      {/*
+       * The empty states (`design/navigation.html`'s `.board-empty`), and there
+       * are two of them because the answers differ.
+       *
+       * A board with no columns is a document with an empty `columns` list: the
+       * fix is to add one, from the ghost column beside it or by asking the
+       * agent. A workspace with **no board at all** has nothing to add a column
+       * to, so the ghost is absent and the sentence names the migration — the
+       * same one the bar's disabled tab names.
+       */}
+      {board === null && !surface.isPending && surface.error === null ? (
+        <div className="board-empty">
+          <b>No board is showing</b>
+          This workspace holds no <code>type: board</code> document. Run <code>corpus upgrade</code>
+          , which reports the migration that creates them as commands to run.
+        </div>
+      ) : null}
+
+      {board !== null && !isPending && columns.length === 0 ? (
+        <div className="board-empty">
+          <b>{board.title} is empty</b>
+          Add columns to <code>boards/{board.id}.md</code> — with the ＋ beside this, or by asking
+          the agent to.
+        </div>
+      ) : null}
 
       {ordered.map((column) => (
         <Column
@@ -631,13 +670,16 @@ export function Board(): ReactElement {
               "Edit query",
             );
           }}
-          onUnpin={() => {
-            void editColumn(
-              column,
-              { status: "archived" },
-              `Unpinned — “${column.title}” was archived, not deleted; it is still in the corpus.`,
-              "Unpin",
-            );
+          onRemove={() => {
+            // The **board** document, by index: the view is left exactly where
+            // it was, and a board listing the same view twice loses the copy the
+            // user is looking at rather than both (SPEC.md §10, rider 2).
+            //
+            // The index is read from the *fetched* set rather than from the
+            // rendered one, because the rendered one may be a drag preview and
+            // the write goes to the array the server is holding.
+            const at = columns.findIndex((entry) => entry.id === column.id);
+            if (at >= 0) void surface.removeColumn(at, column.title);
           }}
           onDragStart={() => {
             dragSource.current = ordered;
@@ -650,16 +692,20 @@ export function Board(): ReactElement {
         />
       ))}
 
-      <NewListGhost
-        onOpen={(clientX, clientY) => {
-          setPicker(
-            clampMenuPosition(clientX, clientY, {
-              width: globalThis.innerWidth,
-              height: globalThis.innerHeight,
-            }),
-          );
-        }}
-      />
+      {/* No board is no place to put a column, so the ghost is absent rather
+          than offering a creation that has nowhere to land. */}
+      {board === null ? null : (
+        <NewListGhost
+          onOpen={(clientX, clientY) => {
+            setPicker(
+              clampMenuPosition(clientX, clientY, {
+                width: globalThis.innerWidth,
+                height: globalThis.innerHeight,
+              }),
+            );
+          }}
+        />
+      )}
 
       {focusDoc === null ? null : (
         <FocusMode

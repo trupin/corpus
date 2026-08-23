@@ -198,10 +198,21 @@ export interface StubRow {
    * anything about it at all.
    */
   readonly due?: string | null;
-  readonly pinned?: boolean;
+  /**
+   * A board's position among boards (SPEC.md §10, rider 2 — CONTRACT-074
+   * removed `pinned` and a view's `order` in the same act).
+   */
   readonly order?: number | null;
-  /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
+  /** A view document's query, or a kanban board's scope. */
   readonly query?: ViewQuery | null;
+  /** A `type: board` document's columns: the ids of the views it lists. */
+  readonly columns?: readonly string[] | null;
+  /** A kanban board's block, exactly as the wire carries it. */
+  readonly kanban?: DocRow["kanban"];
+  /** The one board that receives every open naming no board. */
+  readonly defaultOpen?: boolean;
+  /** SPEC.md §5's workflow position. */
+  readonly stage?: string | null;
   readonly parent?: string | null;
   readonly extra?: Readonly<Record<string, unknown>>;
   /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
@@ -283,9 +294,12 @@ interface StoredDoc {
   status: DocStatus;
   /** See {@link StubRow.due}. */
   due: string | null;
-  pinned: boolean;
   order: number | null;
   query: ViewQuery | null;
+  columns: string[] | null;
+  kanban: DocRow["kanban"];
+  defaultOpen: boolean;
+  stage: string | null;
   parent: string | null;
   extra: Record<string, unknown>;
   stale: StaleTier | null;
@@ -647,9 +661,12 @@ function seeded(row: StubRow): StoredDoc {
     turnModels: { ...(row.turnModels ?? {}) },
     status: row.status ?? "open",
     due: row.due ?? null,
-    pinned: row.pinned ?? false,
     order: row.order ?? null,
     query: row.query ?? null,
+    columns: row.columns === undefined || row.columns === null ? null : [...row.columns],
+    kanban: row.kanban ?? null,
+    defaultOpen: row.defaultOpen ?? false,
+    stage: row.stage ?? null,
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
@@ -838,12 +855,46 @@ function stampUpdated(doc: StoredDoc): void {
  * Installs the stub. Call before `page.goto` — the board queries on first
  * render, and a route added afterwards would miss the first request.
  */
+/**
+ * The board every seed gets, unless the seed writes its own (UI-148).
+ *
+ * A column is a view document **a board lists** (SPEC.md §10, rider 2), so a
+ * workspace with view documents and no board document has no columns at all —
+ * which is a real state, and the one a workspace that never ran the migration is
+ * in, but not the state forty specs seeding a view meant to describe. So a seed
+ * naming no `type: board` document gets one listing every `type: view` row it
+ * seeded, in seed order: the shape those specs were written against, now spelled
+ * as two documents instead of a flag.
+ *
+ * A seed that names its own board — the boards suite, an empty board, a board
+ * naming a view that is not there — gets exactly what it named, and nothing is
+ * synthesised.
+ */
+export const STUB_BOARD_ID = "doc_board_stub";
+
+function seedWithBoard(rows: readonly StubRow[]): readonly StubRow[] {
+  if (rows.some((row) => row.type === "board")) return rows;
+  const views = rows.filter((row) => row.type === "view").map((row) => row.id);
+  return [
+    ...rows,
+    {
+      id: STUB_BOARD_ID,
+      type: "board",
+      title: "Board",
+      path: `data/docs/boards/${STUB_BOARD_ID}.md`,
+      order: 1,
+      columns: views,
+      defaultOpen: true,
+    },
+  ];
+}
+
 export async function stubCorpus(
   page: Page,
   rows: readonly StubRow[],
   options: StubOptions = {},
 ): Promise<StubCorpus> {
-  const store = new Map<string, StoredDoc>(rows.map((row) => [row.id, seeded(row)]));
+  const store = new Map<string, StoredDoc>(seedWithBoard(rows).map((row) => [row.id, seeded(row)]));
   // A mutable copy: `claimJob` moves an event's status, and the seed the spec
   // handed in is not the stub's to rewrite.
   const jobs: StubJob[] = [...(options.jobs ?? [])];
@@ -1048,9 +1099,19 @@ export async function stubCorpus(
       attention: attentionOf(doc),
       snippets: [],
       parentTitle: doc.parent === null ? null : (store.get(doc.parent)?.title ?? null),
-      pinned: doc.pinned,
+      /*
+       * Who wrote last (CONTRACT-074). Flatly `user` here: this stub has one
+       * writer, the page, and §7's reflection reads the field to decide what the
+       * agent has already looked at — a value no browser spec is in a position
+       * to move. UI-153 will need a seed for it.
+       */
+      lastActor: "user",
+      stage: doc.stage,
       order: doc.order,
       query: doc.query,
+      columns: doc.columns,
+      kanban: doc.kanban,
+      defaultOpen: doc.defaultOpen,
       extra: doc.extra,
     };
   };
@@ -1137,16 +1198,25 @@ export async function stubCorpus(
       reviewed: null,
       evergreen: false,
       origin: null,
-      pinned: doc.pinned,
+      stage: doc.stage,
       order: doc.order,
       query: doc.query,
+      columns: doc.columns,
+      kanban: doc.kanban,
+      defaultOpen: doc.defaultOpen,
       extra: doc.extra,
     },
   });
 
   const matches = (doc: StoredDoc, params: URLSearchParams): boolean => {
-    const pinned = params.get("pinned");
-    if (pinned !== null && String(doc.pinned) !== pinned) return false;
+    /*
+     * `pinned=` left `GET /api/docs` with rider 2 (CONTRACT-074), so there is no
+     * branch for it: a spec that still sent one would be sending a parameter the
+     * server does not publish, and it should get every document rather than a
+     * filtered set this stub invented.
+     */
+    const stage = params.get("stage");
+    if (stage !== null && !stage.split(",").includes(doc.stage ?? "")) return false;
     const type = params.get("type");
     if (type !== null && !type.split(",").includes(doc.type)) return false;
     const parent = params.get("parent");
@@ -2415,6 +2485,58 @@ export async function stubCorpus(
         if (changes["extra"] !== undefined && changes["extra"] !== null) {
           // RFC 7386 shallow merge, exactly as the server applies it.
           doc.extra = { ...doc.extra, ...(changes["extra"] as Record<string, unknown>) };
+        }
+        /*
+         * The view and board keys (CONTRACT-074, UI-148).
+         *
+         * They used to be dropped on the floor: the response echoed the stored
+         * document, so a spec could watch a `PUT` go out and never see the board
+         * change — a column reorder, a board reorder and a column removal all
+         * looked correct on the wire and left the bar exactly as it was. Each is
+         * `null`-clearable, exactly as `UpdateDocRequest` declares them.
+         */
+        if (typeof changes["order"] === "number" || changes["order"] === null) {
+          doc.order = changes["order"];
+        }
+        if (typeof changes["stage"] === "string" || changes["stage"] === null) {
+          doc.stage = changes["stage"];
+        }
+        if (Array.isArray(changes["columns"]) || changes["columns"] === null) {
+          doc.columns = changes["columns"] === null ? null : [...(changes["columns"] as string[])];
+        }
+        if (changes["query"] !== undefined) {
+          doc.query = changes["query"] === null ? null : (changes["query"] as ViewQuery);
+        }
+        /*
+         * **At most one board carries `default-open`, and the server is what
+         * keeps it unique** (SERVER-138: setting it on one clears every other
+         * board in the same commit). Reproduced here because the client
+         * deliberately does *not* clear the others — a spec run against a stub
+         * that let two boards carry the flag would be asserting a state the
+         * server cannot produce.
+         */
+        if (typeof changes["defaultOpen"] === "boolean") {
+          doc.defaultOpen = changes["defaultOpen"];
+          if (doc.defaultOpen) {
+            for (const other of store.values()) {
+              if (other !== doc && other.type === "board") other.defaultOpen = false;
+            }
+          }
+        }
+        /*
+         * `unset` names **file** keys, never wire ones (CONTRACT-074) — which is
+         * why `default-open` is spelled the file's way here and `defaultOpen` is
+         * not accepted at all.
+         */
+        if (Array.isArray(changes["unset"])) {
+          for (const key of changes["unset"] as string[]) {
+            if (key === "order") doc.order = null;
+            if (key === "stage") doc.stage = null;
+            if (key === "columns") doc.columns = null;
+            if (key === "query") doc.query = null;
+            if (key === "default-open") doc.defaultOpen = false;
+            if (key in doc.extra) delete doc.extra[key];
+          }
         }
         // Every save stamps `updated`, as the server's write path does.
         stampUpdated(doc);

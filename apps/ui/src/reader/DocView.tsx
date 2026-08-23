@@ -24,6 +24,7 @@ import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
+import { BoardFrontmatter } from "./BoardFrontmatter";
 import { DocWidthHandle } from "./DocWidthContext";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
@@ -428,6 +429,12 @@ export function DocView({
          * exactly as it did before (`ScopeProvenance` draws nothing at all).
          */}
         <ScopeProvenance docId={doc.frontmatter.id} onOpenDoc={onNavigate} />
+
+        {/*
+         * A board document says what it is (SPEC.md §10, rider 2, UI-148). It
+         * draws nothing at all on every other type.
+         */}
+        <BoardFrontmatter frontmatter={doc.frontmatter} />
 
         {/*
          * The comments list, in place of the body — SPEC.md §10's rider: *"the

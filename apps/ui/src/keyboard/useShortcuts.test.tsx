@@ -55,7 +55,7 @@ describe("useShortcuts", () => {
     const openCompose = vi.fn();
     const openSearch = vi.fn();
     const toggleCheatSheet = vi.fn();
-    mount({ openCompose, openSearch, toggleCheatSheet, board });
+    mount({ openCompose, openSearch, toggleCheatSheet, showNthBoard: vi.fn(), board });
 
     fireEvent.keyDown(document, { key: "j" });
     fireEvent.keyDown(document, { key: "ArrowUp" });
@@ -98,6 +98,7 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
         board,
       },
       <Layered />,
@@ -136,7 +137,7 @@ describe("useShortcuts", () => {
       const board = boardSpy();
       const openCompose = vi.fn();
       const openSearch = vi.fn();
-      mount({ openCompose, openSearch, toggleCheatSheet: vi.fn(), board });
+      mount({ openCompose, openSearch, toggleCheatSheet: vi.fn(), showNthBoard: vi.fn(), board });
 
       const field = document.createElement("input");
       document.body.append(field);
@@ -171,7 +172,13 @@ describe("useShortcuts", () => {
   it("ignores a keystroke that is an IME composition", () => {
     const board = boardSpy();
     const openCompose = vi.fn();
-    mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+    mount({
+      openCompose,
+      openSearch: vi.fn(),
+      toggleCheatSheet: vi.fn(),
+      showNthBoard: vi.fn(),
+      board,
+    });
 
     fireEvent.keyDown(document, { key: "c", isComposing: true });
     fireEvent.keyDown(document, { key: "c", keyCode: 229 });
@@ -247,6 +254,7 @@ describe("useShortcuts", () => {
           openCompose: vi.fn(),
           openSearch: vi.fn(),
           toggleCheatSheet: vi.fn(),
+          showNthBoard: vi.fn(),
           board,
         });
         const open = menu();
@@ -268,7 +276,13 @@ describe("useShortcuts", () => {
       it("keeps the board's other keys off the board behind it", () => {
         const board = boardSpy();
         const openCompose = vi.fn();
-        mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+        mount({
+          openCompose,
+          openSearch: vi.fn(),
+          toggleCheatSheet: vi.fn(),
+          showNthBoard: vi.fn(),
+          board,
+        });
         menu();
 
         for (const pressed of ["c", "e", "f", "r", "j", "k"]) {
@@ -382,6 +396,7 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
         board,
       });
       const trigger = document.createElement("button");
@@ -402,6 +417,7 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
         board,
       });
       focus('<div class="row" data-row-doc="doc_a" role="button">x</div>');
@@ -417,6 +433,7 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
         board,
       });
       fireEvent.keyDown(document, { key: "Enter" });
@@ -430,6 +447,7 @@ describe("useShortcuts", () => {
       openCompose: vi.fn(),
       openSearch: vi.fn(),
       toggleCheatSheet: vi.fn(),
+      showNthBoard: vi.fn(),
       board,
     });
     fireEvent.keyDown(document, { key: "q" });

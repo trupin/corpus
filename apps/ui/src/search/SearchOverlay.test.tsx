@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, type ReactElement, type ReactNode } from "react";
@@ -9,7 +8,7 @@ import {
   useRegisterBoardNavigation,
   type BoardNavigation,
 } from "../board/openInColumn";
-import { ToastProvider } from "../shell/Toasts";
+import { createBoardHarness } from "../testing/boardHarness";
 import { SearchOverlay } from "./SearchOverlay";
 import { hitFixture, searchTransport, type SearchTransportOptions } from "./searchTransport";
 
@@ -51,19 +50,17 @@ function renderOverlay(options: SearchTransportOptions = {}) {
     docs: { doc_mortgage: { path: "data/docs/finance/housing/mortgage.md" } },
     ...options,
   });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   const onClose = vi.fn();
   const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn() };
 
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <BoardNavigationProvider>
-            <FakeBoard handlers={handlers} />
-            {children}
-          </BoardNavigationProvider>
-        </ToastProvider>
+        <BoardNavigationProvider>
+          <FakeBoard handlers={handlers} />
+          {children}
+        </BoardNavigationProvider>
       </harness.Wrapper>
     );
   }
@@ -432,7 +429,7 @@ describe("the keyboard", () => {
    * is byte-identical to the one the pre-change overlay wrote for the same
    * search, because `toApiParams`/`toViewFrontmatter` never moved.
    */
-  it("⇧↵ pins the search as the same `GET /api/docs` view document it always did", async () => {
+  it("⇧↵ adds the search to the board as the view document it always did", async () => {
     const user = userEvent.setup();
     const { wire, handlers } = renderOverlay();
     await search(user, "mortgage");
@@ -443,12 +440,14 @@ describe("the keyboard", () => {
       expect(wire.writes("POST").length).toBe(1);
     });
     const fromKeyboard = wire.writes("POST")[0]?.body;
+    // A view is a saved query and nothing more (rider 2): no `pinned`, no
+    // `order`. What puts it on the board is the board's own `columns`.
     expect(fromKeyboard).toMatchObject({
       type: "view",
-      pinned: true,
       title: "mortgage",
       query: { q: "mortgage", sort: "relevance" },
     });
+    expect(fromKeyboard).not.toHaveProperty("pinned");
     await waitFor(() => {
       expect(handlers.revealColumn).toHaveBeenCalledWith("doc_created");
     });
@@ -478,7 +477,6 @@ describe("the keyboard", () => {
     });
     expect(wire.writes("POST")[0]?.body).toMatchObject({
       type: "view",
-      pinned: true,
       query: { unread: "true" },
     });
     // …and it cost no ranked request, because there was no `q` to rank.

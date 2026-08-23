@@ -85,27 +85,44 @@ describe("searchChoice", () => {
 });
 
 describe("columnRequest", () => {
-  it("creates a pinned view document, filed where views live", () => {
-    expect(columnRequest(folderChoices(TREE)[0] as never, 40)).toEqual({
+  /**
+   * A view is a saved query and nothing more (SPEC.md §10, rider 2): no
+   * `pinned`, no `order`. What puts it on a board is the board's own `columns`,
+   * appended in a second write.
+   */
+  it("creates a view document with no board position of its own", () => {
+    expect(columnRequest(folderChoices(TREE)[0] as never)).toEqual({
       type: "view",
       title: "finance",
       folder: VIEW_DOCUMENT_FOLDER,
-      pinned: true,
-      order: 40,
       query: { folder: "finance" },
       evergreen: true,
     });
   });
 
-  it("files new views where the seed workspace files its own", () => {
-    const seed = readFileSync(
-      fileURLToPath(
-        new URL("../../../../assets/workspace/data/docs/views/inbox.md", import.meta.url),
-      ),
-      "utf8",
-    );
-    expect(seed).toContain("pinned: true");
+  /**
+   * The picker and the seed workspace have to agree about what a column *is*
+   * (SPEC.md §10, rider 2), and since UI-148 that is two documents rather than a
+   * flag: a view filed under `views/`, and a board that lists its id. The old
+   * form of this test read `pinned: true` out of the seed's own view document,
+   * which is exactly the key rider 2 removed.
+   */
+  it("files new views where the seed workspace files its own, and boards list them", () => {
+    const read = (path: string): string =>
+      readFileSync(
+        fileURLToPath(new URL(`../../../../assets/workspace/${path}`, import.meta.url)),
+        "utf8",
+      );
+
+    const view = read("data/docs/views/inbox.md");
+    expect(view).toContain("type: view");
+    expect(view).not.toContain("pinned:");
     expect(VIEW_DOCUMENT_FOLDER).toBe("views");
+
+    // …and the seed's own board is what puts it on a board, by id.
+    const board = read("data/docs/boards/attention.md");
+    expect(board).toContain("type: board");
+    expect(board).toContain("doc_seedinbox");
   });
 });
 

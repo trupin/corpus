@@ -46,7 +46,6 @@ const INBOX_VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -129,10 +128,19 @@ async function geometryOf(menu: Locator): Promise<MenuGeometry> {
 /** A point inside the lowest row the window currently shows. */
 async function lowestVisibleRow(page: Page): Promise<{ x: number; y: number }> {
   return page.evaluate(() => {
+    /*
+     * Bounded by the **board**, not only by the window (UI-148). A column clips
+     * its list, so a row scrolled past the fold still reports a rect above
+     * `innerHeight` — and right-clicking there lands on the console strip
+     * instead of on a row. The board bar took 38px off the board, which is what
+     * made a latent fixture bug reachable at 1280×720.
+     */
+    const board = document.querySelector(".board")?.getBoundingClientRect();
+    const floor = Math.min(globalThis.innerHeight, board?.bottom ?? globalThis.innerHeight);
     let best: { x: number; y: number } | null = null;
     for (const row of document.querySelectorAll(".row")) {
       const rect = row.getBoundingClientRect();
-      if (rect.bottom > globalThis.innerHeight || rect.height === 0) continue;
+      if (rect.bottom > floor || rect.height === 0) continue;
       if (best === null || rect.bottom > best.y) {
         best = { x: Math.round(rect.left + 8), y: Math.round(rect.bottom - 4) };
       }

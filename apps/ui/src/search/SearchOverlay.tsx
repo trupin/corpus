@@ -161,8 +161,8 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
         toast({
           tone: "info",
           message: duplicate
-            ? "Pinned — a column already queries exactly this; the new view document was created anyway."
-            : "Pinned — a view document was created for this search (pinned: true, order: last).",
+            ? "Added — a column on this board already queries exactly this; the new view document was created anyway."
+            : "Added — a view document was created for this search and listed last on this board.",
         });
       } catch (cause) {
         // The overlay stays open: there is no column, so there is nothing to

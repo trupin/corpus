@@ -5,10 +5,11 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * UI-003's board suite, in a real browser.
  *
  * Like the rest of the suite it runs against the Vite dev server with **no**
- * workspace server on `127.0.0.1:8765` — which for this issue is not a
- * limitation but a fixture: a board that can reach no pinned view documents is
- * exactly SPEC.md §10's zero-column case, and the honest answer to it is the
- * ghost column and nothing else.
+ * workspace server on `127.0.0.1:8765`. Since UI-148 that is no longer a fixture
+ * for the zero-column case: a column is a view document **a board lists**, so a
+ * board is needed before a column can be absent from one. The empty-board tests
+ * below stub a `type: board` document with `columns: []`, which is SPEC.md §10's
+ * zero-column case stated the way rider 2 states it.
  *
  * The column CRUD half — a drag writing `order` into a view document, `＋`
  * creating into a folder, unpin archiving rather than deleting — is verified
@@ -22,22 +23,48 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  */
 
 test.describe("the board", () => {
-  test("is a ghost column, and never a blank screen, with nothing pinned", async ({ page }) => {
+  /**
+   * The board document lists no columns, so the board says so and offers the
+   * ghost — never a blank screen (SPEC.md §10, rider 2).
+   */
+  const EMPTY_BOARD: StubRow = {
+    id: "doc_board_empty",
+    type: "board",
+    title: "Files",
+    path: "data/docs/boards/files.md",
+    order: 1,
+    columns: [],
+    defaultOpen: true,
+  };
+
+  test("a board with no columns shows the empty state and the ghost column", async ({ page }) => {
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
 
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
+
+    // The bar is drawn from the document, and it is the showing board.
+    await expect(page.locator('.boardbar .board-tab[data-board="doc_board_empty"]')).toHaveClass(
+      /\bon\b/,
+    );
+
+    const empty = page.locator(".board .board-empty");
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText("Files is empty");
+    await expect(empty).toContainText("boards/doc_board_empty.md");
 
     const ghost = page.locator(".board .ghost-col");
     await expect(ghost).toBeVisible();
     await expect(ghost).toContainText("New list — a folder, a view, or any filter");
     await expect(ghost.locator(".plus")).toHaveText("＋");
-    // No column can exist without a pinned view document to back it.
+    // No column can exist without the board listing a view document.
     await expect(page.locator(".col[data-col]")).toHaveCount(0);
     expect(uncaught).toEqual([]);
   });
 
   test("the ghost column matches the prototype in both themes", async ({ page }) => {
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
     const ghost = page.locator(".board .ghost-col");
     const toggle = page.getByRole("button", { name: /^Theme:/ });
@@ -52,7 +79,9 @@ test.describe("the board", () => {
   });
 
   test("the ghost column is the last thing in the scroller", async ({ page }) => {
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
+    await expect(page.locator(".board .ghost-col")).toBeVisible();
     const last = await page.evaluate(() => {
       const board = document.querySelector(".board");
       return board?.lastElementChild?.className ?? "";
@@ -63,6 +92,7 @@ test.describe("the board", () => {
   test("the new-list picker opens at the click point, clamped to the viewport", async ({
     page,
   }) => {
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
     await page.locator(".ghost-col").click();
 
@@ -151,6 +181,7 @@ test.describe("the board", () => {
   }
 
   test("the picker closes on Escape and on a click outside", async ({ page }) => {
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
     await page.locator(".ghost-col").click();
     await expect(page.locator(".ac-menu.open")).toBeVisible();
@@ -164,16 +195,32 @@ test.describe("the board", () => {
     await expect(page.locator(".ac-menu.open")).toHaveCount(0);
   });
 
-  test("a refused pin says so in a toast rather than pretending it worked", async ({ page }) => {
+  test("a refused new list says so in a toast rather than pretending it worked", async ({
+    page,
+  }) => {
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
 
+    await stubCorpus(page, [EMPTY_BOARD]);
+    // The board reads fine and the **write** is refused, which is the case this
+    // is about: `POST /api/docs` answered `500` after the picker was opened.
+    await page.route("**/api/docs", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "internal", message: "the write path is down" }),
+      });
+    });
     await page.goto("/");
     await page.locator(".ghost-col").click();
     await page.getByRole("menuitem", { name: /Due this week/ }).click();
 
     const toast = page.locator(".toast[data-tone='error']");
-    await expect(toast).toContainText("Pin failed", { timeout: 15_000 });
+    await expect(toast).toContainText("New list failed", { timeout: 15_000 });
     // Nothing appeared on the board: the column exists only once the document does.
     await expect(page.locator(".col[data-col]")).toHaveCount(0);
     expect(uncaught).toEqual([]);
@@ -207,8 +254,6 @@ test.describe("the board", () => {
       type: "view",
       title: "Chores",
       path: "data/docs/views/chores.md",
-      pinned: true,
-      order: 1,
       query: { type: "todo" },
       extra: { column: "todos/todos" },
     };
@@ -222,7 +267,7 @@ test.describe("the board", () => {
     await stubCorpus(page, [legacy, chore]);
     await page.goto("/");
 
-    // It pinned: the board drew a column, and it is this view document's.
+    // It landed on the board: a column was drawn, and it is this view's.
     const column = page.locator('.col[data-col="doc_view_legacy"]');
     await expect(column).toBeVisible();
     // As an ordinary view, with its stored query shown as the chips any column
@@ -243,6 +288,7 @@ test.describe("the board", () => {
   });
 
   test("stores no corpus state in the browser", async ({ page }) => {
+    await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
     await page.locator(".ghost-col").click();
     await page.keyboard.press("Escape");

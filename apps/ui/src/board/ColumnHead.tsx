@@ -38,7 +38,7 @@ export interface ColumnHeadProps {
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
-  readonly onUnpin: () => void;
+  readonly onRemove: () => void;
   /** Arms/disarms the column's `draggable` attribute. */
   readonly onHandle: (armed: boolean) => void;
 }
@@ -51,7 +51,7 @@ export function ColumnHead({
   onAdd,
   onRename,
   onEditQuery,
-  onUnpin,
+  onRemove,
   onHandle,
 }: ColumnHeadProps): ReactElement {
   const [editing, setEditing] = useState<Editing>(null);
@@ -84,13 +84,14 @@ export function ColumnHead({
       items: (close) => (
         <ColumnMenuItems
           close={close}
+          missing={column.missing}
           onRename={() => {
             startEditing("title");
           }}
           onEditQuery={() => {
             startEditing("query");
           }}
-          onUnpin={onUnpin}
+          onRemove={onRemove}
         />
       ),
     });

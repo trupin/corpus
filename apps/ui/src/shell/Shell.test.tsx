@@ -36,19 +36,23 @@ afterEach(() => {
 });
 
 describe("Shell", () => {
-  it("renders top bar, board and console strip in that document order", () => {
+  it("renders top bar, board bar, board and console strip in that document order", () => {
     const { container } = renderShell();
     const app = container.querySelector(".app");
     expect(app).not.toBeNull();
 
     const regions = [...(app?.children ?? [])].map((child) => child.className);
-    expect(regions).toEqual(["topbar", "board", "console"]);
+    expect(regions).toEqual(["topbar", "boardbar", "board", "console"]);
   });
 
-  it("has no sidebar", () => {
-    const { container } = renderShell();
-    expect(container.querySelector("aside")).toBeNull();
-    expect(container.querySelector("nav")).toBeNull();
+  /**
+   * The bar is chrome above the board (SPEC.md §10, rider 2), not a sidebar:
+   * §10's "No sidebar" sentence was replaced by rider 1's explorer, which
+   * arrives with UI-150 and is a horizontal panel at the left edge.
+   */
+  it("names the board bar as the boards navigation", () => {
+    renderShell();
+    expect(screen.getByRole("navigation", { name: "Boards" })).toBeDefined();
   });
 
   it("keeps the board as the only scrolling region between the two fixed strips", () => {

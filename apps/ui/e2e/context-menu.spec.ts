@@ -38,7 +38,6 @@ const INBOX_VIEW = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -49,7 +48,6 @@ const ARCHIVE_VIEW = {
   type: "view",
   title: "Archive",
   path: "data/docs/views/archive.md",
-  pinned: true,
   order: 2,
   query: { status: "archived" },
 };

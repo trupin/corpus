@@ -28,7 +28,6 @@ const ATTENTION_VIEW = {
   type: "view",
   title: "Attention",
   path: "data/docs/views/attention.md",
-  pinned: true,
   order: 1,
   query: { needs: "me" },
 };
@@ -39,7 +38,6 @@ const ALL_THREADS_VIEW = {
   type: "view",
   title: "Threads",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 2,
   query: { type: "thread" },
 };

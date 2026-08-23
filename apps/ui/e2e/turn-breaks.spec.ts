@@ -24,7 +24,6 @@ const THREADS_VIEW = {
   type: "view",
   title: "Threads",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 1,
   query: { folder: "threads" },
 };

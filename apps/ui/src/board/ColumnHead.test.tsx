@@ -6,7 +6,7 @@ import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { boardTransport, viewRow } from "../testing/boardFixture";
 import { ColumnHead } from "./ColumnHead";
-import { toBoardColumn } from "./viewDoc";
+import { missingColumn, toBoardColumn } from "./viewDoc";
 
 afterEach(() => {
   cleanup();
@@ -14,10 +14,10 @@ afterEach(() => {
 });
 
 const column = toBoardColumn(
+  "doc_threads",
   viewRow({
     id: "doc_threads",
     title: "Conversations",
-    order: 30,
     query: { type: "thread", status: "open" },
   }),
 );
@@ -29,7 +29,7 @@ function renderHead(overrides: Partial<Parameters<typeof ColumnHead>[0]> = {}) {
     onAdd: vi.fn(),
     onRename: vi.fn(),
     onEditQuery: vi.fn(),
-    onUnpin: vi.fn(),
+    onRemove: vi.fn(),
     onHandle: vi.fn(),
     ...overrides,
   };
@@ -186,13 +186,27 @@ describe("ColumnHead", () => {
     });
   });
 
-  it("unpins through the menu and closes it", () => {
+  /**
+   * "Remove from this board" replaced "Unpin" with rider 2: it edits the board
+   * document and leaves the view exactly where it was (UI-148).
+   */
+  it("removes from the board through the menu and closes it", () => {
     const { props } = renderHead();
     fireEvent.click(screen.getByRole("button", { name: /List options/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unpin/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Remove from this board/ }));
 
-    expect(props.onUnpin).toHaveBeenCalledTimes(1);
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("offers only the removal for a column no view document answers to", () => {
+    renderHead({ column: missingColumn("doc_gone", "doc_gone") });
+    fireEvent.click(screen.getByRole("button", { name: /List options/ }));
+
+    expect(screen.getByRole("menuitem", { name: /Remove from this board/ })).toBeTruthy();
+    // Nothing to rename and nothing to re-query: both would 404.
+    expect(screen.queryByRole("menuitem", { name: /^Rename/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Edit query/ })).toBeNull();
   });
 
   it("closes the menu on a click outside, on Escape, and on a second ⋯", () => {
@@ -301,6 +315,7 @@ describe("ColumnHead", () => {
     it("measures a copy of the row that carries every chip and the full label", () => {
       // Four chips: what the row needs is the chips it has, not its width.
       const busy = toBoardColumn(
+        "doc_busy",
         viewRow({
           title: "Conversations",
           query: { type: "thread", status: "open", tag: "finance", folder: "inbox" },
@@ -349,7 +364,10 @@ describe("ColumnHead", () => {
   });
 
   it("names the kind a folder column really is", () => {
-    const folder = toBoardColumn(viewRow({ title: "Finance", query: { folder: "finance" } }));
+    const folder = toBoardColumn(
+      "doc_folder",
+      viewRow({ title: "Finance", query: { folder: "finance" } }),
+    );
     const { container } = renderHead({ column: folder });
     expect(container.querySelector(".col-kind")?.textContent).toBe("folder");
     expect(container.querySelector(".chips > .chip.on")?.textContent).toBe("folder: finance/");

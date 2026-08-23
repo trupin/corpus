@@ -1,12 +1,17 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { Board } from "../shell/Board";
-import { ToastProvider } from "../shell/Toasts";
-import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { createBoardHarness } from "../testing/boardHarness";
+import {
+  boardTransport,
+  DEFAULT_BOARD_ID,
+  viewRow,
+  type BoardTransport,
+} from "../testing/boardFixture";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { ContextMenuProvider } from "./ContextMenuHost";
@@ -54,15 +59,13 @@ function renderColumns(
   rows: readonly ReturnType<typeof docRowFixture>[],
 ): BoardTransport {
   const wire = boardTransport({ views, defaultRows: rows });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <ContextMenuProvider>
-            <KeyboardHarness>{children}</KeyboardHarness>
-          </ContextMenuProvider>
-        </ToastProvider>
+        <ContextMenuProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ContextMenuProvider>
       </harness.Wrapper>
     );
   }
@@ -282,23 +285,31 @@ describe("a column header's context menu", () => {
 
     fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
     expect(screen.getByRole("menu", { name: "List options for Inbox" })).toBeTruthy();
-    expect(menuActions()).toEqual(["rename", "edit-query", "unpin"]);
+    expect(menuActions()).toEqual(["rename", "edit-query", "remove"]);
   });
 
-  it("unpins by archiving the view document, never by deleting it", async () => {
+  /**
+   * "Remove from this board" edits the **board** document and leaves the view
+   * alone (SPEC.md §10, rider 2). It replaced "Unpin", which archived the view —
+   * the right act while a column *was* a pinned view, and the wrong one now,
+   * because the same view may sit on another board this gesture must not touch.
+   */
+  it("removes the column from the board document, and touches no view", async () => {
     const wire = renderBoard([FRESH]);
     await row("doc_a");
     const header = document.querySelector<HTMLElement>(".col-head");
     if (header === null) throw new Error("no header");
 
     fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unpin/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Remove from this board/ }));
 
     await waitFor(() => {
-      expect(wire.writes("PUT").filter((call) => call.path === "/api/docs/doc_view")).toHaveLength(
-        1,
-      );
+      expect(
+        wire.writes("PUT").filter((call) => call.path === `/api/docs/${DEFAULT_BOARD_ID}`),
+      ).toHaveLength(1);
     });
+    expect(wire.writes("PUT").filter((call) => call.path === "/api/docs/doc_view")).toHaveLength(0);
     expect(wire.writes("DELETE")).toHaveLength(0);
+    expect(wire.calls.filter((call) => call.path.endsWith("/archive"))).toHaveLength(0);
   });
 });

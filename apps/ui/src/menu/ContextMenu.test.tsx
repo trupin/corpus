@@ -241,6 +241,7 @@ describe("the context menu frame", () => {
           openCompose: () => undefined,
           openSearch: () => undefined,
           toggleCheatSheet: () => undefined,
+          showNthBoard: () => undefined,
           board,
         });
         return (

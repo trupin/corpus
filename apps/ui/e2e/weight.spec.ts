@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
 
@@ -27,7 +27,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 1,
   query: { type: "thread" },
 };
@@ -83,10 +82,40 @@ const OPTION = "[data-weight-key]";
  * Typing closes it — a click into the field is a pointer landing outside — so
  * tests reopen it before reading the options back.
  */
+/**
+ * The address line, brought fully into view and left to stop moving.
+ *
+ * A fixture concern and never an assertion. The composer sits at the foot of a
+ * scrollable reader, so a click on the line can scroll the reader first — and a
+ * press whose `pointerdown` lands on the line and whose `pointerup` lands on
+ * whatever slid under it is no press at all: the popover never opens, and the
+ * failure reads as if the control were broken. **Focusing it is what takes that
+ * scroll**: the browser scrolls a partly-clipped control into view when it gains
+ * focus, so doing it separately gets the movement over with before anything is
+ * measured. UI-148's board
+ * bar is what made this reachable at 1280×720 — the bar is 38px of chrome the
+ * reader no longer has.
+ */
+async function readyToPress(page: Page, line: Locator): Promise<void> {
+  await line.scrollIntoViewIfNeeded();
+  await line.focus();
+  let last = "";
+  let same = 0;
+  for (let tick = 0; tick < 60; tick += 1) {
+    const box = JSON.stringify(await line.boundingBox());
+    same = box !== "null" && box === last ? same + 1 : 0;
+    if (same >= 3) return;
+    last = box;
+    await page.waitForTimeout(50);
+  }
+}
+
 async function openAddress(page: Page, surface = "th_w"): Promise<void> {
   const pop = page.locator(`[data-address-pop="${surface}"]`);
   if ((await pop.count()) > 0) return;
-  await page.locator(`button[data-address-line="${surface}"]`).click();
+  const line = page.locator(`button[data-address-line="${surface}"]`);
+  await readyToPress(page, line);
+  await line.click();
   await pop.waitFor();
 }
 

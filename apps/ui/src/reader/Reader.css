@@ -1014,3 +1014,34 @@
 .doc-body-slot[hidden] {
   display: none;
 }
+
+/*
+ * ── A board document's frontmatter (`design/navigation.html`'s `.fm-block`) ──
+ *
+ * The keys that decide what the board bar shows, rendered as the file writes
+ * them. A reading, not a form: the acts that change them are the bar's tabs and
+ * the column headers (UI-148).
+ */
+.board-fm {
+  margin: 14px 0 0;
+}
+
+.board-fm .fm-block {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.board-fm .fm-block b {
+  color: var(--accent-ink);
+  font-weight: 600;
+}

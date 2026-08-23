@@ -39,7 +39,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 1,
   query: { type: "thread" },
 };
@@ -305,7 +304,6 @@ test.describe("designating a resident", () => {
         type: "view",
         title: "Skills & agents",
         path: "data/docs/views/personas.md",
-        pinned: true,
         order: 2,
         query: { type: "agent-def" },
       },

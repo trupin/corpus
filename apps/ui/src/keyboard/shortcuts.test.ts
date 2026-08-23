@@ -111,9 +111,10 @@ describe("the shortcut registry", () => {
   });
 
   /**
-   * SPEC.md §10's enumeration and `design/index.html`'s twelve rows, item by
-   * item. A binding present in one and absent from the other is a scheme that
-   * has quietly changed without the spec saying so.
+   * SPEC.md §10's enumeration and the prototypes' rows, item by item. A binding
+   * present in one and absent from the other is a scheme that has quietly
+   * changed without the spec saying so. `⌘1`…`⌘9` joined it with rider 2, and
+   * `design/navigation.html` draws it in the cheat sheet beside the column keys.
    */
   it("is exactly SPEC.md §10's scheme, in the prototype's order", () => {
     expect(SHORTCUTS.map((shortcut) => shortcut.id)).toEqual([
@@ -124,6 +125,7 @@ describe("the shortcut registry", () => {
       "layers.close",
       "columns.switch",
       "columns.move",
+      "boards.switch",
       "doc.focusMode",
       "doc.archive",
       "doc.reply",
@@ -139,6 +141,7 @@ describe("the shortcut registry", () => {
       "close / back",
       "switch column (also [ / ])",
       "move column",
+      "show the nth board",
       "focus mode",
       "archive open / highlighted doc",
       "reply in open thread",

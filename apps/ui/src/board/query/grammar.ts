@@ -186,10 +186,21 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     values: { kind: "fixed", values: ["true", "false"] },
     multi: false,
   },
-  pinned: {
-    summary: "Documents carrying pinned: true — the board's own columns.",
-    values: { kind: "fixed", values: ["true", "false"] },
-    multi: false,
+  /**
+   * SPEC.md §5's workflow position, filterable since CONTRACT-074 — it replaced
+   * `pinned=`, which left the API with rider 2 because nothing puts a view on a
+   * board any more except the board's own `columns`.
+   *
+   * Free-form, and deliberately so: the values are named by the kanban boards
+   * that use them (§10, rider 6), so there is no fixed set to enumerate and a
+   * completion list would be this file guessing at a vocabulary the workspace
+   * owns. A comma is the one character a stage may not contain, because `stage=`
+   * is a comma-separated OR list.
+   */
+  stage: {
+    summary: "Where a document sits in a workflow — a kanban board names the values.",
+    values: { kind: "free", hint: "a stage the board names" },
+    multi: true,
   },
   sort: {
     // Not "a leading - reverses it": the contract enumerates the keys, and only
@@ -246,7 +257,10 @@ const READING_ORDER: readonly string[] = [
   "isParent",
   "references",
   "includeArchived",
-  "pinned",
+  // Beside `status`'s neighbours rather than beside `status` itself, because the
+  // two are never substitutes (SPEC.md §5): `status` says whether work remains,
+  // `stage` says where in a workflow the document is.
+  "stage",
   "sort",
   "limit",
   "offset",

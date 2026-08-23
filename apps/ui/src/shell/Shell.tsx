@@ -1,5 +1,6 @@
 import { useWeightLevels } from "@corpus/kit";
 import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
+import { BoardsProvider, useBoardSurface } from "../board/BoardsProvider";
 import { BoardNavigationProvider } from "../board/openInColumn";
 import { ComposeOverlay } from "../compose/ComposeOverlay";
 import { Console } from "../console/Console";
@@ -12,6 +13,7 @@ import type { ShortcutContext } from "../keyboard/shortcuts";
 import { useShortcuts } from "../keyboard/useShortcuts";
 import { SearchOverlay } from "../search/SearchOverlay";
 import { Board } from "./Board";
+import { BoardBar } from "./BoardBar";
 import { ToastProvider, useToast } from "./Toasts";
 import { Topbar } from "./Topbar";
 import "./Shell.css";
@@ -19,7 +21,7 @@ import "./Shell.css";
 export { isOverlayOpen } from "./overlays";
 
 /**
- * Top bar · board · console, in that document order (SPEC.md §10). No sidebar.
+ * Top bar · board bar · board · console, in that document order (SPEC.md §10).
  *
  * The toast surface wraps rather than joins them: it is `position: fixed`
  * chrome, and putting it inside `.app` would make it a fourth region of a
@@ -42,18 +44,24 @@ type Layer = "search" | "compose" | "cheatSheet";
 export function Shell(): ReactElement {
   return (
     <ToastProvider>
-      <BoardNavigationProvider>
-        <BoardCommandsProvider>
-          <ContextMenuProvider>
-            {/* Outermost of the surface hosts: an image can be clicked in the
-                board, in a thread and in focus mode, and the viewer opens over
-                all of them. */}
-            <ImageViewerHost>
-              <ShellSurfaces />
-            </ImageViewerHost>
-          </ContextMenuProvider>
-        </BoardCommandsProvider>
-      </BoardNavigationProvider>
+      {/* Above the board and the overlays alike: which board is showing decides
+          what the board renders, and the search overlay's "save as view" adds a
+          column to it (SPEC.md §10, rider 2). It sits inside the toasts because
+          every board-document write reports itself through one. */}
+      <BoardsProvider>
+        <BoardNavigationProvider>
+          <BoardCommandsProvider>
+            <ContextMenuProvider>
+              {/* Outermost of the surface hosts: an image can be clicked in the
+                  board, in a thread and in focus mode, and the viewer opens over
+                  all of them. */}
+              <ImageViewerHost>
+                <ShellSurfaces />
+              </ImageViewerHost>
+            </ContextMenuProvider>
+          </BoardCommandsProvider>
+        </BoardNavigationProvider>
+      </BoardsProvider>
     </ToastProvider>
   );
 }
@@ -68,6 +76,7 @@ function ShellSurfaces(): ReactElement {
   /** Focus goes back where it came from — the search bar, the board, or a reader. */
   const opener = useRef<HTMLElement | null>(null);
   const board = useBoardCommands();
+  const boards = useBoardSurface();
   const toast = useToast();
 
   const open = useCallback((next: Layer) => {
@@ -108,9 +117,18 @@ function ShellSurfaces(): ReactElement {
     });
   }, []);
 
+  /** `⌘1`…`⌘9` — the nth tab of the bar, and nothing when there is no nth tab. */
+  const showNthBoard = useCallback(
+    (index: number) => {
+      const target = boards.boards[index];
+      if (target !== undefined) boards.showBoard(target.id);
+    },
+    [boards],
+  );
+
   const context = useMemo<ShortcutContext>(
-    () => ({ openCompose, openSearch, toggleCheatSheet, board }),
-    [board, openCompose, openSearch, toggleCheatSheet],
+    () => ({ openCompose, openSearch, toggleCheatSheet, showNthBoard, board }),
+    [board, openCompose, openSearch, showNthBoard, toggleCheatSheet],
   );
 
   useShortcuts(context);
@@ -138,6 +156,7 @@ function ShellSurfaces(): ReactElement {
     <>
       <div className="app">
         <Topbar onOpenSearch={openSearch} onOpenCompose={openCompose} />
+        <BoardBar />
         <Board />
         <Console />
       </div>

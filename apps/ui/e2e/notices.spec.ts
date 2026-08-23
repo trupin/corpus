@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 // `test` comes from the coverage fixture, not from `@playwright/test`: it is the
 // same runner plus the browser-side V8 collection the merged gate needs.
 import { expect, test } from "./coverage";
+import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-139 — **a refusal a keyboard-only or touch user can finish reading**, in a
@@ -76,7 +77,7 @@ async function refusePin(page: Page, expected = 1): Promise<void> {
   await expect(page.locator('.toast[data-tone="error"]')).toHaveCount(expected, {
     timeout: 15_000,
   });
-  await expect(page.locator('.toast[data-tone="error"]').last()).toContainText("Pin failed");
+  await expect(page.locator('.toast[data-tone="error"]').last()).toContainText("New list failed");
 }
 
 /** What the keyboard is on, as a selector-ish description of the focused node. */
@@ -110,6 +111,10 @@ async function tabUntil(page: Page, selector: string): Promise<number> {
 test.describe("a refusal outlives its toast", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
+    // A board with no columns, which is what the ghost belongs to since UI-148:
+    // a column is a view document *a board lists*. `refuseEveryPin` is routed
+    // afterwards, so its `POST` refusal still wins over the stub's handler.
+    await stubCorpus(page, []);
     await refuseEveryPin(page);
     await page.goto("/");
     await expect(page.locator(".ghost-col")).toBeVisible();

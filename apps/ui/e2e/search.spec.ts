@@ -273,7 +273,6 @@ const VIEW = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -374,7 +373,6 @@ test.describe("the ranked result list", () => {
     const [write] = await corpus.of("POST", "/api/docs");
     expect(write?.body).toMatchObject({
       type: "view",
-      pinned: true,
       title: "mortgage",
       query: { q: "mortgage", sort: "relevance" },
     });

@@ -28,7 +28,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -39,7 +38,6 @@ const SECOND_VIEW: StubRow = {
   type: "view",
   title: "Also inbox",
   path: "data/docs/views/two.md",
-  pinned: true,
   order: 2,
   query: { folder: "inbox" },
 };
@@ -392,7 +390,6 @@ test.describe("a thread opened as its own document", () => {
     type: "view",
     title: "Conversations",
     path: "data/docs/views/threads.md",
-    pinned: true,
     order: 2,
     query: { type: "thread" },
   };

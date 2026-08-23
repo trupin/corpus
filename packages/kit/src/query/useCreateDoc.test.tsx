@@ -42,18 +42,18 @@ function transport(status = 201): {
 }
 
 describe("useCreateDoc", () => {
-  it("POSTs the view keys that make a document a board column", async () => {
+  it("POSTs the board keys a `type: board` document carries", async () => {
     const wire = transport();
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
     const { result } = renderHook(() => useCreateDoc(), { wrapper: harness.Wrapper });
 
     result.current.mutate({
-      type: "view",
+      type: "board",
       title: "Finance",
-      folder: "views",
-      pinned: true,
+      folder: "boards",
       order: 40,
-      query: { folder: "finance" },
+      columns: ["doc_view_a", "doc_view_b"],
+      defaultOpen: true,
     });
 
     await waitFor(() => {
@@ -64,12 +64,12 @@ describe("useCreateDoc", () => {
         method: "POST",
         path: "/api/docs",
         body: {
-          type: "view",
+          type: "board",
           title: "Finance",
-          folder: "views",
-          pinned: true,
+          folder: "boards",
           order: 40,
-          query: { folder: "finance" },
+          columns: ["doc_view_a", "doc_view_b"],
+          defaultOpen: true,
         },
       },
     ]);
@@ -79,14 +79,14 @@ describe("useCreateDoc", () => {
   it("invalidates every list and the folder tree, and writes nothing optimistically", async () => {
     const wire = transport();
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    harness.queryClient.setQueryData(docsListKey({ pinned: "true" }), { items: [], page: {} });
+    harness.queryClient.setQueryData(docsListKey({ type: "board" }), { items: [], page: {} });
     harness.queryClient.setQueryData(TREE_KEY, { folders: [] });
     const { result } = renderHook(() => useCreateDoc(), { wrapper: harness.Wrapper });
 
     result.current.mutate({ type: "note", title: "Untitled" });
     // The server assigns the id, the path and the timestamps; a guess here would
     // be a different document from the one on disk.
-    expect(harness.queryClient.getQueryData(docsListKey({ pinned: "true" }))).toEqual({
+    expect(harness.queryClient.getQueryData(docsListKey({ type: "board" }))).toEqual({
       items: [],
       page: {},
     });
@@ -94,7 +94,7 @@ describe("useCreateDoc", () => {
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
-    expect(harness.queryClient.getQueryState(docsListKey({ pinned: "true" }))?.isInvalidated).toBe(
+    expect(harness.queryClient.getQueryState(docsListKey({ type: "board" }))?.isInvalidated).toBe(
       true,
     );
     expect(harness.queryClient.getQueryState(TREE_KEY)?.isInvalidated).toBe(true);

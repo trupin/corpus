@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { docRowFixture } from "@corpus/kit/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { Board } from "../shell/Board";
-import { ToastProvider } from "../shell/Toasts";
 import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { createBoardHarness } from "../testing/boardHarness";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { COLUMN_RESIZE_STEP, MIN_COLUMN_WIDTH } from "./columnWidth";
@@ -29,19 +29,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const NARROW = viewRow({ id: "doc_view", title: "Inbox", order: 10 });
+const NARROW = viewRow({ id: "doc_view", title: "Inbox" });
 
 function renderBoard(views: readonly ReturnType<typeof viewRow>[]): BoardTransport {
   const wire = boardTransport({ views, defaultRows: [docRowFixture({ id: "doc_a" })] });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <ContextMenuProvider>
-            <KeyboardHarness>{children}</KeyboardHarness>
-          </ContextMenuProvider>
-        </ToastProvider>
+        <ContextMenuProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ContextMenuProvider>
       </harness.Wrapper>
     );
   }

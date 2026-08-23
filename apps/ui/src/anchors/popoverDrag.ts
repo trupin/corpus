@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -192,6 +193,28 @@ export function usePopoverDrag(
       window.removeEventListener("pointercancel", onUp);
     };
   }, [dragging]);
+
+  /**
+   * **The box the host placed may not fit where it was placed** (UI-148).
+   *
+   * The clamp used to apply to a *move* and never to the opening, so a selection
+   * near the foot of the window opened a popover whose Send button was below it
+   * — reachable by `⌘↵` and by nothing a pointer could press. It has always been
+   * possible; the board bar's 38px of chrome is what made it reachable at
+   * 1280×720, which is the size the geometry suites measure at.
+   *
+   * A layout effect rather than an effect, so the off-screen position is never
+   * painted, and only when the box actually overflows — a popover that fits is
+   * left exactly where the host put it, which keeps it at the words it is about.
+   */
+  useLayoutEffect(() => {
+    if (moved !== null || dragging) return;
+    const size = measure();
+    if (size.height === 0 && size.width === 0) return;
+    const fitted = clampToViewport(anchor, size, viewport());
+    if (fitted.top === anchor.top && fitted.left === anchor.left) return;
+    setMoved(fitted);
+  }, [anchor, dragging, measure, moved]);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {

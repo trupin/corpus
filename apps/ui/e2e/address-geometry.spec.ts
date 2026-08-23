@@ -50,7 +50,6 @@ const THREADS_VIEW: StubRow = {
   title: "Conversations",
   path: "data/docs/views/threads.md",
   query: { type: "thread" },
-  pinned: true,
   order: 1,
 };
 
@@ -205,6 +204,24 @@ async function settled(page: Page, locator: Locator): Promise<void> {
   throw new Error("the address line never stopped moving");
 }
 
+/**
+ * A control, ready to be pressed: scrolled in, focused, and holding still.
+ *
+ * A fixture concern and never an assertion, and **separate from
+ * {@link settled}**, which is a pure measurement wait several assertions rely on
+ * not moving anything. Pressing a partly-clipped control makes the browser
+ * scroll its own scrollport to bring the newly focused element into view — 13px,
+ * measured — so the press's `pointerup` lands where the control no longer is and
+ * no click event is produced at all. Taking that scroll first is what makes the
+ * press land. UI-148's board bar is 38px of chrome the reader no longer has at
+ * 1280×720, which is what made a latent fixture gap reachable.
+ */
+async function pressable(page: Page, locator: Locator): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
+  await locator.focus();
+  await settled(page, locator);
+}
+
 /** The board, a reply composer on `th_host`, and its address popover open. */
 async function open(page: Page): Promise<void> {
   await stubCorpus(page, [THREADS_VIEW, HOST, GONE], {
@@ -219,7 +236,7 @@ async function open(page: Page): Promise<void> {
 
   const line = page.locator('button[data-address-line="th_host"]');
   await expect(line).toContainText("release-researcher");
-  await settled(page, line);
+  await pressable(page, line);
   await line.click();
   await expect(page.locator(POP)).toBeVisible();
   await expect(page.locator(ROWS)).toHaveCount(LANES.length + 1);
@@ -289,7 +306,15 @@ test.describe("the address popover holds still while you read it", () => {
       await rows.nth(index).focus();
       expect(await geometry(page), `focusing ${String(lane)} moved something`).toEqual(at);
       said.push((await page.locator(SAYS).textContent()) ?? "");
-      await rows.nth(index).blur();
+      /*
+       * Focus is moved to the address line rather than dropped on the floor
+       * (UI-148). `blur()` with nowhere to go returns focus to the body, and the
+       * browser then scrolls the reader's scrollport back — 13px, measured —
+       * which moves the card and reads as the defect this test is about. Moving
+       * focus to a control inside the same card takes no scroll at all, and it
+       * is what tabbing out of the list actually does.
+       */
+      await page.locator('button[data-address-line="th_host"]').focus();
       expect(await geometry(page), `blurring ${String(lane)} moved something`).toEqual(at);
     }
     expect(new Set(said).size).toBe(count);
@@ -482,7 +507,7 @@ async function openWith(page: Page, lanes: readonly AgentLane[], height: number)
   await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
   await page.mouse.move(AWAY.x, AWAY.y);
   const line = page.locator('button[data-address-line="th_host"]');
-  await settled(page, line);
+  await pressable(page, line);
   await line.click();
   await expect(page.locator(POP)).toBeVisible();
   await page.mouse.move(AWAY.x, AWAY.y);
@@ -1380,6 +1405,15 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
 
     const line = page.locator('[data-address-line="th_host"]');
     await expect(line).toContainText(`· ${HEAVY_KEY}`);
+    /*
+     * The reader's own scroll is settled **before** any baseline is taken
+     * (UI-148). Focusing a partly-clipped control later in this test scrolls the
+     * scrollport to bring it into view, and every box measured against a
+     * baseline taken before that scroll would then read as having moved — which
+     * is the defect this test is about, arriving from the fixture instead.
+     */
+    await pressable(page, page.locator('button[data-address-line="th_host"]'));
+    await page.mouse.move(AWAY.x, AWAY.y);
     await settled(page, page.locator(REPLY_SEND));
     const under = await slotBoxes(page, "th_host", REPLY_SEND);
     expect(await boxOf(page.locator(".reader .composer-foot"))).toEqual(
@@ -1412,7 +1446,9 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
 
     // And the ordinary live statement is read rather than revealed, at this
     // width, with the siblings demanding more than the footer has.
-    await page.locator('button[data-address-line="th_host"]').click();
+    const addressLine = page.locator('button[data-address-line="th_host"]');
+    await pressable(page, addressLine);
+    await addressLine.click();
     await expect(page.locator(POP)).toBeVisible();
     await page.locator(`${PICKER} [data-recipient-lane="orchestrator"]`).click();
     const reveal = await revealOf(page, "th_host");

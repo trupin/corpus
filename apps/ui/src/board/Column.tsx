@@ -10,13 +10,13 @@ import { useColumnWidth } from "./useColumnWidth";
 import type { BoardColumn } from "./viewDoc";
 
 /**
- * One column card (`design/index.html`'s `.col`): a pinned view document,
- * rendered.
+ * One column card (`design/index.html`'s `.col`): a view document the showing
+ * board lists, rendered.
  *
  * The card snaps to the board's scroll axis and carries the `.kactive` cue
  * while it is the keyboard's active column. Its header is the drag handle; the
- * drag itself belongs to the board, because reordering is about the whole set
- * and the `order` values written are the neighbours' as much as this one's.
+ * drag itself belongs to the board, because reordering rewrites the board
+ * document's whole `columns` array and this card is one entry in it.
  *
  * **Its width is the view document's** (SPEC.md §10), not a constant and not a
  * browser-local preference: `336px` is only what a column with no chosen width
@@ -50,7 +50,7 @@ export interface ColumnProps {
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
-  readonly onUnpin: () => void;
+  readonly onRemove: () => void;
   readonly onDragStart: () => void;
   readonly onDragEnd: () => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -67,7 +67,7 @@ interface ColumnBodyProps {
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
-  readonly onUnpin: () => void;
+  readonly onRemove: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -89,7 +89,7 @@ function ColumnBody({
   onAdd,
   onRename,
   onEditQuery,
-  onUnpin,
+  onRemove,
   onNotify,
 }: ColumnBodyProps): ReactElement {
   // The compiled filter is the wire's own form — every value a string, arrays
@@ -109,7 +109,7 @@ function ColumnBody({
         onAdd={onAdd}
         onRename={onRename}
         onEditQuery={onEditQuery}
-        onUnpin={onUnpin}
+        onRemove={onRemove}
         onHandle={onHandle}
       />
       <ColumnList
@@ -145,7 +145,10 @@ export function Column(props: ColumnProps): ReactElement {
   const [grownTo, setGrownTo] = useState(0);
 
   const size = useColumnWidth({
-    viewDocId: column.id,
+    // The **view** document, not the slot: width rides the view's `extra`
+    // (SPEC.md §10, unchanged by rider 2), so two boards listing one view share
+    // its width, which is what "synced to every browser" already meant.
+    viewDocId: column.viewId,
     title: column.title,
     stored: column.width,
     onNotify: props.onNotify,
@@ -231,7 +234,7 @@ export function Column(props: ColumnProps): ReactElement {
           onAdd={props.onAdd}
           onRename={props.onRename}
           onEditQuery={props.onEditQuery}
-          onUnpin={props.onUnpin}
+          onRemove={props.onRemove}
           onNotify={props.onNotify}
         />
       ) : (
@@ -242,24 +245,36 @@ export function Column(props: ColumnProps): ReactElement {
             onAdd={props.onAdd}
             onRename={props.onRename}
             onEditQuery={props.onEditQuery}
-            onUnpin={props.onUnpin}
+            onRemove={props.onRemove}
             onHandle={setDraggable}
           />
           <div className="col-list">
             <div className="col-card col-card-error" role="alert">
-              <p className="col-card-title">This list&rsquo;s view document is unreadable</p>
-              <p className="col-card-body">
-                “{column.title}” ({column.id}) — {column.error}.
+              <p className="col-card-title">
+                {column.missing
+                  ? "This column names a view document that is not there"
+                  : "This list’s view document is unreadable"}
               </p>
-              <button
-                type="button"
-                className="col-card-action"
-                onClick={() => {
-                  onOpen(column.id);
-                }}
-              >
-                Open the view document
-              </button>
+              <p className="col-card-body">
+                “{column.title}” ({column.viewId}) — {column.error}.
+              </p>
+              {/*
+               * A missing view has nothing to open — the id resolves to no
+               * document at all — so the card offers the act that applies: the
+               * ⋯ menu's "Remove from this board", which is the whole of its
+               * menu here.
+               */}
+              {column.missing ? null : (
+                <button
+                  type="button"
+                  className="col-card-action"
+                  onClick={() => {
+                    onOpen(column.viewId);
+                  }}
+                >
+                  Open the view document
+                </button>
+              )}
             </div>
           </div>
         </>

@@ -38,7 +38,6 @@ const FOLDER_VIEW = {
   type: "view",
   title: "Notes",
   path: "data/docs/views/notes.md",
-  pinned: true,
   order: 1,
   query: { folder: "notes" },
 };
