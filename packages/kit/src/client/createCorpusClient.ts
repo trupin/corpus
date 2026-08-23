@@ -23,6 +23,8 @@ import type {
   ReattachRefusalReason,
   ReattachThreadRequest,
   ReattachThreadResponse,
+  ReflectAskResult,
+  ReflectStatus,
   RelatedDocs,
   SearchResults,
   Thread,
@@ -287,6 +289,33 @@ export interface CorpusClient {
    * destructive act reachable from a pill that only reports.
    */
   getIndexStatus(options?: RequestOptions): Promise<IndexStatus>;
+  /**
+   * `GET /api/workspace/reflect` — the reflection clock, what is unreflected,
+   * the pending reflection, the last digest thread and the quiet window
+   * (SPEC.md §7's rider 9).
+   *
+   * Read-only and parameterless, like {@link getQueueStatus}. **`changed` is a
+   * corpus-wide count and rides on the response rather than being derived here**:
+   * deriving it client-side means listing every document to produce one number,
+   * and the server counts it with the contract's own `isUnreflected` — the same
+   * call the board applies row by row — so the number in the control and the
+   * marks on the rows cannot disagree.
+   */
+  getReflectStatus(options?: RequestOptions): Promise<ReflectStatus>;
+  /**
+   * `POST /api/workspace/reflect` — **ask for a reflection over the whole
+   * corpus** (SPEC.md §7: the board bar's Reflect control, and `corpus reflect`).
+   *
+   * **`202` always, never a `409`.** An ask while one is pending is answered
+   * with the pending one rather than doubled or refused, and `pending: true` is
+   * what tells the two apart — so a caller says "asked" or "already asked"
+   * without comparing ids, and never renders an error for a person who pressed
+   * the button twice.
+   *
+   * It carries no body: the window is server state, and a caller that could name
+   * its own `since` would be asking for a different act than the one §7 defines.
+   */
+  askReflection(): Promise<ReflectAskResult>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
@@ -926,6 +955,17 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         "GET /api/index/status",
         await api.GET("/api/index/status", { ...signalOf(options) }),
       );
+    },
+
+    async getReflectStatus(options) {
+      return unwrap(
+        "GET /api/workspace/reflect",
+        await api.GET("/api/workspace/reflect", { ...signalOf(options) }),
+      );
+    },
+
+    async askReflection() {
+      return unwrap("POST /api/workspace/reflect", await api.POST("/api/workspace/reflect", {}));
     },
 
     async getHealth(options) {

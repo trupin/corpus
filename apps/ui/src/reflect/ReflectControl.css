@@ -1,0 +1,87 @@
+/*
+ * The board bar's Reflect control (SPEC.md §7's rider 9, §10's board bar).
+ *
+ * **It is chrome inside chrome.** `.boardbar` is `height: 38px; flex: none`, and
+ * an e2e spec fails if that stops holding — so everything here is `flex: none`,
+ * `white-space: nowrap`, and sized off the bar's own line rather than off the
+ * text it happens to hold (§10: "nothing resizes because of what it holds").
+ * Nothing here has a `height`, a `padding-block` or a `line-height` that could
+ * push the bar past 38px.
+ *
+ * It sits to the **right of `.boardbar-spacer`**, which is `flex: 1` — so the
+ * label growing from `Reflect` to `Reflect · 12 changes since 3h` eats the
+ * spacer's slack and moves nothing on the bar.
+ */
+
+.reflect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.reflect-ask {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  align-self: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+  flex: none;
+}
+
+.reflect-ask:hover:not([disabled]) {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+/*
+ * While a reflection is running. Quiet rather than busy: SPEC.md §8's honesty
+ * rule applies to this button too — the corpus is being read by an agent whose
+ * progress nothing here can know, so the control says *reflecting…* and claims
+ * nothing more. No spinner, no bar, no percentage.
+ */
+.reflect-ask[disabled] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/*
+ * The count's own box (SPEC.md §10's rider, signed 2026-08-20 — "a count
+ * reaching two digits" is named in it).
+ *
+ * Tabular figures make `12` and `19` the same width, so the number ticking
+ * inside a digit count moves nothing at all; `min-width: 2ch` covers the
+ * one-to-two crossing, which is the one a working corpus actually makes. Beyond
+ * two digits it widens once and stays there, which is the same bargain
+ * `.col-count` strikes at three.
+ */
+.reflect-count {
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: right;
+  display: inline-block;
+}
+
+/*
+ * The clock, and the link to the digest thread. Same line, quieter ink: it is a
+ * report, not an act, even in the half of the time that it is also a button.
+ */
+.reflect-clock {
+  align-self: center;
+  color: var(--ink-3);
+  font-size: 11px;
+  flex: none;
+}
+
+.reflect-digest:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}

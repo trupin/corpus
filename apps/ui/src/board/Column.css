@@ -181,6 +181,28 @@
  *   people actually have. A workspace whose column reaches `1024` widens by one
  *   digit at that crossing and then stays put.
  */
+/*
+ * "3 changed" — how many of this list's documents the agent has not looked at
+ * (SPEC.md §7's rider 9: "each column counts its own").
+ *
+ * `flex: none` and no `margin-left`, so it sits directly after `.col-kind` and
+ * before `.col-count`, whose `margin-left: auto` still pins the count and the
+ * two buttons to the right edge. `.col-title` remains the only item in the row
+ * that gives ground, which is what §10's rider asks for: what moves when a fact
+ * appears is the text, re-cut, and never the controls.
+ *
+ * It is absent at zero rather than reading "0 changed" — a count that has
+ * nothing to report reports nothing, and a quiet board stays quiet.
+ */
+.col-changed {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: none;
+}
+
 .col-count {
   margin-left: auto;
   font-family: var(--mono);

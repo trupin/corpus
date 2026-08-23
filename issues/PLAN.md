@@ -1459,5 +1459,5 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-138 |
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
-| UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |
+| UI-153 | The Reflect control, and what changed since the agent last looked | done | P1 | opus | UI-148, SERVER-137 |
 | PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |

@@ -35,6 +35,15 @@ export interface ColumnHeadProps {
   readonly column: BoardColumn;
   /** The live result count, or `null` while it is unknown. */
   readonly count: number | null;
+  /**
+   * How many of the rows this column has loaded changed since the agent last
+   * reflected (SPEC.md §7's rider 9: "each column counts its own").
+   *
+   * Defaults to `0`, which is also what an unread clock produces — so a head
+   * that has been told nothing says nothing, rather than claiming a corpus the
+   * agent has never looked at.
+   */
+  readonly changed?: number;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -48,6 +57,7 @@ type Editing = "title" | "query" | null;
 export function ColumnHead({
   column,
   count,
+  changed = 0,
   onAdd,
   onRename,
   onEditQuery,
@@ -161,6 +171,24 @@ export function ColumnHead({
           </span>
         )}
         <span className="col-kind">{column.kind}</span>
+        {/*
+         * §7's per-column count. Present only when there is something to say:
+         * "0 changed" beside every column on a quiet board would be five words
+         * of chrome reporting nothing. `.col-title` is the truncating item in
+         * this row (see `Column.css`), so this appearing re-cuts the title and
+         * moves neither the count nor the two buttons after it.
+         */}
+        {changed > 0 ? (
+          <span
+            className="col-changed"
+            title={
+              `${String(changed)} of this list’s documents changed since the agent last ` +
+              `reflected on the corpus. Each one carries the same mark.`
+            }
+          >
+            {`${String(changed)} changed`}
+          </span>
+        ) : null}
         <span className="col-count">{count === null ? "—" : count}</span>
         <button
           type="button"

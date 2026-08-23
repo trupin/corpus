@@ -101,6 +101,24 @@
   min-width: 8ch;
 }
 
+/*
+ * The unreflected mark's slot (SPEC.md §7's rider 9), **reserved on every tab
+ * and painted only when there is something to say**.
+ *
+ * The same arrangement `.row::before` uses for the staleness rail, and for the
+ * same reason: a mark that joined the flow when it appeared made the tab 14px
+ * wider and shifted every tab after it, which is exactly what §10's "nothing
+ * resizes because of what it holds" rules out. 6px of box is what a tab pays for
+ * a fact it may one day carry, and it pays it whether or not it does.
+ */
+.board-tab-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 6px;
+  flex: none;
+}
+
 .board-tab .tag {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -171,4 +189,57 @@
 .board-add:hover {
   color: var(--accent-ink);
   background: var(--accent-wash);
+}
+
+/* ── The paths pill and "close paths" (SPEC.md §10, rider 3) ─────────────
+   `design/navigation.html`'s `.paths-pill` and `.btn-ghost`. Mono and quiet:
+   a count changing from 1 to 12 moves nothing ("nothing resizes because of
+   what it holds" is served by the bar's fixed height and the spacer). */
+.paths-pill {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.paths-pill b {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn-ghost {
+  align-self: center;
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  color: var(--ink-2);
+  background: none;
+  white-space: nowrap;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-ghost[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-ghost[disabled]:hover {
+  border-color: var(--line);
+  color: var(--ink-2);
 }

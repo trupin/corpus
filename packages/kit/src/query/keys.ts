@@ -4,6 +4,7 @@ import {
   INDEX_KEY,
   JOBS_KEY,
   QUEUE_KEY,
+  REFLECT_KEY,
   TREE_KEY,
   docKey,
   jobKey,
@@ -38,6 +39,19 @@ export {
   INDEX_KEY,
   JOBS_KEY,
   QUEUE_KEY,
+  /**
+   * `["reflect"]` — the reflection clock behind `GET /api/workspace/reflect`
+   * (SPEC.md §7, rider 9).
+   *
+   * **One subscription covers both halves of the control.** The resource moves
+   * on two unrelated things — a document write changes `changed`, a queue
+   * transition changes `pending`, `reflected` and `lastDigest` — and the server
+   * resolves that by naming this key on **every** frame that names `["docs"]` or
+   * `["queue"]`, applied at the bus rather than per emitter (SERVER-137). So a
+   * query cached here refetches on either, and the Reflect control needs no
+   * clock of its own.
+   */
+  REFLECT_KEY,
   TREE_KEY,
   docKey,
   jobKey,

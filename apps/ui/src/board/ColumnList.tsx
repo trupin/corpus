@@ -1,4 +1,4 @@
-import type { DocRow } from "@corpus/contract";
+import { isUnreflected, type DocRow } from "@corpus/contract";
 import { Row, type RowNotice } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
@@ -33,9 +33,32 @@ export interface ColumnListProps {
    * one row can ever carry it.
    */
   readonly cursorDocId: string | null;
+  /** The origin row of this column's open path, or `null` (SPEC.md §10, rider 3). */
+  readonly originDocId: string | null;
+  /** Documents open on the board — their rows here carry the dot (rider 3). */
+  readonly openDocIds: ReadonlySet<string>;
+  /**
+   * The corpus's reflection clock (SPEC.md §7's rider 9), in **three** states.
+   *
+   * A timestamp is the clock. `null` is the clock the wire actually sends for a
+   * corpus nobody has reflected on, under which every unarchived document not
+   * last written by the agent *is* unreflected — so it marks the column, and
+   * that is correct rather than alarming. `undefined` is the state that is not
+   * on the wire at all: this browser has not read `GET /api/workspace/reflect`
+   * yet, and it marks nothing, because "never reflected" is a claim about the
+   * corpus and a page that has asked nobody is in no position to make it.
+   *
+   * Two nullish values look like one bug and are not: collapsing them would
+   * either light every row for one round trip on load, or silently stop marking
+   * a workspace whose agent has never run.
+   */
+  readonly reflected: string | null | undefined;
   readonly onScroll: (scrollTop: number) => void;
+  /** A row was picked: a path opens off it (SPEC.md §10, rider 3). */
   readonly onOpen: (row: DocRow) => void;
-  /** SPEC.md §10's "open in focus" — the ⇧↵ act, offered by the row's menu. */
+  /** "Open here" — the column's own in-place reader (`⌥↵`, the row menu). */
+  readonly onOpenHere: (row: DocRow) => void;
+  /** SPEC.md §10's "open in full screen" — the ⇧↵ act, offered by the row's menu. */
   readonly onOpenFocus: (row: DocRow) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -46,8 +69,12 @@ export function ColumnList({
   error,
   scrollTop,
   cursorDocId,
+  originDocId,
+  openDocIds,
+  reflected,
   onScroll,
   onOpen,
+  onOpenHere,
   onOpenFocus,
   onNotify,
 }: ColumnListProps): ReactElement {
@@ -111,6 +138,9 @@ export function ColumnList({
               onOpen={() => {
                 onOpen(row);
               }}
+              onOpenHere={() => {
+                onOpenHere(row);
+              }}
               onOpenFocus={() => {
                 onOpenFocus(row);
               }}
@@ -136,6 +166,16 @@ export function ColumnList({
             key={row.id}
             row={row}
             cursor={row.id === cursorDocId}
+            origin={row.id === originDocId}
+            openElsewhere={row.id !== originDocId && openDocIds.has(row.id)}
+            /*
+             * The mark compares two timestamps already on hand — this row's
+             * `updated` and the corpus's clock — with the contract's own
+             * predicate, the same call `GET /api/workspace/reflect` counts
+             * `changed` with. No per-row request, and no second rule that could
+             * disagree with the number on the board bar.
+             */
+            unreflected={reflected === undefined ? false : isUnreflected(row, reflected)}
             onOpen={onOpen}
             onNotify={onNotify}
           />

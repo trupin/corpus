@@ -69,6 +69,25 @@ describe("ColumnHead", () => {
     expect(container.querySelector(".col-count")?.textContent).toBe("—");
   });
 
+  /** SPEC.md §7's rider 9: "each column counts its own". */
+  it("says how many of its documents the agent has not looked at", () => {
+    const { container } = renderHead({ changed: 3 });
+    expect(container.querySelector(".col-changed")?.textContent).toBe("3 changed");
+    // The head's own row count is untouched by it.
+    expect(container.querySelector(".col-count")?.textContent).toBe("4");
+  });
+
+  /**
+   * Zero says nothing rather than "0 changed": a quiet board stays quiet, and a
+   * head that has been told nothing — the state before the clock arrives — is
+   * indistinguishable from a head with nothing to report, which is correct.
+   */
+  it("says nothing when nothing changed, and when nobody told it", () => {
+    expect(renderHead({ changed: 0 }).container.querySelector(".col-changed")).toBeNull();
+    cleanup();
+    expect(renderHead().container.querySelector(".col-changed")).toBeNull();
+  });
+
   it("arms the drag handle on the header but not on its buttons", () => {
     const onHandle = vi.fn();
     const { container } = renderHead({ onHandle });
