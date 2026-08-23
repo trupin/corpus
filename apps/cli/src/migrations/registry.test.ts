@@ -32,17 +32,21 @@ describe("the registry", () => {
     expect(MIGRATIONS.map((migration) => migration.id)).toEqual(["views-to-board"]);
   });
 
-  it("reports nothing for a workspace whose documents are all current", () => {
+  it("reports nothing for a workspace whose documents are all current", async () => {
     expect(
-      detectMigrations({ root: "/w", dataDir: "data", actor: "user", corpus: emptyCorpus }),
+      await detectMigrations({ root: "/w", dataDir: "data", actor: "user", corpus: emptyCorpus }),
     ).toEqual([]);
   });
 
-  it("reads the workspace off disk when no corpus is injected", () => {
+  it("reads the workspace off disk when no corpus is injected", async () => {
     // A directory that does not exist is an empty corpus, never a throw: an
     // upgrade must survive being run in a half-formed workspace.
     expect(
-      detectMigrations({ root: "/nowhere-this-does-not-exist", dataDir: "data", actor: "user" }),
+      await detectMigrations({
+        root: "/nowhere-this-does-not-exist",
+        dataDir: "data",
+        actor: "user",
+      }),
     ).toEqual([]);
   });
 });

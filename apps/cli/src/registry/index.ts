@@ -1,4 +1,5 @@
 import { agentsCommand } from "../commands/agents.js";
+import { boardTopic } from "../commands/board/index.js";
 import { dbTopic } from "../commands/db/index.js";
 import { docTopic } from "../commands/doc/index.js";
 import { folderTopic } from "../commands/folder/index.js";
@@ -51,6 +52,10 @@ export const registry: Registry = validateRegistry({
     serverTopic,
     docTopic,
     folderTopic,
+    // One verb, and the topic's own comment says why it is a topic rather than a
+    // `doc` verb: `order` is the one act whose subject is the board *bar* rather
+    // than any one board (SPEC.md §10 rider 2, CLI-063).
+    boardTopic,
     threadTopic,
     skillTopic,
     queueTopic,

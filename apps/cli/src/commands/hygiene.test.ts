@@ -59,7 +59,7 @@ import { describe, expect, it } from "vitest";
  */
 
 /** Topics whose verbs are pure API clients: they may not touch the filesystem at all. */
-const WRITE_RESTRICTED_TOPICS = ["doc", "folder", "thread", "db", "index-maintenance"];
+const WRITE_RESTRICTED_TOPICS = ["doc", "folder", "board", "thread", "db", "index-maintenance"];
 
 /** Write APIs, their sync twins, and the stream that bypasses both. */
 const FORBIDDEN_FS = [
@@ -245,6 +245,8 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
   it("finds the modules it is supposed to be guarding", async () => {
     const modules = await writeRestrictedModules();
     expect(modules.map((module) => module.path)).toEqual([
+      "board/index.ts",
+      "board/order.ts",
       "db/doctor.ts",
       "db/index.ts",
       "db/rebuild.ts",
@@ -352,6 +354,8 @@ describe("nothing outside input.ts touches process.stdin", () => {
     expect(modules.map((module) => module.path)).toEqual([
       "age.ts",
       "agents.ts",
+      "board/index.ts",
+      "board/order.ts",
       "columns.ts",
       "db/doctor.ts",
       "db/index.ts",

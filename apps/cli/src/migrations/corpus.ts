@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 
 /**
  * The workspace's documents, read straight off disk, read-only (CLI-061).
@@ -15,7 +14,38 @@ import { parse as parseYaml } from "yaml";
  * file well formed"; a file that will not parse is **skipped** here rather than
  * failed, because a migration report that refuses to run because of an unrelated
  * broken file tells the operator nothing about the migration.
+ *
+ * ## Why the reads here are async (CLI-058)
+ *
+ * Nothing in this module does asynchronous I/O — every file is read with
+ * `readFileSync`. The `async` is for the **`yaml` import**, and it is the whole
+ * reason the signatures look like this.
+ *
+ * `yaml` is the only third-party package the CLI loads for a code path that runs
+ * on one verb. A static `import … from "yaml"` puts it on the startup path of
+ * *every* invocation — 15 ms to import on its own — and the agent loop is made
+ * of hundreds of invocations (CLI-058). Deferring it to {@link yamlModule} costs
+ * a migration detector one microtask and gives every other command that time
+ * back: **10.1 ms off 168.7 ms, 6.0 %**, measured on the packaged bundle over 60
+ * interleaved runs of `corpus health` with the two builds differing in this one
+ * line.
+ *
+ * `startup-cost.test.ts` pins the set of packages the startup path may reach, so
+ * a static import added here fails as a named diff rather than as a slow tool
+ * nobody profiles.
  */
+
+/**
+ * `yaml`, loaded at most once per process and only when a document is actually
+ * parsed. Memoised as the **promise** rather than the module, so concurrent
+ * first callers share one load.
+ */
+let yamlModule: Promise<typeof import("yaml")> | undefined;
+
+function yaml(): Promise<typeof import("yaml")> {
+  yamlModule ??= import("yaml");
+  return yamlModule;
+}
 
 /** The frontmatter of one file under `data/docs/`, exactly as written. */
 export interface DocumentOnDisk {
@@ -44,11 +74,11 @@ const BOM = "\uFEFF";
  * corpus, not a failure: `corpus upgrade` runs outside a fully-formed workspace
  * often enough that refusing there would cost the tool half of §2.4.
  */
-export function readWorkspaceCorpus(root: string, dataDir: string): WorkspaceCorpus {
+export async function readWorkspaceCorpus(root: string, dataDir: string): Promise<WorkspaceCorpus> {
   const docsRoot = join(root, dataDir, "docs");
   const documents: DocumentOnDisk[] = [];
   for (const relative of markdownFilesUnder(docsRoot)) {
-    const parsed = readDocument(join(docsRoot, ...relative.split("/")));
+    const parsed = await readDocument(join(docsRoot, ...relative.split("/")));
     if (parsed === null) continue;
     documents.push({ ...parsed, path: `${dataDir}/docs/${relative}` });
   }
@@ -81,14 +111,14 @@ function markdownFilesUnder(directory: string): readonly string[] {
 }
 
 /** One file's frontmatter, or `null` when it has none this reader can use. */
-function readDocument(absolute: string): Omit<DocumentOnDisk, "path"> | null {
+async function readDocument(absolute: string): Promise<Omit<DocumentOnDisk, "path"> | null> {
   let raw: string;
   try {
     raw = readFileSync(absolute, "utf8");
   } catch {
     return null;
   }
-  const frontmatter = parseFrontmatter(raw);
+  const frontmatter = await parseFrontmatter(raw);
   if (frontmatter === null) return null;
   return {
     id: stringOrNull(frontmatter.id),
@@ -106,16 +136,17 @@ function readDocument(absolute: string): Omit<DocumentOnDisk, "path"> | null {
  * ever reads. What the two must agree on is where the fences are, and that is
  * the whole of what is duplicated here — the CLI may not import from the server
  * (CLAUDE.md dependency direction), and the parse itself goes through the same
- * `yaml` library rather than a hand-rolled scanner (SPEC.md §5).
+ * `yaml` library rather than a hand-rolled scanner (SPEC.md §5) — loaded on
+ * first use rather than at startup, which is what the `async` buys.
  */
-export function parseFrontmatter(raw: string): Record<string, unknown> | null {
+export async function parseFrontmatter(raw: string): Promise<Record<string, unknown> | null> {
   const text = raw.startsWith(BOM) ? raw.slice(BOM.length) : raw;
   const lines = text.split("\n");
   if (!isFence(lines[0])) return null;
 
   const body: string[] = [];
   for (let index = 1; index < lines.length; index += 1) {
-    if (isFence(lines[index])) return mappingOf(body.join("\n"));
+    if (isFence(lines[index])) return await mappingOf(body.join("\n"));
     body.push(stripCr(lines[index] ?? ""));
   }
   // Unterminated: not a document. `corpus doc check` is what says so.
@@ -130,10 +161,11 @@ function stripCr(line: string): string {
   return line.endsWith("\r") ? line.slice(0, -1) : line;
 }
 
-function mappingOf(source: string): Record<string, unknown> | null {
+async function mappingOf(source: string): Promise<Record<string, unknown> | null> {
+  const { parse } = await yaml();
   let parsed: unknown;
   try {
-    parsed = parseYaml(source) as unknown;
+    parsed = parse(source) as unknown;
   } catch {
     return null;
   }

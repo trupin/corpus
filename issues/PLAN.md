@@ -1274,7 +1274,7 @@ was written for.
 | SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | done | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
-| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
+| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | done | P2 | CONTRACT-080, CLI-060 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
 | CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | done | P2 | CONTRACT-075, SERVER-136 |
 | CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | done | P3 | CONTRACT-074, SERVER-138 |
@@ -1322,8 +1322,8 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | --- | --- | --- | --- | --- |
 | CLI-055 | `doc show` reads a whole document or nothing, so the cheapest read path bypasses the CLI | done | P0 | — |
 | CLI-056 | Help text costs an agent more to read than the work it describes | done | P1 | — |
-| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
-| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
+| CLI-057 | `doc show` takes one id, so reading five documents costs five processes | done | P2 | — |
+| CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | done | P1 | — |
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | done | P2 | — |
 | SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | done | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
@@ -1534,3 +1534,6 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | todo | P1 | opus | CLI-056 |
 | UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | todo | P2 | opus | CONTRACT-078 |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |
+| CONTRACT-082 | The CLI pays 23ms a call for routes it never serves (CLI-058 measurement) | todo | P1 | opus | — |
+| SERVER-143 | A view accepts an `order` the spec says it does not have (CLI-063 finding) | todo | P1 | opus | — |
+| CLI-064 | A batch verb needs a decided exit code before it is worth building (CLI-058 recommendation) — **not in v0.20.0** | todo | P1 | fable | CLI-057, CLI-058 |

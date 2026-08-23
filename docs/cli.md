@@ -19,6 +19,8 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus reflect`](#corpus-reflect)
 - [`corpus search`](#corpus-search)
 - [`corpus upgrade`](#corpus-upgrade)
+- [`corpus board`](#corpus-board)
+  - [`corpus board order`](#corpus-board-order)
 - [`corpus db`](#corpus-db)
   - [`corpus db doctor`](#corpus-db-doctor)
   - [`corpus db rebuild`](#corpus-db-rebuild)
@@ -419,6 +421,56 @@ One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest
 
 ```
 corpus upgrade --json
+```
+
+## `corpus board`
+
+Acts on the board bar as a set — today, its order.
+
+A board is a document (SPEC.md §10), so everything that happens to **one** board happens through `corpus doc`: `corpus doc create --type board` makes one, `corpus doc edit` writes its `columns`, its `kanban` block and its title, and `corpus doc archive` takes it off the bar. This topic is for the acts whose subject is the **bar itself**, and there is one of them.
+
+`order` renumbers every board named, in the order given, and lands the whole renumbering as the single auto-commit §4 requires — rider 2's _reordering boards writes `order` on every board, in one commit_. Doing the same with `corpus doc edit <id> --order N` per board makes one commit only while §4's window happens to stay open across the writes, which is not a property anything can rely on.
+
+### `corpus board order`
+
+Set the order of the board bar, in one act and one commit.
+
+Renumbers the boards named to `1 … n`, in the order given, through `POST /api/boards/order` — and lands every write as the **single** auto-commit SPEC.md §4 requires, which is rider 2's _reordering boards writes `order` on every board, in one commit_. The alternative is `corpus doc edit <id> --order N` per board, and that makes one commit only by accident: §4's window folds a party's consecutive writes, so it holds only until the window closes between two of them. Here it is a property of the act.
+
+**Name the whole bar, first tab first.** The positions come from the list — the first board is given `1`, the next `2` — so there is no way to spell a contradiction, no gap and no tie to resolve. A board already sitting at the number it would be given is **not** written: a write that changes nothing still stamps `updated` and lands a line in the log, so a bar dragged back where it started writes nothing at all.
+
+**It names the bar, not the corpus.** Boards the list does not name keep the `order` they carry, which is what lets a caller that shows only unarchived boards state its own order without inventing positions for boards nobody can see.
+
+One row per board, in the order asked for: the id, the position it **now** carries, and `moved` or `unchanged`. Then one line naming the single commit — count the `moved` rows rather than the ids you sent when reporting how many boards moved. **All or nothing**: an id that names no document is a `404` and an id that names something other than a `type: board` document is a `400`, both refused before anything is written, so no caller ever sees half an order. An id named twice is a `400` too — a board has one position, so a repeat cannot be resolved into an order.
+
+```
+corpus board order <id…> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                       |
+| -------- | -------- | --------------------------------------------------------------------------------- |
+| `id…`    | yes      | The boards, in the order the bar should be in — first tab first. Each named once. |
+
+**Examples**
+
+Put Inbox first, Attention second, Files third. One act, one commit, and only the boards whose position actually changed are written.
+
+```
+corpus board order doc_inbox doc_attention doc_files --from agent
+```
+
+The single sha the reorder landed as — `git show` it to see every board it wrote. Null when no board had to move.
+
+```
+corpus board order doc_attention doc_inbox --json | jq -r .commit
+```
+
+Reverse the bar: read the boards in their current order, hand them back reversed. The list is the order, so nothing has to compute positions.
+
+```
+corpus doc list --type board --sort order --json | jq -r '.items[].id' | tail -r | xargs corpus board order --from agent
 ```
 
 ## `corpus db`
@@ -1168,7 +1220,7 @@ corpus doc related doc_a1b2c3 --json
 
 ### `corpus doc show`
 
-Read a document — all of it, its heading paths, or one section byte for byte.
+Read one document or several — all of it, its heading paths, or one section byte for byte.
 
 Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date.
 
@@ -1184,17 +1236,21 @@ These two flags narrow **what you read**, not what crosses the wire: the request
 
 The §10 **board and workflow keys** print when the document carries them, and only then: `stage`, `order`, `default-open`, `columns`, and a `kanban` block flattened to its field, its stages, its graph and its status map. A board therefore shows its whole configuration here, and an ordinary note is not made five lines longer by the existence of boards.
 
+**Several ids read several documents in one call.** The saving is _processes, not bytes_: each id is still its own request, but one `corpus` invocation costs ~159 ms of startup before it does anything, against ~10 ms for a round trip, so five ids in one call is **189 ms rather than 797 ms** (measured). The documents come back in the order asked for, one at a time, each under a `──── <id> ────` rule; a repeated id is read once. `--json` is then a JSON **array** of the same payloads, in the same order, so a caller reads element `.frontmatter.id` rather than parsing a rule. **An id that names nothing does not lose the others**: every document that was found is printed, the missing ids are named together afterwards, and the exit code is the same `404`/exit 5 a single missing id has always given — so exit 0 means all found and exit 5 means at least one was not. `--json` carries them at `.error.details.missing`, with what was read at `.details.found`. At most 200 ids at once, the same ceiling one listing has; more than that is refused before any request. Any _other_ failure — an unreachable server, a rejected token — ends the read where it happens rather than spending the remaining round trips.
+
+`--headings` and `--section` read inside **one** document, so they take one id and refuse several (exit 2). Two sections joined by a separator are no longer either document's bytes, which is the one property `--section` exists to have.
+
 The human rendering is a summary: the whole payload — including those keys and any non-core `extra` frontmatter — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
 
 ```
-corpus doc show <id> [flags]
+corpus doc show <id…> [flags]
 ```
 
 **Arguments**
 
-| Argument | Required | Description        |
-| -------- | -------- | ------------------ |
-| `id`     | yes      | The document's id. |
+| Argument | Required | Description                                                                        |
+| -------- | -------- | ---------------------------------------------------------------------------------- |
+| `id…`    | yes      | The document's id. Several read several documents in one call, in the order given. |
 
 **Flags**
 
@@ -1210,6 +1266,18 @@ Read a document before editing or commenting on it: header, its `key`, anchored 
 
 ```
 corpus doc show doc_a1b2c3
+```
+
+Three documents, one process. Each arrives under a `──── <id> ────` rule, in the order asked for — one startup instead of three, measured at 189 ms against 797 ms for five.
+
+```
+corpus doc show doc_a1b2c3 doc_d4e5f6 doc_g7h8i9
+```
+
+A missing id does not lose the ones that were found: the array on stdout holds every document that was read, the missing ids arrive on stderr at `.error.details.missing`, and the exit code is 5.
+
+```
+corpus doc show doc_a1b2c3 doc_nosuchid --json | jq -r '.[].frontmatter.title'
 ```
 
 The document's addresses, one per line — `Mortgage options`, `Mortgage options › Rates`, `Mortgage options › Escrow` — without reading a word of it.

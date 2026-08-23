@@ -370,7 +370,7 @@ async function syncTemplate(
     // *data* may still be written for the version before this one (SPEC.md §2.4
     // rider 8). It is also why this is not gated on `dryRun` — detecting a
     // migration writes nothing in either mode.
-    migrations: detectMigrations({
+    migrations: await detectMigrations({
       root,
       dataDir: request.dataDir ?? DEFAULT_DATA_DIR,
       actor: request.actor,
