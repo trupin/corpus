@@ -32,12 +32,14 @@ import { describe, expect, it } from "vitest";
  * `node:fs` costs a resolution rather than a parse.
  *
  * `@corpus/contract` is one entry here and a large module graph behind it; what
- * *it* loads eagerly is the contract's own to guard. The two known costs on the
- * far side of that boundary are measured and reported in CLI-058 rather than
- * fixed from here: the OpenAPI route definitions the CLI never serves (**5 ms**
- * and 182 kB, removable by marking the contract side-effect-free), and
- * `@hono/zod-openapi` standing in for plain `zod` in every schema
- * (**18.4 ms** on top of `zod`, for an `.openapi()` annotation no client reads).
+ * *it* loads eagerly is the contract's own to guard, and CONTRACT-082 took the
+ * two costs CLI-058 measured on the far side of that boundary: the OpenAPI route
+ * definitions the CLI never serves (182 kB, dropped by marking the contract
+ * side-effect-free) and `@hono/zod-openapi` standing in for plain `zod` in every
+ * schema. Together they were **20 ms of every invocation**, measured before and
+ * after on interleaved packaged builds. `@hono/zod-openapi` no longer appears in
+ * the CLI bundle at all; `packages/contract/src/schemas/openapi-metadata.test.ts`
+ * is what keeps it out.
  */
 
 /**

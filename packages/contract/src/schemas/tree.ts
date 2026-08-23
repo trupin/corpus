@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The `data/docs/` folder tree (SPEC.md §9.2), behind folder pickers, folder
@@ -24,8 +25,8 @@ export interface FolderNode {
  * expresses the cycle without a `z.lazy` wrapper the OpenAPI emitter would have
  * to unwrap.
  */
-export const FolderNodeSchema: z.ZodType<FolderNode> = z
-  .object({
+export const FolderNodeSchema: z.ZodType<FolderNode> = openapi(
+  z.object({
     path: z.string().describe("Path relative to `data/docs/`; empty for the root."),
     name: z.string(),
     count: z.number().int().min(0).describe("Documents filed directly in this folder."),
@@ -33,11 +34,15 @@ export const FolderNodeSchema: z.ZodType<FolderNode> = z
     get children() {
       return z.array(FolderNodeSchema);
     },
-  })
-  .openapi("FolderNode");
+  }),
+  "FolderNode",
+);
 
-export const FolderTreeSchema = z
-  .object({ folders: z.array(FolderNodeSchema).describe("Top-level folders under `data/docs/`.") })
-  .openapi("FolderTree");
+export const FolderTreeSchema = openapi(
+  z.object({
+    folders: z.array(FolderNodeSchema).describe("Top-level folders under `data/docs/`."),
+  }),
+  "FolderTree",
+);
 
 export type FolderTree = z.infer<typeof FolderTreeSchema>;

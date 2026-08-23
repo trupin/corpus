@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { CANONICAL_INSTANT } from "../turns.js";
 import { IsoDateTimeSchema } from "./time.js";
 

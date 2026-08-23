@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The projection's two maintenance operations (SPEC.md §11, §12 M1).
@@ -56,15 +57,16 @@ const projectionCounts = {
  * broken, and a caller that cannot see what was skipped would read a partial
  * rebuild as a complete one.
  */
-export const SkippedFileSchema = z
-  .object({
+export const SkippedFileSchema = openapi(
+  z.object({
     path: z.string().describe("Workspace-relative path of the file that produced no row."),
     reason: z.string().describe("Why it was skipped. Rendered verbatim; never parsed."),
-  })
-  .openapi("SkippedFile");
+  }),
+  "SkippedFile",
+);
 
-export const RebuildResultSchema = z
-  .object({
+export const RebuildResultSchema = openapi(
+  z.object({
     path: z
       .string()
       .describe(
@@ -82,8 +84,9 @@ export const RebuildResultSchema = z
       .describe(
         "Files that are documents by location but produced no row. Empty is the good case.",
       ),
-  })
-  .openapi("RebuildResult");
+  }),
+  "RebuildResult",
+);
 
 /**
  * The ways a projection can disagree with the files, as
@@ -98,7 +101,7 @@ export const DRIFT_KINDS = [
   "duplicate_id",
 ] as const;
 
-export const DriftKindSchema = z.enum(DRIFT_KINDS).openapi({
+export const DriftKindSchema = openapi(z.enum(DRIFT_KINDS), {
   description:
     "`missing_row`: a document file exists but the projection has no row for it. " +
     "`orphan_row`: the projection has a row for a path that no longer exists. " +
@@ -111,8 +114,8 @@ export const DriftKindSchema = z.enum(DRIFT_KINDS).openapi({
     "`duplicate_id`: two files claim one id; only the first by path order is projected.",
 });
 
-export const ProjectionDriftSchema = z
-  .object({
+export const ProjectionDriftSchema = openapi(
+  z.object({
     kind: DriftKindSchema,
     // Nullable, not optional — the response-side convention this contract uses
     // everywhere (see `query.ts`'s thread-row shape). The server's own `Drift`
@@ -130,8 +133,9 @@ export const ProjectionDriftSchema = z
     detail: z
       .string()
       .describe("Human-readable specifics, rendered verbatim by `corpus db doctor`; never parsed."),
-  })
-  .openapi("ProjectionDrift");
+  }),
+  "ProjectionDrift",
+);
 
 /**
  * Report-only doctor findings (CONTRACT-025), and the second half of a
@@ -169,12 +173,13 @@ export const DOCTOR_WARNING_KINDS = ["unindexable_file"] as const;
 /** Narrowing helper for consumers that handle only the kinds the product ships. */
 export const CoreDoctorWarningKindSchema = z.enum(DOCTOR_WARNING_KINDS);
 
-export const DoctorWarningKindSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-z][a-z0-9_]*$/)
-  .openapi({
+export const DoctorWarningKindSchema = openapi(
+  z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z][a-z0-9_]*$/),
+  {
     description:
       "What kind of report-only finding this is. **Open by design**, unlike `ProjectionDrift.kind`: " +
       "a warning carries no verdict, so a consumer that does not recognise the kind still renders " +
@@ -184,10 +189,11 @@ export const DoctorWarningKindSchema = z
       "under a segment the document walk skips, so the corpus can never show it (SPEC.md §5). " +
       "Constrained to a lowercase snake_case token of at most 64 characters — it is a key to " +
       "switch on, not prose.",
-  });
+  },
+);
 
-export const DoctorWarningSchema = z
-  .object({
+export const DoctorWarningSchema = openapi(
+  z.object({
     kind: DoctorWarningKindSchema,
     // Nullable, not optional — the same response-side convention `ProjectionDrift`
     // uses, and load-bearing here for a second reason: the kind space is open, so
@@ -220,11 +226,12 @@ export const DoctorWarningSchema = z
           "a path they must go hunting for. `null` when there is no such commit: the file is " +
           "uncommitted, the workspace has no git, or the kind concerns no single file.",
       ),
-  })
-  .openapi("DoctorWarning");
+  }),
+  "DoctorWarning",
+);
 
-export const DoctorStatsSchema = z
-  .object({
+export const DoctorStatsSchema = openapi(
+  z.object({
     files: z.number().int().min(0).describe("Document files found under the workspace roots."),
     documents: z.number().int().min(0).describe("`documents` rows the projection holds."),
     hashed: z
@@ -242,11 +249,12 @@ export const DoctorStatsSchema = z
       .min(0)
       .describe("Files that had to be parsed, i.e. those with no row to explain them."),
     durationMs: z.number().int().min(0).describe("Wall-clock time the check took."),
-  })
-  .openapi("DoctorStats");
+  }),
+  "DoctorStats",
+);
 
-export const DoctorReportSchema = z
-  .object({
+export const DoctorReportSchema = openapi(
+  z.object({
     ok: z
       .boolean()
       .describe(
@@ -279,8 +287,9 @@ export const DoctorReportSchema = z
           "that runs no warning pass omits the key entirely, which is what keeps this field " +
           "additive for clients generated before it existed.",
       ),
-  })
-  .openapi("DoctorReport");
+  }),
+  "DoctorReport",
+);
 
 export type SkippedFile = z.infer<typeof SkippedFileSchema>;
 export type RebuildResult = z.infer<typeof RebuildResultSchema>;

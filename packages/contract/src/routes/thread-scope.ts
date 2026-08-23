@@ -9,6 +9,7 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * `GET /api/threads/{id}/scope` — what a designated thread's resident owns
@@ -41,7 +42,7 @@ import {
  */
 
 const ThreadIdParamSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 export const getThreadScope = createRoute({

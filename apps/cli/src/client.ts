@@ -1,4 +1,4 @@
-import { patchDoc } from "@corpus/contract";
+import { KEYLESS_WRITE_PATHS } from "@corpus/contract";
 import {
   createCorpusClient,
   isApiError,
@@ -207,13 +207,19 @@ function collectCauses(error: unknown, depth = 0): CauseFacts {
  * The write routes that present **no key of their own** (SPEC.md §7), as the
  * path templates the contract itself declares — never as a string spelled here.
  *
- * There is exactly one, and reading it off `patchDoc` rather than writing
+ * There is exactly one, and taking it from the contract rather than writing
  * `"/api/docs/{id}/patch"` is the whole point: the route's path is the
  * contract's to choose, and a copy of it in this file would go stale silently,
  * on the one code path whose job is telling an agent what to do next. A rename
  * in `packages/contract` moves this with it.
+ *
+ * It arrives as a published constant rather than as `patchDoc.path` because a
+ * route **definition** drags `@hono/zod-openapi` into the bundle, and that costs
+ * every `corpus` invocation 18.4 ms for machinery the CLI never uses
+ * (CONTRACT-082). `packages/contract/src/routes/paths.ts` builds the route from
+ * this constant, so the single source of truth is unchanged.
  */
-const KEYLESS_WRITE_ROUTES: readonly string[] = [patchDoc.path];
+const KEYLESS_WRITE_ROUTES: readonly string[] = KEYLESS_WRITE_PATHS;
 
 /**
  * Whether the request that got this response presented a key — which decides

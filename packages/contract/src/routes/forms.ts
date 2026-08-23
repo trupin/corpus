@@ -12,6 +12,7 @@ import {
   VALIDATION_RESPONSE,
   UNRESOLVED_REFERENCE_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * The form-answer surface (SPEC.md §6). The form is addressed through the turn
@@ -22,8 +23,8 @@ import {
  * identity, so nothing inside a form can drift from anything else in it.
  */
 const FormParamsSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
-  ts: IsoDateTimeSchema.openapi({
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
+  ts: openapi(IsoDateTimeSchema, {
     param: { name: "ts", in: "path", required: true },
     description:
       "Timestamp of the agent turn carrying the form, which is that turn's identity and therefore " +

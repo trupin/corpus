@@ -1,8 +1,9 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import type { Actor } from "../actor.js";
 import type { DocStatus } from "./doc.js";
 import { EventIdSchema, ThreadIdSchema } from "./id.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Reflection is an act over the whole corpus, never a side effect of one
@@ -55,8 +56,8 @@ export const WorkspaceReflectPayloadSchema = z.object({
  * say "asked" or "already asked" without comparing ids against something it may
  * not have.
  */
-export const ReflectAskResultSchema = z
-  .object({
+export const ReflectAskResultSchema = openapi(
+  z.object({
     eventId: EventIdSchema.describe(
       "The `workspace.reflect` event that will run — newly enqueued when nothing was pending or " +
         "in progress, and otherwise the one already there.",
@@ -71,8 +72,9 @@ export const ReflectAskResultSchema = z
           "the thing they wanted is already happening. False when this ask is what created the " +
           "event.",
       ),
-  })
-  .openapi("ReflectAskResult");
+  }),
+  "ReflectAskResult",
+);
 
 /**
  * The clock, and everything the board bar's Reflect control renders from it.
@@ -83,8 +85,8 @@ export const ReflectAskResultSchema = z
  * literally the same, {@link isUnreflected} — so the corpus count and the marks
  * on the rows cannot disagree.
  */
-export const ReflectStatusSchema = z
-  .object({
+export const ReflectStatusSchema = openapi(
+  z.object({
     reflected: IsoDateTimeSchema.nullable().describe(
       "**The clock** (SPEC.md §7): the `created` time of the last reflection whose job was " +
         "processed, held as server state in `.corpus/`. `null` for a corpus never reflected on. " +
@@ -129,8 +131,9 @@ export const ReflectStatusSchema = z
           "this long after the last. **`0` disables the automatic path** and leaves asking as the " +
           "only way one happens.",
       ),
-  })
-  .openapi("ReflectStatus");
+  }),
+  "ReflectStatus",
+);
 
 /**
  * **Is this document unreflected?** — SPEC.md §7's rule, shipped rather than

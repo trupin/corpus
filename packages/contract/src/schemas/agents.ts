@@ -1,8 +1,9 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocIdSchema, ThreadIdSchema } from "./id.js";
 import { LaneSchema, ORCHESTRATOR_LANE } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 import { REQUESTED_WEIGHT_MAX_LENGTH, RequestedWeightSchema } from "./weight.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **The roster** — who is running, read behind an ordinary query key (SPEC.md
@@ -91,13 +92,15 @@ export const AGENT_NAME_MAX_LENGTH = 100;
  * asking for a profile, the other is reporting the profile that was asked for —
  * and each says so itself rather than sharing prose that has to be true of both.
  */
-export const AgentNameSchema = z
-  .string()
-  .min(1)
-  .max(AGENT_NAME_MAX_LENGTH)
-  .refine((value) => value.trim() !== "", { message: "must not be blank" })
-  .refine((value) => !/[\r\n]/.test(value), { message: "must be a single line" })
-  .openapi({ example: "researcher" });
+export const AgentNameSchema = openapi(
+  z
+    .string()
+    .min(1)
+    .max(AGENT_NAME_MAX_LENGTH)
+    .refine((value) => value.trim() !== "", { message: "must not be blank" })
+    .refine((value) => !/[\r\n]/.test(value), { message: "must be a single line" }),
+  { example: "researcher" },
+);
 
 /**
  * What a resident's weight governs, and what it does not — SPEC.md §7's rider
@@ -185,54 +188,56 @@ export const RESIDENT_WEIGHT_BOUNDARY =
  * that consume it would lose the one name they refer to it by. The refinement
  * buys the same guarantee at runtime for the price of one sentence.
  */
-export const ResidentSchema = z
-  .object({
-    name: AgentNameSchema.nullable().describe(
-      "The **profile** this conversation's agent was designated with, or null when it was " +
-        "designated with none. Null is the ordinary case (SPEC.md §7): a resident with no profile " +
-        "is *a general resident* — an agent working the conversation as the workspace's ordinary " +
-        "agent does — and it is a resident in every other respect, so **null here never means " +
-        "there is nobody**; that is the whole field being null one level up. Where it is a name, " +
-        "it is the invocable name `@<subagent>` mentions use (SPEC.md §8), not a document id, and " +
-        "it is what a person reads. **Do not substitute a word for null and print it as a name** " +
-        "— beside real profile names it would be indistinguishable from one, and could collide " +
-        "with an agent-def titled the same.",
-    ),
-    docId: DocIdSchema.nullable().describe(
-      "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
-        "none to resolve — either because no profile was named, or because the one that was named " +
-        "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
-        "has to live in to be addressable at all. **Archiving a profile does not empty this " +
-        "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
-        "still designatable, so what stands here is its id and `name (profile missing)` is the " +
-        "wrong thing to show for it. Archived-ness is not carried on a `Resident` at all — it is " +
-        "the document's own `status`, on the document this id names, for the caller that cares. " +
-        "Read the two fields together: `name` null is a " +
-        "general resident, `name` set with this null is a resident whose profile has gone (SPEC.md " +
-        "§7 — the designation stands, and the missing profile is reported rather than silently " +
-        "substituted), and both set is a profile a reader can open. It is re-resolved on every " +
-        "response rather than stored, so what stands here is the document the name answers to " +
-        "now, never a stale id.",
-    ),
-    weight: RequestedWeightSchema.nullable().describe(
-      "The **weight this resident runs at**, or null (SPEC.md §7, rider signed 2026-08-19: a " +
-        "resident's weight is set when it is designated, not per message). Where set, it is a " +
-        "level's key from the workspace's own agent guidance — the same token a message's " +
-        "`weight` carries, never a model name — recorded verbatim from the designation and " +
-        "interpreted by nothing here. **Null means none was chosen**: the launcher decides what " +
-        "the resident runs at, and says so. Orthogonal to `name` and `docId` — a general " +
-        "resident may run at a stated weight, and a profiled one at none. It " +
-        `${RESIDENT_WEIGHT_BOUNDARY}. ` +
-        "A designation is long-lived, so a level the launcher cannot meet is not refused here " +
-        "(the table is skill text the server never reads): the launcher reports it, per §7's " +
-        "weight rider, in the listener's first reply.",
-    ),
-  })
-  .refine((resident) => resident.name !== null || resident.docId === null, {
-    message: "a resident that named no profile cannot have resolved to an agent-def document",
-    path: ["docId"],
-  })
-  .openapi("Resident");
+export const ResidentSchema = openapi(
+  z
+    .object({
+      name: AgentNameSchema.nullable().describe(
+        "The **profile** this conversation's agent was designated with, or null when it was " +
+          "designated with none. Null is the ordinary case (SPEC.md §7): a resident with no profile " +
+          "is *a general resident* — an agent working the conversation as the workspace's ordinary " +
+          "agent does — and it is a resident in every other respect, so **null here never means " +
+          "there is nobody**; that is the whole field being null one level up. Where it is a name, " +
+          "it is the invocable name `@<subagent>` mentions use (SPEC.md §8), not a document id, and " +
+          "it is what a person reads. **Do not substitute a word for null and print it as a name** " +
+          "— beside real profile names it would be indistinguishable from one, and could collide " +
+          "with an agent-def titled the same.",
+      ),
+      docId: DocIdSchema.nullable().describe(
+        "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
+          "none to resolve — either because no profile was named, or because the one that was named " +
+          "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
+          "has to live in to be addressable at all. **Archiving a profile does not empty this " +
+          "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
+          "still designatable, so what stands here is its id and `name (profile missing)` is the " +
+          "wrong thing to show for it. Archived-ness is not carried on a `Resident` at all — it is " +
+          "the document's own `status`, on the document this id names, for the caller that cares. " +
+          "Read the two fields together: `name` null is a " +
+          "general resident, `name` set with this null is a resident whose profile has gone (SPEC.md " +
+          "§7 — the designation stands, and the missing profile is reported rather than silently " +
+          "substituted), and both set is a profile a reader can open. It is re-resolved on every " +
+          "response rather than stored, so what stands here is the document the name answers to " +
+          "now, never a stale id.",
+      ),
+      weight: RequestedWeightSchema.nullable().describe(
+        "The **weight this resident runs at**, or null (SPEC.md §7, rider signed 2026-08-19: a " +
+          "resident's weight is set when it is designated, not per message). Where set, it is a " +
+          "level's key from the workspace's own agent guidance — the same token a message's " +
+          "`weight` carries, never a model name — recorded verbatim from the designation and " +
+          "interpreted by nothing here. **Null means none was chosen**: the launcher decides what " +
+          "the resident runs at, and says so. Orthogonal to `name` and `docId` — a general " +
+          "resident may run at a stated weight, and a profiled one at none. It " +
+          `${RESIDENT_WEIGHT_BOUNDARY}. ` +
+          "A designation is long-lived, so a level the launcher cannot meet is not refused here " +
+          "(the table is skill text the server never reads): the launcher reports it, per §7's " +
+          "weight rider, in the listener's first reply.",
+      ),
+    })
+    .refine((resident) => resident.name !== null || resident.docId === null, {
+      message: "a resident that named no profile cannot have resolved to an agent-def document",
+      path: ["docId"],
+    }),
+  "Resident",
+);
 
 /**
  * The resident of a conversation, or `null` — the shape carried on `Thread`,
@@ -290,12 +295,13 @@ export const residentField = z
  * follows for `originTitle` (`./job.ts`): a renamed conversation shows its new
  * title on the next read.
  */
-export const LaneOriginSchema = z
-  .object({
+export const LaneOriginSchema = openapi(
+  z.object({
     id: ThreadIdSchema.describe("The designated root thread this lane belongs to."),
     title: z.string().describe("That thread's title as it now stands, read at response time."),
-  })
-  .openapi("LaneOrigin");
+  }),
+  "LaneOrigin",
+);
 
 /**
  * **Whether a listener is parked** — the one field every "is an agent there"
@@ -362,9 +368,10 @@ export const presenceSinceField = IsoDateTimeSchema.nullable().describe(
  * rather than nesting this, so the row still reads as one sentence; it is
  * structurally an `AgentPresence`, and `isAgentPresent` takes either.
  */
-export const AgentPresenceSchema = z
-  .object({ live: presenceLiveField, since: presenceSinceField })
-  .openapi("AgentPresence", {
+export const AgentPresenceSchema = openapi(
+  z.object({ live: presenceLiveField, since: presenceSinceField }),
+  "AgentPresence",
+  {
     description:
       "**Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §10). " +
       "Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is " +
@@ -378,7 +385,8 @@ export const AgentPresenceSchema = z
       "and two are both `live`, and a count belongs to the roster, which has a row per lane to " +
       "put it on. Read it rather than deriving idleness from the queue counts beside it — an " +
       "empty queue means nobody asked for anything, not that somebody is waiting to be asked.",
-  });
+  },
+);
 
 /**
  * One lane of the queue, and whoever is or is not listening on it.
@@ -386,8 +394,8 @@ export const AgentPresenceSchema = z
  * Ordered as the row reads: which lane, who is resident on it, whether anyone is
  * listening, since when, what they are doing, and which conversation it is.
  */
-export const AgentLaneSchema = z
-  .object({
+export const AgentLaneSchema = openapi(
+  z.object({
     lane: LaneSchema.describe(
       "This lane's name: `orchestrator`, or the id of a designated root thread. It is the value " +
         "to send as `scope` on a queue verb, and as `recipient` on a message addressed here.",
@@ -420,8 +428,9 @@ export const AgentLaneSchema = z
           "the field is here for the title beside it, so a recipient picker can name the " +
           "conversation without a second read.",
       ),
-  })
-  .openapi("AgentLane");
+  }),
+  "AgentLane",
+);
 
 /**
  * The whole roster: every lane, always including the orchestrator's.
@@ -431,8 +440,8 @@ export const AgentLaneSchema = z
  * sibling field, and this one will want one the first time the roster needs to
  * say something about itself.
  */
-export const AgentRosterSchema = z
-  .object({
+export const AgentRosterSchema = openapi(
+  z.object({
     agents: z
       .array(AgentLaneSchema)
       .describe(
@@ -440,8 +449,9 @@ export const AgentRosterSchema = z
           "before anything has been designated and survives the last release — so a caller that " +
           "finds an empty list has found a bug rather than a workspace with no agents.",
       ),
-  })
-  .openapi("AgentRoster");
+  }),
+  "AgentRoster",
+);
 
 /**
  * Body of `POST /api/threads/{id}/resident` — **optional in full**: a bare
@@ -493,8 +503,8 @@ export const AgentRosterSchema = z
  * (CONTRACT-017), so a caller that means `name` and writes `agent` is told which
  * key it got wrong instead of quietly receiving a general resident.
  */
-export const DesignateResidentRequestSchema = z
-  .strictObject({
+export const DesignateResidentRequestSchema = openapi(
+  z.strictObject({
     name: AgentNameSchema.describe(
       "The **profile** to designate, by the invocable name `@<subagent>` mentions already use " +
         "(SPEC.md §8): for a `type: agent-def` document **under `.claude/agents/`**, its filename " +
@@ -535,8 +545,9 @@ export const DesignateResidentRequestSchema = z
         "listener's first reply, naming what was asked for and what was done instead. Sent " +
         "alone, it designates a general resident at that weight; the two fields are independent.",
     ),
-  })
-  .openapi("DesignateResidentRequest");
+  }),
+  "DesignateResidentRequest",
+);
 
 /**
  * The event type a designation enqueues, spelled here so this module does not

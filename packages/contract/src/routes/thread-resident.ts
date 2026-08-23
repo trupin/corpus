@@ -11,6 +11,7 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 /**
  * Designation and release (SPEC.md §7, rider SHARED-043 signed 2026-08-13).
@@ -60,7 +61,7 @@ import {
  */
 
 const ThreadIdParamSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 export const designateResident = createRoute({

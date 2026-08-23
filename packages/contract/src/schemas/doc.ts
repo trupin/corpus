@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { ACTORS } from "../actor.js";
 import { BodyRangeSchema, TextQuoteSelectorSchema } from "./anchor.js";
 import { ExtraFrontmatterSchema } from "./extra.js";
@@ -15,6 +15,7 @@ import {
 import { ThreadStatusSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Document types the core defines, and they are all of them (SPEC.md §5).
@@ -48,21 +49,18 @@ export const CORE_DOC_TYPES = [
 
 export const CoreDocTypeSchema = z.enum(CORE_DOC_TYPES);
 
-export const DocTypeSchema = z
-  .string()
-  .min(1)
-  .openapi({
-    description:
-      `Document type. Core values: ${CORE_DOC_TYPES.join(", ")}. Open rather than enumerated ` +
-      "because a workspace may hold a document whose type this build has never heard of — from " +
-      "its own history, or hand-written — and such a document still opens, renders and searches " +
-      "(SPEC.md §5, §12's M6).",
-    example: "note",
-  });
+export const DocTypeSchema = openapi(z.string().min(1), {
+  description:
+    `Document type. Core values: ${CORE_DOC_TYPES.join(", ")}. Open rather than enumerated ` +
+    "because a workspace may hold a document whose type this build has never heard of — from " +
+    "its own history, or hand-written — and such a document still opens, renders and searches " +
+    "(SPEC.md §5, §12's M6).",
+  example: "note",
+});
 
 export const DOC_STATUSES = ["open", "resolved", "archived"] as const;
 
-export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
+export const DocStatusSchema = openapi(z.enum(DOC_STATUSES), {
   description:
     "Lifecycle status; meaning is per type. Archiving is a reversible flip, never a deletion.",
 });
@@ -337,9 +335,10 @@ const VIEW_QUERY_DESCRIPTION =
 
 const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
 
-export const ViewQuerySchema = z
-  .record(z.string().min(1), z.union([viewQueryValue, z.array(viewQueryValue)]))
-  .openapi({ description: VIEW_QUERY_DESCRIPTION });
+export const ViewQuerySchema = openapi(
+  z.record(z.string().min(1), z.union([viewQueryValue, z.array(viewQueryValue)])),
+  { description: VIEW_QUERY_DESCRIPTION },
+);
 
 /**
  * A stage value as a document may carry it, and as a board may name it.
@@ -431,107 +430,109 @@ export const KanbanFieldSchema = z.enum(KANBAN_FIELDS);
  * board couples no stage to a status; `status: {}` means the same thing and is
  * simply the long way to write it.
  */
-export const KanbanSchema = z
-  .strictObject({
-    field: KanbanFieldSchema.describe(
-      "The document field this board's columns are drawn over (SPEC.md §10). `stage` is the " +
-        "free-form workflow position of §5; `status` is the three-value lifecycle. Those are the " +
-        "only two — a kanban over an arbitrary frontmatter key would be a board over a value the " +
-        "server neither filters nor arbitrates.",
-    ),
-    stages: z
-      .array(StageValueSchema)
-      .min(1)
-      .describe(
-        "The stages in **display order**, one column each, distinct. The first is where a " +
-          "document in scope with no value for the field sits (SPEC.md §10), which is why a " +
-          "client asks for that column with `stage=,<first>` — the first stage or nothing at all, " +
-          "in one request. **A kanban over `status` may name only the three statuses of §5**, " +
-          `\`${DOC_STATUSES.join("`, `")}\`, because those are the only values that field holds.`,
+export const KanbanSchema = openapi(
+  z
+    .strictObject({
+      field: KanbanFieldSchema.describe(
+        "The document field this board's columns are drawn over (SPEC.md §10). `stage` is the " +
+          "free-form workflow position of §5; `status` is the three-value lifecycle. Those are the " +
+          "only two — a kanban over an arbitrary frontmatter key would be a board over a value the " +
+          "server neither filters nor arbitrates.",
       ),
-    transitions: z
-      .record(z.string(), z.array(z.string()))
-      .optional()
-      .describe(
-        "For each stage, the stages a **drag** may reach — the board's transition graph " +
-          "(SPEC.md §10). Every key and every value must be one of `stages`, and a stage may not " +
-          "lead to itself. **Omitted means the linear funnel**: each stage leads to its " +
-          "neighbours, both ways. An empty object is not the same thing — it is a graph nothing " +
-          "may be dragged along. A stage the graph does not reach is still reachable by setting " +
-          "the field in the document, from the reader or the CLI: the server enforces the status " +
-          "map, never the transitions.",
-      ),
-    status: z
-      .record(z.string(), DocStatusSchema)
-      .optional()
-      .describe(
-        "**How a stage decides a status** (SPEC.md §5's coupling rule): entering a stage named " +
-          "here writes that status in the same commit, and entering a stage that is not named " +
-          "here writes `open`. Every key must be one of `stages`. The coupling is by this " +
-          "explicit map and never by a stage's name, so a stage called `archived` couples to " +
-          "nothing unless the board says so. Omitted means the board couples no stage at all.",
-      ),
-  })
-  .superRefine((kanban, ctx) => {
-    const declared = new Set<string>();
-    for (const [index, stage] of kanban.stages.entries()) {
-      if (declared.has(stage)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["stages", index],
-          message:
-            `duplicate stage \`${stage}\`: a kanban's stages are its columns, and a column ` +
-            "appears once.",
-        });
-      }
-      declared.add(stage);
-      if (kanban.field === "status" && !DocStatusSchema.safeParse(stage).success) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["stages", index],
-          message:
-            `\`${stage}\` is not a status: a kanban over \`status\` has the three statuses of ` +
-            `SPEC.md §5 as its only possible stages (\`${DOC_STATUSES.join("`, `")}\`).`,
-        });
-      }
-    }
-    for (const [from, targets] of Object.entries(kanban.transitions ?? {})) {
-      if (!declared.has(from)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["transitions", from],
-          message: `\`${from}\` is not one of \`stages\`: a transition may only leave a stage this board declares.`,
-        });
-      }
-      for (const [index, to] of targets.entries()) {
-        if (!declared.has(to)) {
+      stages: z
+        .array(StageValueSchema)
+        .min(1)
+        .describe(
+          "The stages in **display order**, one column each, distinct. The first is where a " +
+            "document in scope with no value for the field sits (SPEC.md §10), which is why a " +
+            "client asks for that column with `stage=,<first>` — the first stage or nothing at all, " +
+            "in one request. **A kanban over `status` may name only the three statuses of §5**, " +
+            `\`${DOC_STATUSES.join("`, `")}\`, because those are the only values that field holds.`,
+        ),
+      transitions: z
+        .record(z.string(), z.array(z.string()))
+        .optional()
+        .describe(
+          "For each stage, the stages a **drag** may reach — the board's transition graph " +
+            "(SPEC.md §10). Every key and every value must be one of `stages`, and a stage may not " +
+            "lead to itself. **Omitted means the linear funnel**: each stage leads to its " +
+            "neighbours, both ways. An empty object is not the same thing — it is a graph nothing " +
+            "may be dragged along. A stage the graph does not reach is still reachable by setting " +
+            "the field in the document, from the reader or the CLI: the server enforces the status " +
+            "map, never the transitions.",
+        ),
+      status: z
+        .record(z.string(), DocStatusSchema)
+        .optional()
+        .describe(
+          "**How a stage decides a status** (SPEC.md §5's coupling rule): entering a stage named " +
+            "here writes that status in the same commit, and entering a stage that is not named " +
+            "here writes `open`. Every key must be one of `stages`. The coupling is by this " +
+            "explicit map and never by a stage's name, so a stage called `archived` couples to " +
+            "nothing unless the board says so. Omitted means the board couples no stage at all.",
+        ),
+    })
+    .superRefine((kanban, ctx) => {
+      const declared = new Set<string>();
+      for (const [index, stage] of kanban.stages.entries()) {
+        if (declared.has(stage)) {
           ctx.addIssue({
             code: "custom",
-            path: ["transitions", from, index],
-            message: `\`${to}\` is not one of \`stages\`: a transition may only reach a stage this board declares.`,
+            path: ["stages", index],
+            message:
+              `duplicate stage \`${stage}\`: a kanban's stages are its columns, and a column ` +
+              "appears once.",
           });
-          continue;
         }
-        if (to === from) {
+        declared.add(stage);
+        if (kanban.field === "status" && !DocStatusSchema.safeParse(stage).success) {
           ctx.addIssue({
             code: "custom",
-            path: ["transitions", from, index],
-            message: `\`${from}\` may not lead to itself: a drop on the column a document is already in changes nothing.`,
+            path: ["stages", index],
+            message:
+              `\`${stage}\` is not a status: a kanban over \`status\` has the three statuses of ` +
+              `SPEC.md §5 as its only possible stages (\`${DOC_STATUSES.join("`, `")}\`).`,
           });
         }
       }
-    }
-    for (const stage of Object.keys(kanban.status ?? {})) {
-      if (!declared.has(stage)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["status", stage],
-          message: `\`${stage}\` is not one of \`stages\`: only a stage this board draws can decide a status.`,
-        });
+      for (const [from, targets] of Object.entries(kanban.transitions ?? {})) {
+        if (!declared.has(from)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["transitions", from],
+            message: `\`${from}\` is not one of \`stages\`: a transition may only leave a stage this board declares.`,
+          });
+        }
+        for (const [index, to] of targets.entries()) {
+          if (!declared.has(to)) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["transitions", from, index],
+              message: `\`${to}\` is not one of \`stages\`: a transition may only reach a stage this board declares.`,
+            });
+            continue;
+          }
+          if (to === from) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["transitions", from, index],
+              message: `\`${from}\` may not lead to itself: a drop on the column a document is already in changes nothing.`,
+            });
+          }
+        }
       }
-    }
-  })
-  .openapi("Kanban", {
+      for (const stage of Object.keys(kanban.status ?? {})) {
+        if (!declared.has(stage)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["status", stage],
+            message: `\`${stage}\` is not one of \`stages\`: only a stage this board draws can decide a status.`,
+          });
+        }
+      }
+    }),
+  "Kanban",
+  {
     description:
       "A board drawn as a **kanban** over one field (SPEC.md §10): the field, the stages in " +
       "display order, and optionally the transition graph and the stage-to-status map of §5. Its " +
@@ -540,7 +541,8 @@ export const KanbanSchema = z
       "drag follows a transition and nothing else, and anything the graph forbids is still done " +
       "by setting the field in the document — **the server enforces the status map, never the " +
       "transitions**.",
-  });
+  },
+);
 
 /**
  * A nullable reference to the registered {@link KanbanSchema}, spelled as a
@@ -587,8 +589,8 @@ const viewAndBoardFrontmatterShape = {
   extra: ExtraFrontmatterSchema,
 } as const;
 
-export const DocFrontmatterSchema = z
-  .object({
+export const DocFrontmatterSchema = openapi(
+  z.object({
     id: DocumentIdSchema,
     type: DocTypeSchema,
     title: z.string(),
@@ -609,12 +611,13 @@ export const DocFrontmatterSchema = z
     evergreen: z.boolean().describe("True opts the document out of staleness entirely."),
     origin: originField,
     ...viewAndBoardFrontmatterShape,
-  })
-  .openapi("DocFrontmatter");
+  }),
+  "DocFrontmatter",
+);
 
 /** Where a thread's anchor currently lands in the parent body, resolved at read time (SPEC.md §6). */
-export const ResolvedAnchorSchema = z
-  .object({
+export const ResolvedAnchorSchema = openapi(
+  z.object({
     anchorId: AnchorIdSchema,
     selector: TextQuoteSelectorSchema,
     threadId: ThreadIdSchema,
@@ -629,8 +632,9 @@ export const ResolvedAnchorSchema = z
       .describe(
         "True when the selector did not resolve; the thread is still fully functional but detached.",
       ),
-  })
-  .openapi("ResolvedAnchor");
+  }),
+  "ResolvedAnchor",
+);
 
 /**
  * One whole document, and the **one place a key is published** (SPEC.md §7,
@@ -649,8 +653,8 @@ export const ResolvedAnchorSchema = z
  * would let a caller write a document it never opened — the exact overwrite the
  * mechanism exists to refuse.
  */
-export const DocSchema = z
-  .object({
+export const DocSchema = openapi(
+  z.object({
     frontmatter: DocFrontmatterSchema,
     body: z.string().describe("Markdown body, without the frontmatter block."),
     path: z
@@ -659,8 +663,9 @@ export const DocSchema = z
     anchors: z.array(ResolvedAnchorSchema),
     key: documentKeyResponseField,
     userEditing: userEditingField,
-  })
-  .openapi("Doc");
+  }),
+  "Doc",
+);
 
 /**
  * **Who made this document's last write** — projected as `documents.last_actor`
@@ -678,7 +683,7 @@ export const DocSchema = z
  * predicate itself is shipped rather than described twice — see `isUnreflected`
  * in `./reflect.js`, which is the one implementation both apply.
  */
-const lastActorField = z.enum(ACTORS).openapi({
+const lastActorField = openapi(z.enum(ACTORS), {
   description:
     "The acting party of this document's **last write** (SPEC.md §4, projected as " +
     "`documents.last_actor`, §9.1). Never absent and never null: a document the server has never " +
@@ -724,8 +729,8 @@ export const docRowBaseShape = {
  * therefore `.optional()` with their server-applied default documented, never
  * `.default()` — see the optional-in/defaulted-out note in `./index.ts`.
  */
-export const CreateDocRequestSchema = z
-  .strictObject({
+export const CreateDocRequestSchema = openapi(
+  z.strictObject({
     job: jobField,
     type: DocTypeSchema,
     title: z.string().min(1).describe(CREATE_TITLE_DESCRIPTION),
@@ -770,8 +775,9 @@ export const CreateDocRequestSchema = z
           "the one a browser opens onto unless the create says so.",
       ),
     extra: ExtraFrontmatterSchema.optional(),
-  })
-  .openapi("CreateDocRequest");
+  }),
+  "CreateDocRequest",
+);
 
 /**
  * The three frontmatter keys `unset` refuses (SPEC.md §9.2: "for any frontmatter
@@ -835,102 +841,104 @@ const UNSET_DESCRIPTION =
  * guard bolted onto that; it is the wire shape the sentence always described,
  * and the one `POST /api/docs/bulk`'s `tag` act has had all along.
  */
-export const UpdateDocRequestSchema = z
-  .strictObject({
-    job: jobField,
-    origin: originDetachField,
-    key: documentKeyRequestField,
-    title: z.string().min(1).optional(),
-    body: z.string().optional(),
-    tags: z.array(z.string()).optional().describe(TAGS_DESCRIPTION),
-    addTags: z.array(z.string().min(1)).optional().describe(ADD_TAGS_DESCRIPTION),
-    removeTags: z.array(z.string().min(1)).optional().describe(REMOVE_TAGS_DESCRIPTION),
-    status: z.enum(DOC_STATUSES).optional(),
-    due: IsoDateSchema.nullable().optional(),
-    reviewed: IsoDateTimeSchema.nullable()
-      .optional()
-      .describe('Set to the current instant to record "still current" (SPEC.md §5).'),
-    evergreen: z.boolean().optional(),
-    // The view and board keys follow the request's own convention — name only
-    // what you change. `null` clears the key from the file; subsequent reads
-    // report `null` (`false` for `defaultOpen`, whose absent and false states
-    // are one). `unset` below is the general form, and the only way to remove a
-    // key this schema does not declare.
-    stage: StageValueSchema.nullable()
-      .optional()
-      .describe(`${STAGE_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    order: z
-      .number()
-      .nullable()
-      .optional()
-      .describe(`${ORDER_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    query: ViewQuerySchema.nullable()
-      .optional()
-      .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    columns: z
-      .array(DocumentIdSchema)
-      .nullable()
-      .optional()
-      .describe(`${COLUMNS_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    kanban: nullableKanban
-      .optional()
-      .describe(`${KANBAN_ROW_DESCRIPTION} On update, \`null\` clears the key from the file.`),
-    defaultOpen: z
-      .boolean()
-      .optional()
-      .describe(
-        `${DEFAULT_OPEN_DESCRIPTION} Setting it \`true\` clears the flag from every other board ` +
-          "in the same commit, and the response names those documents.",
-      ),
-    unset: z.array(z.string().min(1)).optional().describe(UNSET_DESCRIPTION),
-    extra: ExtraFrontmatterSchema.optional(),
-  })
-  .refine((patch) => !updateNeedsDocumentKey(patch) || patch.key !== undefined, {
-    message: MISSING_DOCUMENT_KEY_MESSAGE,
-    path: ["key"],
-  })
-  /**
-   * **Stating the set and stating a change to it are contradictory**, so a
-   * request that does both is refused rather than silently resolved in some
-   * order (SERVER-102). There is no reading of `{tags: ["a"], addTags: ["b"]}`
-   * that is not a guess about which the caller meant, and the client most likely
-   * to send it is one half-migrated from the whole-set field — exactly the
-   * caller that must be told, not accommodated.
-   *
-   * Reported at `addTags`, the field that is new: a caller sending only `tags`
-   * never sees this, and the one that added a delta is the one being asked to
-   * choose.
-   */
-  .refine(
-    (patch) => patch.tags === undefined || (patch.addTags ?? patch.removeTags) === undefined,
-    {
-      message:
-        "send either `tags` (the whole set) or `addTags`/`removeTags` (a change to it), not both — " +
-        "they are contradictory instructions and the server will not guess which you meant.",
-      path: ["addTags"],
-    },
-  )
-  /**
-   * The three keys a document cannot survive losing, refused **by name** rather
-   * than as a class: the caller's next act is to edit that entry out of the
-   * array, and a message that only said "some key is reserved" would leave them
-   * reading the list themselves.
-   */
-  .superRefine((patch, ctx) => {
-    for (const [index, key] of (patch.unset ?? []).entries()) {
-      if ((UNSETTABLE_EXCLUSIONS as readonly string[]).includes(key)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["unset", index],
-          message:
-            `\`${key}\` cannot be unset: \`${UNSETTABLE_EXCLUSIONS.join("`, `")}\` are a ` +
-            "document's identity, its behaviour and its birth (SPEC.md §5, §9.2). Every other " +
-            "frontmatter key may be removed.",
-        });
+export const UpdateDocRequestSchema = openapi(
+  z
+    .strictObject({
+      job: jobField,
+      origin: originDetachField,
+      key: documentKeyRequestField,
+      title: z.string().min(1).optional(),
+      body: z.string().optional(),
+      tags: z.array(z.string()).optional().describe(TAGS_DESCRIPTION),
+      addTags: z.array(z.string().min(1)).optional().describe(ADD_TAGS_DESCRIPTION),
+      removeTags: z.array(z.string().min(1)).optional().describe(REMOVE_TAGS_DESCRIPTION),
+      status: z.enum(DOC_STATUSES).optional(),
+      due: IsoDateSchema.nullable().optional(),
+      reviewed: IsoDateTimeSchema.nullable()
+        .optional()
+        .describe('Set to the current instant to record "still current" (SPEC.md §5).'),
+      evergreen: z.boolean().optional(),
+      // The view and board keys follow the request's own convention — name only
+      // what you change. `null` clears the key from the file; subsequent reads
+      // report `null` (`false` for `defaultOpen`, whose absent and false states
+      // are one). `unset` below is the general form, and the only way to remove a
+      // key this schema does not declare.
+      stage: StageValueSchema.nullable()
+        .optional()
+        .describe(`${STAGE_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+      order: z
+        .number()
+        .nullable()
+        .optional()
+        .describe(`${ORDER_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+      query: ViewQuerySchema.nullable()
+        .optional()
+        .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+      columns: z
+        .array(DocumentIdSchema)
+        .nullable()
+        .optional()
+        .describe(`${COLUMNS_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+      kanban: nullableKanban
+        .optional()
+        .describe(`${KANBAN_ROW_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+      defaultOpen: z
+        .boolean()
+        .optional()
+        .describe(
+          `${DEFAULT_OPEN_DESCRIPTION} Setting it \`true\` clears the flag from every other board ` +
+            "in the same commit, and the response names those documents.",
+        ),
+      unset: z.array(z.string().min(1)).optional().describe(UNSET_DESCRIPTION),
+      extra: ExtraFrontmatterSchema.optional(),
+    })
+    .refine((patch) => !updateNeedsDocumentKey(patch) || patch.key !== undefined, {
+      message: MISSING_DOCUMENT_KEY_MESSAGE,
+      path: ["key"],
+    })
+    /**
+     * **Stating the set and stating a change to it are contradictory**, so a
+     * request that does both is refused rather than silently resolved in some
+     * order (SERVER-102). There is no reading of `{tags: ["a"], addTags: ["b"]}`
+     * that is not a guess about which the caller meant, and the client most likely
+     * to send it is one half-migrated from the whole-set field — exactly the
+     * caller that must be told, not accommodated.
+     *
+     * Reported at `addTags`, the field that is new: a caller sending only `tags`
+     * never sees this, and the one that added a delta is the one being asked to
+     * choose.
+     */
+    .refine(
+      (patch) => patch.tags === undefined || (patch.addTags ?? patch.removeTags) === undefined,
+      {
+        message:
+          "send either `tags` (the whole set) or `addTags`/`removeTags` (a change to it), not both — " +
+          "they are contradictory instructions and the server will not guess which you meant.",
+        path: ["addTags"],
+      },
+    )
+    /**
+     * The three keys a document cannot survive losing, refused **by name** rather
+     * than as a class: the caller's next act is to edit that entry out of the
+     * array, and a message that only said "some key is reserved" would leave them
+     * reading the list themselves.
+     */
+    .superRefine((patch, ctx) => {
+      for (const [index, key] of (patch.unset ?? []).entries()) {
+        if ((UNSETTABLE_EXCLUSIONS as readonly string[]).includes(key)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["unset", index],
+            message:
+              `\`${key}\` cannot be unset: \`${UNSETTABLE_EXCLUSIONS.join("`, `")}\` are a ` +
+              "document's identity, its behaviour and its birth (SPEC.md §5, §9.2). Every other " +
+              "frontmatter key may be removed.",
+          });
+        }
       }
-    }
-  })
-  .openapi("UpdateDocRequest")
+    }),
+  "UpdateDocRequest",
+)
   /**
    * The keyed-write rule, **published as JSON Schema rather than only as prose**
    * (OpenAPI 3.1 is JSON Schema 2020-12, so `dependentRequired` is legal here):
@@ -962,27 +970,29 @@ export const UpdateDocRequestSchema = z
  * and archiving creates nothing. What the job buys here is attribution — the
  * job log and the trace line can say which piece of work archived something.
  */
-export const JobOnlyRequestSchema = z.strictObject({ job: jobField }).openapi("JobOnlyRequest");
+export const JobOnlyRequestSchema = openapi(z.strictObject({ job: jobField }), "JobOnlyRequest");
 
-export const MoveDocRequestSchema = z
-  .strictObject({ job: jobField, folder: z.string().describe(MOVE_FOLDER_DESCRIPTION) })
-  .openapi("MoveDocRequest");
+export const MoveDocRequestSchema = openapi(
+  z.strictObject({ job: jobField, folder: z.string().describe(MOVE_FOLDER_DESCRIPTION) }),
+  "MoveDocRequest",
+);
 
 /**
  * Every save runs anchor reconciliation (SPEC.md §6), so the response reports
  * what moved: clients use it to refresh highlight positions and to surface
  * threads that just became detached.
  */
-export const AnchorReconciliationSchema = z
-  .object({
+export const AnchorReconciliationSchema = openapi(
+  z.object({
     remapped: z
       .array(AnchorIdSchema)
       .describe("Anchors whose selector was recomputed against the new body."),
     orphaned: z
       .array(AnchorIdSchema)
       .describe("Anchors whose text was removed; their threads are now detached."),
-  })
-  .openapi("AnchorReconciliation");
+  }),
+  "AnchorReconciliation",
+);
 
 /**
  * What every non-editing document mutation returns — create, move, archive,
@@ -990,9 +1000,10 @@ export const AnchorReconciliationSchema = z
  * warnings have somewhere to live: a hook that rejected the auto-commit, or a
  * workspace with no git, must surface on the response and not only in a log.
  */
-export const DocMutationResponseSchema = z
-  .object({ doc: DocSchema, warnings: warningsField })
-  .openapi("DocMutationResponse");
+export const DocMutationResponseSchema = openapi(
+  z.object({ doc: DocSchema, warnings: warningsField }),
+  "DocMutationResponse",
+);
 
 /**
  * What a write that changes a document's **content** answers with — the saved
@@ -1012,17 +1023,18 @@ export const docWriteResponseShape = {
   warnings: warningsField,
 } as const;
 
-export const UpdateDocResponseSchema = z
-  .object({ ...docWriteResponseShape })
-  .openapi("UpdateDocResponse");
+export const UpdateDocResponseSchema = openapi(
+  z.object({ ...docWriteResponseShape }),
+  "UpdateDocResponse",
+);
 
 /**
  * Deletion is user-only (SPEC.md §7, §9.2). Nothing is hard-deleted from
  * history: git keeps the file, and the document's threads survive as orphaned
  * records that still name it as `parent`.
  */
-export const DeleteDocResultSchema = z
-  .object({
+export const DeleteDocResultSchema = openapi(
+  z.object({
     deletedId: DocumentIdSchema,
     orphanedThreadIds: z
       .array(ThreadIdSchema)
@@ -1031,8 +1043,9 @@ export const DeleteDocResultSchema = z
           "readable; their anchors no longer resolve. Drop their caches.",
       ),
     warnings: warningsField,
-  })
-  .openapi("DeleteDocResult");
+  }),
+  "DeleteDocResult",
+);
 
 export type ViewQuery = z.infer<typeof ViewQuerySchema>;
 export type KanbanField = z.infer<typeof KanbanFieldSchema>;

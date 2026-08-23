@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import type { QueryKey } from "../query-keys.js";
+import { openapi } from "./openapi-metadata.js";
 
 /** SSE event name the server uses for cache invalidation. */
 export const INVALIDATE_EVENT = "invalidate";
@@ -13,13 +14,16 @@ export const INVALIDATE_EVENT = "invalidate";
  * `../query-keys.js`: this schema says what a well-formed key looks like, the
  * vocabulary says which of them the server actually emits.
  */
-export const QueryKeySchema = z
-  .array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())]))
-  .openapi("QueryKey", { example: ["docs", { type: "note" }] });
+export const QueryKeySchema = openapi(
+  z.array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())])),
+  "QueryKey",
+  { example: ["docs", { type: "note" }] },
+);
 
-export const InvalidatePayloadSchema = z
-  .object({ keys: z.array(QueryKeySchema).min(1) })
-  .openapi("InvalidatePayload");
+export const InvalidatePayloadSchema = openapi(
+  z.object({ keys: z.array(QueryKeySchema).min(1) }),
+  "InvalidatePayload",
+);
 
 /**
  * Parses one key off the wire. Its return annotation is where the Zod-free

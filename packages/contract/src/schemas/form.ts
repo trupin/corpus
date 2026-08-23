@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import type { ValidationError, ValidationIssue } from "./error.js";
 import { EventIdSchema, ThreadIdSchema } from "./id.js";
 import { recipientField } from "./lane.js";
@@ -6,6 +6,7 @@ import { jobField } from "./provenance.js";
 import { ThreadSummarySchema, TurnSchema } from "./thread.js";
 import { IsoDateTimeSchema } from "./time.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Forms in turns (SPEC.md §6). An agent turn may carry a fenced ```` ```form ````
@@ -628,31 +629,33 @@ const ANSWER_VALUE_KEY_BY_KIND: Readonly<Record<FormFieldKind, AnswerValueKey>> 
  * The corresponding entry in the event payload is the mirror image: there, every
  * field is present and a blank one is marked ({@link FormFieldRecordSchema}).
  */
-export const FormFieldAnswerSchema = z
-  .strictObject({
-    question: nonBlank.describe(
-      "The field's question, verbatim from the form. A question the form does not ask is a `400`.",
-    ),
-    option: nonBlank
-      .optional()
-      .describe("`choose one`: the chosen option, verbatim from that field's `options`."),
-    options: z
-      .array(nonBlank)
-      .min(1)
-      .optional()
-      .describe(
-        "`choose any`: the chosen options, each verbatim from that field's `options` and each " +
-          "named at most once. Selecting nothing is spelled by omitting the entry, not by an " +
-          "empty list.",
+export const FormFieldAnswerSchema = openapi(
+  z
+    .strictObject({
+      question: nonBlank.describe(
+        "The field's question, verbatim from the form. A question the form does not ask is a `400`.",
       ),
-    text: nonBlank.optional().describe("`write`: the text written."),
-  })
-  .refine((entry) => ANSWER_VALUE_KEYS.filter((key) => entry[key] !== undefined).length === 1, {
-    message:
-      "An answer entry carries exactly one of `option` (choose one), `options` (choose any) or " +
-      "`text` (write); a field left blank is omitted from `answers` entirely.",
-  })
-  .openapi("FormFieldAnswer");
+      option: nonBlank
+        .optional()
+        .describe("`choose one`: the chosen option, verbatim from that field's `options`."),
+      options: z
+        .array(nonBlank)
+        .min(1)
+        .optional()
+        .describe(
+          "`choose any`: the chosen options, each verbatim from that field's `options` and each " +
+            "named at most once. Selecting nothing is spelled by omitting the entry, not by an " +
+            "empty list.",
+        ),
+      text: nonBlank.optional().describe("`write`: the text written."),
+    })
+    .refine((entry) => ANSWER_VALUE_KEYS.filter((key) => entry[key] !== undefined).length === 1, {
+      message:
+        "An answer entry carries exactly one of `option` (choose one), `options` (choose any) or " +
+        "`text` (write); a field left blank is omitted from `answers` entirely.",
+    }),
+  "FormFieldAnswer",
+);
 
 /**
  * The answer submitted for a form: one entry per field the person answered,
@@ -663,8 +666,8 @@ export const FormFieldAnswerSchema = z
  * legal answer and has to be expressible. Making the key itself optional would
  * give "I answered nothing" two spellings.
  */
-export const FormAnswerRequestSchema = z
-  .strictObject({
+export const FormAnswerRequestSchema = openapi(
+  z.strictObject({
     job: jobField,
     recipient: recipientField,
     answers: z
@@ -681,8 +684,9 @@ export const FormAnswerRequestSchema = z
         "Free-text note about the ask as a whole, recorded beside the answers (SPEC.md §6). " +
           "Optional, and never a field's answer.",
       ),
-  })
-  .openapi("FormAnswerRequest");
+  }),
+  "FormAnswerRequest",
+);
 
 /**
  * The answer's own mutation response. Same three parts every turn append reports
@@ -690,8 +694,8 @@ export const FormAnswerRequestSchema = z
  * §11's warnings, because appending a turn writes a workspace file and a rejected
  * auto-commit has to surface here exactly as it does on every other mutation.
  */
-export const FormAnswerResponseSchema = z
-  .object({
+export const FormAnswerResponseSchema = openapi(
+  z.object({
     thread: ThreadSummarySchema,
     turn: TurnSchema.describe(
       "The appended answer turn: prose naming every field the form asked and what was given for " +
@@ -705,8 +709,9 @@ export const FormAnswerResponseSchema = z
         "ordinary terms (SHARED-019 Amendment 1, corrected by SERVER-062).",
     ),
     warnings: warningsField,
-  })
-  .openapi("FormAnswerResponse");
+  }),
+  "FormAnswerResponse",
+);
 
 /**
  * What was recorded for one field, in the `form.respond` payload.

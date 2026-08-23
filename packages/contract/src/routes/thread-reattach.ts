@@ -13,9 +13,10 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 const ThreadIdParamSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 /** The `409` of this route: a well-formed request the document's state refuses. */

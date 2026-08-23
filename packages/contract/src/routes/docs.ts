@@ -22,9 +22,10 @@ import {
   UNKNOWN_JOB_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 const DocIdParamSchema = z.object({
-  id: DocumentIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(DocumentIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 /**

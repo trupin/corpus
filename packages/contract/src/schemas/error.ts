@@ -1,5 +1,6 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocSchema } from "./doc.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The uniform problem shape every error response uses (SPEC.md §2.3). Flat and
@@ -20,24 +21,27 @@ export const ERROR_CODES = [
 
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
 
-export const ValidationIssueSchema = z
-  .object({
+export const ValidationIssueSchema = openapi(
+  z.object({
     path: z.string().describe("Dotted path to the offending field, e.g. `body.title`."),
     message: z.string(),
-  })
-  .openapi("ValidationIssue");
+  }),
+  "ValidationIssue",
+);
 
-export const ValidationErrorSchema = z
-  .object({
+export const ValidationErrorSchema = openapi(
+  z.object({
     code: z.literal("bad_request"),
     message: z.string(),
     issues: z.array(ValidationIssueSchema),
-  })
-  .openapi("ValidationError");
+  }),
+  "ValidationError",
+);
 
-export const UnauthorizedErrorSchema = z
-  .object({ code: z.literal("unauthorized"), message: z.string() })
-  .openapi("UnauthorizedError");
+export const UnauthorizedErrorSchema = openapi(
+  z.object({ code: z.literal("unauthorized"), message: z.string() }),
+  "UnauthorizedError",
+);
 
 /**
  * The acting party is not allowed to make this call at all — as opposed to `401`
@@ -45,13 +49,15 @@ export const UnauthorizedErrorSchema = z
  * but the state refuses it). Deletion is user-only (SPEC.md §7 — "the agent
  * archives, never deletes"), so an `x-corpus-author: agent` deletion lands here.
  */
-export const ForbiddenErrorSchema = z
-  .object({ code: z.literal("forbidden"), message: z.string() })
-  .openapi("ForbiddenError");
+export const ForbiddenErrorSchema = openapi(
+  z.object({ code: z.literal("forbidden"), message: z.string() }),
+  "ForbiddenError",
+);
 
-export const NotFoundErrorSchema = z
-  .object({ code: z.literal("not_found"), message: z.string() })
-  .openapi("NotFoundError");
+export const NotFoundErrorSchema = openapi(
+  z.object({ code: z.literal("not_found"), message: z.string() }),
+  "NotFoundError",
+);
 
 /**
  * The request conflicts with state that already exists: a taken skill name,
@@ -62,12 +68,13 @@ export const NotFoundErrorSchema = z
  * A **stale key** is a `409` too, and gets a code of its own rather than joining
  * this one ({@link StaleKeyErrorSchema}).
  */
-export const ConflictErrorSchema = z
-  .object({
+export const ConflictErrorSchema = openapi(
+  z.object({
     code: z.literal("conflict"),
     message: z.string(),
-  })
-  .openapi("ConflictError");
+  }),
+  "ConflictError",
+);
 
 /**
  * SPEC.md §7's refusal: **the key you presented names a version this document no
@@ -105,8 +112,8 @@ export const ConflictErrorSchema = z
  * differ. So the recovery is exactly the ordinary flow: read the key off the
  * document you were handed, merge, and write again.
  */
-export const StaleKeyErrorSchema = z
-  .object({
+export const StaleKeyErrorSchema = openapi(
+  z.object({
     code: z.literal("stale_key"),
     message: z.string(),
     doc: DocSchema.describe(
@@ -115,8 +122,9 @@ export const StaleKeyErrorSchema = z
         "have overwritten, and the content you tried to save is still yours to resend. Reconcile " +
         "against this and write again presenting its `key`.",
     ),
-  })
-  .openapi("StaleKeyError");
+  }),
+  "StaleKeyError",
+);
 
 /**
  * The catch-all body for an unexpected `500` — a bug, not a modelled outcome.
@@ -133,12 +141,14 @@ export const StaleKeyErrorSchema = z
  * Carries no structured detail on purpose — an unexpected failure has nothing
  * trustworthy to say about itself, and internals do not belong on the wire.
  */
-export const InternalErrorSchema = z
-  .object({ code: z.literal("internal_error"), message: z.string() })
-  .openapi("InternalError", {
+export const InternalErrorSchema = openapi(
+  z.object({ code: z.literal("internal_error"), message: z.string() }),
+  "InternalError",
+  {
     description:
       "Catch-all body for an unexpected server failure. Intentionally not declared as a response by any route: the code exists so an unhandled failure can be serialised as an ApiError rather than mislabelled, while a documented 500 would wrongly present a crash as a designed outcome.",
-  });
+  },
+);
 
 /**
  * A `job` that names no work a write can serve (SPEC.md §9.2, CONTRACT-050).
@@ -148,13 +158,14 @@ export const InternalErrorSchema = z
  * reach it, and a `422` that serialized as something outside `ApiError` would be
  * the one refusal a caller could not handle generically.
  */
-export const UnknownJobErrorSchema = z
-  .object({
+export const UnknownJobErrorSchema = openapi(
+  z.object({
     code: z.literal("unknown_job"),
     message: z.string(),
     job: z.string().describe("The id that resolved to no event, or to work already settled."),
-  })
-  .openapi("UnknownJobError");
+  }),
+  "UnknownJobError",
+);
 
 /**
  * **The value you named is not a lane** (SPEC.md §7; CONTRACT-051 introduced it
@@ -194,8 +205,8 @@ export const UnknownJobErrorSchema = z
  * code does; one name for one fact beats two spellings a consumer has to check
  * for.
  */
-export const UnknownRecipientErrorSchema = z
-  .object({
+export const UnknownRecipientErrorSchema = openapi(
+  z.object({
     code: z.literal("unknown_recipient"),
     message: z.string(),
     recipient: z
@@ -207,8 +218,9 @@ export const UnknownRecipientErrorSchema = z
           "`recipient` because the code is; which parameter was at fault is the operation you " +
           "called.",
       ),
-  })
-  .openapi("UnknownRecipientError", {
+  }),
+  "UnknownRecipientError",
+  {
     description:
       "The value you named is not a lane: this workspace holds no such thread, or that thread " +
       "holds no resident and is therefore not a lane at all (SPEC.md §7). **`unknown_recipient` " +
@@ -218,10 +230,11 @@ export const UnknownRecipientErrorSchema = z
       "for the only one that can; a second code would hand a client two branches for one " +
       "recovery. Nothing was written or parked, and `recipient` carries the offending value " +
       "either way.",
-  });
+  },
+);
 
-export const ApiErrorSchema = z
-  .discriminatedUnion("code", [
+export const ApiErrorSchema = openapi(
+  z.discriminatedUnion("code", [
     ValidationErrorSchema,
     UnauthorizedErrorSchema,
     ForbiddenErrorSchema,
@@ -231,8 +244,9 @@ export const ApiErrorSchema = z
     UnknownJobErrorSchema,
     UnknownRecipientErrorSchema,
     InternalErrorSchema,
-  ])
-  .openapi("ApiError");
+  ]),
+  "ApiError",
+);
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;

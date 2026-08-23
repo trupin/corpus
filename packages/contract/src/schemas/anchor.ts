@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 const EXACT_DESCRIPTION = "The quoted text the thread is attached to.";
 const PREFIX_DESCRIPTION = "Text immediately preceding `exact`, for disambiguation.";
@@ -22,13 +23,14 @@ const REQUEST_CONTEXT_NOTE =
  * Parse-side: frontmatter that omits the context strings yields them as empty,
  * so every reader sees the same three-field shape.
  */
-export const TextQuoteSelectorSchema = z
-  .object({
+export const TextQuoteSelectorSchema = openapi(
+  z.object({
     exact: z.string().min(1).describe(EXACT_DESCRIPTION),
     prefix: z.string().default("").describe(PREFIX_DESCRIPTION),
     suffix: z.string().default("").describe(SUFFIX_DESCRIPTION),
-  })
-  .openapi("TextQuoteSelector");
+  }),
+  "TextQuoteSelector",
+);
 
 /**
  * The wire form of the same selector, for request bodies. Identical in meaning,

@@ -1,4 +1,4 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 
 /**
  * The **weight** a request states its work should be done at (SPEC.md §7 and

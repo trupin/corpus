@@ -1,6 +1,7 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema } from "./id.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * **Reordering the board bar** (SPEC.md §10, rider 2 signed 2026-08-22):
@@ -86,30 +87,32 @@ const BOARDS_DESCRIPTION =
  * board would let a broken bar look healthy — the rule `BulkActionRequest`
  * applies to a staged set holding nothing.
  */
-export const ReorderBoardsRequestSchema = z
-  .strictObject({
-    boards: z.array(DocumentIdSchema).min(1).describe(BOARDS_DESCRIPTION),
-  })
-  .superRefine(({ boards }, ctx) => {
-    const seen = new Set<string>();
-    boards.forEach((id, index) => {
-      if (!seen.has(id)) {
-        seen.add(id);
-        return;
-      }
-      ctx.addIssue({
-        code: "custom",
-        path: ["boards", index],
-        message:
-          `\`${id}\` is named twice. A board has one position on the bar (SPEC.md §10), so a ` +
-          "repeat cannot be resolved into an order — name each board once.",
+export const ReorderBoardsRequestSchema = openapi(
+  z
+    .strictObject({
+      boards: z.array(DocumentIdSchema).min(1).describe(BOARDS_DESCRIPTION),
+    })
+    .superRefine(({ boards }, ctx) => {
+      const seen = new Set<string>();
+      boards.forEach((id, index) => {
+        if (!seen.has(id)) {
+          seen.add(id);
+          return;
+        }
+        ctx.addIssue({
+          code: "custom",
+          path: ["boards", index],
+          message:
+            `\`${id}\` is named twice. A board has one position on the bar (SPEC.md §10), so a ` +
+            "repeat cannot be resolved into an order — name each board once.",
+        });
       });
-    });
-  })
-  .openapi("ReorderBoardsRequest");
+    }),
+  "ReorderBoardsRequest",
+);
 
-export const BoardPositionSchema = z
-  .object({
+export const BoardPositionSchema = openapi(
+  z.object({
     id: DocumentIdSchema.describe("The board this position is about."),
     order: z
       .number()
@@ -126,15 +129,17 @@ export const BoardPositionSchema = z
           "nothing was written for it and nothing about it is in `commit`. A caller reporting " +
           '"how many boards moved" counts these, never the length of the list it sent.',
       ),
-  })
-  .openapi("BoardPosition", {
+  }),
+  "BoardPosition",
+  {
     description:
       "One board and where it sits after the reorder. Every board the request named is here, " +
       "in the order it asked for, whether or not this act had to write it.",
-  });
+  },
+);
 
-export const ReorderBoardsResultSchema = z
-  .object({
+export const ReorderBoardsResultSchema = openapi(
+  z.object({
     boards: z
       .array(BoardPositionSchema)
       .describe(
@@ -156,8 +161,9 @@ export const ReorderBoardsResultSchema = z
           "(`commit_failed` in `warnings`, §11).",
       ),
     warnings: warningsField,
-  })
-  .openapi("ReorderBoardsResult");
+  }),
+  "ReorderBoardsResult",
+);
 
 export type ReorderBoardsRequest = z.infer<typeof ReorderBoardsRequestSchema>;
 export type BoardPosition = z.infer<typeof BoardPositionSchema>;

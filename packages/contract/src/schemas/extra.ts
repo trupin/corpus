@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The **open extra-frontmatter surface** (CONTRACT-011, adjudicated 2026-07-27).
@@ -244,9 +245,8 @@ const checkValue = (
  * a key is the only party that knows what it says, which is what keeps a
  * frontmatter convention the core has never heard of at zero contract changes.
  */
-export const ExtraFrontmatterSchema = z
-  .record(z.string().min(1), z.unknown())
-  .superRefine((extra, ctx) => {
+export const ExtraFrontmatterSchema = openapi(
+  z.record(z.string().min(1), z.unknown()).superRefine((extra, ctx) => {
     let ok = true;
     for (const [key, value] of Object.entries(extra)) {
       if (RESERVED_KEY_SET.has(key)) {
@@ -268,7 +268,8 @@ export const ExtraFrontmatterSchema = z
         message: `\`extra\` serializes to ${String(bytes)} bytes; the bound is ${String(EXTRA_MAX_BYTES)}.`,
       });
     }
-  })
-  .openapi({ description: EXTRA_DESCRIPTION });
+  }),
+  { description: EXTRA_DESCRIPTION },
+);
 
 export type ExtraFrontmatter = z.infer<typeof ExtraFrontmatterSchema>;

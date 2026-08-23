@@ -17,14 +17,15 @@ import {
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 const ThreadIdParamSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 const TurnParamsSchema = z.object({
-  id: ThreadIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
-  ts: IsoDateTimeSchema.openapi({
+  id: openapi(ThreadIdSchema, { param: { name: "id", in: "path", required: true } }),
+  ts: openapi(IsoDateTimeSchema, {
     param: { name: "ts", in: "path", required: true },
     description:
       "The turn's timestamp, which is its identity within the thread (SPEC.md §6). An ISO 8601 " +

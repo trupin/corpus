@@ -1,6 +1,7 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { jobField } from "./provenance.js";
 import { docWriteResponseShape } from "./doc.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The **anchored patch**: editing a document's body by naming the text it
@@ -107,14 +108,15 @@ const ALL_DESCRIPTION =
  *
  * There is deliberately **no `key`** (SPEC.md §7; see this module's docblock).
  */
-export const PatchDocRequestSchema = z
-  .strictObject({
+export const PatchDocRequestSchema = openapi(
+  z.strictObject({
     job: jobField,
     old: z.string().min(1).describe(OLD_DESCRIPTION),
     new: z.string().describe(NEW_DESCRIPTION),
     all: z.boolean().optional().describe(ALL_DESCRIPTION),
-  })
-  .openapi("PatchDocRequest");
+  }),
+  "PatchDocRequest",
+);
 
 /**
  * Why a well-formed patch was refused by the document's own text. Machine
@@ -128,7 +130,7 @@ export const PatchDocRequestSchema = z
  */
 export const PATCH_REFUSAL_REASONS = ["no-match", "multiple-matches"] as const;
 
-export const PatchRefusalReasonSchema = z.enum(PATCH_REFUSAL_REASONS).openapi({
+export const PatchRefusalReasonSchema = openapi(z.enum(PATCH_REFUSAL_REASONS), {
   description:
     "Which state refused the patch: the status code says the document's text did, this says how. " +
     "`no-match`: `old` does not occur in the body at all (`matches` is `0`) — the document is not " +
@@ -177,8 +179,8 @@ export const PatchRefusalReasonSchema = z.enum(PATCH_REFUSAL_REASONS).openapi({
  * counted with the same left-to-right non-overlapping scan `all` replaces with,
  * so the server's count and a caller's own count of its own quote agree.
  */
-export const PatchConflictErrorSchema = z
-  .object({
+export const PatchConflictErrorSchema = openapi(
+  z.object({
     code: z.literal("conflict"),
     message: z.string(),
     reason: PatchRefusalReasonSchema,
@@ -192,8 +194,9 @@ export const PatchConflictErrorSchema = z
           "a caller must be able to tell them apart without reading English. `0` for `no-match`; " +
           "two or more for `multiple-matches`. Nothing was written.",
       ),
-  })
-  .openapi("PatchConflictError");
+  }),
+  "PatchConflictError",
+);
 
 /**
  * What an applied patch answers with.
@@ -216,8 +219,8 @@ export const PatchConflictErrorSchema = z
  * A success that hid the count while both refusals name it would be the odd one
  * out.
  */
-export const PatchDocResponseSchema = z
-  .object({
+export const PatchDocResponseSchema = openapi(
+  z.object({
     ...docWriteResponseShape,
     replaced: z
       .number()
@@ -231,8 +234,9 @@ export const PatchDocResponseSchema = z
           "writes nothing: no file change, no commit. The caller can see that case in its own " +
           "request, so nothing here has to name it separately.",
       ),
-  })
-  .openapi("PatchDocResponse");
+  }),
+  "PatchDocResponse",
+);
 
 export type PatchDocRequest = z.infer<typeof PatchDocRequestSchema>;
 export type PatchRefusalReason = z.infer<typeof PatchRefusalReasonSchema>;

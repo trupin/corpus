@@ -1,4 +1,5 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * SPEC.md §11's warnings: things that went wrong around a mutation without
@@ -82,7 +83,7 @@ export const WARNING_CODES = [
   "default_open_cleared",
 ] as const;
 
-export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
+export const WarningCodeSchema = openapi(z.enum(WARNING_CODES), {
   description:
     "`commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — " +
     "the write is on disk and uncommitted. " +
@@ -146,8 +147,8 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "it did get says the act moved its folder.",
 });
 
-export const WarningSchema = z
-  .object({
+export const WarningSchema = openapi(
+  z.object({
     code: WarningCodeSchema,
     detail: z
       .string()
@@ -156,8 +157,9 @@ export const WarningSchema = z
           "unresolved ref, the carried document's id and path. Rendered verbatim in the console; " +
           "never parsed, which is why every distinction a client must act on lives in `code`.",
       ),
-  })
-  .openapi("Warning");
+  }),
+  "Warning",
+);
 
 /**
  * The carrier itself, spread into every mutation response. Always present and

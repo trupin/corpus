@@ -1,6 +1,7 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { HEADING_PATH_SEPARATOR, RelationSchema, semanticIndexField } from "./retrieval.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * The thread **context pack** (SPEC.md §7 Retrieval discipline — Retrieval Phase
@@ -166,8 +167,8 @@ export const CONTEXT_MAX_QUOTE_CHARS = 1000;
  * passage sits under no heading, exactly as a search hit's does, so every row
  * carries a human-readable address without carrying it twice.
  */
-export const ContextExcerptSchema = z
-  .strictObject({
+export const ContextExcerptSchema = openapi(
+  z.strictObject({
     id: DocumentIdSchema.describe(
       "The document the excerpt was taken from — a thread id when the passage lives in a thread, " +
         "since threads are documents (SPEC.md §6). Never the thread this pack is about, and never " +
@@ -193,8 +194,9 @@ export const ContextExcerptSchema = z
           "is a separate, deliberate `GET /api/docs/{id}` on this row's id.",
       ),
     relation: RelationSchema,
-  })
-  .openapi("ContextExcerpt");
+  }),
+  "ContextExcerpt",
+);
 
 /** The two fields every parent block carries, whatever the thread's shape. */
 const parentIdentity = {
@@ -240,8 +242,8 @@ const contextPackBase = {
  * section** around it rather than a snippet window — because a comment on one
  * sentence is almost never answerable from that sentence alone.
  */
-export const AnchoredContextPackSchema = z
-  .strictObject({
+export const AnchoredContextPackSchema = openapi(
+  z.strictObject({
     shape: z.literal("anchored"),
     ...contextPackBase,
     parent: z
@@ -275,8 +277,9 @@ export const AnchoredContextPackSchema = z
         truncated: truncatedField,
       })
       .describe("The passage the conversation is about, and the section it lives in."),
-  })
-  .openapi("AnchoredContextPack");
+  }),
+  "AnchoredContextPack",
+);
 
 /**
  * The pack for a thread on a whole document: the parent's title and its opening
@@ -284,8 +287,8 @@ export const AnchoredContextPackSchema = z
  * stored excerpt — a fixed leading slice cut mid-word is a worse briefing than
  * the document's first section.
  */
-export const WholeDocumentContextPackSchema = z
-  .strictObject({
+export const WholeDocumentContextPackSchema = openapi(
+  z.strictObject({
     shape: z.literal("whole-document"),
     ...contextPackBase,
     parent: z
@@ -303,8 +306,9 @@ export const WholeDocumentContextPackSchema = z
         truncated: truncatedField,
       })
       .describe("The parent, identified and opened — there is no anchored passage to show."),
-  })
-  .openapi("WholeDocumentContextPack");
+  }),
+  "WholeDocumentContextPack",
+);
 
 /**
  * The pack for a thread whose anchor no longer resolves (SPEC.md §6).
@@ -316,8 +320,8 @@ export const WholeDocumentContextPackSchema = z
  * promise that an orphaned thread keeps what it was about — and this is where
  * an agent reads it.
  */
-export const OrphanedAnchorContextPackSchema = z
-  .strictObject({
+export const OrphanedAnchorContextPackSchema = openapi(
+  z.strictObject({
     shape: z.literal("orphaned-anchor"),
     ...contextPackBase,
     parent: z
@@ -339,8 +343,9 @@ export const OrphanedAnchorContextPackSchema = z
         "The parent, and the quote that no longer resolves inside it. No resolved passage is " +
           "reported, because there is none.",
       ),
-  })
-  .openapi("OrphanedAnchorContextPack");
+  }),
+  "OrphanedAnchorContextPack",
+);
 
 /**
  * The pack for a standalone thread — the composer's Ask action, `parent: null`.
@@ -351,12 +356,13 @@ export const OrphanedAnchorContextPackSchema = z
  * probing this union exists to replace. The pack is its related excerpts,
  * ranked against the thread's own text.
  */
-export const StandaloneContextPackSchema = z
-  .strictObject({
+export const StandaloneContextPackSchema = openapi(
+  z.strictObject({
     shape: z.literal("standalone"),
     ...contextPackBase,
-  })
-  .openapi("StandaloneContextPack");
+  }),
+  "StandaloneContextPack",
+);
 
 /**
  * The pack for a thread whose parent was deleted (sprint-022 Open Conflict 9).
@@ -369,8 +375,8 @@ export const StandaloneContextPackSchema = z
  * excerpts are still useful, and this is the case where a briefing is hardest to
  * reconstruct by hand.
  */
-export const DeletedParentContextPackSchema = z
-  .strictObject({
+export const DeletedParentContextPackSchema = openapi(
+  z.strictObject({
     shape: z.literal("parent-deleted"),
     ...contextPackBase,
     deletedParent: DocumentIdSchema.describe(
@@ -378,8 +384,9 @@ export const DeletedParentContextPackSchema = z
         "thread survived it. Reading it is a `404`; git retains its history. No parent block " +
         "accompanies it, because there is no parent content left to carry.",
     ),
-  })
-  .openapi("DeletedParentContextPack");
+  }),
+  "DeletedParentContextPack",
+);
 
 /**
  * The context pack: one of five shapes, discriminated on `shape`.

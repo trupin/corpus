@@ -1,8 +1,9 @@
-import { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import { BodyRangeSchema } from "./anchor.js";
 import { ResolvedAnchorSchema } from "./doc.js";
 import { ThreadSummarySchema } from "./thread.js";
 import { warningsField } from "./warning.js";
+import { openapi } from "./openapi-metadata.js";
 
 /**
  * Re-attaching a thread to a range **a person chose** (SPEC.md §6; SERVER-059).
@@ -77,22 +78,24 @@ const EXPECTED_TEXT_DESCRIPTION =
  * about its own intent, and `400` naming the field is a better answer than a
  * state check that would attribute the caller's arithmetic bug to the document.
  */
-export const ReattachThreadRequestSchema = z
-  .strictObject({
-    range: BodyRangeSchema.describe(RANGE_DESCRIPTION),
-    expectedText: z.string().min(1).describe(EXPECTED_TEXT_DESCRIPTION),
-  })
-  .refine(({ range }) => range.end > range.start, {
-    message: "`range.end` must be greater than `range.start`; an anchor cannot quote nothing",
-    path: ["range", "end"],
-  })
-  .refine(({ range, expectedText }) => expectedText.length === range.end - range.start, {
-    message:
-      "`expectedText` must be exactly `range.end - range.start` characters long — the two " +
-      "describe the same passage",
-    path: ["expectedText"],
-  })
-  .openapi("ReattachThreadRequest");
+export const ReattachThreadRequestSchema = openapi(
+  z
+    .strictObject({
+      range: BodyRangeSchema.describe(RANGE_DESCRIPTION),
+      expectedText: z.string().min(1).describe(EXPECTED_TEXT_DESCRIPTION),
+    })
+    .refine(({ range }) => range.end > range.start, {
+      message: "`range.end` must be greater than `range.start`; an anchor cannot quote nothing",
+      path: ["range", "end"],
+    })
+    .refine(({ range, expectedText }) => expectedText.length === range.end - range.start, {
+      message:
+        "`expectedText` must be exactly `range.end - range.start` characters long — the two " +
+        "describe the same passage",
+      path: ["expectedText"],
+    }),
+  "ReattachThreadRequest",
+);
 
 /**
  * Why a well-formed re-attach was refused by the document's state. Machine
@@ -107,7 +110,7 @@ export const REATTACH_REFUSAL_REASONS = [
   "not-anchored",
 ] as const;
 
-export const ReattachRefusalReasonSchema = z.enum(REATTACH_REFUSAL_REASONS).openapi({
+export const ReattachRefusalReasonSchema = openapi(z.enum(REATTACH_REFUSAL_REASONS), {
   description:
     "Which state refused the request: the status code says a state did, this says which. " +
     "`range-changed`: the parent's body no longer holds `expectedText` at that range — it was " +
@@ -135,13 +138,14 @@ export const ReattachRefusalReasonSchema = z.enum(REATTACH_REFUSAL_REASONS).open
  * (a taken skill name, deferring unclaimed work, re-answering an answered form)
  * are the same shape of refusal.
  */
-export const ReattachConflictErrorSchema = z
-  .object({
+export const ReattachConflictErrorSchema = openapi(
+  z.object({
     code: z.literal("conflict"),
     message: z.string(),
     reason: ReattachRefusalReasonSchema,
-  })
-  .openapi("ReattachConflictError");
+  }),
+  "ReattachConflictError",
+);
 
 /**
  * What a successful repair answers with.
@@ -159,13 +163,14 @@ export const ReattachConflictErrorSchema = z
  * `resolve` and `reopen`. `thread` mirrors `ThreadMutationResponse`'s summary so
  * a board row can be updated from the same response.
  */
-export const ReattachThreadResponseSchema = z
-  .object({
+export const ReattachThreadResponseSchema = openapi(
+  z.object({
     thread: ThreadSummarySchema,
     anchor: ResolvedAnchorSchema,
     warnings: warningsField,
-  })
-  .openapi("ReattachThreadResponse");
+  }),
+  "ReattachThreadResponse",
+);
 
 export type ReattachThreadRequest = z.infer<typeof ReattachThreadRequestSchema>;
 export type ReattachRefusalReason = z.infer<typeof ReattachRefusalReasonSchema>;

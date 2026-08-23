@@ -22,9 +22,10 @@ import {
   UNKNOWN_SCOPE_RESPONSE,
   VALIDATION_RESPONSE,
 } from "./responses.js";
+import { openapi } from "../schemas/openapi-metadata.js";
 
 const EventIdParamSchema = z.object({
-  id: EventIdSchema.openapi({ param: { name: "id", in: "path", required: true } }),
+  id: openapi(EventIdSchema, { param: { name: "id", in: "path", required: true } }),
 });
 
 /**
