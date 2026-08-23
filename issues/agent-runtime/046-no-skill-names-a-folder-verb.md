@@ -64,6 +64,33 @@ So the answer is not automatically "add the verbs to the stewardship list". It m
 
 `corpus folder delete` is user-only at the CLI, so that one is already decided.
 
+## Decided by the user, 2026-08-23 — add the verbs, bounded
+
+**Chosen: bounded adoption.** The skills use `corpus folder archive|unarchive|
+rename|delete` **only where the folder is what the person named** — someone
+asking for a folder to be archived, moved or renamed.
+
+**Bulk stewardship the agent decided on its own stays per document.** The
+charter's "obsolete documents are archived" and "misfiled documents are moved"
+keep their per-document form, because the agent chose those documents and must
+be able to name each one.
+
+**Why it won.** A folder act is bounded by nothing the agent chose. `corpus
+folder archive finance` archives every document and thread under it, including
+ones nobody mentioned. The saving is real and the blast radius is the reason the
+silence existed — bounding by *who named the folder* keeps the saving where the
+scope was given to the agent rather than assumed by it.
+
+**Rejected: add them plainly.** Cheapest in tokens and it lets an agent judgment
+sweep up documents nobody named.
+
+**Rejected: leave the silence.** The user declined. It is slower, more
+expensive, and it leaves a real defect — the board-order shape, one level up —
+in place for the case where a person really did say "archive this folder".
+
+**Write the boundary into the skill as a rule, not as an example.** An example
+of the safe case is not a rule against the unsafe one.
+
 ## Acceptance Criteria
 
 - [ ] The skills say what an agent may do at folder level, rather than saying nothing

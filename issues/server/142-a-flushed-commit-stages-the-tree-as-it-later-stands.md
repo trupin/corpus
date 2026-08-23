@@ -69,6 +69,29 @@ merely exists is not a reason to widen a release.
 It is **P1 rather than P2** because the thing it corrupts is the audit trail, and
 an audit trail is only worth what its worst entry is worth.
 
+## Decided by the user, 2026-08-23 — snapshot the observed bytes
+
+**Chosen: design 1.** The commit records what the flush observed, whatever the
+working tree holds by the time the git lock frees.
+
+**Why it won.** It is correct by construction rather than by timing, and it ends
+the committer's use of the live working tree as its own input — which is the
+actual defect, not a symptom of it. No ordering of writes can defeat it.
+
+**Rejected: share a lock between the watcher's commit chain and
+`applyOperations`.** Simpler to state and smaller to build, and it puts a server
+write behind a lock held by a filesystem event. Nobody has measured what that
+costs in latency, and the server is the sole writer for every surface in the
+product — a lock there is felt everywhere.
+
+**Rejected: leave it.** The user declined. What it corrupts is the audit trail,
+and an audit trail is worth what its worst entry is worth.
+
+**Do not reach for the cheap patch.** Skipping the commit when the registry says
+the bytes are the server's loses the person's commit entirely when the first
+flush's commit is the stale one. A lost commit is worse than a misattributed
+one.
+
 ## Acceptance Criteria
 
 - [ ] A person's commit records the bytes the flush observed, whatever the tree

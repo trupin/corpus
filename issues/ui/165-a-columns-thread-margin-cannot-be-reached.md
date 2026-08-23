@@ -63,6 +63,30 @@ are defensible. Choosing needs the user, because §10's current wording promises
 a behaviour the product does not deliver at any width, and either the wording or
 the width has to move.
 
+## Decided by the user, 2026-08-23 — lower the margin threshold
+
+**Chosen: option 1.** `MARGIN_MIN_WIDTH` comes down so a wide column earns its
+margin by dragging its own edge. At 916px of content the card takes 300px plus a
+30px gap, leaving about 586px of body.
+
+**Why it won.** The user signed a rider on 2026-08-23 that names the margin as
+*the* case where a reader gives its body less than its full width. A constant
+that makes that case unreachable in a column contradicts text signed the same
+day. The most faithful reading of the signature is that the margin is meant to
+happen.
+
+**Rejected: amend §10 to say the margin is focus mode's.** Cheapest, and it would
+have made the spec agree with the code by lowering what the spec promises. The
+user chose to raise what the code delivers instead.
+
+**Rejected: raise `MAX_COLUMN_WIDTH` to 1100.** It buys the behaviour by making
+one column most of a screen, which is what focus mode already is — blurring the
+two surfaces to satisfy a threshold.
+
+**The cost, stated.** A column at its widest will read narrower than full
+screen's default measure once the margin takes its 330px. That is the trade, and
+it is the trade the margin always implied.
+
 ## Acceptance Criteria
 
 - [ ] The choice is made and written down, with the two rejected options and why
