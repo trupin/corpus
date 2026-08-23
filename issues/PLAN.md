@@ -1491,9 +1491,16 @@ picker on the date. That contradicts §10's "editable as a small form", so it
 needs a rider: SHARED-068 carries the drafted text, **unsigned**, and UI-162
 implements it.
 
-**Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068
-waits on the user's signature and blocks nothing else, so UI-162 runs whenever
-that signature arrives. Critical path: CONTRACT-081 → SERVER-141 → UI-161.
+**A document's content fills the document.** The reader carries two widths — the
+column's, in its view document, and the body's own, browser-local — so widening
+a column leaves the text where it was. The user, 2026-08-23: _"I don't want to
+have to resize the document, then the content as well."_ SHARED-069 carries that
+rider, **unsigned**, and UI-163 deletes the body's width.
+
+**Order of work.** CONTRACT-081 first, then SERVER-141 and UI-161. SHARED-068 and
+SHARED-069 wait on the user's signatures and block nothing else, so UI-162 and
+UI-163 run whenever those signatures arrive. Critical path:
+CONTRACT-081 → SERVER-141 → UI-161.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
@@ -1502,3 +1509,5 @@ that signature arrives. Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
 | SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, unsigned | todo | P0 | fable | — |
 | UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
+| SHARED-069 | A document's content fills the document — the SPEC rider, unsigned | todo | P0 | fable | — |
+| UI-163 | The body fills its reader | todo | P0 | opus | SHARED-069 |
