@@ -135,12 +135,15 @@
  * **The rail is how the handle knows where the body's edge is.** The default
  * measure is `66ch` and `ch` is font-dependent, so its pixel value is the
  * browser's to know. Rather than compute it, this empty box carries the *same*
- * `max-width` and the *same* type `.focus .doc-body` carries — so its right
- * edge **is** the body's right edge, by construction, at the default and at
- * every width somebody drags to. The type declarations below are therefore
- * load-bearing and must stay in step with `.focus .doc-body` above. Getting
- * the type wrong does not break the drag; it puts the handle a few pixels off
- * the edge it is supposed to sit at, at the default width only.
+ * `max-width` and the *same* type the body carries — so its right edge **is**
+ * the body's right edge, by construction, at the default and at every width
+ * somebody drags to. The type declarations below are therefore load-bearing and
+ * must stay in step with the body. Getting the type wrong does not break the
+ * drag; it puts the handle off the edge it is supposed to sit at, at the default
+ * width only — and 40px of that is enough to put it over the last characters of
+ * a line and to start a drag short (see `.rail-conversation` below, and
+ * `doc-width.spec.ts`, which asserts the two edges meet for both kinds of
+ * body).
  *
  * **The handle hangs entirely outside the measure.** `right: -12px` with
  * `width: 12px` puts it in `[measure, measure + 12px]` — in the gutter, never
@@ -180,6 +183,29 @@
    * browser's.
    */
   z-index: 3;
+}
+
+/*
+ * The one type declaration the rail cannot share with `.focus .doc-body`.
+ *
+ * `.focus .doc-body` says `16.5px` for both kinds of body, so the rail's own
+ * size above is in step with both. The **family** is not: a document's body is
+ * `markdown.css`'s `var(--serif)` and a conversation's is `Reader.css`'s
+ * `.thread-conversation`, `var(--sans)`. A `ch` is wider in the sans, so `66ch`
+ * is 685.94px in a conversation against 605.65px in a note (measured, 1280×720),
+ * and a rail that assumed serif drew its handle 40px inside the body's right
+ * edge — over the last characters of a line, which is the one thing the note
+ * above says the handle must never do — and started a drag 40px short, so the
+ * first press of the control pulled the body in by that much.
+ *
+ * `DocView` passes the flag from the same branch that chooses which body to
+ * render, so the two cannot disagree about what is on screen. That the rail's
+ * edge really is the body's edge is asserted in `doc-width.spec.ts` for both
+ * kinds — the comment above asks these declarations to stay in step, and that
+ * test is what makes the request enforceable.
+ */
+.doc-width-rail.rail-conversation {
+  font-family: var(--sans);
 }
 
 .doc-width-handle {

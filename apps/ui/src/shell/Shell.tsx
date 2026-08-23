@@ -14,6 +14,7 @@ import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import type { ShortcutContext } from "../keyboard/shortcuts";
 import { useShortcuts } from "../keyboard/useShortcuts";
 import { SearchOverlay } from "../search/SearchOverlay";
+import { useSteadyComposerPin } from "../thread/composerPin";
 import { Board } from "./Board";
 import { BoardBar } from "./BoardBar";
 import { ToastProvider, useToast } from "./Toasts";
@@ -160,6 +161,13 @@ function ShellSurfaces(): ReactElement {
    * hold the client it is issued through.
    */
   useEditSessionFlusher();
+  /*
+   * Above every composer for the same reason the flusher is: the invariant is
+   * about `.composer` and its stylesheet, not about any one of the three
+   * components that render one, and the press it protects can arrive on any of
+   * them (UI-157).
+   */
+  useSteadyComposerPin();
 
   return (
     <>

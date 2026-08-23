@@ -394,7 +394,7 @@ export function DocView({
          * comments list carries no measure, and a control that visibly does
          * nothing is worse than no control.
          */}
-        {showsBody ? <DocWidthHandle /> : null}
+        {showsBody ? <DocWidthHandle conversation={reader.isThread} /> : null}
 
         <FrontmatterForm
           /*

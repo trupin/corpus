@@ -1083,7 +1083,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
 | UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
 | UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
-| UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | todo | P2 | — |
+| UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | done | P2 | — |
 
 **UI-128's ledger ranks six reachable clusters**, each measured in a real browser
 and each filed below in the order a person hits them. The audit also found that
@@ -1230,8 +1230,8 @@ left in a report.
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
-| UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
-| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
+| UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | done | P1 | UI-145 |
+| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | done | P2 | UI-149 |
 | UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | done | P1 | UI-150 |
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
 | UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
@@ -1547,5 +1547,5 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | SERVER-144 | Retrieval ranks the product's own skills into every pack (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row (SHARED-070) — **not in v0.20.0** | todo | P1 | opus | SHARED-070 |
 | SERVER-146 | One server test failed once under load and was not named — **not in v0.20.0** | todo | P2 | opus | — |
-| CONTRACT-083 | Three queue routes return a 409 they do not declare (SERVER-145 finding) | todo | P1 | opus | SERVER-145 |
-| CLI-067 | `queue fail` needs a reason, and two help strings now contradict the server (SERVER-145 finding) | todo | P1 | opus | SERVER-145 |
+| CONTRACT-083 | Three queue routes return a 409 they do not declare (SERVER-145 finding) | done | P1 | opus | SERVER-145 |
+| CLI-067 | `queue fail` needs a reason, and two help strings now contradict the server (SERVER-145 finding) | done | P1 | opus | SERVER-145 |

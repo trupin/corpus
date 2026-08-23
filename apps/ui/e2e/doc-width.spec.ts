@@ -512,6 +512,56 @@ test.describe("the document body's width, in full screen", () => {
    * like any other — the clarification the user made unprompted on 2026-08-06,
    * now living where the control lives.
    */
+  /**
+   * **The handle is at the body's right edge, for both kinds of body** — the
+   * claim `.doc-width-rail` exists to make, and the one nothing asserted.
+   *
+   * The rail is an empty box carrying the same `max-width` and the same type the
+   * body carries, so that its edge *is* the body's edge rather than a number
+   * somebody kept in step. `FocusMode.css` asks those declarations to stay in
+   * step; this is what makes the request enforceable, because the two bodies do
+   * not share a type: a document's is `var(--serif)` and a conversation's is
+   * `Reader.css`'s `var(--sans)`, and `66ch` is 685.94px in the one against
+   * 605.65px in the other (measured, 1280×720). A rail that assumed serif drew
+   * the handle 40px inside a conversation's right edge — over the last
+   * characters of a line, which the rail's own note says must never happen — and
+   * started a drag 40px short, so the first press narrowed the body by that much.
+   *
+   * The handle hangs entirely outside the measure (`right: -12px; width: 12px`),
+   * so its **left** edge is the body's right edge, and that is what is compared.
+   */
+  for (const kind of ["a document", "a conversation"] as const) {
+    test(`puts the handle at the right edge of ${kind}`, async ({ page }) => {
+      await stubCorpus(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
+      await page.goto("/");
+      await page.locator(".board").waitFor();
+      const row = kind === "a document" ? "doc_note" : "th_1";
+      const column = kind === "a document" ? "doc_view_inbox" : "doc_view_threads";
+      await page
+        .locator(`.col[data-col="${column}"] .row[data-row-doc="${row}"]`)
+        .click({ button: "right" });
+      await page.locator('[role="menuitem"][data-act="open-here"]').click();
+      await page.locator(`.reader[data-reader-doc="${row}"] [data-expand]`).click();
+      await page.locator(`.focus ${BODY}`).waitFor();
+
+      const edges = await page.locator(".focus").evaluate((focus, body: string) => {
+        const measured = focus.querySelector(body);
+        const handle = focus.querySelector('[role="separator"][aria-label="Document width"]');
+        if (measured === null || handle === null) return null;
+        return {
+          bodyRight: Math.round(measured.getBoundingClientRect().right * 10) / 10,
+          handleLeft: Math.round(handle.getBoundingClientRect().left * 10) / 10,
+        };
+      }, BODY);
+      if (edges === null) throw new Error("no body or no handle");
+
+      expect(
+        Math.abs(edges.handleLeft - edges.bodyRight),
+        `the handle is at ${String(edges.handleLeft)} and the body ends at ${String(edges.bodyRight)}`,
+      ).toBeLessThan(1.5);
+    });
+  }
+
   test("resizes a thread opened as a document too", async ({ page }) => {
     await stubCorpus(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
     await page.goto("/");

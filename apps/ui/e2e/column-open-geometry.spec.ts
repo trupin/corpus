@@ -83,6 +83,39 @@ const NOTE: StubRow = {
   ].join("\n"),
 };
 
+/**
+ * A conversation, for the half of this claim a document body cannot make
+ * (UI-136 finding 2).
+ *
+ * It was filed as *"a reader column resolves its width asynchronously — 345px at
+ * first paint and 558px settled"*, measured by UI-129 on a **thread** reader and
+ * worked around in `image-geometry.spec.ts` with a settle helper. The width half
+ * of that is gone: UI-146 stopped the column animating open and UI-149 removed
+ * the reader-open widening altogether, so a column renders at its chosen width
+ * whether it is reading or not. Measured after both, sampling the reader's
+ * `.doc-main` every animation frame for 4s from before the row was clicked, the
+ * width is one value from its first frame — 410px in a path column, 306px opened
+ * in a 336px query column, for a note and for a conversation alike.
+ *
+ * A conversation is a different renderer over a different tree (`.doc-body` is
+ * `.thread-conversation` here, and its paragraphs are turns), so the three tests
+ * above could all pass while a thread reader still moved. This is the fixture
+ * that closes that gap.
+ */
+const THREAD: StubRow = {
+  id: "th_convo",
+  type: "thread",
+  title: "About the checklist",
+  path: "data/docs/inbox/th_convo.md",
+  body: Array.from(
+    { length: 8 },
+    (_unused, index) =>
+      `## ${index % 2 === 0 ? "user" : "agent"} · 2026-07-01T09:0${String(index)}:00Z\n\n` +
+      `Turn ${String(index)}, long enough to wrap several times in a narrow column and ` +
+      "fewer times once the column has taken its reading width.\n",
+  ).join("\n"),
+};
+
 /** One animation frame's worth of the geometry a reader can see. */
 interface Frame {
   /**
@@ -163,6 +196,36 @@ function assertNothingMoved(frames: Frame[]): void {
   ).toEqual([first]);
 }
 
+/**
+ * Every frame's **measure** equals the first frame's — where the body starts and
+ * how wide it is.
+ *
+ * The weaker half of {@link assertNothingMoved}, and it is the right claim for a
+ * conversation rather than a document. A thread's turns render into the body
+ * after it exists, so its height and the position of its last paragraph go on
+ * changing for a few frames — content arriving, which SPEC.md §10 permits and
+ * which is what `settle.ts` legitimately waits for. What §10 forbids, and what
+ * UI-136 finding 2 reported, is the *box* changing: a column whose width lands
+ * after everything laid out against it. That is what this asserts, from the
+ * first frame the body was painted in.
+ */
+function assertMeasureNeverMoved(frames: Frame[]): void {
+  expect(frames.length, "the sampler saw no painted body at all").toBeGreaterThan(2);
+  const first = frames[0];
+  if (first === undefined) throw new Error("no frames");
+  const measure = ({ left, width }: Frame): Record<string, number> => ({ left, width });
+  const distinct = frames
+    .map(measure)
+    .filter(
+      (frame, index, all) =>
+        index === 0 || JSON.stringify(frame) !== JSON.stringify(all[index - 1]),
+    );
+  expect(
+    distinct,
+    `the reader's measure changed after its first painted frame: ${JSON.stringify(distinct)}`,
+  ).toEqual([measure(first)]);
+}
+
 test.describe("a document does not move once it is painted", () => {
   test("the body's every frame is the frame it was first painted in", async ({ page }) => {
     await stubCorpus(page, [VIEW, NOTE]);
@@ -227,6 +290,36 @@ test.describe("a document does not move once it is painted", () => {
     // that carried the defect.
     await page.waitForTimeout(300);
     assertNothingMoved(await recordedFrames(page));
+  });
+
+  /**
+   * The same box, one renderer over — see {@link THREAD}.
+   * `.thread-conversation` *is* the `.doc-body` the sampler reads, so nothing
+   * here needs a second apparatus; what it needs is the other renderer under it.
+   *
+   * {@link assertMeasureNeverMoved} rather than {@link assertNothingMoved},
+   * and the difference is the finding. Measured here, a conversation's first two
+   * distinct frames are
+   *
+   *     {top: 346.7, left: 15, width: 410, closing: 346.7}
+   *     {top: 348.7, left: 15, width: 410, closing: 1032.4}
+   *
+   * — the turns arriving under a body that was already 410px wide and already
+   * 15px inside its card. The measure never moves, which is the claim UI-136
+   * finding 2 said could not be made; the interior does, which is content
+   * landing and is the one thing `settle.ts` is still for.
+   */
+  test("a conversation's measure is the measure it was first painted with", async ({ page }) => {
+    await stubCorpus(page, [VIEW, NOTE, THREAD]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+
+    await sampleFrames(page, 1500);
+    await page.locator('.row[data-row-doc="th_convo"]').click();
+    await page.locator(".reader .thread-conversation .turn").first().waitFor();
+    await page.waitForTimeout(1600);
+
+    assertMeasureNeverMoved(await recordedFrames(page));
   });
 });
 

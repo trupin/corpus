@@ -306,14 +306,14 @@ describe("full screen's width control", () => {
 
   /** No provider, no control: a `DocView` outside full screen lays out unchanged. */
   it("draws nothing where no reader owns a measure", () => {
-    render(<DocWidthHandle />);
+    render(<DocWidthHandle conversation={false} />);
     expect(screen.queryByRole("separator", { name: DOC_WIDTH_LABEL })).toBeNull();
   });
 
   it("draws nothing when the context is explicitly empty", () => {
     render(
       <DocWidthContext.Provider value={null}>
-        <DocWidthHandle />
+        <DocWidthHandle conversation={false} />
       </DocWidthContext.Provider>,
     );
     expect(screen.queryByRole("separator", { name: DOC_WIDTH_LABEL })).toBeNull();
@@ -336,6 +336,27 @@ describe("full screen's width control", () => {
    * the absence of an observer is asserting the rule itself, which is why it is
    * worth a test that looks like a white-box one.
    */
+  /**
+   * The rail's type has to be the body's, and the two bodies do not share one: a
+   * document's is `var(--serif)` and a conversation's is `var(--sans)`. Which of
+   * them is on screen is `DocView`'s to say, and this is the wire it says it
+   * down. The *consequence* — that the handle then lands on the body's right
+   * edge — is geometry, and is asserted in `doc-width.spec.ts` against a real
+   * browser; jsdom resolves no `ch` and would agree with any wrong answer.
+   */
+  it.each([
+    { conversation: false, expected: "doc-width-rail" },
+    { conversation: true, expected: "doc-width-rail rail-conversation" },
+  ])("dresses the rail for the body it measures ($expected)", ({ conversation, expected }) => {
+    const { container } = render(
+      <DocWidthContext.Provider value={{ width: 700, choose: () => undefined }}>
+        <DocWidthHandle conversation={conversation} />
+      </DocWidthContext.Provider>,
+    );
+
+    expect(container.querySelector(".doc-width-rail")?.className).toBe(expected);
+  });
+
   it("observes nothing — the reader's scroll is not this control's to disturb", () => {
     const observed = vi.fn();
     class CountingObserver {
@@ -350,7 +371,7 @@ describe("full screen's width control", () => {
 
     render(
       <DocWidthContext.Provider value={{ width: 700, choose: () => undefined }}>
-        <DocWidthHandle />
+        <DocWidthHandle conversation={false} />
       </DocWidthContext.Provider>,
     );
 

@@ -141,6 +141,24 @@ function roomFor(rail: HTMLElement): number {
  */
 const POINTER_GAIN = 2;
 
+export interface DocWidthHandleProps {
+  /**
+   * Whether the body this measures is a conversation.
+   *
+   * The rail's right edge is the body's right edge only while it resolves `66ch`
+   * in the body's own type, and **a conversation's body is not a document's**:
+   * `Reader.css`'s `.thread-conversation` puts it in `var(--sans)`, where a `ch`
+   * is wider. Measured at 1280×720 in full screen — a note's default measure is
+   * 605.65px and a conversation's is 685.94px, 40px of which the rail was
+   * missing, so the handle sat over the last characters of a line and a first
+   * press of the control pulled the body 40px narrower (UI-156).
+   *
+   * Passed rather than sniffed from the DOM because `DocView` already knows: it
+   * is the same branch that decides which body to render.
+   */
+  readonly conversation: boolean;
+}
+
 /**
  * The body's right edge, as a grab handle.
  *
@@ -149,7 +167,7 @@ const POINTER_GAIN = 2;
  * expects of an edge. It is invisible until hovered, focused or dragged —
  * exactly like `.col-resizer`, whose behaviour it copies.
  */
-export function DocWidthHandle(): ReactElement | null {
+export function DocWidthHandle({ conversation }: DocWidthHandleProps): ReactElement | null {
   const control = useContext(DocWidthContext);
   const railRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState(false);
@@ -274,7 +292,10 @@ export function DocWidthHandle(): ReactElement | null {
   if (control === null) return null;
 
   return (
-    <div className="doc-width-rail" ref={railRef}>
+    <div
+      className={conversation ? "doc-width-rail rail-conversation" : "doc-width-rail"}
+      ref={railRef}
+    >
       <div
         className={`doc-width-handle${resizing ? " resizing" : ""}`}
         role="separator"
