@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { ColumnMenuItems } from "../menu/ColumnMenuItems";
+import { ColumnMenuItems, type StageColumnActs } from "../menu/ColumnMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { keepsNativeMenu } from "../menu/nativeMenu";
 import { QueryEditor } from "./query/QueryEditor";
 import { shortSortLabel, useSortFit } from "./sortFit";
-import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
+import {
+  chipClassName,
+  formatQueryString,
+  parseQueryString,
+  sameQuery,
+  type BoardColumn,
+} from "./viewDoc";
 
 /**
  * A column's header: title, kind, live count, `＋`, `⋯`, and the stored query
@@ -44,6 +50,20 @@ export interface ColumnHeadProps {
    * agent has never looked at.
    */
   readonly changed?: number;
+  /**
+   * The acts of a kanban **stage** column, or `null` on a view column
+   * (SPEC.md §10, rider 6). Present, the `⋯` offers these and nothing else, and
+   * neither the title nor the query is editable here — a stage has no view
+   * document to rename and its query is the board's scope.
+   */
+  readonly stageActs?: StageColumnActs | null;
+  /**
+   * Whether this column offers `＋`. Off on every stage column but the first:
+   * a new document is created with no value for the field, so it lands in the
+   * first column whichever column's `＋` was pressed (SPEC.md §10, rider 6) —
+   * and a button that always creates somewhere else is a button that lies.
+   */
+  readonly canAdd?: boolean;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -58,6 +78,8 @@ export function ColumnHead({
   column,
   count,
   changed = 0,
+  stageActs = null,
+  canAdd = true,
   onAdd,
   onRename,
   onEditQuery,
@@ -95,6 +117,7 @@ export function ColumnHead({
         <ColumnMenuItems
           close={close}
           missing={column.missing}
+          stage={stageActs}
           onRename={() => {
             startEditing("title");
           }}
@@ -190,15 +213,17 @@ export function ColumnHead({
           </span>
         ) : null}
         <span className="col-count">{count === null ? "—" : count}</span>
-        <button
-          type="button"
-          className="col-add"
-          aria-label={`New document in ${column.title}`}
-          title="New document in this list"
-          onClick={onAdd}
-        >
-          ＋
-        </button>
+        {canAdd ? (
+          <button
+            type="button"
+            className="col-add"
+            aria-label={`New document in ${column.title}`}
+            title="New document in this list"
+            onClick={onAdd}
+          >
+            ＋
+          </button>
+        ) : null}
         <button
           ref={menuButton}
           type="button"
@@ -231,7 +256,7 @@ export function ColumnHead({
       ) : (
         <div className="chips" ref={sortFit.row}>
           {column.chips.map((chip) => (
-            <span key={chip.key} className="chip on">
+            <span key={chip.key} className={chipClassName(chip.tone)} title={chip.title}>
               {chip.label}
             </span>
           ))}
@@ -247,7 +272,7 @@ export function ColumnHead({
            */}
           <div className="chips-probe" aria-hidden="true" ref={sortFit.probe}>
             {column.chips.map((chip) => (
-              <span key={chip.key} className="chip on">
+              <span key={chip.key} className={chipClassName(chip.tone)}>
                 {chip.label}
               </span>
             ))}

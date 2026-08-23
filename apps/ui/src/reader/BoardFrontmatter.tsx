@@ -1,5 +1,6 @@
 import type { DocFrontmatter } from "@corpus/contract";
 import type { ReactElement } from "react";
+import { KanbanExplanation, KanbanGraph } from "./KanbanGraph";
 
 /**
  * A board document's frontmatter, shown (`design/navigation.html`'s `fmBlock`,
@@ -40,6 +41,14 @@ export function BoardFrontmatter({ frontmatter }: BoardFrontmatterProps): ReactE
 
   return (
     <section className="board-fm" aria-label="Board frontmatter">
+      {/*
+       * The graph first (SPEC.md §10, rider 6: "the board document draws the
+       * graph"). Above the keys rather than below them, because it *is* the
+       * keys — a person opening a kanban's document is looking for what the
+       * board does, and the `transitions` map is the one block that cannot be
+       * read at a glance in YAML.
+       */}
+      {kanban === null ? null : <KanbanGraph kanban={kanban} />}
       <div className="fm-block">
         <span>---</span>
         <span>
@@ -114,10 +123,14 @@ export function BoardFrontmatter({ frontmatter }: BoardFrontmatterProps): ReactE
         )}
         <span>---</span>
       </div>
-      <p className="reader-note">
-        A board is a document. Edit <b>columns</b> here, or ask the agent to — the board bar
-        follows.
-      </p>
+      {kanban === null ? (
+        <p className="reader-note">
+          A board is a document. Edit <b>columns</b> here, or ask the agent to — the board bar
+          follows.
+        </p>
+      ) : (
+        <KanbanExplanation kanban={kanban} />
+      )}
     </section>
   );
 }

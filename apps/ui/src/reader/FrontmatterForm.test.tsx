@@ -33,6 +33,7 @@ const DOC = docFixture({
     title: "Mortgage options",
     tags: ["finance"],
     status: "open",
+    stage: null,
     due: null,
     updated: "2026-07-02T09:00:00.000Z",
   },
@@ -135,6 +136,7 @@ describe("changedFields", () => {
         title: "Mortgage options",
         tags: "finance",
         status: "resolved",
+        stage: "",
         due: "",
       }),
     ).toEqual({ status: "resolved" });
@@ -149,15 +151,16 @@ describe("changedFields", () => {
         title: withDue.frontmatter.title,
         tags: "finance",
         status: "open",
+        stage: "",
         due: "",
       }),
     ).toEqual({ due: null });
   });
 
   it("refuses an empty title rather than writing one", () => {
-    expect(changedFields(DOC, { title: "   ", tags: "finance", status: "open", due: "" })).toEqual(
-      {},
-    );
+    expect(
+      changedFields(DOC, { title: "   ", tags: "finance", status: "open", stage: "", due: "" }),
+    ).toEqual({});
   });
 
   /**
@@ -173,6 +176,7 @@ describe("changedFields", () => {
           title: ARCHIVED.frontmatter.title,
           tags: "finance",
           status: "open",
+          stage: "",
           due: "",
         }),
       ).toEqual({});
@@ -184,6 +188,7 @@ describe("changedFields", () => {
           title: DOC.frontmatter.title,
           tags: "finance",
           status: "archived",
+          stage: "",
           due: "",
         }),
       ).toEqual({});
@@ -195,6 +200,7 @@ describe("changedFields", () => {
           title: "Renamed while archived",
           tags: "finance",
           status: "open",
+          stage: "",
           due: "",
         }),
       ).toEqual({ title: "Renamed while archived" });
@@ -215,6 +221,7 @@ describe("changedFields", () => {
       title: "Inbox chores",
       tags: "finance",
       status: "resolved" as const,
+      stage: "",
       due: "2030-01-01",
     };
     const TODO = docFixture({

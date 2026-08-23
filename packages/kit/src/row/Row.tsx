@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
 import {
   AgentActivityDot,
   AgeChip,
@@ -103,6 +103,23 @@ export interface RowProps {
    */
   readonly origin?: boolean | undefined;
   /**
+   * The row may be picked up and dragged (SPEC.md §10, rider 6 — a kanban's
+   * rows move between its stage columns).
+   *
+   * **A prop, like every other, because a row knows nothing about any column.**
+   * What a drag *means* is the host's entirely: which field it writes, which
+   * columns will take it, and whether the graph allows the drop. This row only
+   * says "this element is draggable" and reports the two events, so the same
+   * component still renders in a search result list, where nothing drags.
+   *
+   * Absent means not draggable, which is what every list but a kanban's is.
+   */
+  readonly draggable?: boolean | undefined;
+  /** The drag began on this row. The host decides what is in flight. */
+  readonly onDragStart?: ((row: DocRow, event: DragEvent<HTMLDivElement>) => void) | undefined;
+  /** The drag ended, dropped or not — the host clears whatever it lit. */
+  readonly onDragEnd?: (() => void) | undefined;
+  /**
    * The document is open elsewhere on the board — the top of some other path
    * column or in-place reader — and this row is not the origin: a small dot in
    * the badge cluster (rider 3: "a row open elsewhere on the board carries a
@@ -129,7 +146,7 @@ function needsYouText(attention: readonly string[]): string | null {
 
 export function Row(props: RowProps): ReactElement {
   const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor, unreflected } = props;
-  const { origin, openElsewhere } = props;
+  const { origin, openElsewhere, draggable, onDragStart, onDragEnd } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -188,8 +205,23 @@ export function Row(props: RowProps): ReactElement {
       data-row-status={row.status}
       data-row-level={String(level)}
       aria-label={`${row.type}: ${row.title}`}
+      /* `undefined` rather than `false`: the attribute's presence is what the
+         prototype's `.row[draggable="true"]` grab cursor selects on, and a row
+         nobody made draggable must not carry it at all. */
+      draggable={draggable === true ? true : undefined}
       onClick={open}
       onKeyDown={onKeyDown}
+      onDragStart={(event: DragEvent<HTMLDivElement>) => {
+        if (draggable !== true) return;
+        // Chromium refuses to start a drag with an empty data transfer.
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", row.id);
+        onDragStart?.(row, event);
+      }}
+      onDragEnd={() => {
+        if (draggable !== true) return;
+        onDragEnd?.();
+      }}
     >
       <div className="row-top">
         <span className="type-glyph">{row.type}</span>

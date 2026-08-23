@@ -1,0 +1,142 @@
+/*
+ * The kanban form and the drawn graph (`design/navigation.html`, SPEC.md §10
+ * rider 6).
+ *
+ * The dialog is deliberately small and modal: it replaces four chained
+ * `window.prompt` calls, and its whole reason to exist is that the four answers
+ * are visible together and correctable before anything is written.
+ */
+
+.kanban-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.kanban-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+}
+
+.kanban-dialog h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.kanban-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.kanban-field input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.kanban-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.kanban-hint,
+.kanban-problem {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.kanban-problem {
+  margin: 0;
+  color: var(--signal);
+}
+
+.kanban-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.kanban-cancel,
+.kanban-save {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.kanban-save {
+  border-color: transparent;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+/* The graph. Forward edges arc above in the accent; backward edges arc below,
+   dashed, on the sepia axis — the same two directions the column chips name. */
+.graph {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0 16px;
+}
+
+.graph text {
+  font-family: var(--mono);
+  font-size: 11px;
+  fill: var(--ink);
+}
+
+.graph .node {
+  fill: var(--surface-2);
+  stroke: var(--line-strong);
+}
+
+.graph .node.mapped {
+  stroke: var(--good);
+}
+
+.graph .fwd {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.graph .back {
+  fill: none;
+  stroke: var(--sepia);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.graph .arrow {
+  fill: var(--accent);
+}
+
+.graph .arrow.back {
+  fill: var(--sepia);
+}

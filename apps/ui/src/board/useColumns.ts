@@ -1,5 +1,7 @@
 import { useDocs, type DocsFilter } from "@corpus/kit";
 import { useMemo } from "react";
+import type { Board } from "./boardDoc";
+import { deriveStageColumns } from "./kanban";
 import { missingColumn, toBoardColumn, type BoardColumn } from "./viewDoc";
 
 /**
@@ -23,6 +25,14 @@ import { missingColumn, toBoardColumn, type BoardColumn } from "./viewDoc";
  * view that was archived, deleted or never existed renders §10's error card
  * naming the id ({@link missingColumn}), because a column silently disappearing
  * from a board is how a person loses a list without being told.
+ *
+ * **A kanban board resolves nothing at all** (SPEC.md §10, rider 6): its columns
+ * are its stages, derived from its own `kanban` block and its scope query, and
+ * they are not view documents. So the branch below is not an optimisation — a
+ * kanban's `columns` is empty by construction, and resolving it would render the
+ * board as a board with no columns. The `type=view` query still runs, because it
+ * is the same cache entry every other board on the bar reads and a kanban is
+ * usually one tab away from one that needs it.
  */
 
 /** Every view document, in one query. Exported so a test can assert the wire. */
@@ -35,17 +45,24 @@ export interface BoardColumns {
 }
 
 /**
- * Resolves one board's `columns`.
+ * Resolves one board's columns: its stages when it is a kanban, its `columns`
+ * otherwise.
  *
- * `null` — no board is showing at all — is not the same as `[]`: a workspace
- * with no board documents issues no view query, because there is nothing to
- * resolve against and the bar is already saying what to do about it.
+ * `null` — no board is showing at all — is not the same as a board with an empty
+ * `columns`: a workspace with no board documents has nothing to resolve against,
+ * and the bar is already saying what to do about it.
  */
-export function useColumns(columnIds: readonly string[] | null): BoardColumns {
+export function useColumns(board: Board | null): BoardColumns {
   const docs = useDocs(VIEWS_FILTER);
   const items = docs.data?.items;
+  const columnIds = board === null || board.kanban !== null ? null : board.columnIds;
 
-  const columns = useMemo(() => {
+  const stages = useMemo(
+    () => (board === null || board.kanban === null ? null : deriveStageColumns(board)),
+    [board],
+  );
+
+  const resolved = useMemo(() => {
     if (columnIds === null) return [];
     const byId = new Map((items ?? []).map((row) => [row.id, row]));
     /*
@@ -66,5 +83,11 @@ export function useColumns(columnIds: readonly string[] | null): BoardColumns {
     });
   }, [columnIds, items]);
 
-  return { columns, isPending: docs.isPending, error: docs.error };
+  /*
+   * A kanban's columns are ready the moment its board document is: nothing is
+   * fetched to derive them, so reporting the view query's `isPending` would show
+   * a kanban's empty state for a request its columns do not depend on.
+   */
+  if (stages !== null) return { columns: stages, isPending: false, error: null };
+  return { columns: resolved, isPending: docs.isPending, error: docs.error };
 }
