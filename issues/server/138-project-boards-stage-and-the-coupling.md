@@ -39,7 +39,7 @@ The server reads and writes the fields CONTRACT-074 put on the wire, indexes `st
 - [x] Validation of `kanban` at the write boundary matches CONTRACT-074's refusals; `404`/`400` messages name the field.
 - [x] Unknown frontmatter keys, `pinned` included, keep landing in `extra` unchanged.
 - [x] `unset: [..]` on the update body removes each named key from the file's frontmatter (core or `extra`) in the same commit as any `changes`; `id`, `type`, `created` refuse `400` naming the key; an absent key is a no-op, not an error.
-- [x] ~~A document whose status is **derived** never has `status` written by the stage coupling.~~ **Struck 2026-08-22 (Phase 41 prep).** Derived status was removed with the plugin surface (SHARED-067), so no document has one. The coupling writes `status` for every document in a kanban, with no carve-out. The rider that signed this carve-out (§5, 2026-08-22) survives as dead text and is not implemented.
+- [x] ~~A document whose status is **derived** never has `status` written by the stage coupling.~~ **Struck 2026-08-22 (Phase 41 prep).** Derived status was removed with the plugin surface (SHARED-067), so no document has one. The coupling writes `status` for every document in a kanban, with no carve-out. **Corrected 2026-08-23 (PR #58):** the struck sentence originally claimed a rider signing this carve-out "survives as dead text" in §5. **There is no such text in SPEC.md.** `issues/PLAN.md`'s Phase 41 prep note says so directly — "SPEC §5 and §10 were checked to carry no derived-status carve-out — the carve-out lived only in the issue files" — and a re-read of §5's stage rider on 2026-08-23 confirms it. Nothing in the spec was ever left dead by this strike.
 - [x] `documents` gains `last_actor TEXT` (`user` | `agent`), written on every write from the acting party the write carried, and `user` for a change the watcher picks up from outside the server (§4); projected as `lastActor` on the row (CONTRACT-074). A rebuild from files reads it from the last commit's author on that path, which is the same fact §4 records.
 
 ## Technical Design
@@ -59,10 +59,25 @@ The server reads and writes the fields CONTRACT-074 put on the wire, indexes `st
 - `order` projection stays in `sort_order`; only its meaning moves.
 
 ### Edge Cases
+
+> **Reconciled 2026-08-23 (PR #58).** The second bullet below contradicted this
+> issue's own ticked acceptance criterion ("the board's `kanban.status[stage]`
+> when mapped, `open` otherwise") and, more importantly, the signed rider it
+> claimed to be reading. **§5's literal sentence is "a stage the board maps to a
+> status writes that status on entry, and a stage with no mapping writes
+> `open`"** — it draws its line at the `status` map and says nothing about the
+> `stages` list. The acceptance criterion is the one that was right. The carve-out
+> is removed from the code (`docs/kanban.ts`), and the bullet is struck rather
+> than deleted so the record shows what was implemented between 2026-08-22 and
+> this correction. The remaining bullets are kept, with the two that are **this
+> issue's rules rather than the spec's** now saying so.
+
 - A kanban over `status` has no stage coupling to run (the field is status itself).
-- A document whose `stage` is not in any matching board's `stages`: no status write, and no warning — the stage is simply not part of a kanban's vocabulary yet.
-- A board archived after mapping: it no longer decides anything.
-- `stage: null` (clearing) on a document in a kanban writes `open` — it is the unmapped case.
+- ~~A document whose `stage` is not in any matching board's `stages`: no status write, and no warning — the stage is simply not part of a kanban's vocabulary yet.~~ **Struck 2026-08-23 (PR #58).** A stage the board does not draw has no mapping, so §5's second outcome covers it: the document is in the kanban, and `open` is written and named in the response like any other unmapped stage. The warning says which of the two outcomes happened, so nobody goes looking in `kanban.status` for an entry that is not there.
+- A board archived after mapping: it no longer decides anything. **This is SERVER-138's rule, not §5's** (noted 2026-08-23): the rider is silent on an archived board. Kept because an archived board is out of sight, and a board nobody can see deciding a status is a change with no visible cause.
+- A document whose **root** fixes its status — an archived skill under `.claude/skills-archived/` (§7) — gets no status written by the coupling. **Also SERVER-138's rule, not §5's** (noted 2026-08-23): its status is not in its frontmatter at all, so there is nothing there for a board to decide, and `POST /api/docs/{id}/unarchive` stays the operation that brings one back.
+- Which board decides when two kanbans claim one document — the lowest `order`, nulls last, then `title`, then `id` — is **SERVER-138's rule too** (noted 2026-08-23). §5 says a stage decides a status and never says whose map.
+- `stage: null` (clearing) on a document in a kanban writes `open` — a cleared stage is in no `status` map, so §5's "a stage with no mapping writes `open`" covers it with no rule of its own.
 
 ## Testing Strategy
 Vitest against a real temp workspace and a real projection (the server's existing pattern): one test per acceptance criterion, and a parity test that the scope match for coupling agrees with `GET /api/docs` on the same query.
@@ -184,6 +199,83 @@ The one failure is **not this issue's and predates it**:
 `queue/project.test.ts > covers every key the contract says a queue transition
 emits` — CONTRACT-074 published a `reflect` query key whose description claims a
 queue transition emits it, and no server emitter does yet. That is SERVER-137's.
+
+---
+
+**server-dev, 2026-08-23, on opus — PR #58, the coupling now says what §5 says,
+and the comments cite only what §5 contains.**
+
+**The finding.** `docs/kanban.ts` carried three rules that appear nowhere in
+SPEC.md, and its comments **quoted them as "§5's edge case says…"** — verbatim
+quotes of text the spec does not hold. The signed rider's whole sentence on this
+is:
+
+> a stage the board maps to a status writes that status on entry, and a stage
+> with no mapping writes `open`
+
+It draws its line at the **map**. It says nothing about the `stages` list, about
+archived boards, or about clearing.
+
+**What changed.**
+
+1. **A stage the deciding board does not draw now writes `open`** and is named in
+   the response, like any other unmapped stage. It used to write nothing and say
+   nothing. `StageCoupling.status` is therefore `DocStatus`, never `null` — a
+   board that claims the document always decides, and "no board claimed it" stays
+   the one silence (`decideStageStatus` returning `null`).
+2. **Clearing is not a rule of its own.** A cleared stage is in no `status` map,
+   so the same sentence covers it. The code says so instead of citing an "edge
+   case".
+3. **An archived board still decides nothing** — kept, because a board nobody can
+   see deciding a status is a change with no visible cause — but it is now cited
+   as **SERVER-138's** rule, not §5's. The same correction was applied to the two
+   other silences this module fills: the deciding order (lowest `order`, nulls
+   last, then `title`, then `id`) and the carve-out for a document whose root
+   fixes its status (an archived skill under `.claude/skills-archived/`, §7).
+
+**Every false citation in the file, corrected:**
+
+| Line | Claimed | Truth |
+| --- | --- | --- |
+| `StageCoupling` doc | §5 leaves an undrawn stage alone | not in §5 — rule removed |
+| `stageKanbanBoards` doc | §5's edge case: an archived board "no longer decides anything" | not in §5 — recited as SERVER-138 |
+| `stageKanbanBoards` doc | §5 makes "the one with the lowest `order` decides" | not in §5 — recited as SERVER-138 |
+| `decideStageStatus` doc | §5's edge case makes `stage: null` the unmapped case | not in §5 — it follows from the rider's own sentence |
+| `decideStageStatus` body | §5's edge case for an undrawn stage | not in §5 — rule removed |
+| `boardScopeQuery` doc | §10 promises "an unknown key degrades in the client, never on the wire" | **no such sentence anywhere in SPEC.md** — the reasoning stands on its own and is now stated as this module's |
+| `stageStatusWarning` **warning text** | "the board with the lowest `order` decides (SPEC.md §5)" | citation dropped from the user-visible string |
+
+**The warning now says which outcome happened**, because they are two different
+facts for the person reading it. A message claiming the map decided, when the map
+holds no such stage, would send somebody looking for an entry that is not there.
+
+**E2E, real server on port 8766**, kanban `K` over `stage` with
+`stages: [triage, done]`, `status: {done: resolved}`, scoped to `folder: inbox`;
+`Stray` created `status: resolved`.
+
+| `PUT /api/docs/<id>` | file | warning |
+| --- | --- | --- |
+| `{"stage":"elsewhere"}` (undrawn) | `-status: resolved` `+status: open` `+stage: elsewhere`, **one** commit `doc edit: Stray (doc_g6g3jcem) by user` | ``stage `elsewhere` set status to `open`: this document is in the kanban K (doc_6j6skvpp), which maps no status to that stage, and a stage with no mapping is `open` (SPEC.md §5). It also matches K (doc_ylnxdxt5); the board with the lowest `order` decides.`` |
+| `{"stage":"done"}` (mapped) | `status: resolved` | ``…whose `kanban.status` map decides a status on entry (SPEC.md §5).`` |
+| `{"stage":null}` (cleared) | `status: open` | ``stage cleared set status to `open`: …and a document in a kanban with no stage has no mapping, so `open` (SPEC.md §5).`` |
+
+Each message cites §5 for exactly the sentence §5 contains, and for nothing else.
+
+**Falsification** (`docs/kanban.test.ts`, 24 tests):
+
+| Break | Went red |
+| --- | --- |
+| the undrawn-stage carve-out put back (writes `null`) | 1 — "writes `open` for a stage the deciding board does not even draw" |
+| the warning always says the map decided | 2 — both unmapped cases |
+
+**Routed elsewhere, not fixed here** (this session is scoped to `apps/server`):
+`packages/contract/src/schemas/warning.ts`'s `stage_status` description still
+ends "Silent … when the stage is one the deciding board does not draw — that last
+one writes no status either", which is now false on the wire; `apps/ui/e2e/stubCorpus.ts`
+mirrors the removed carve-out in its fake coupling. UI-152's **stray-stage count**
+is unaffected — it counts documents in scope whose stage the board does not list,
+which is a fact about `stage` and not about `status`.
+
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

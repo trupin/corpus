@@ -20,6 +20,11 @@ export type { AwaitingDigest, ReflectClockState } from "./clock.js";
 export { mountReflectRoutes } from "./routes.js";
 export { createReflectScheduler, minutesToMs } from "./scheduler.js";
 export type { ReflectAttempt, ReflectScheduler, ReflectSchedulerOptions } from "./scheduler.js";
-export { REFLECT_ASK_SOURCE, REFLECT_QUIET_SOURCE, createReflectService } from "./service.js";
-export type { ReflectService, ReflectServiceOptions } from "./service.js";
+export {
+  NO_DIGEST_LOG_LINE,
+  REFLECT_ASK_SOURCE,
+  REFLECT_QUIET_SOURCE,
+  createReflectService,
+} from "./service.js";
+export type { RecordJobLine, ReflectService, ReflectServiceOptions } from "./service.js";
 export { countUnreflected, findLiveReflection, resolveDigest } from "./status.js";

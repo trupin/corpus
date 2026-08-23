@@ -175,7 +175,7 @@ test.describe("the board bar", () => {
     await expect(page.locator(tabTitles)).toHaveCount(1);
   });
 
-  test("dragging a tab writes `order` on every board that moved", async ({ page }) => {
+  test("dragging a tab writes the whole bar in one request", async ({ page }) => {
     const corpus = await stubCorpus(page, [...BOARDS, VIEW, NOTE]);
     await page.goto("/");
     await expect(page.locator(tabTitles)).toHaveText(["Attention", "Files"]);
@@ -185,13 +185,23 @@ test.describe("the board bar", () => {
     await second.dragTo(first, { targetPosition: { x: 2, y: 8 } });
 
     await expect(page.locator(tabTitles)).toHaveText(["Files", "Attention"]);
-    const writes = (await corpus.requests()).filter(
-      (request) => request.method === "PUT" && request.path.startsWith("/api/docs/doc_board_"),
-    );
-    expect(writes.map((request) => [request.path, request.body])).toEqual([
-      ["/api/docs/doc_board_files", { order: 1 }],
-      ["/api/docs/doc_board_attention", { order: 2 }],
+    /*
+     * SPEC.md §10, rider 2: "reordering boards writes `order` on every board, in
+     * one commit". **One** request states the whole bar — a `PUT` per board is a
+     * commit per board, which is exactly what this route replaced
+     * (CONTRACT-080). That the commit is one is asserted where it is observable,
+     * against real git, in `apps/server/src/docs/board-order.test.ts`.
+     */
+    const requests = await corpus.requests();
+    const writes = requests.filter((request) => request.path === "/api/boards/order");
+    expect(writes.map((request) => [request.method, request.body])).toEqual([
+      ["POST", { boards: ["doc_board_files", "doc_board_attention"] }],
     ]);
+    expect(
+      requests.filter(
+        (request) => request.method === "PUT" && request.path.startsWith("/api/docs/doc_board_"),
+      ),
+    ).toEqual([]);
   });
 
   test("a column the board lists and the corpus cannot answer for renders an error card", async ({

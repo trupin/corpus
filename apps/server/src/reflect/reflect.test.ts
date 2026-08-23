@@ -25,7 +25,7 @@ import {
   type WriteWorkspace,
 } from "../docs/write-fixture.js";
 import { REFLECT_FILE } from "./clock.js";
-import { REFLECT_ASK_SOURCE } from "./service.js";
+import { NO_DIGEST_LOG_LINE, REFLECT_ASK_SOURCE } from "./service.js";
 
 const REFLECT_PATH = "/api/workspace/reflect";
 
@@ -369,6 +369,37 @@ describe("the clock moves when a reflection lands (SPEC.md §7)", () => {
 });
 
 describe("the digest thread (SPEC.md §7)", () => {
+  /**
+   * One job's log, as text.
+   *
+   * The missing-digest line is appended **fire and forget** — `observeSettled`
+   * is synchronous and may not hold up a queue transition — so a reader has to
+   * wait for it. Every call settles first, which is what makes "says nothing"
+   * a real assertion rather than a race the test happens to win, and `until`
+   * then polls for the line a caller is expecting.
+   */
+  const jobLogLines = async (eventId: string, until?: string): Promise<string[]> => {
+    const read = async (): Promise<string[]> => {
+      const response = await ws.request(`/api/jobs/${eventId}/log`, { headers: AUTH });
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as { lines: { line: string }[] };
+      return payload.lines.map((entry) => entry.line);
+    };
+    const pause = (): Promise<void> =>
+      new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
+    await pause();
+    const deadline = Date.now() + 2_000;
+    let lines = await read();
+    while (until !== undefined && !lines.some((line) => line.includes(until))) {
+      if (Date.now() > deadline) return lines;
+      await pause();
+      lines = await read();
+    }
+    return lines;
+  };
+
   const createThread = async (
     body: Record<string, unknown>,
     actor: "user" | "agent" = "agent",
@@ -445,6 +476,65 @@ describe("the digest thread (SPEC.md §7)", () => {
     await ws.post(`/api/queue/${result.eventId}/complete`, {});
 
     expect((await status()).lastDigest).toBeNull();
+  });
+
+  /**
+   * A reflection that settles with no digest is otherwise **silent**: the board
+   * bar shows a fresh "reflected just now" beside the previous reflection's
+   * digest, or beside none, and nothing anywhere says why. PR #58 gave that
+   * moment one job-log line, naming the two ways an agent gets it wrong.
+   * Not an error — the reflection did happen, and the clock still moves.
+   */
+  it("says in the job log that a reflection finished without a digest", async () => {
+    const { result } = await ask("user");
+    await claimAll();
+
+    expect((await ws.post(`/api/queue/${result.eventId}/complete`, {})).status).toBe(200);
+
+    const lines = await jobLogLines(result.eventId, "without a digest thread");
+    const line = lines.find((entry) => entry.includes("without a digest thread"));
+    expect(line).toBe(NO_DIGEST_LOG_LINE);
+    // The two causes are named, because both look like a posted digest from the
+    // agent's side.
+    expect(line).toContain("--job");
+    expect(line).toContain("--parent");
+    // The reflection still happened: the clock moved, and this is not a failure.
+    expect((await status()).reflected).not.toBeNull();
+    expect(eventsIn("processed")).toHaveLength(1);
+  });
+
+  it("says nothing in the log when the reflection did post its digest", async () => {
+    const { result } = await ask("user");
+    await claimAll();
+    const digest = await createThread({ body: "since … until …", job: result.eventId });
+
+    await ws.post(`/api/queue/${result.eventId}/complete`, {});
+
+    expect((await status()).lastDigest).toBe(digest);
+    expect((await jobLogLines(result.eventId)).join("\n")).not.toContain("without a digest");
+  });
+
+  /**
+   * The parented-thread case is the one an agent is most likely to have got
+   * wrong while believing it posted a digest — so it is the case the line has
+   * to reach.
+   */
+  it("says it for a reflection whose only thread had a parent", async () => {
+    const doc = await createDoc(ws, { type: "note", title: "Reviewed", body: "A body.\n" });
+    const { result } = await ask("user");
+    await claimAll();
+    await createThread({
+      parent: doc.id,
+      selector: { exact: "A body." },
+      body: "a note on this",
+      job: result.eventId,
+    });
+
+    await ws.post(`/api/queue/${result.eventId}/complete`, {});
+
+    expect(await jobLogLines(result.eventId, "without a digest thread")).toContain(
+      NO_DIGEST_LOG_LINE,
+    );
   });
 
   it("does not report a digest whose thread was deleted", async () => {

@@ -26,6 +26,7 @@ import type {
   ReattachThreadRequest,
   ReattachThreadResponse,
   ReflectAskResult,
+  ReorderBoardsResult,
   ReflectStatus,
   RelatedDocs,
   RenameFolderResult,
@@ -260,6 +261,23 @@ export interface CorpusClient {
    * something that is not a document is still in it.
    */
   deleteFolder(path: string): Promise<DeleteFolderResult>;
+  /**
+   * `POST /api/boards/order` — the board bar, renumbered in **one** commit
+   * (SPEC.md §10, rider 2: "reordering boards writes `order` on every board, in
+   * one commit").
+   *
+   * **The ids are the bar, in the order it should be in**, first tab first; the
+   * positions are the server's to derive, and it numbers them from one. Nothing
+   * here sends an `order` value, because a caller that computed its own could
+   * disagree with the next caller about the same bar.
+   *
+   * **Boards it does not name are left alone**, so a bar showing only unarchived
+   * boards states its own order without inventing positions for boards nobody
+   * can see. The whole reorder is refused before anything is written when an id
+   * names no document (`404`) or names something that is not a board (`400`) —
+   * `order` is a board's position among boards and nothing else.
+   */
+  reorderBoards(boards: readonly string[]): Promise<ReorderBoardsResult>;
   /**
    * `GET /api/search` — ranked retrieval (SPEC.md §9.2).
    *
@@ -958,6 +976,13 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/folders/delete",
         await api.POST("/api/folders/delete", { body: { path } }),
+      );
+    },
+
+    async reorderBoards(boards) {
+      return unwrap(
+        "POST /api/boards/order",
+        await api.POST("/api/boards/order", { body: { boards: [...boards] } }),
       );
     },
 

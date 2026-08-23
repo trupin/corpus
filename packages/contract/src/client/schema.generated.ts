@@ -1551,6 +1551,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the order of the board bar, in one commit
+         * @description Renumbers the boards named in the body to `1 … n`, in the order given, and lands every write as the **single** auto-commit SPEC.md §4 requires — rider 2's "reordering boards writes `order` on every board, in one commit". A board already at the position it would be given is left alone, so the commit contains exactly the documents whose position changed (§4) and a bar dragged back where it started writes nothing at all.
+         *
+         *     **All or nothing.** The whole request is refused before anything is written when an id names no document (`404`) or names a document that is not a `type: board` (`400` — rider 2: a view document has no `order`), and the file writes are applied as one group that rolls back if any of them fails. No caller can observe half an order, which is the failure one-`PUT`-per-board could not rule out.
+         *
+         *     **It names the bar, not the corpus.** Boards the body does not name keep the `order` they carry, so a client showing only unarchived boards states its own order without inventing positions for boards nobody can see. Two boards may then tie, which is the state a hand-edited file can be in anyway, and `GET /api/docs?sort=order` breaks a tie by title and then by id.
+         *
+         *     Authored by the acting party like every other write (§4), and the commit folds in neither direction: it is an act over a set, so it never joins a preceding editing session and no later save joins it.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The board bar, in the order it should be in. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReorderBoardsRequest"];
+                };
+            };
+            responses: {
+                /** @description Every board named, with the position it now carries and whether this act wrote it, plus the one commit and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReorderBoardsResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/capture": {
         parameters: {
             query?: never;
@@ -4931,7 +5011,7 @@ export interface components {
         };
         Warning: {
             /**
-             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. `stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and the board's `kanban.status` map therefore decided its `status` in the same commit (SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the status it wrote and the board that decided — and, when the document is in more than one kanban over `stage`, the boards that did not decide, since "the one with the lowest `order`" is a rule a caller cannot check from the response alone. It is about the document the request named, unlike the carried pair above, and it is here because the caller asked for one field and got two: a `status` a caller neither sent nor was told about is exactly the effect §11 says must not be learned from `git log`. Silent when the write moved no stage, when no kanban claims the document, and when the stage is one the deciding board does not draw — that last one writes no status either. `default_open_cleared`: this write set `default-open: true` on a board, and **at most one board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost it in the same commit. One warning per board cleared, naming its id and title. Silent when no other board carried it. The last two are silent when there is nothing to say, and so are the carried pair — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. `stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and the board's `kanban.status` map therefore decided its `status` in the same commit (SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the status it wrote and the board that decided — and, when the document is in more than one kanban over `stage`, the boards that did not decide, since "the one with the lowest `order`" is a rule a caller cannot check from the response alone. It is about the document the request named, unlike the carried pair above, and it is here because the caller asked for one field and got two: a `status` a caller neither sent nor was told about is exactly the effect §11 says must not be learned from `git log`. Silent when the write moved no stage and when no kanban claims the document. A stage the board maps writes that status; any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). `default_open_cleared`: this write set `default-open: true` on a board, and **at most one board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost it in the same commit. One warning per board cleared, naming its id and title. Silent when no other board carried it. The last two are silent when there is nothing to say, and so are the carried pair — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
              * @enum {string}
              */
             code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref" | "carried_skill" | "carried_reconciliation" | "stage_status" | "default_open_cleared";
@@ -5460,6 +5540,30 @@ export interface components {
              * @example doc_a1b2c3
              */
             id: string;
+        };
+        ReorderBoardsResult: {
+            /** @description Every board the request named, in the order it asked for, each with the position it now carries and whether this act wrote it. The act is all-or-nothing, so this is the order the corpus holds — never a partial one. */
+            boards: components["schemas"]["BoardPosition"][];
+            /** @description The **single** auto-commit this reorder landed as (SPEC.md §4), authored by the acting party, containing exactly the board documents whose position changed. One sha, never a list: that is the whole of what rider 2's "in one commit" promises, and it is why this route exists rather than one `PUT` per board. Null in three cases, none of them an error — every board was already at its position, so there was nothing to commit; the workspace is not a git repository (`commit_skipped` in `warnings`); or the workspace's hooks rejected the commit, leaving the writes on disk and uncommitted (`commit_failed` in `warnings`, §11). */
+            commit: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        /** @description One board and where it sits after the reorder. Every board the request named is here, in the order it asked for, whether or not this act had to write it. */
+        BoardPosition: {
+            /**
+             * @description The board this position is about.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description The position this board **now** carries — its place in the list the request sent, counting from one. Read back from the document rather than predicted, so a caller renders what the corpus holds. */
+            order: number;
+            /** @description Whether this act wrote the board's file. False for a board already at that position: nothing was written for it and nothing about it is in `commit`. A caller reporting "how many boards moved" counts these, never the length of the list it sent. */
+            changed: boolean;
+        };
+        ReorderBoardsRequest: {
+            /** @description **The bar, in the order it should be in** — every board this caller is ordering, by id, first tab first. The positions are derived from the list: the first board is given `1`, the next `2`, and so on in steps of one. A board already sitting at the number it would be given is **not** written, because a write that changes nothing still stamps `updated` and lands a line in the log the agent reads. An id may appear at most once — a board has one position, so a repeat is a caller bug rather than something to resolve. Boards this list does not name are left exactly as they are, which is what lets a bar that hides archived boards state its own order without inventing positions for boards nobody can see. */
+            boards: string[];
         };
         CaptureResult: {
             /**

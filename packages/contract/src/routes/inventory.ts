@@ -187,6 +187,18 @@
  * E2E log and walked against these four by hand, because nothing here parses
  * `SPEC.md`.
  *
+ * `POST /api/boards/order` (CONTRACT-080) is derived from SPEC.md §10's rider
+ * 2, signed 2026-08-22, and **§9.2 does not list it**: it joins the pending
+ * amendments rather than the undocumented. The derivation is one sentence of the
+ * rider — "reordering boards writes `order` on every board, **in one commit**" —
+ * and the deriving step is that no other route can say it. §4's commit window
+ * folds one party's editing session on one document, so a `PUT` per board is a
+ * commit per board by construction; `POST /api/docs/bulk` lands one commit but
+ * carries §10's *selection* acts, which §9.2 enumerates and a reorder is not
+ * one of. An act over a set with no route is an act the rider cannot have, so
+ * the route is the rider. It sits after the folder acts because those are its
+ * only neighbours in kind. The §9.2 bullet is the orchestrator's to draft.
+ *
  * `POST /api/workspace/reflect` and `GET /api/workspace/reflect`
  * (CONTRACT-076) are derived from SPEC.md §7's reflection rider (rider 9,
  * signed 2026-08-22) rather than from §9.2, and **§9.2 does not list them**:
@@ -240,6 +252,7 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/folders/archive",
   "POST /api/folders/unarchive",
   "POST /api/folders/delete",
+  "POST /api/boards/order",
   "POST /api/capture",
 
   "POST /api/threads",

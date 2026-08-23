@@ -217,6 +217,21 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
       }
       return json(status);
     }
+    /*
+     * `POST /api/boards/order` — the bar's order, written as one act and one
+     * commit (SPEC.md §10, rider 2; CONTRACT-080). Answered rather than left to
+     * the `{}` catch-all: the provider reads `boards` off the result to say how
+     * many documents moved, and a `{}` would have it read `filter` off nothing.
+     * It renumbers what it was sent, as the server does, so a spec asserting the
+     * count is asserting the rule rather than a canned number.
+     */
+    if (url.pathname === "/api/boards/order" && request.method === "POST") {
+      const ids = ((call.body as { boards?: string[] } | undefined)?.boards ?? []).map(
+        (id, index) => ({ id, order: index + 1, changed: true }),
+      );
+      return json({ boards: ids, commit: "c0mm1t", warnings: [] });
+    }
+
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);
     }

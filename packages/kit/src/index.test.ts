@@ -66,6 +66,7 @@ const RUNTIME_SURFACE = [
   "useRenameFolder",
   "useSetFolderArchived",
   "useDeleteFolder",
+  "useReorderBoards",
   "useMarkThreadSeen",
   "useSetThreadStatus",
   "useSetResident",

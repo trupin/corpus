@@ -1,5 +1,6 @@
 import { getAgentRoster } from "./agents.js";
 import { getAttachment } from "./attachments.js";
+import { reorderBoards } from "./boards.js";
 import { applyBulkAction } from "./bulk.js";
 import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
@@ -57,6 +58,7 @@ import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
 export * from "./agents.js";
 export * from "./attachments.js";
+export * from "./boards.js";
 export * from "./bulk.js";
 export * from "./capture.js";
 export * from "./check.js";
@@ -151,6 +153,12 @@ export * from "./upgrade.js";
  * fully static paths with no parameter anywhere — so this placement is for the
  * reader.
  *
+ * The **board reorder** follows them, and for the same reason in both senses:
+ * `/api/boards/order` is a fully static path competing with no parameter, and
+ * the folder acts are its nearest neighbours in kind — the only other act whose
+ * subject is a set of documents rather than one. It precedes `capture`, which
+ * ends the document half of the surface.
+ *
  * The two **reflection** routes close the queue group, after `abandonEvent`.
  * That is where they belong in both directions: an ask enqueues a queue event,
  * and the clock is the state the automatic path is decided against. They are one
@@ -180,6 +188,7 @@ export const contractRoutes = {
   archiveFolder,
   unarchiveFolder,
   deleteFolder,
+  reorderBoards,
   capture,
 
   createThread,

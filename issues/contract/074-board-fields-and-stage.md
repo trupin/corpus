@@ -29,7 +29,7 @@ A board is a `type: board` document whose frontmatter lists its columns, its pos
 - [x] `DocRow` carries `lastActor: "user" | "agent"` — the acting party of the document's last write (§4 attribution; an out-of-band edit the watcher picks up is `user`). It is what §7's reflection marks and counts read, so it is on the row rather than behind a request.
 - [x] The update body accepts `unset: string[]` beside `changes`: each named frontmatter key is removed (core or `extra`); `id`, `type`, `created` refuse with a message naming the key. This is what CLI-060's `--unset` and CLI-061's migration send.
 - [x] `DocRow` no longer carries `pinned`; `DocsQuerySchema` no longer accepts `pinned`; `sort=order` stays.
-- [ ] `DocsQuerySchema` accepts `stage=<string>`; `GET /api/search` does too.
+- [x] `DocsQuerySchema` accepts `stage=<string>`; `GET /api/search` does too. (Ticked 2026-08-23 after PR #58's review found it left unticked though implemented — `stage` is on both parameter lists in `openapi.json`, with tests.)
 - [x] `"board"` is in `CORE_DOC_TYPES`; `DocTypeSchema` stays an open string.
 - [x] Create and update bodies accept `stage`, `columns`, `kanban`, `defaultOpen`, `order`; a write refuses, with a message naming the field, when: `kanban.field` is not `status` or `stage`; `kanban.stages` is empty or has duplicates; a `transitions` key or value is not in `stages`, or a value equals its key; a `status` map key is not in `stages` or a value is not `open | resolved | archived`; `kanban.field` is `status` and a stage is not one of the three.
 - [x] `npm run generate -w packages/contract` is idempotent and the drift check passes; `openapi.json` is committed.

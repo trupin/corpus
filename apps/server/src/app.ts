@@ -482,9 +482,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // takes effect without a restart. See `readQuietMinutes`.
       quietMinutes: () =>
         readQuietMinutes(config.configPath, config.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES),
-      // Where "who asked" is recorded: the payload is `{ since }` and a stored
-      // event has no actor field, so the job log is the honest home for it.
-      recordAskLine: async (eventId, line) => {
+      // Where "who asked" and "no digest landed" are recorded: the payload is
+      // `{ since }` and a stored event has no actor field, so the job log is the
+      // honest home for both.
+      recordJobLine: async (eventId, line) => {
         await jobs?.appendLine(eventId, line, "server");
       },
       logger,

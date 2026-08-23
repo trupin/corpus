@@ -553,6 +553,22 @@ function createStubApp() {
     c.json({ documents: [{ id: row.id }], warnings: [] }, 200),
   );
 
+  // SPEC.md §10, rider 2 (CONTRACT-080). The handler renumbers what it parsed,
+  // exactly as the server does, because the positions are derived from the
+  // list's own order and a canned reply would not exercise that: the second
+  // board stands in for one already at its number, which the act does not write.
+  app.openapi(contractRoutes.reorderBoards, (c) => {
+    const { boards } = c.req.valid("json");
+    return c.json(
+      {
+        boards: boards.map((id, index) => ({ id, order: index + 1, changed: index !== 1 })),
+        commit: "c0mm1t",
+        warnings: [],
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.capture, (c) => {
     const body = c.req.valid("form");
     return c.json(

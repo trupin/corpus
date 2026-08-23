@@ -1,63 +1,50 @@
+import { BOARD_ORDER_STEP } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { BOARD_ORDER_STEP, nextBoardOrder, planBoardReorder, renumberBoards } from "./boardOrder";
+import { nextBoardOrder, planBoardReorder } from "./boardOrder";
 
 const bar = (...orders: (number | null)[]) =>
   orders.map((order, index) => ({ id: `board_${String(index)}`, order }));
 
 describe("planBoardReorder", () => {
   /**
-   * SPEC.md §10, rider 2: "reordering boards writes `order` on every board".
-   * Every board that ends up at a new position is written, and one already
-   * sitting at the number it would be given is not — a `PUT` that changes
-   * nothing still lands a commit.
+   * SPEC.md §10, rider 2: "reordering boards writes `order` on every board, in
+   * one commit". What a drag produces is the **sequence** the bar should be in;
+   * the numbers are derived by `POST /api/boards/order`, which is what makes the
+   * whole reorder one commit (CONTRACT-080). Computing them here again would be
+   * a second opinion about the same rule.
    */
-  it("renumbers the boards whose position changed", () => {
+  it("states the bar in the order the drag leaves it", () => {
     expect(planBoardReorder(bar(1, 2, 3, 4), 3, 1)).toEqual([
-      { id: "board_3", order: 2 },
-      { id: "board_1", order: 3 },
-      { id: "board_2", order: 4 },
+      "board_0",
+      "board_3",
+      "board_1",
+      "board_2",
     ]);
   });
 
-  it("writes every board when the first one moves to the end", () => {
-    expect(planBoardReorder(bar(1, 2, 3), 0, 2)).toEqual([
-      { id: "board_1", order: 1 },
-      { id: "board_2", order: 2 },
-      { id: "board_0", order: 3 },
-    ]);
+  it("moves the first board to the end", () => {
+    expect(planBoardReorder(bar(1, 2, 3), 0, 2)).toEqual(["board_1", "board_2", "board_0"]);
   });
 
   /** A board with no `order` key is placed, never dropped. */
-  it("gives a board carrying no order a number", () => {
-    expect(planBoardReorder(bar(null, 2, 3), 2, 0)).toEqual([
-      { id: "board_2", order: 1 },
-      { id: "board_0", order: 2 },
-      { id: "board_1", order: 3 },
-    ]);
+  it("names a board carrying no order like any other", () => {
+    expect(planBoardReorder(bar(null, 2, 3), 2, 0)).toEqual(["board_2", "board_0", "board_1"]);
   });
 
-  it("writes nothing when nothing moves", () => {
+  it("asks for nothing when nothing moves", () => {
     expect(planBoardReorder(bar(1, 2, 3), 1, 1)).toEqual([]);
     expect(planBoardReorder(bar(1, 2, 3), 0, -1)).toEqual([]);
     expect(planBoardReorder(bar(1, 2, 3), 2, 3)).toEqual([]);
     expect(planBoardReorder(bar(1, 2, 3), 9, 0)).toEqual([]);
   });
 
-  /** Two boards at the same `order` — the file is hand-editable (UI-148). */
-  it("resolves a bar whose boards share an order", () => {
-    // `board_2` lands first and is already at 1, so only the two it displaced
-    // are written.
-    expect(planBoardReorder(bar(1, 1, 1), 2, 0)).toEqual([
-      { id: "board_0", order: 2 },
-      { id: "board_1", order: 3 },
-    ]);
-  });
-});
-
-describe("renumberBoards", () => {
-  it("skips a board already at the number it would be given", () => {
-    expect(renumberBoards(bar(1, 2, 3))).toEqual([]);
-    expect(renumberBoards(bar(1, 5, 3))).toEqual([{ id: "board_1", order: 2 }]);
+  /**
+   * Two boards at the same `order` — the file is hand-editable (UI-148). The
+   * sequence is stated the same way, and the server is what resolves the tie by
+   * renumbering; nothing here has to know the bar was inconsistent.
+   */
+  it("states a bar whose boards share an order like any other", () => {
+    expect(planBoardReorder(bar(1, 1, 1), 2, 0)).toEqual(["board_2", "board_0", "board_1"]);
   });
 });
 

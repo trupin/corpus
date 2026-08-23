@@ -195,6 +195,70 @@ rather than to the rename. Re-verified end to end: rows carry the new spelling,
   `DeleteFolderResult` has no field to name them, so they are logged rather than
   reported.
 
+---
+
+**server-dev, 2026-08-23, on opus — PR #58, the case-only rename on a
+case-sensitive filesystem.**
+
+`acts.test.ts`'s "declares both spellings to the watcher" case passed on macOS
+and failed on CI. **Not a regression — a platform difference.** On a
+case-sensitive volume `Finance` → `finance` is an ordinary rename: the
+destination does not exist, `resolveDestination` returns `caseOnly: false`, the
+directory is moved once, and the old path really is gone. So nothing declares it,
+and nothing needs to: `renameDir` already registers the removal that claims the
+`unlink` chokidar will report there.
+
+**What changed: the test, not the code.** The server was already deciding at
+runtime — `resolveDestination` compares the destination's `dev`/`ino` against
+the source's, which asks the filesystem about the two paths that actually matter
+and cannot be fooled by a folding rule (Unicode on APFS, ASCII elsewhere) that
+guessing would get wrong. The test now asks the same question the same way: a
+new `foldsCase(root)` writes `.corpus/CASE-FOLD-PROBE` and looks for
+`.corpus/case-fold-probe`. **No branch on `process.platform`** — macOS mounts
+case-sensitive volumes and Linux mounts case-insensitive ones, and the volume is
+what decides.
+
+The test then asserts what is true on each:
+
+- **folding**: both spellings claimable **with the bytes**, because the old path
+  still stats and chokidar reports `change` there;
+- **case-sensitive**: the old path claimable as a **removal** (`claim(path,
+  null)`), not claimable with the bytes, and gone from disk.
+
+**One thing the old test had wrong even on macOS.** The create declared the same
+bytes at the same path, and the self-write registry's TTL runs on the wall clock
+rather than the fixture's — so the old-path assertion was being satisfied by the
+create, not by the rename. The test now waits `SELF_WRITE_TTL_MS + 100` and
+asserts `selfWrites.size === 0` before the act, which is what makes the claims
+that follow claims about the rename.
+
+**Verified on both filesystems, on this machine.** A 200 MB
+`Case-sensitive APFS` disk image was created with `hdiutil` and mounted at
+`/Volumes/CorpusCS` (`touch PROBE; ls probe` → `No such file or directory`).
+
+| Run | Folding (default `TMPDIR`) | Case-sensitive (`TMPDIR=/Volumes/CorpusCS/tmp`) |
+| --- | --- | --- |
+| `folders/` suite | 37 passed | 37 passed |
+| the case test alone | passed | passed |
+| **with `declareBothSpellings` removed** | **FAILED** at `claim(oldPath, content)` | passed — there is nothing there for the fix to do |
+
+The last row is the falsification the fix needed: removing it is fatal where the
+filesystem folds case and invisible where it does not, which is exactly the
+claim.
+
+**A real server on each.** `corpus init` + `corpus server start`, one document
+created into `Finance`, then `POST /api/folders/rename {from: Finance, to: finance}`:
+
+- macOS (folding, port 8766): one commit
+  `folder rename: data/docs/Finance → data/docs/finance (1 document) by user`,
+  `git status --porcelain` empty, `readdir` shows `finance` only, the row reads
+  `data/docs/finance/deed.md`, and `corpus db doctor` → `projection is clean —
+  21 documents from 21 files (4ms)`.
+- case-sensitive volume (port 8768): the same commit subject, empty
+  `git status`, `data/docs/Finance` **gone** from disk, the same row, and
+  `corpus db doctor` → `projection is clean — 13 documents from 13 files (9ms)`.
+
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

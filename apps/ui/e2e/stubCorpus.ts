@@ -49,6 +49,7 @@ import {
   type QueueStatus,
   type ReattachConflictError,
   type RenameFolderResult,
+  type ReorderBoardsResult,
   type ReattachThreadResponse,
   type ReflectAskResult,
   type ReflectStatus,
@@ -160,6 +161,7 @@ type StubPayload =
   | ReattachThreadResponse
   | ReflectAskResult
   | ReflectStatus
+  | ReorderBoardsResult
   | RelatedDocs
   | StaleKeyError
   | SearchResults
@@ -1483,14 +1485,12 @@ export async function stubCorpus(
       if (!matches(doc, params)) continue;
       const kanban = board.kanban;
       if (kanban === null) continue;
-      // A stage the deciding board does not draw writes no status and says
-      // nothing — "not in this board's vocabulary", not an error (§5).
-      const status =
-        doc.stage === null
-          ? "open"
-          : kanban.stages.includes(doc.stage)
-            ? (kanban.status?.[doc.stage] ?? "open")
-            : null;
+      // A stage the board maps writes that status; every other stage writes
+      // `open`, which is what SPEC.md §5's rider says and what the server does.
+      // The carve-out that used to sit here — an undrawn stage writing no
+      // status — was removed under PR #58's review, because the spec never
+      // said it and the code was citing §5 for it.
+      const status = (doc.stage === null ? undefined : kanban.status?.[doc.stage]) ?? "open";
       return { board, status };
     }
     return null;
@@ -1702,6 +1702,50 @@ export async function stubCorpus(
         return { id: doc.id, status };
       });
       return json(route, { documents: changed, warnings: [] } satisfies FolderStatusResult);
+    }
+
+    /*
+     * `POST /api/boards/order` — the bar's order, as **one act and one commit**
+     * (SPEC.md §10, rider 2; CONTRACT-080).
+     *
+     * The stub cannot show the half that matters most — that git holds one
+     * commit — which is `apps/server/src/docs/board-order.test.ts`'s. What it
+     * can pin is that the bar issues **one** request stating the whole order
+     * rather than a `PUT` per board, and that it renders what comes back: the
+     * positions are derived here from the list's own order, exactly as the
+     * server derives them, and a board already at its number is reported
+     * unchanged so a spec asserting the count is asserting the rule.
+     */
+    if (url.pathname === "/api/boards/order" && method === "POST") {
+      const asked = inputOf()["boards"];
+      const ids = Array.isArray(asked)
+        ? asked.filter((id): id is string => typeof id === "string")
+        : [];
+      // Refused before anything is written, like the server: no caller can
+      // observe half an order.
+      const missing = ids.find((id) => !store.has(id));
+      if (missing !== undefined) {
+        return json(
+          route,
+          { code: "not_found", message: `no document with id ${missing}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      const positions = ids.map((id, index) => {
+        const subject = store.get(id);
+        const order = index + 1;
+        const changed = subject !== undefined && subject.order !== order;
+        if (subject !== undefined && changed) {
+          subject.order = order;
+          stampUpdated(subject);
+        }
+        return { id, order, changed };
+      });
+      return json(route, {
+        boards: positions,
+        commit: "c0mm1tstub",
+        warnings: [],
+      } satisfies ReorderBoardsResult);
     }
     /*
      * `GET /api/index/status` — the strip's index pill (SPEC.md §10's

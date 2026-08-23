@@ -1,8 +1,15 @@
-// SPEC.md §5's coupling rule: **while a document is in a kanban, its stage
-// decides its status** (rider 5, signed 2026-08-22; SERVER-138).
+// SPEC.md §5's coupling rule (rider signed 2026-08-22; SERVER-138). The rider's
+// own words, because everything below is either one of these sentences or a
+// decision this module made where the rider is silent:
 //
-// Three sentences of the rider are the whole of this module, and each one is a
-// decision somebody could have taken differently:
+//   **While a document is in a kanban, its stage decides its status**: a stage
+//   the board maps to a status writes that status on entry, and a stage with no
+//   mapping writes `open`, in the same commit, named in the response. Writing
+//   `status` never moves a stage. Whether a document is "in a kanban" is decided
+//   by the board's scope query **with archived documents included**, because a
+//   document in a stage mapped to `archived` is still in the kanban.
+//
+// What follows from those sentences, and nothing else does:
 //
 // - **"In a kanban" is decided by the board's scope query.** Not by a list on
 //   the document, not by a folder convention — by the same saved query
@@ -11,13 +18,27 @@
 // - **With archived documents included**, because a document in a stage mapped
 //   to `archived` is still in the kanban, and a scope that dropped it would let
 //   one archive take a document out of the board that archived it.
+// - **Two outcomes, never three.** A stage the board maps writes that status,
+//   and every other stage — one the map does not name, one the board does not
+//   even draw, and the absence of a stage — is "no mapping" and writes `open`.
+//   The rider draws the line at the *map*, so this module does not draw a second
+//   one at the `stages` list.
+//
 // - **The coupling is by an explicit map, never by a stage's name.** A stage
 //   called `archived` couples to nothing unless the board's `kanban.status`
 //   says so (the user's decision, 2026-08-22, recorded in the Phase 41 plan).
 //
-// The server enforces the status map and never the transitions (§10, rider 6):
-// a stage write is refused for nothing, and skipping the graph is exactly how a
-// person or the CLI moves a document the drag cannot.
+// The server enforces the status map and never the transitions. §10's kanban
+// rider says it in as many words — "the server does not enforce transitions, it
+// enforces the status map" — so a stage write is refused for nothing, and
+// skipping the graph is exactly how a person or the CLI moves a document the
+// drag cannot.
+//
+// **Two rules here are this module's, not the spec's**, and are marked as such
+// where they are made: an archived board decides nothing, and a document whose
+// *root* fixes its status is left alone. Both are SERVER-138's readings of a
+// silence, and a citation that lent them §5's authority would be a lie the next
+// reader has no way to catch.
 
 import type { DocStatus, ViewQuery, Warning } from "@corpus/contract";
 import { DocsQuerySchema, KanbanSchema, type Kanban } from "@corpus/contract";
@@ -29,6 +50,9 @@ import { valueToWire } from "./selection.js";
 /**
  * What a stage with no entry in the board's `status` map writes (SPEC.md §5:
  * "a stage with no mapping writes `open`").
+ *
+ * "No mapping" covers every stage the map does not name — including one the
+ * board does not draw at all, and including no stage. See {@link decideStageStatus}.
  */
 export const UNMAPPED_STAGE_STATUS: DocStatus = "open";
 
@@ -43,18 +67,15 @@ export type StageKanbanBoard = {
 /**
  * What the coupling decided for one write.
  *
- * `status` is `null` for the case §5 leaves alone — "a document whose `stage` is
- * not in any matching board's `stages`: no status write, and no warning" — which
- * is not the same as "no board matched" (`decideStageStatus` returns `null`
- * outright for that). Both are silent; only this one had a board to be silent
- * about, and the distinction is what keeps a stage the board has never heard of
- * from being read as the unmapped case and forced to `open`.
+ * There is always a status: a board that claims the document decides one, and
+ * §5's two outcomes cover every stage between them. "No board claimed it" is
+ * `decideStageStatus` returning `null` outright, which is the only silence.
  */
 export type StageCoupling = {
   readonly board: StageKanbanBoard;
   /** The other kanbans this document is also in, in deciding order after `board`. */
   readonly alsoMatched: readonly StageKanbanBoard[];
-  readonly status: DocStatus | null;
+  readonly status: DocStatus;
 };
 
 /**
@@ -68,12 +89,10 @@ export type StageCoupling = {
  * this way rather than by reading keys off the object:
  *
  * - **A key the query grammar does not define is dropped**, because the schema
- *   is a plain object and strips what it does not declare. §10 promises exactly
- *   that ("an unknown key degrades in the client, never on the wire"), and this
- *   is the server side of the same promise: a board whose query names a filter
- *   this build has never heard of still has a scope, made of the keys it does
- *   understand. **This is deliberately gentler than `compileSelectionQuery`**,
- *   which refuses an unknown key with a `400`: that query decides what a Save
+ *   is a plain object and strips what it does not declare. A board whose query
+ *   names a filter this build has never heard of still has a scope, made of the
+ *   keys it does understand. **This is deliberately gentler than
+ *   `compileSelectionQuery`**, which refuses an unknown key with a `400`: that query decides what a Save
  *   *writes*, and it is the caller's own, so it must be told. This one decides
  *   whether a stage write couples, and it belongs to a **third** document the
  *   caller never named — refusing here would make an unrelated board's typo
@@ -104,16 +123,20 @@ export function boardScopeQuery(query: ViewQuery | null): FilterQuery {
 }
 
 /**
- * The kanbans over `stage`, in the order §5 makes them decide: "the one with the
- * lowest `order` decides".
+ * The kanbans over `stage`, in deciding order.
  *
- * The tiebreak is `GET /api/docs?sort=order`'s, spelled out — `order` with nulls
- * last, then `title`, then `id` — so "the lowest `order`" means the same thing
- * here and in the board bar a person is looking at. A board with no `order` key
- * is placed rather than dropped, exactly as it is there.
+ * **The order is SERVER-138's, not the spec's.** §5 says a document's stage
+ * decides its status and never says which board decides when two claim the same
+ * document, so the issue picked the one a person is looking at first: the lowest
+ * `order`. The tiebreak is `GET /api/docs?sort=order`'s, spelled out — `order`
+ * with nulls last, then `title`, then `id` — so "the lowest `order`" means the
+ * same thing here and in the board bar. A board with no `order` key is placed
+ * rather than dropped, exactly as it is there.
  *
- * Archived boards are excluded: §5's edge case says a board archived after
- * mapping "no longer decides anything".
+ * **Archived boards are excluded, and that is SERVER-138's rule too.** §5 is
+ * silent on it. An archived board is out of sight (§5's status ladder), and a
+ * board nobody can see deciding a document's status is a change with no visible
+ * cause — so a board archived after mapping decides nothing.
  */
 export function stageKanbanBoards(db: ProjectionDb): StageKanbanBoard[] {
   const rows = db
@@ -155,9 +178,9 @@ export function stageKanbanBoards(db: ProjectionDb): StageKanbanBoard[] {
  * create's membership from a row that does not exist yet, and a save's from the
  * stage the document is leaving.
  *
- * `null` for the stage means the key is being cleared, and §5's edge case makes
- * that the **unmapped** case rather than a stage of its own: "`stage: null`
- * (clearing) on a document in a kanban writes `open`".
+ * `null` for the stage means the key is being cleared. A cleared stage is in no
+ * board's `status` map, so §5's second outcome covers it with no rule of its
+ * own: "a stage with no mapping writes `open`".
  */
 export function decideStageStatus(
   db: ProjectionDb,
@@ -166,17 +189,19 @@ export function decideStageStatus(
   stage: string | null,
   nowMs: number,
 ): StageCoupling | null {
-  // A document whose **root** fixes its status has no status in its frontmatter
-  // to decide: `projection/project-document.ts` reads the root first, so §7's
-  // skills are `archived` because of the folder they sit in, whatever the key
-  // says. Writing one here would put a value in the file that nothing reads and
-  // that `corpus doc check` would then have to explain — and taking such a
-  // document off `archived` is `POST /api/docs/{id}/unarchive`'s job, because
-  // unarchiving a skill is a filesystem move and a name release rather than a
-  // field edit (`assertNotUnarchivingByPut`, `docs/update.ts`).
+  // **SERVER-138's rule, where §5 is silent.** A document whose **root** fixes
+  // its status has no status in its frontmatter to decide:
+  // `projection/project-document.ts` reads the root first, so an archived skill
+  // is `archived` because of the folder it sits in — §7 makes archiving a skill
+  // a move to `.claude/skills-archived/` — whatever its `status:` key says.
+  // Writing one here would put a value in the file that nothing reads and that
+  // `corpus doc check` would then have to explain — and taking such a document
+  // off `archived` is `POST /api/docs/{id}/unarchive`'s job, because unarchiving
+  // a skill is a filesystem move and a name release rather than a field edit
+  // (`assertNotUnarchivingByPut`, `docs/update.ts`).
   //
-  // Silent, like the two other cases that decide nothing: the stage still moves,
-  // and it is the board's own column that is drawn from it.
+  // Silent, like the other case that decides nothing: the stage still moves, and
+  // it is the board's own column that is drawn from it.
   if (classifyPath(relativePath)?.status != null) return null;
 
   const matched = stageKanbanBoards(db).filter((board) =>
@@ -185,29 +210,32 @@ export function decideStageStatus(
   const [board, ...alsoMatched] = matched;
   if (board === undefined) return null;
 
-  // A stage the deciding board does not draw is not part of a kanban's
-  // vocabulary yet (§5's edge case): the document is in the kanban, the stage is
-  // not, and writing `open` for it would silently reopen work over a typo.
-  // Clearing the stage is the one absent value that *is* the unmapped case.
+  // §5's two outcomes, and the `stages` list takes no part in either: the map
+  // decides, or nothing does and the answer is `open`. A stage the board does
+  // not draw is therefore an ordinary unmapped stage — it shows in no column
+  // (UI-152 counts those), and the document it is on is `open`, which is what a
+  // document nobody has mapped to a settled stage is.
   const status =
-    stage === null
-      ? UNMAPPED_STAGE_STATUS
-      : board.kanban.stages.includes(stage)
-        ? (board.kanban.status?.[stage] ?? UNMAPPED_STAGE_STATUS)
-        : null;
+    (stage === null ? undefined : board.kanban.status?.[stage]) ?? UNMAPPED_STAGE_STATUS;
 
   return { board, alsoMatched, status };
 }
 
 /**
- * §11's report of the coupling — one warning, naming the stage, the status and
- * the board that decided.
+ * The coupling "named in the response" (§5) — one warning, naming the stage, the
+ * status and the board that decided.
  *
- * It names the boards that did **not** decide when there are any, because §5's
- * "the one with the lowest `order` decides" is a rule a caller cannot check from
- * a response that mentions one board: two kanbans over one corpus share one
- * `stage` value, so a person whose document jumped to `resolved` needs to know
- * which board's map did it before they can go and change it.
+ * **It says which of §5's two outcomes happened**, because they are two
+ * different facts for the person reading it: a map entry moved this document, or
+ * nothing did and `open` is what an unmapped stage means. A message that claimed
+ * the map decided when the map holds no such stage would send somebody looking
+ * for an entry that is not there.
+ *
+ * It names the boards that did **not** decide when there are any, because the
+ * deciding order (SERVER-138) is a rule a caller cannot check from a response
+ * that mentions one board: two kanbans over one corpus share one `stage` value,
+ * so a person whose document jumped to `resolved` needs to know which board's
+ * map did it before they can go and change it.
  */
 export function stageStatusWarning(
   coupling: StageCoupling,
@@ -219,12 +247,18 @@ export function stageStatusWarning(
       ? ""
       : ` It also matches ${coupling.alsoMatched
           .map((board) => `${board.title} (${board.id})`)
-          .join(", ")}; the board with the lowest \`order\` decides (SPEC.md §5).`;
+          .join(", ")}; the board with the lowest \`order\` decides.`;
+  const because =
+    stage === null
+      ? "and a document in a kanban with no stage has no mapping, so `open` (SPEC.md §5)"
+      : coupling.board.kanban.status?.[stage] === undefined
+        ? "which maps no status to that stage, and a stage with no mapping is `open` (SPEC.md §5)"
+        : "whose `kanban.status` map decides a status on entry (SPEC.md §5)";
   return {
     code: "stage_status",
     detail:
       `stage ${stage === null ? "cleared" : `\`${stage}\``} set status to \`${status}\`: this ` +
-      `document is in the kanban ${coupling.board.title} (${coupling.board.id}), whose ` +
-      `\`kanban.status\` map decides a status on entry (SPEC.md §5).${others}`,
+      `document is in the kanban ${coupling.board.title} (${coupling.board.id}), ` +
+      `${because}.${others}`,
   };
 }

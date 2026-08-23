@@ -34,7 +34,24 @@ export const REFLECT_ASK_SOURCE = "reflect";
 export const REFLECT_QUIET_SOURCE = "reflect-quiet";
 
 /** Appends one line to a job's log; `undefined` on a server with no job service. */
-export type RecordAskLine = (eventId: string, line: string) => Promise<void>;
+export type RecordJobLine = (eventId: string, line: string) => Promise<void>;
+
+/**
+ * What a reflection's job log says when the job finished and posted no digest.
+ *
+ * **Not an error** — the reflection happened, the clock moved, and §7 asks for a
+ * digest thread without making one the condition of the work being done. What
+ * makes it worth a line is that the omission is otherwise **invisible**: the
+ * board bar shows a fresh "reflected 2m ago" beside the *previous* reflection's
+ * digest, or beside no digest at all, and nothing anywhere says why. The line
+ * names the two ways an agent gets it wrong, because both look like a posted
+ * digest from the agent's side.
+ */
+export const NO_DIGEST_LOG_LINE =
+  "this reflection finished without a digest thread, so the workspace still shows the " +
+  "previous one (or none). A digest is a standalone thread created against this job: " +
+  "`corpus thread create --job <eventId>` with no `--parent`. A thread posted without " +
+  "`--job`, or with a parent, is an ordinary thread and is not recorded as the digest.";
 
 export interface ReflectServiceOptions {
   readonly corpusDir: string;
@@ -43,13 +60,18 @@ export interface ReflectServiceOptions {
   /** SPEC.md §7's window, re-read on every use — see `readQuietMinutes`. */
   readonly quietMinutes: () => number;
   /**
-   * Where the acting party is recorded. The route takes an actor header and the
-   * contract says the header "records who asked, which is what the job log and
-   * the digest thread report" — a `workspace.reflect` payload is `{ since }` and
-   * nothing else, and a `StoredEvent` has no actor field, so the job log is the
-   * one place that record can honestly live.
+   * The reflection's own job log, written to twice.
+   *
+   * **Who asked**: the route takes an actor header and the contract says the
+   * header "records who asked, which is what the job log and the digest thread
+   * report" — a `workspace.reflect` payload is `{ since }` and nothing else, and
+   * a `StoredEvent` has no actor field, so the job log is the one place that
+   * record can honestly live.
+   *
+   * **What was missing at the end**: see {@link NO_DIGEST_LOG_LINE}. The same
+   * log, because both are facts about one job that live nowhere else.
    */
-  readonly recordAskLine?: RecordAskLine | undefined;
+  readonly recordJobLine?: RecordJobLine | undefined;
   readonly logger?: Logger | undefined;
 }
 
@@ -125,9 +147,9 @@ export function createReflectService(options: ReflectServiceOptions): ReflectSer
         source,
         payload: { since },
       });
-      if (options.recordAskLine !== undefined) {
+      if (options.recordJobLine !== undefined) {
         try {
-          await options.recordAskLine(event.id, line);
+          await options.recordJobLine(event.id, line);
         } catch (error: unknown) {
           // The event is already durable. A log line that did not land is worth
           // reporting and is never worth failing the ask over.
@@ -155,6 +177,33 @@ export function createReflectService(options: ReflectServiceOptions): ReflectSer
     );
     return result.pending ? "busy" : "enqueued";
   };
+
+  /**
+   * Says, in the reflection's own job log, that it finished without a digest.
+   *
+   * **Fire and forget, on purpose.** `observeSettled` is called inside the
+   * queue's own move, before the transition is announced, and it returns
+   * `void`: a log append may not hold that up, and a job log that could not be
+   * written may certainly not fail a transition that has already happened. The
+   * failure path is the server log, exactly as the ask line's is — **unless the
+   * service has been stopped by then**. An append in flight across a shutdown
+   * finds the queue gone and fails for that reason alone, and a shutdown that
+   * printed an error about a log line nobody will read would teach an operator
+   * to ignore this message.
+   */
+  const reportMissingDigest = (eventId: string): void => {
+    if (options.recordJobLine === undefined) return;
+    void options.recordJobLine(eventId, NO_DIGEST_LOG_LINE).catch((error: unknown) => {
+      if (stopped) return;
+      logger.error("could not record that a reflection posted no digest", {
+        eventId,
+        error: String(error),
+      });
+    });
+  };
+
+  /** Set by {@link ReflectService.stop}; see {@link reportMissingDigest}. */
+  let stopped = false;
 
   const scheduler: ReflectScheduler = createReflectScheduler({ quietMinutes, attempt, logger });
 
@@ -202,6 +251,10 @@ export function createReflectService(options: ReflectServiceOptions): ReflectSer
       // was processed**". `failed`, `abandoned` and `deferred` leave it exactly
       // where it was, so the retry that follows sees the same window.
       if (event.status !== "processed") return;
+      // Read before the move, because the move consumes it: this is the one
+      // moment anything can tell whether this reflection posted a digest.
+      const awaiting = readReflectState(corpusDir).awaitingDigest;
+      if (awaiting?.eventId !== event.id) reportMissingDigest(event.id);
       try {
         advanceClock(corpusDir, event.id, event.created);
       } catch (error: unknown) {
@@ -219,6 +272,7 @@ export function createReflectService(options: ReflectServiceOptions): ReflectSer
     },
 
     stop() {
+      stopped = true;
       scheduler.stop();
     },
 

@@ -111,6 +111,8 @@ export {
   type FolderArchiveVariables,
   type RenameFolderVariables,
 } from "./query/useFolderActs.js";
+// SPEC.md §10's rider 2: the bar's order, written as one act and one commit.
+export { useReorderBoards } from "./query/useReorderBoards.js";
 export {
   useMarkThreadSeen,
   useSetThreadStatus,

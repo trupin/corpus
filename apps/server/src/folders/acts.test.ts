@@ -6,7 +6,7 @@
 // HTTP reads a client would use. Nothing here stubs git — a folder act's whole
 // claim is "one action, one commit", and a stub would only prove it was called.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -15,6 +15,7 @@ import {
   createThreadWorkspace,
   type WriteWorkspace,
 } from "../threads/thread-fixture.js";
+import { SELF_WRITE_TTL_MS } from "../watcher/index.js";
 
 const workspaces: WriteWorkspace[] = [];
 
@@ -197,6 +198,34 @@ describe("POST /api/folders/rename", () => {
   });
 });
 
+/**
+ * Does the filesystem under `root` fold case?
+ *
+ * **Asked of the filesystem, never of `process.platform`.** macOS mounts
+ * case-sensitive volumes and Linux mounts case-insensitive ones, and a rename
+ * from `Finance` to `finance` is two different acts depending on which one a
+ * workspace happens to sit on — one directory entry recased, or one entry
+ * removed and another created. The volume is what decides, so the volume is what
+ * gets asked: write a name, look for the other spelling, answer from that.
+ *
+ * The probe lives in `.corpus/`, which is gitignored and outside the watcher's
+ * roots, so it can never reach a `git status` assertion or a projection row.
+ *
+ * The **server** needs no such probe: `resolveDestination` compares the
+ * destination's `dev`/`ino` against the source's, which asks the same question
+ * of the two paths that actually matter and cannot be fooled by a folding rule
+ * (Unicode on APFS, ASCII elsewhere) that guessing would get wrong.
+ */
+function foldsCase(root: string): boolean {
+  const probe = join(root, ".corpus", "CASE-FOLD-PROBE");
+  writeFileSync(probe, "", "utf8");
+  try {
+    return existsSync(join(root, ".corpus", "case-fold-probe"));
+  } finally {
+    rmSync(probe, { force: true });
+  }
+}
+
 describe("POST /api/folders/rename — a case-only rename", () => {
   it("recases the folder on disk, in the projection and in git, in one commit", async () => {
     const ws = workspace("rename-case");
@@ -243,26 +272,46 @@ describe("POST /api/folders/rename — a case-only rename", () => {
     expect(ws.git("status", "--porcelain").trim()).toBe("");
   });
 
-  it("declares both spellings to the watcher, so neither event re-projects the old path", async () => {
+  it("declares the old spelling to the watcher in the form that filesystem will report it", async () => {
     const ws = workspace("rename-case-watcher");
     await createDoc(ws, { type: "note", title: "Deed", folder: "Finance", body: "the deed" });
     ws.advance(60_000);
+    // The **create** declared these same bytes at this same path, and the
+    // registry's TTL runs on the wall clock rather than the fixture's, so
+    // without this wait the assertions below would pass on a create the rename
+    // had nothing to do with. Two seconds of real time is what makes the claims
+    // that follow claims about the rename.
+    await new Promise((resolve) => setTimeout(resolve, SELF_WRITE_TTL_MS + 100));
+    expect(ws.server.selfWrites.size).toBe(0);
 
     expect((await act(ws, "rename", { from: "Finance", to: "finance" })).status).toBe(200);
 
-    // chokidar reports a case-only directory rename as `change` at the file's
-    // **old** spelling followed by `add` at its new one — the old path still
-    // stats, so nothing looks unlinked. `claim` is the seam the watcher decides
-    // on, and both spellings have to answer it or the row is re-projected under
-    // the path the rename just removed (found on a real server: `db doctor`
-    // reported `orphan_row` and `duplicate_id`).
     const content = readFileSync(join(ws.root, "data/docs/finance/deed.md"));
-    expect(ws.server.selfWrites.claim(join(ws.root, "data/docs/Finance/deed.md"), content)).toBe(
-      true,
-    );
-    expect(ws.server.selfWrites.claim(join(ws.root, "data/docs/finance/deed.md"), content)).toBe(
-      true,
-    );
+    const oldPath = join(ws.root, "data/docs/Finance/deed.md");
+    const newPath = join(ws.root, "data/docs/finance/deed.md");
+    const claims = ws.server.selfWrites;
+
+    if (foldsCase(ws.root)) {
+      // The rename never removed a directory entry, so the old spelling still
+      // stats and chokidar reports a case-only directory rename as `change` at
+      // the file's **old** spelling followed by `add` at its new one. Nothing
+      // looks unlinked. `claim` is the seam the watcher decides on, and both
+      // spellings have to answer it **with the bytes** or the row is
+      // re-projected under the path the rename just removed (found on a real
+      // server: `db doctor` reported `orphan_row` and `duplicate_id`).
+      expect(claims.claim(oldPath, content)).toBe(true);
+      expect(claims.claim(newPath, content)).toBe(true);
+    } else {
+      // Where the volume keeps the two names apart, `Finance` is an ordinary
+      // rename's source: the entry is gone, and the event chokidar will report
+      // there is an `unlink`. So the honest declaration is a removal — the one
+      // `renameDir` already makes for every document it moves — and declaring
+      // the bytes there instead would be a claim about a file that is not
+      // there, which would suppress a real `add` if somebody recreated it.
+      expect(claims.claim(oldPath, null)).toBe(true);
+      expect(claims.claim(oldPath, content)).toBe(false);
+      expect(existsSync(oldPath)).toBe(false);
+    }
   });
 
   it("does not swallow the operator's unrelated staged work", async () => {

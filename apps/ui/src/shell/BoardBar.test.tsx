@@ -268,7 +268,13 @@ describe("the board bar", () => {
     });
   });
 
-  it("moves a board left through the menu, writing `order` on every board that moved", async () => {
+  /**
+   * SPEC.md §10, rider 2: "reordering boards writes `order` on every board, in
+   * one commit". **One** request states the whole bar — the count is the
+   * assertion, because one request per board is one commit per board, which is
+   * what the route replaced (CONTRACT-080).
+   */
+  it("moves a board left through the menu, stating the whole bar in one request", async () => {
     const wire = boardTransport({ boards: BOARDS });
     const { container } = renderBar(wire);
     await settle(container, 3);
@@ -280,15 +286,16 @@ describe("the board bar", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Move left/ }));
 
     await waitFor(() => {
-      expect(wire.writes("PUT")).toHaveLength(2);
+      expect(wire.writes("POST")).toHaveLength(1);
     });
-    expect(wire.writes("PUT").map((call) => [call.path, call.body])).toEqual([
-      ["/api/docs/b_files", { order: 2 }],
-      ["/api/docs/b_status", { order: 3 }],
+    expect(wire.writes("POST").map((call) => [call.path, call.body])).toEqual([
+      ["/api/boards/order", { boards: ["b_attention", "b_files", "b_status"] }],
     ]);
+    // And no per-document write at all: the positions are the server's to derive.
+    expect(wire.writes("PUT")).toEqual([]);
   });
 
-  it("drags a tab to reorder, writing every board that moved", async () => {
+  it("drags a tab to reorder, stating the whole bar in one request", async () => {
     const wire = boardTransport({ boards: BOARDS });
     const { container } = renderBar(wire);
     await settle(container, 3);
@@ -306,13 +313,12 @@ describe("the board bar", () => {
     fireEvent(container.querySelector(".board-tabs") as Element, dragEventAt("drop", 10));
 
     await waitFor(() => {
-      expect(wire.writes("PUT")).toHaveLength(3);
+      expect(wire.writes("POST")).toHaveLength(1);
     });
-    expect(wire.writes("PUT").map((call) => [call.path, call.body])).toEqual([
-      ["/api/docs/b_files", { order: 1 }],
-      ["/api/docs/b_attention", { order: 2 }],
-      ["/api/docs/b_status", { order: 3 }],
+    expect(wire.writes("POST").map((call) => [call.path, call.body])).toEqual([
+      ["/api/boards/order", { boards: ["b_files", "b_attention", "b_status"] }],
     ]);
+    expect(wire.writes("PUT")).toEqual([]);
   });
 
   /**

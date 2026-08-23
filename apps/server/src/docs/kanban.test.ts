@@ -89,9 +89,13 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
     const response = await putDoc(ws, doc.id, { stage: "doing" });
     expect(response.status).toBe(200);
     expect(statusOf(ws, doc.path)).toBe("status: open");
+    const payload = (await response.json()) as { warnings: { code: string; detail: string }[] };
+    expect(payload.warnings.find((entry) => entry.code === "stage_status")?.detail).toContain(
+      "maps no status to that stage",
+    );
   });
 
-  /** §5's edge case: clearing is the unmapped case, not a stage of its own. */
+  /** A cleared stage is in no `status` map, so §5's "no mapping writes `open`" covers it. */
   it("writes `open` when the stage is cleared", async () => {
     ws = createWriteWorkspace("kanban-clear");
     await board(ws, { title: "K", status: { done: "resolved" } });
@@ -105,11 +109,13 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
   });
 
   /**
-   * §5's other edge case: a stage no matching board draws is not part of a
-   * kanban's vocabulary yet. Writing `open` for it would silently reopen work
-   * over a typo, so nothing is written and nothing is said.
+   * §5 draws its line at the **map**, not at the `stages` list: "a stage with no
+   * mapping writes `open`", and a stage the board does not draw has no mapping.
+   * The document is in the kanban either way, so the rider's second outcome
+   * applies unchanged. (SERVER-138 once carved this case out and wrote nothing;
+   * PR #58 removed the carve-out, because the rider never contained it.)
    */
-  it("says and writes nothing for a stage the deciding board does not draw", async () => {
+  it("writes `open` for a stage the deciding board does not even draw", async () => {
     ws = createWriteWorkspace("kanban-unknown-stage");
     await board(ws, { title: "K", stages: ["triage", "done"], status: { done: "resolved" } });
     const doc = await createDoc(ws, { type: "note", title: "Task", status: "resolved" });
@@ -117,9 +123,13 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
 
     const response = await putDoc(ws, doc.id, { stage: "elsewhere" });
     expect(response.status).toBe(200);
-    const payload = (await response.json()) as { warnings: { code: string }[] };
-    expect(statusOf(ws, doc.path)).toBe("status: resolved");
-    expect(payload.warnings.map((entry) => entry.code)).not.toContain("stage_status");
+    const payload = (await response.json()) as { warnings: { code: string; detail: string }[] };
+    expect(statusOf(ws, doc.path)).toBe("status: open");
+    const warning = payload.warnings.find((entry) => entry.code === "stage_status");
+    // The message says which of the two outcomes happened, so nobody goes
+    // looking in `kanban.status` for an entry that is not there.
+    expect(warning?.detail).toContain("maps no status to that stage");
+    expect(warning?.detail).toContain("`open`");
   });
 
   it("does nothing at all when no kanban's scope claims the document", async () => {
@@ -215,6 +225,11 @@ describe("a stage decides a status while the document is in a kanban (SPEC.md §
     expect(payload.warnings.map((entry) => entry.code)).not.toContain("stage_status");
   });
 
+  /**
+   * **SERVER-138's rule, not §5's** — the rider is silent on an archived board.
+   * An archived board is out of sight, and a board nobody can see deciding a
+   * status is a change with no visible cause.
+   */
   it("lets a board archived after mapping decide nothing", async () => {
     ws = createWriteWorkspace("kanban-archived-board");
     const k = await board(ws, { title: "K", status: { done: "resolved" } });

@@ -196,6 +196,66 @@ Thirteen deliberate breakages, each reverted, each confirmed to turn its test re
 
 No test was found that cannot fail.
 
+---
+
+**server-dev, 2026-08-23, on opus — PR #58, a reflection that settles with no
+digest now says so.**
+
+**The gap.** A `workspace.reflect` job reaching `processed` with no
+`awaitingDigest` for that event left `lastDigest` null — or worse, still pointing
+at the *previous* reflection's digest, beside a fresh `reflected`. Nothing
+anywhere said why. `advanceClock` is right to leave the old digest alone
+(`lastDigest` is "the most recent digest there is"), so the fix is a report, not
+a behaviour change.
+
+**What changed.** `observeSettled` reads `awaitingDigest` **before**
+`advanceClock` consumes it — the one moment anything can tell whether this
+reflection posted a digest — and appends one line to that job's own log when it
+did not. `recordAskLine` became `recordJobLine`, since the same seam now carries
+two facts about one job. Not an error: the reflection happened and the clock
+still moves.
+
+The line names the two ways an agent gets it wrong, because both look like a
+posted digest from the agent's side:
+
+> this reflection finished without a digest thread, so the workspace still shows
+> the previous one (or none). A digest is a standalone thread created against
+> this job: `corpus thread create --job <eventId>` with no `--parent`. A thread
+> posted without `--job`, or with a parent, is an ordinary thread and is not
+> recorded as the digest.
+
+**Fire and forget, deliberately.** `observeSettled` is called inside the queue's
+own move, before the transition is announced, and returns `void`: a log append
+may not hold that up, and a job log that could not be written may certainly not
+fail a transition that already happened. The failure path is the server log —
+**suppressed once `stop()` has run**, because an append in flight across a
+shutdown finds the queue gone and fails for that reason alone, and a shutdown
+that printed this error would teach an operator to ignore the message. (Found in
+the test run: three fixtures tore their workspace down under a pending append.)
+
+**E2E, real server on port 8766.** `corpus init`, `corpus server start`, every
+call over HTTP with the workspace token.
+
+1. **Ask → claim → complete, no thread.** `GET /api/workspace/reflect` →
+   `{"reflected":"2026-08-23T11:09:35Z", "lastDigest":null}` — the silent state.
+   `GET /api/jobs/<evt>/log` now reads:
+   `- reflection asked by user` / `- this reflection finished without a digest thread, …`
+2. **A reflection that did post one.** Digest `th_hjltez5i` created with
+   `job: <evt>` and no parent → `lastDigest: th_hjltez5i`, and
+   `grep -c 'without a digest'` on that job's log → **0**.
+3. **The "worse" case, reproduced and then diagnosed.** A third reflection
+   completed with no digest: `{"reflected":"2026-08-23T11:09:59Z",
+   "lastDigest":"th_hjltez5i"}` — a fresh timestamp beside the *previous*
+   reflection's digest — and that job's log carries the line.
+
+**Falsification** (`reflect/reflect.test.ts`, 31 tests):
+
+| Break | Went red |
+| --- | --- |
+| `observeSettled` never calls `reportMissingDigest` | 2 — "says in the job log…" and "…whose only thread had a parent" |
+| it calls it unconditionally, digest or not | 1 — "says nothing in the log when the reflection did post its digest" |
+
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

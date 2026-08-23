@@ -94,8 +94,8 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "the request named, unlike the carried pair above, and it is here because the caller asked " +
     "for one field and got two: a `status` a caller neither sent nor was told about is exactly " +
     "the effect §11 says must not be learned from `git log`. Silent when the write moved no " +
-    "stage, when no kanban claims the document, and when the stage is one the deciding board " +
-    "does not draw — that last one writes no status either. " +
+    "stage and when no kanban claims the document. A stage the board maps writes that status; " +
+    "any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). " +
     "`default_open_cleared`: this write set `default-open: true` on a board, and **at most one " +
     "board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost " +
     "it in the same commit. One warning per board cleared, naming its id and title. Silent when " +

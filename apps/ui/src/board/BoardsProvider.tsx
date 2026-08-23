@@ -1,6 +1,7 @@
 import {
   useCreateDoc,
   useDeleteDoc,
+  useReorderBoards,
   useSetDocArchived,
   useUpdateDocById,
   type RowNotice,
@@ -100,7 +101,10 @@ export interface BoardSurface {
   readonly archiveBoard: (board: Board) => Promise<void>;
   readonly deleteBoard: (board: Board) => Promise<void>;
   readonly setDefaultBoard: (board: Board) => Promise<void>;
-  /** Drag or Move left/right: writes `order` on every board that moved. */
+  /**
+   * Drag or Move left/right: writes `order` on every board that moved, in one
+   * commit (SPEC.md §10, rider 2).
+   */
   readonly moveBoard: (fromIndex: number, toIndex: number) => Promise<void>;
   /** Appends a view document to the showing board's `columns`. */
   readonly addColumn: (viewId: string) => Promise<void>;
@@ -138,6 +142,7 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
   const updateDoc = useUpdateDocById();
   const setArchived = useSetDocArchived();
   const deleteDoc = useDeleteDoc();
+  const reorderBoards = useReorderBoards();
   const columnWrites = useColumnOrder();
 
   /*
@@ -362,28 +367,36 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
 
   const moveBoard = useCallback(
     async (fromIndex: number, toIndex: number) => {
-      const writes = planBoardReorder(boards, fromIndex, toIndex);
-      if (writes.length === 0) return;
+      const order = planBoardReorder(boards, fromIndex, toIndex);
+      if (order.length === 0) return;
       try {
-        // Sequential rather than parallel: the server is the sole writer and each
-        // write is its own commit, so a deterministic order keeps the git history
-        // readable and keeps a partial failure from interleaving. There is no
-        // multi-document write on the wire today (CONTRACT-074 adds none), so the
-        // rider's "one commit" is as close as `PUT /api/docs/{id}` reaches.
-        for (const write of writes) {
-          await updateDoc.mutateAsync({ id: write.id, changes: { order: write.order } });
-        }
+        /*
+         * One request, and therefore one commit (SPEC.md §10, rider 2:
+         * "reordering boards writes `order` on every board, in one commit").
+         * The positions are the server's to derive — it numbers the list from
+         * one and writes only the boards that moved — so nothing here computes
+         * an `order` value, and the count in the message is what the act
+         * reports having written rather than what this browser guessed.
+         */
+        const result = await reorderBoards.mutateAsync(order);
+        const written = result.boards.filter((board) => board.changed).length;
         toast({
           tone: "info",
-          message: `Board order written — ${String(writes.length)} board document${
-            writes.length === 1 ? "" : "s"
-          } updated and committed.`,
+          message:
+            // Never claims a commit the act did not make: every board was
+            // already at its number, so nothing was written and `commit` is
+            // null. Rare from a drag, and free to say honestly.
+            result.commit === null
+              ? "Board order unchanged — every board was already where you put it."
+              : `Board order written — ${String(written)} board document${
+                  written === 1 ? "" : "s"
+                } updated in one commit.`,
         });
       } catch (cause) {
         fail("Reorder", cause);
       }
     },
-    [boards, fail, toast, updateDoc],
+    [boards, fail, reorderBoards, toast],
   );
 
   const addColumn = useCallback(

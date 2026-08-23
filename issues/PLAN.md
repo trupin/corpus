@@ -1275,6 +1275,7 @@ was written for.
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
 | CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
+| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | todo | P3 | CONTRACT-074, SERVER-138 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
@@ -1463,4 +1464,5 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | done | P0 | opus | UI-149, CONTRACT-075 |
 | UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | done | P1 | opus | UI-149 |
 | UI-153 | The Reflect control, and what changed since the agent last looked | done | P1 | opus | UI-148, SERVER-137 |
+| CONTRACT-080 | A board reorder is one commit: `POST /api/boards/order` — PR #58's second blocking finding, one vertical (contract, server, kit/UI) | done | P0 | opus | UI-148, SERVER-138 |
 | PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |

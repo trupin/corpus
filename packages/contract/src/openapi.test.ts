@@ -3630,6 +3630,11 @@ describe("§11 warnings reach every mutation response", () => {
     "RenameFolderResult",
     "FolderStatusResult",
     "DeleteFolderResult",
+    // CONTRACT-080: a board reorder is an act over the bar landing as one
+    // auto-commit (SPEC.md §10, rider 2), so it reaches §11 exactly where the
+    // folder acts do — a workspace without git, and a hook that rejects the
+    // commit, both leave the renumbered files on disk and uncommitted.
+    "ReorderBoardsResult",
   ];
 
   /**
@@ -4431,7 +4436,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(24);
+    expect(bodies).toHaveLength(25);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -4479,6 +4484,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("partitions the surface into the mandatory and the omittable sets", () => {
     const partition = Object.fromEntries(bodies.map((body) => [body.signature, body.declared]));
     expect(partition).toEqual({
+      "POST /api/boards/order": true,
       "POST /api/capture": true,
       "POST /api/check": true,
       "POST /api/docs": true,

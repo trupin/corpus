@@ -1,30 +1,22 @@
+import { BOARD_ORDER_STEP } from "@corpus/contract";
 import { reinsert } from "./columnOrder";
 
 /**
  * Board position arithmetic (SPEC.md §10, rider 2 — "reordering boards writes
  * `order` on every board, in one commit").
  *
- * `order` is a board's position among boards and nothing else (CONTRACT-074).
- * The rider says a reorder rewrites the set rather than nudging one member, so
- * this is a **renumbering** and not the midpoint search a view's `order` used to
- * get: the bar is a handful of tabs, the numbers people read in
- * `corpus doc show` stay `1, 2, 3`, and there is no state in which the gaps have
- * run out.
+ * There is almost nothing left to it, and that is the point. A reorder used to
+ * be a renumbering computed here and sent as one `PUT` per board, which is one
+ * auto-commit per board — so reverting a drag was several `git revert`s and a
+ * sequence that failed partway left half an order in the history. The bar's
+ * order now goes to `POST /api/boards/order` as **the sequence of ids**, and the
+ * server derives the numbers and lands them as one commit (CONTRACT-080). What
+ * is left here is the sequence a drag produces.
  *
- * What is *not* rewritten is a board already sitting at the number the
- * renumbering would give it. Every write is an auto-commit, and a `PUT` that
- * changes nothing still bumps `updated` and lands a line in the log the agent
- * reads (PR #10 finding 19, the rule the view rename has always followed).
+ * `nextBoardOrder` stays, because putting a **new** board last is a different
+ * question — it is an `order` value on a create, not a statement about the set —
+ * and it uses the contract's own step so the two cannot disagree about spacing.
  */
-
-/** Spacing of a fresh board bar: consecutive integers, as the seed writes them. */
-export const BOARD_ORDER_STEP = 1;
-
-/** What the caller must write, in the order given. Empty means "nothing moved". */
-export interface OrderWrite {
-  readonly id: string;
-  readonly order: number;
-}
 
 /** Only the two fields the arithmetic reads. `null` order = no `order` key. */
 export interface OrderedBoard {
@@ -32,31 +24,20 @@ export interface OrderedBoard {
   readonly order: number | null;
 }
 
-/** Every board at its 1-based position, minus the ones already there. */
-export function renumberBoards(target: readonly OrderedBoard[]): readonly OrderWrite[] {
-  const writes: OrderWrite[] = [];
-  for (const [index, board] of target.entries()) {
-    const order = (index + 1) * BOARD_ORDER_STEP;
-    if (board.order !== order) writes.push({ id: board.id, order });
-  }
-  return writes;
-}
-
 /**
- * The `order` values that realize moving `fromIndex` to `toIndex` in the bar.
- *
- * A move that changes nothing returns no writes — the left-most tab dragged
- * further left issues zero requests.
+ * The bar's ids in the order moving `fromIndex` to `toIndex` leaves them, or an
+ * empty list when the gesture changes nothing — which is what makes the
+ * left-most tab dragged further left issue zero requests.
  */
 export function planBoardReorder(
   boards: readonly OrderedBoard[],
   fromIndex: number,
   toIndex: number,
-): readonly OrderWrite[] {
+): readonly string[] {
   if (fromIndex === toIndex) return [];
   if (fromIndex < 0 || fromIndex >= boards.length) return [];
   if (toIndex < 0 || toIndex >= boards.length) return [];
-  return renumberBoards(reinsert(boards, fromIndex, toIndex));
+  return reinsert(boards, fromIndex, toIndex).map((board) => board.id);
 }
 
 /** The `order` a brand-new board takes: last on the bar (SPEC.md §10). */

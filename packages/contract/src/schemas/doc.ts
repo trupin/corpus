@@ -32,10 +32,9 @@ import { warningsField } from "./warning.js";
  * kanban, so the core gives it behaviour and it belongs here. It sits beside
  * `view` because that is what it is made of — a board lists the ids of view
  * documents — and not at the end, which would read as an afterthought rather
- * than as a member of the same family. SPEC.md §5's canonical frontmatter block
- * still lists the older six in its `type:` comment while §10's rider makes
- * `board` first-class; the discrepancy is §5's to fix, and this package never
- * edits SPEC.md.
+ * than as a member of the same family. SPEC.md §5's `type:` comment listed the
+ * older six when this was written; it names `board` as of 2026-08-23, applied
+ * as a consequence of rider 2 rather than as a new rule.
  */
 export const CORE_DOC_TYPES = [
   "note",
