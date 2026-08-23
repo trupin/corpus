@@ -63,6 +63,10 @@ const RUNTIME_SURFACE = [
   "useCapture",
   "useCreateThread",
   "useDeleteDoc",
+  "useRenameFolder",
+  "useSetFolderArchived",
+  "useDeleteFolder",
+  "useReorderBoards",
   "useMarkThreadSeen",
   "useSetThreadStatus",
   "useSetResident",
@@ -86,6 +90,10 @@ const RUNTIME_SURFACE = [
   "jobsListKey",
   "JOBS_KEY",
   "QUEUE_KEY",
+  // The reflection clock's key (SPEC.md §7's rider 9). Named on every frame that
+  // names `["docs"]` or `["queue"]`, so one subscription covers the Reflect
+  // control's count and its pending state (UI-153).
+  "REFLECT_KEY",
   "relatedKey",
   "searchKey",
   "threadKey",
@@ -102,6 +110,10 @@ const RUNTIME_SURFACE = [
   // between them so no row implementation decides for itself (UI-097).
   "QueuedDot",
   "AgentActivityDot",
+  // …and the diamond for a document changed since the agent last reflected,
+  // which three surfaces draw — a row, a column head, a board tab (UI-153).
+  "ChangedMark",
+  "CHANGED_MARK_LABEL",
   "reasonChip",
   "reasonChips",
   "REASON_CHIP_CLASSES",

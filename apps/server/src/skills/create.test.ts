@@ -113,7 +113,7 @@ describe("creating a skill", () => {
 
     // Read-your-write: the row is there by the time the response is built.
     expect(rowFor(PATH)?.id).toBe(id);
-    expect(keys).toEqual([[["docs"], ["docs", id]]]);
+    expect(keys).toEqual([[["docs"], ["docs", id], ["reflect"]]]);
     // Skills live outside `data/docs/`, the only tree `GET /api/tree` describes.
     expect(keys.flat().some(([head]) => head === "tree")).toBe(false);
   });

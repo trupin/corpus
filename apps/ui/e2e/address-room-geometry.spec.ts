@@ -51,8 +51,12 @@ const THREADS_VIEW: StubRow = {
   title: "Conversations",
   path: "data/docs/views/threads.md",
   query: { type: "thread" },
-  pinned: true,
   order: 1,
+  // The reading width this suite's room measurements assume. It used to arrive
+  // by the reader-open widening (336 → 560); UI-149 removed the widening
+  // (rider 3), so `openReply` opens **in the column** ("open here") and the
+  // column carries the width itself.
+  extra: { width: 560 },
 };
 
 const HOST: StubRow = {
@@ -177,13 +181,17 @@ async function openReply(
     options.width === undefined
       ? THREADS_VIEW
       : { ...THREADS_VIEW, extra: { width: options.width } };
+
   await stubCorpus(page, [view, options.doc ?? HOST], {
     lanes: options.lanes,
     agent: { live: false, since: ago(4 * 60_000) },
   });
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="th_host"]').click();
+  // "Open here": the reader whose room these tests measure is the column's
+  // own; a plain click now opens a 440px path column (UI-149, rider 3).
+  await page.locator('.row[data-row-doc="th_host"]').click({ button: "right" });
+  await page.locator('[role="menuitem"][data-act="open-here"]').click();
   await expect(page.locator('.reader [data-composer="th_host"]')).toBeVisible();
   if (options.scrollToFoot === true)
     await page.locator(".reader-scroll").evaluate((node) => {

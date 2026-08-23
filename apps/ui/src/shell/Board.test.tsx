@@ -1,16 +1,21 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import {
+  boardTransport,
+  DEFAULT_BOARD_ID,
+  viewRow,
+  type BoardTransport,
+} from "../testing/boardFixture";
+import { createBoardHarness } from "../testing/boardHarness";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { BOARD_STORAGE_KEY } from "../board/useBoardLocalState";
 import { DELETE_ARMED_LABEL, DELETE_LABEL } from "../reader/DocMenu";
 import { Board } from "./Board";
-import { ToastProvider } from "./Toasts";
 
 afterEach(() => {
   cleanup();
@@ -28,15 +33,13 @@ const VIEWS = [
 ];
 
 function renderBoard(wire: BoardTransport): ReturnType<typeof render> {
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   function Wrapper({ children }: { readonly children?: React.ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <ContextMenuProvider>
-            <KeyboardHarness>{children}</KeyboardHarness>
-          </ContextMenuProvider>
-        </ToastProvider>
+        <ContextMenuProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ContextMenuProvider>
       </harness.Wrapper>
     );
   }
@@ -121,7 +124,7 @@ describe("Board", () => {
     expect(first?.querySelectorAll(".row")).toHaveLength(1);
   });
 
-  it("moves the active column with ⇧→ and writes the view document's order", async () => {
+  it("moves the active column with ⇧→ and rewrites the board document's columns", async () => {
     const wire = boardTransport({ views: VIEWS });
     const { container } = renderBoard(wire);
     await waitFor(() => {
@@ -136,8 +139,8 @@ describe("Board", () => {
       expect(wire.writes("PUT")).toHaveLength(1);
     });
     expect(wire.writes("PUT")[0]).toMatchObject({
-      path: "/api/docs/doc_one",
-      body: { order: 25 },
+      path: `/api/docs/${DEFAULT_BOARD_ID}`,
+      body: { columns: ["doc_two", "doc_one", "doc_three"] },
     });
     // Rendered from the moved set, not from an imperative DOM insertion.
     expect(titles(container)).toEqual(["Second", "First", "Third"]);
@@ -213,8 +216,8 @@ describe("Board", () => {
       expect(wire.writes("PUT")).toHaveLength(1);
     });
     expect(wire.writes("PUT")[0]).toMatchObject({
-      path: "/api/docs/doc_three",
-      body: { order: 15 },
+      path: `/api/docs/${DEFAULT_BOARD_ID}`,
+      body: { columns: ["doc_one", "doc_three", "doc_two"] },
     });
   });
 
@@ -258,7 +261,7 @@ describe("Board", () => {
     expect(wire.writes("PUT")).toEqual([]);
   });
 
-  it("pins a chosen list by creating a view document with order last", async () => {
+  it("adds a chosen list by creating a view document and listing it last", async () => {
     const wire = boardTransport({
       views: VIEWS,
       tree: {
@@ -283,12 +286,18 @@ describe("Board", () => {
       type: "view",
       title: "finance",
       folder: "views",
-      pinned: true,
-      order: 40,
       query: { folder: "finance" },
       evergreen: true,
     });
-    expect(await screen.findByText(/Pinned — a view document was created/)).toBeDefined();
+    // …and the board now lists it, last.
+    await waitFor(() => {
+      expect(wire.writes("PUT")).toHaveLength(1);
+    });
+    expect(wire.writes("PUT")[0]).toMatchObject({
+      path: `/api/docs/${DEFAULT_BOARD_ID}`,
+      body: { columns: ["doc_one", "doc_two", "doc_three", "doc_created"] },
+    });
+    expect(await screen.findByText(/a view document was created/)).toBeDefined();
   });
 
   it("creates into the folder a folder column scopes to, and opens it with the title selected", async () => {
@@ -343,7 +352,11 @@ describe("Board", () => {
     });
   });
 
-  it("unpins by archiving the view document, never by deleting it", async () => {
+  /**
+   * "Remove from this board filters `columns` and leaves the view document
+   * alone" (SPEC.md §10, rider 2). It replaced "Unpin", which archived the view.
+   */
+  it("removes a column from the board document and leaves the view untouched", async () => {
     const wire = boardTransport({ views: VIEWS });
     const { container } = renderBoard(wire);
     await waitFor(() => {
@@ -351,17 +364,18 @@ describe("Board", () => {
     });
 
     fireEvent.click(screen.getAllByRole("button", { name: /List options/ })[0] as Element);
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unpin/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Remove from this board/ }));
 
     await waitFor(() => {
       expect(wire.writes("PUT")).toHaveLength(1);
     });
     expect(wire.writes("PUT")[0]).toMatchObject({
-      path: "/api/docs/doc_one",
-      body: { status: "archived" },
+      path: `/api/docs/${DEFAULT_BOARD_ID}`,
+      body: { columns: ["doc_two", "doc_three"] },
     });
     expect(wire.writes("DELETE")).toEqual([]);
-    expect(await screen.findByText(/was archived, not deleted/)).toBeDefined();
+    expect(wire.calls.filter((call) => call.path.endsWith("/archive"))).toEqual([]);
+    expect(await screen.findByText(/The view document is untouched/)).toBeDefined();
   });
 
   it("writes a renamed title and an edited query to the view document", async () => {
@@ -422,7 +436,6 @@ describe("Board", () => {
         viewRow({
           id: "doc_bad",
           title: "Broken",
-          order: 20,
           query: "needs=me" as never,
         }),
       ],
@@ -436,8 +449,9 @@ describe("Board", () => {
     const broken = container.querySelector('.col[data-col="doc_bad"]');
     expect(broken?.querySelector(".col-card-error")?.textContent).toContain("doc_bad");
     expect(broken?.querySelector(".col-card-error")?.textContent).toContain("not a map of filters");
-    // The broken column issued no query of its own…
-    expect(wire.calls.filter((call) => call.path === "/api/docs")).toHaveLength(2);
+    // The broken column issued no query of its own — three reads at this point
+    // and no fourth: the boards, the views, and the working column's own list.
+    expect(wire.calls.filter((call) => call.path === "/api/docs")).toHaveLength(3);
     // …and its sibling still renders.
     expect(await screen.findByText("A note")).toBeDefined();
   });
@@ -484,27 +498,29 @@ describe("Board", () => {
     expect(await screen.findByText("A note")).toBeDefined();
   });
 
-  it("reports a failed column-set read instead of pretending the board is empty", async () => {
+  /**
+   * A read that failed is not a board that lists nothing. The board says so, and
+   * — because no board resolved either — offers no ghost column: a `＋ New list`
+   * with nowhere to put the column would be a promise the product cannot keep.
+   */
+  it("reports a failed read instead of pretending the board is empty", async () => {
     const failing = (): Promise<Response> => Promise.reject(new TypeError("Failed to fetch"));
-    const harness = createCorpusTestHarness({
-      fetch: failing as unknown as typeof globalThis.fetch,
-    });
+    const harness = createBoardHarness(failing);
     const { container } = render(
-      <ToastProvider>
+      <harness.Wrapper>
         <ContextMenuProvider>
           <Board />
         </ContextMenuProvider>
-      </ToastProvider>,
-      { wrapper: harness.Wrapper },
+      </harness.Wrapper>,
     );
 
     await waitFor(() => {
       expect(container.querySelector(".board-error")).not.toBeNull();
     });
-    expect(container.querySelector(".ghost-col")).not.toBeNull();
+    expect(container.querySelector(".ghost-col")).toBeNull();
   });
 
-  it("keeps scroll and open readers locally, and nothing else", async () => {
+  it("keeps scroll, open readers and paths locally, and nothing else", async () => {
     const wire = boardTransport({
       views: VIEWS,
       rows: { "?folder=inbox": [docRowFixture({ id: "doc_r1", title: "A note" })] },
@@ -514,15 +530,35 @@ describe("Board", () => {
       expect(screen.getByText("A note")).toBeDefined();
     });
 
+    // A row click opens a path column to the right (SPEC.md §10, rider 3) —
+    // the reader lives in the path, and the query column keeps its list.
     fireEvent.click(screen.getByRole("button", { name: /note: A note/ }));
     await waitFor(() => {
-      expect(container.querySelector(".reader")).not.toBeNull();
+      expect(container.querySelector(".pcol .reader")).not.toBeNull();
     });
 
     const blob = globalThis.localStorage.getItem(BOARD_STORAGE_KEY) ?? "";
     expect(JSON.parse(blob)).toEqual({
-      version: 2,
-      columns: { doc_one: { scroll: 0, nav: [{ docId: "doc_r1", scrollY: 0 }] } },
+      version: 4,
+      // Not chosen: the browser landed on this board by falling back, and a
+      // fallback is not a choice (SPEC.md §10, rider 2 as amended).
+      board: null,
+      boards: {
+        [DEFAULT_BOARD_ID]: {
+          seq: 2,
+          strip: [
+            { kind: "query", view: "doc_one", scroll: 0, nav: [] },
+            {
+              kind: "path",
+              id: 1,
+              origin: { view: "doc_one", doc: "doc_r1" },
+              cols: [{ stack: [{ docId: "doc_r1", scrollY: 0 }] }],
+            },
+            { kind: "query", view: "doc_two", scroll: 0, nav: [] },
+            { kind: "query", view: "doc_three", scroll: 0, nav: [] },
+          ],
+        },
+      },
     });
     expect(blob).not.toContain("folder");
     expect(blob).not.toContain("order");
@@ -533,10 +569,21 @@ describe("Board", () => {
       "localStorage",
       memoryStorage({
         [BOARD_STORAGE_KEY]: JSON.stringify({
-          version: 2,
-          columns: {
-            doc_gone: { scroll: 40, nav: [{ docId: "doc_x", scrollY: 0 }] },
-            doc_one: { scroll: 0, nav: [] },
+          version: 4,
+          board: DEFAULT_BOARD_ID,
+          boards: {
+            [DEFAULT_BOARD_ID]: {
+              seq: 1,
+              strip: [
+                {
+                  kind: "query",
+                  view: "doc_gone",
+                  scroll: 40,
+                  nav: [{ docId: "doc_x", scrollY: 0 }],
+                },
+                { kind: "query", view: "doc_one", scroll: 0, nav: [] },
+              ],
+            },
           },
         }),
       }),
@@ -549,9 +596,11 @@ describe("Board", () => {
     });
     await waitFor(() => {
       const stored = JSON.parse(globalThis.localStorage.getItem(BOARD_STORAGE_KEY) ?? "{}") as {
-        columns: Record<string, unknown>;
+        boards: Record<string, { strip: { kind: string; view?: string }[] }>;
       };
-      expect(Object.keys(stored.columns)).toEqual(["doc_one"]);
+      expect(
+        (stored.boards[DEFAULT_BOARD_ID]?.strip ?? []).map((item) => item.view ?? "?"),
+      ).toEqual(["doc_one", "doc_two", "doc_three"]);
     });
   });
 });
@@ -608,25 +657,44 @@ describe("the board's keyboard", () => {
     expect(cursorRow(container)).toBe("doc_r2");
   });
 
-  it("↵ opens the highlighted document in its own column", async () => {
+  it("↵ opens the highlighted document in a path to the right of its column", async () => {
     const { container } = await withRows();
     fireEvent.keyDown(document, { key: "ArrowDown" });
     fireEvent.keyDown(document, { key: "Enter" });
     await waitFor(() => {
-      expect(container.querySelector('.reader[data-reader-column="doc_one"]')).not.toBeNull();
+      expect(container.querySelector(".pcol .reader")).not.toBeNull();
     });
+    // The reader is a path column's, not the query column's, and the query
+    // column keeps its list (rider 3: it no longer widens into a reader).
+    expect(container.querySelector(".pcol")?.getAttribute("data-col")).toBe("path:1:0");
     expect(container.querySelector(".reader")?.getAttribute("data-reader-doc")).toBe("doc_r1");
+    expect(container.querySelector('.reader[data-reader-column="doc_one"]')).toBeNull();
+    // The row it hangs off carries the origin mark, derived from the strip.
+    expect(container.querySelector(".row.origin")?.getAttribute("data-row-doc")).toBe("doc_r1");
     expect(container.querySelector(".focus.open")).toBeNull();
   });
 
-  it("⇧↵ opens it directly in full screen, over its column", async () => {
+  it("⌥↵ opens it here, in the column's own reader", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "Enter", altKey: true });
+    await waitFor(() => {
+      expect(container.querySelector('.reader[data-reader-column="doc_one"]')).not.toBeNull();
+    });
+    expect(container.querySelector(".pcol")).toBeNull();
+  });
+
+  it("⇧↵ opens it directly in full screen — the overlay, and nothing on the board", async () => {
     const { container } = await withRows();
     fireEvent.keyDown(document, { key: "ArrowDown" });
     fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
     await waitFor(() => {
       expect(document.querySelector(".focus.open")).not.toBeNull();
     });
-    expect(container.querySelector('.reader[data-reader-column="doc_one"]')).not.toBeNull();
+    // "Directly" (§10): closing the overlay returns to the board exactly as it
+    // was — no column reader and no path opened underneath it.
+    expect(container.querySelector(".reader")).toBeNull();
+    expect(container.querySelector(".pcol")).toBeNull();
   });
 
   it("← and → switch the active column, clamping at both ends", async () => {
@@ -739,9 +807,10 @@ describe("the board's keyboard", () => {
       const { container } = await withRows();
       fireEvent.click(screen.getByRole("button", { name: /note: First note/ }));
       await waitFor(() => {
-        expect(container.querySelector(".reader")).not.toBeNull();
+        expect(container.querySelector(".pcol .reader")).not.toBeNull();
       });
-      expect(activeColumn(container)).toBe("doc_one");
+      // The click opened a path column and made it active (rider 3).
+      expect(activeColumn(container)).toBe("path:1:0");
       fireEvent.keyDown(document, { key: "f" });
       await waitFor(() => {
         expect(document.querySelector(".focus.open")).not.toBeNull();
@@ -776,7 +845,7 @@ describe("the board's keyboard", () => {
       });
       restingPointerOver(container, "doc_two");
 
-      expect(activeColumn(container)).toBe("doc_one");
+      expect(activeColumn(container)).toBe("path:1:0");
     });
 
     /**
@@ -795,7 +864,7 @@ describe("the board's keyboard", () => {
       });
       restingPointerOver(container, "doc_two");
 
-      expect(activeColumn(container)).toBe("doc_one");
+      expect(activeColumn(container)).toBe("path:1:0");
     });
 
     /** The half that makes it a latch and not a behaviour change. */
@@ -806,7 +875,7 @@ describe("the board's keyboard", () => {
         expect(document.querySelector(".focus.open")).toBeNull();
       });
       restingPointerOver(container, "doc_two");
-      expect(activeColumn(container)).toBe("doc_one");
+      expect(activeColumn(container)).toBe("path:1:0");
 
       fireEvent.mouseMove(document);
       restingPointerOver(container, "doc_two");

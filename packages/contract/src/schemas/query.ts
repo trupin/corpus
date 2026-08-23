@@ -36,12 +36,13 @@ export const NEEDS_FILTERS = ["me", ...NEEDS_REASONS] as const;
 export const NeedsFilterSchema = z.enum(NEEDS_FILTERS);
 
 /**
- * `order` (CONTRACT-011) sorts ascending by the §10 view key of the same name
- * — the board's column ordering. Ascending only: a board reads left to right,
- * and no §10 surface wants the reverse. Ties and absent keys are deterministic
- * by the documented tiebreak — `order` with nulls **last** (a column with no
- * `order` is placed, never dropped), then `title`, then `id` — so the same
- * column set renders in the same sequence on every load.
+ * `order` (CONTRACT-011) sorts ascending by the §10 key of the same name — since
+ * rider 7 (2026-08-22) a **board's position among boards**, where it used to be
+ * a pinned view's position on the board. Ascending only: a board bar reads left
+ * to right, and no §10 surface wants the reverse. Ties and absent keys are
+ * deterministic by the documented tiebreak — `order` with nulls **last** (a
+ * board with no `order` is placed, never dropped), then `title`, then `id` — so
+ * the same set renders in the same sequence on every load.
  */
 export const DOC_SORTS = [
   "updated",
@@ -84,9 +85,9 @@ const queryParam = (name: string) => ({ param: { name, in: "query" as const, req
  *   endpoints genuinely disagree about — optional on the collection query (which
  *   is a list first), required on ranked retrieval (which is nothing without it).
  *   Each endpoint therefore declares its own, with its own description.
- * - `pinned` and `sort` are board and list concerns, and the signed
- *   `/api/search` parameter list omits them: ranked retrieval has one order, its
- *   ranking.
+ * - `sort` is a list concern, and the signed `/api/search` parameter list omits
+ *   it: ranked retrieval has one order, its ranking. (`pinned` was the other
+ *   such omission until rider 7 removed it from the API entirely, 2026-08-22.)
  * - `offset` rides on {@link PaginationQuerySchema}, which `/api/search` does not
  *   compose: a ranked result set is a top-k, not a page.
  * - `isParent` (CONTRACT-042) is a genuine structural filter and would belong
@@ -121,6 +122,44 @@ export const docFilterShape = {
         "`status=archived` selects archived documents *only*. To see archived documents " +
         "**alongside** the rest, use `includeArchived=true` — that is the archived chip, not this " +
         "parameter.",
+    }),
+  /**
+   * **The null sentinel is an empty element, and it is what makes a kanban's
+   * first column one request** (CONTRACT-074's decision, taken here so UI-152
+   * does not have to OR two responses together).
+   *
+   * §10 puts "a document in scope with no value for the field" in a kanban's
+   * first column *beside* the documents actually in its first stage, so that
+   * column is a union — and a union is one request only if the filter can OR.
+   * So `stage=` is comma-separated like `type` and `tag`, and one of its
+   * elements may be empty.
+   *
+   * **The empty element cannot collide with a real stage**, which is the whole
+   * reason it was chosen over a word like `none`: a written stage is a non-empty
+   * string (`StageValueSchema`, `./doc.ts`), so the empty element names a value no
+   * document can hold and can only mean absence. A reserved word would be a
+   * stage vocabulary the product forbids, and §5 calls `stage` free-form.
+   *
+   * The cost is one reserved character in a stage value — a comma — which is
+   * exactly the price `tag` already pays for the same separator, and is why
+   * `StageValueSchema` refuses one on write.
+   */
+  stage: z
+    .string()
+    .optional()
+    .openapi({
+      ...queryParam("stage"),
+      description:
+        "Comma-separated stage values (SPEC.md §5); values OR together like `type` and `tag`, " +
+        "and each is an **exact** match. **An empty element selects documents with no `stage` at " +
+        "all** — the null sentinel — so a kanban's first column, which holds its first stage " +
+        "*and* everything unstaged (SPEC.md §10), is one request: `stage=,triage`. It can never " +
+        "collide with a real stage, because a written stage is a non-empty comma-free string, so " +
+        "the empty element names a value no document can hold. `stage=` on its own therefore " +
+        "selects the unstaged, and omitting the parameter filters nothing at all. Duplicate " +
+        "elements collapse. **Not thread-only**: any document may carry a stage. A kanban over " +
+        "`status` needs none of this — every document has a status — and draws its columns with " +
+        "`status=`.",
     }),
   includeArchived: z
     .stringbool()
@@ -219,15 +258,17 @@ export const docFilterShape = {
 } as const;
 
 /**
- * Published parameter order is `…, unread, pinned, isParent, needs, sort`, so
- * the shared filters are spread in two runs with the two docs-only parameters
- * between them.
+ * Published parameter order is `…, unread, isParent, needs, sort`, so the shared
+ * filters are spread in two runs with the one docs-only filter between them.
  * Order is not cosmetic here: `openapi.test.ts` pins the parameter list, and
  * it is what keeps `openapi.json` byte-stable across regenerations. A filter
  * added to {@link docFilterShape} still lands on both endpoints untouched by
  * this split — it joins the first run.
+ *
+ * The split used to hold `pinned` as well, which rider 7 removed from the API
+ * on 2026-08-22 (a view has no `pinned`, and a board lists its own columns).
  */
-const { needs: needsFilter, ...filtersBeforePinned } = docFilterShape;
+const { needs: needsFilter, ...filtersBeforeIsParent } = docFilterShape;
 
 /**
  * The full §9.2 grammar. Values OR within a comma-separated parameter and AND
@@ -245,20 +286,7 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
         "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry " +
         "`snippets`; without `q` every row's `snippets` array is empty.",
     }),
-  ...filtersBeforePinned,
-  pinned: z
-    .stringbool()
-    .optional()
-    .openapi({
-      ...queryParam("pinned"),
-      type: "boolean",
-      description:
-        "Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a " +
-        "missing key reads as `false`). The board's column set is one bounded query — " +
-        "`pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` " +
-        "on the rows, so no per-column follow-up read is ever needed (SPEC.md §10). Not " +
-        "thread-only: any type may carry the key, though only views render as columns.",
-    }),
+  ...filtersBeforeIsParent,
   isParent: z
     .stringbool()
     .optional()
@@ -292,8 +320,10 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
     description:
       `Sort key; defaults to \`${DEFAULT_DOC_SORT}\`. \`relevance\` requires \`q\` and is rejected ` +
       "with `400` without it, rather than silently falling back. `order` sorts ascending by the " +
-      "§10 view key — the board's column ordering — with the documented tiebreak: `order` with " +
-      "nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`.",
+      "§10 key — a **board's position among boards** — with the documented tiebreak: `order` with " +
+      "nulls last (a board with no `order` key is placed, never dropped), then `title`, then " +
+      "`id`. The board bar's whole set is therefore one bounded query, `type=board&sort=order`, " +
+      "with each board's `columns`, `kanban` and `defaultOpen` on the rows.",
   }),
 })
   .refine((query) => query.sort !== "relevance" || query.q !== undefined, {

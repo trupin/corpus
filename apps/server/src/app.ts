@@ -9,8 +9,18 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { buildOpenApiDocument, contractRoutes, type QueryKey } from "@corpus/contract";
-import { isLoopbackHost, nonLoopbackBindError, type ServerConfig } from "./config.js";
+import {
+  DEFAULT_REFLECT_QUIET_MINUTES,
+  buildOpenApiDocument,
+  contractRoutes,
+  type QueryKey,
+} from "@corpus/contract";
+import {
+  isLoopbackHost,
+  nonLoopbackBindError,
+  readQuietMinutes,
+  type ServerConfig,
+} from "./config.js";
 import {
   CorpusError,
   badRequest,
@@ -30,7 +40,13 @@ import { mountAgentRoutes } from "./agents/index.js";
 import { mountCaptureRoutes } from "./capture/index.js";
 import { mountCheckRoutes } from "./check/index.js";
 import { mountSkillRoutes } from "./skills/index.js";
-import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
+import {
+  createDocumentMutex,
+  mountDocsRoutes,
+  type DocsWorkspace,
+  type DocumentMutex,
+} from "./docs/index.js";
+import { mountFolderRoutes } from "./folders/index.js";
 import {
   mountThreadRoutes,
   mountThreadScopeRoutes,
@@ -55,11 +71,17 @@ import {
   recoverUncommittedChanges,
   type AutoCommitter,
 } from "./git/index.js";
-import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./jobs/index.js";
+import {
+  createJobService,
+  createStatedWeightRecorder,
+  mountJobRoutes,
+  type JobService,
+} from "./jobs/index.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
+import { createReflectService, mountReflectRoutes, type ReflectService } from "./reflect/index.js";
 import { mountSearchRoutes } from "./search/index.js";
 import {
   createIndexMaintenance,
@@ -123,6 +145,15 @@ export interface CorpusServer {
    */
   readonly projection: ProjectionDb | undefined;
   /**
+   * The one per-document write lane every mutation queues in (SERVER-006), and
+   * the only handle a test has on it: holding a lane is how an interleaving is
+   * *decided* rather than timed, which is the difference between a lost-update
+   * regression test that proves something and one that passes on a fast laptop.
+   * `undefined` alongside {@link projection} — a server with no rows mounts no
+   * write path to serialize.
+   */
+  readonly mutex: DocumentMutex | undefined;
+  /**
    * The one in-process invalidation emitter (SPEC.md §2.2 rule 3). Write paths
    * and the watcher publish here; `GET /events` is a subscriber. There is
    * deliberately no second channel.
@@ -182,6 +213,17 @@ export interface CorpusServer {
    * would be an invitation to open a third.
    */
   readonly commitOutOfBand: CommitOutOfBandChanges | undefined;
+  /**
+   * SPEC.md §7's reflection (SERVER-137): the clock, the ask and the quiet
+   * window. `undefined` on a server built without a projection — `changed` is a
+   * projection count and a pending reflection is a projection query, so there is
+   * nothing for the Reflect control to read.
+   *
+   * Exposed for {@link commitOutOfBand}'s reason: the watcher is attached by
+   * `lifecycle.ts` after this function returns, and an out-of-band edit restarts
+   * the quiet window like any other write by a person.
+   */
+  readonly reflect: ReflectService | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -393,6 +435,17 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   let commitOutOfBand: CommitOutOfBandChanges | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
+  /** SPEC.md §7's reflection (SERVER-137); built with the projection below. */
+  let reflect: ReflectService | undefined;
+  /**
+   * The console's job store, declared here rather than at its construction
+   * because the reflection service records who asked on the new job's log and
+   * is built before it (the service reads the queue; reflection reads the
+   * projection, which is open first).
+   */
+  let jobs: JobService | undefined;
+  /** The write lanes, published on the server so a test can hold one. */
+  let documentMutex: DocumentMutex | undefined;
   /**
    * SPEC.md §4's boot half (SERVER-094), bound only when the server has a
    * workspace to recover — i.e. when it has a projection, which is the same
@@ -414,6 +467,38 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // the partition mean anything — with nothing live, every thread lane reads
     // as lapsed and the orchestrator's unscoped claim sees the whole queue.
     queue.attachScopeLookup(createLaneScopeLookup(deps.projection));
+
+    // SPEC.md §7's reflection (rider 9, SERVER-137). Built early in this block
+    // because everything after it wants to tell it something: the write
+    // pipeline restarts its quiet window, the thread surface reports the digest,
+    // and the queue moves its clock.
+    const reflectService = createReflectService({
+      corpusDir: config.corpusDir,
+      projection: deps.projection,
+      // The one enqueue path, for `comment.created`'s reason: it is the only
+      // one that also wakes a parked `corpus queue idle` (SPEC.md §7).
+      enqueue: (input) => queue.enqueue(input),
+      // Re-read per use rather than captured, so an edit to `reflect.quiet`
+      // takes effect without a restart. See `readQuietMinutes`.
+      quietMinutes: () =>
+        readQuietMinutes(config.configPath, config.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES),
+      // Where "who asked" and "no digest landed" are recorded: the payload is
+      // `{ since }` and a stored event has no actor field, so the job log is the
+      // honest home for both.
+      recordJobLine: async (eventId, line) => {
+        await jobs?.appendLine(eventId, line, "server");
+      },
+      logger,
+    });
+    reflect = reflectService;
+    // Before the transition is announced, which is the whole point of the seam.
+    queue.observeSettled((event) => {
+      reflectService.observeSettled(event);
+    });
+    mountReflectRoutes(app, reflectService);
+    registerDisposer(() => {
+      reflectService.stop();
+    });
 
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -556,6 +641,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // write naming a `job` can be stamped with the conversation that work
       // came from without the write path knowing anything about the queue.
       jobs: createJobLookup(queue.store, deps.projection),
+      // SPEC.md §7's quiet window: every mutation reports itself and its acting
+      // party, and the service decides what that means.
+      reflect: reflectService,
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with
@@ -563,6 +651,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // two mutexes would serialize each surface against itself and neither
     // against the other (SERVER-006).
     const mutex = createDocumentMutex();
+    documentMutex = mutex;
 
     // Retrieval's semantic half, built before the two endpoints that read it.
     // Constructing it costs nothing — no query, no resolution, no model — and it
@@ -585,6 +674,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
     mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
 
+    // SPEC.md §9.2's folder acts (SERVER-136). Mounted beside the document
+    // surface and sharing its lanes: a folder act writes the same files
+    // `PUT /api/docs/{id}` writes, so the two queue rather than race. Inside
+    // this block because a folder's membership is a projection read.
+    mountFolderRoutes(app, docsWorkspace, mutex);
+
     // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
     // collection query it filters identically to, so it mounts here rather than
     // with the file-backed surface — and inside this block, because a server
@@ -594,6 +689,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     const threadsWorkspace: ThreadsWorkspace = {
       ...docsWorkspace,
       corpusDir: config.corpusDir,
+      // Re-stated at the wider type: only this surface can report §7's digest,
+      // and the spread above carries the document half of the observer.
+      reflect: reflectService,
       // The one enqueue path: `QueueService.enqueue` writes the pending file,
       // mirrors it, invalidates and — the part a file drop cannot do — wakes
       // every parked `queue idle` (SPEC.md §7).
@@ -620,21 +718,22 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // database and is bound above.
     mountAgentRoutes(app, { projection: deps.projection, tracker: laneTracker, now });
 
-    const jobs = createJobService({
+    const jobService = createJobService({
       corpusDir: config.corpusDir,
       projection: deps.projection,
       queue,
       logger,
       now,
     });
-    mountJobRoutes(app, jobs);
+    jobs = jobService;
+    mountJobRoutes(app, jobService);
     // §7's console bullet, the server's half (SERVER-069): every event a request
     // stated a weight on gets that weight written onto its job log, verbatim and
     // before any dispatch line exists, so "honoured, not weighed again" is
     // checkable against something the orchestrator did not write. Bound here
     // rather than passed to `createQueueService` because the job service reads
     // the queue and so cannot exist before it.
-    queue.observeEnqueued(createStatedWeightRecorder({ jobs, logger }));
+    queue.observeEnqueued(createStatedWeightRecorder({ jobs: jobService, logger }));
 
     // Mounted here, with the rest of the projection-backed surface: `doctor`
     // reads the database and `rebuild` replaces it, so neither means anything on
@@ -738,7 +837,14 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // A recovery that git refuses is logged and returned, never thrown: a
     // workspace that cannot commit is still a workspace you can read.
     await recoverAtBoot?.();
-    return await bind();
+    const address = await bind();
+    // SPEC.md §7's restart rule, and it runs **after** the bind rather than
+    // before: a restart is evidence of nothing about how quiet the corpus is —
+    // the process that knew went away — so boot counts as the most recent
+    // activity and the first automatic reflection is one whole window later,
+    // never at the instant of start.
+    reflect?.start();
+    return address;
   };
 
   const close = (): Promise<void> => {
@@ -798,12 +904,14 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     logger,
     queue,
     projection: deps.projection,
+    mutex: documentMutex,
     bus,
     selfWrites,
     semantic,
     indexMaintenance,
     editSessions,
     commitOutOfBand,
+    reflect,
     registerDisposer,
     start,
     close,

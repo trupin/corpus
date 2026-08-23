@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -41,3 +41,20 @@ implementing agent. Two rules bind every part of this phase:
 
 ## E2E Verification Log
 _[Agent fills — state the model]_
+
+## E2E Verification Log
+
+**Status corrected 2026-08-22 (Phase 41 prep).** The work landed in v0.18.0 and
+the row was never flipped. Verified on `main` at `583aa726`:
+
+```
+$ awk 'tolower($0) ~ /plugin|todos/' $(find apps/cli/src -name '*.ts' -not -name '*.test.ts')
+(no output)
+$ ls apps/cli/src/registry/
+fixtures.ts  globals.ts  index.ts  types.ts  validate.test.ts  validate.ts
+```
+
+`apps/cli/src/registry/plugins.ts` is gone, and the only two surviving mentions
+are in `commands/doc/frontmatter.test.ts`, where they restate the rule that
+outlived its cause: `column` once meant a plugin renderer, and there are no
+plugins. That is the second binding rule of this issue working as written.

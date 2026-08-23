@@ -10,7 +10,8 @@ import {
   resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
-import { parseViewFlags, VIEW_KEY_FLAGS } from "./frontmatter.js";
+import { parseBoardFlags, BOARD_KEY_FLAGS } from "./frontmatter.js";
+import { effectLines, otherWarnings } from "./render.js";
 
 /**
  * `corpus doc create` — the first half of the agent's stewardship surface
@@ -48,7 +49,7 @@ export async function runDocCreate(
   const folder = context.flags.string("folder");
   const due = context.flags.string("due");
   const evergreen = parseTriStateBoolean("evergreen", context.flags.string("evergreen"));
-  const view = parseViewFlags(context.flags);
+  const board = parseBoardFlags(context.flags);
 
   const response = await context.client.request((api) =>
     api.POST("/api/docs", {
@@ -68,15 +69,16 @@ export async function runDocCreate(
         ...(tags === undefined ? {} : { tags }),
         ...(due === undefined ? {} : { due }),
         ...(evergreen === undefined ? {} : { evergreen }),
-        ...view,
+        ...board,
       },
     }),
   );
 
   context.out.emit(response);
   context.out.line(
-    `created ${response.doc.frontmatter.id} — ${response.doc.path}${warningSuffix(response.warnings)}`,
+    `created ${response.doc.frontmatter.id} — ${response.doc.path}${warningSuffix(otherWarnings(response.warnings))}`,
   );
+  for (const line of effectLines(response.warnings)) context.out.line(line);
 }
 
 export const createCommand: WorkspaceCommandSpec = {
@@ -110,13 +112,18 @@ export const createCommand: WorkspaceCommandSpec = {
     "`<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in " +
     "`data/docs/finance/`. A folder the server rejects is reported verbatim rather than " +
     "pre-validated here. " +
-    "`--pinned`, `--order` and `--query` write the SPEC.md §10 **view keys** at " +
-    "creation, so `--type view --pinned true` is a board column in one command — the board picks " +
-    "it up over SSE with no reload. A column the board's own “＋ New list” would have written " +
-    "also carries `--folder views --evergreen true`, which is what the seed columns look like " +
+    "`--columns`, `--kanban`, `--default-open`, `--order`, `--query` and `--stage` write the " +
+    "SPEC.md §10 **board and view keys** at creation, so `--type board --columns a,b " +
+    "--default-open true` is a whole board in one command and `--type board --kanban '…'` is a " +
+    "whole kanban — the board bar picks either up over SSE with no reload. A `type: view` " +
+    "document is a saved query and nothing more: what puts it on a board is that board's " +
+    "`--columns`, never a key on the view. A column the board's own “＋ New list” would have " +
+    "written carries `--folder views --evergreen true`, which is what the seed columns look like " +
     "and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit " +
     "rather than implied by `--type view`, because this verb defaults nothing per type. Prints " +
-    "the new id and path; `--json` emits the server's `{doc, warnings}` response unchanged.",
+    "the new id and path, and prints on its own line any second effect the write had — a stage " +
+    "that decided a status (§5's coupling), a `default-open` taken off another board. `--json` " +
+    "emits the server's `{doc, warnings}` response unchanged.",
   args: [],
   flags: [
     {
@@ -124,7 +131,7 @@ export const createCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "type",
       description:
-        "Document type: `note`, `view`, `template`, `skill`, `agent-def`, or any other value this workspace uses (SPEC.md §5 — the field is an open string). Required.",
+        "Document type: `note`, `view`, `board`, `template`, `skill`, `agent-def`, or any other value this workspace uses (SPEC.md §5 — the field is an open string). Required.",
     },
     {
       name: "title",
@@ -166,7 +173,7 @@ export const createCommand: WorkspaceCommandSpec = {
         "is created with `true`, because a column is configuration rather than content and a " +
         "six-month-old Inbox column is not something to review.",
     },
-    ...VIEW_KEY_FLAGS,
+    ...BOARD_KEY_FLAGS,
     ...bodyFlags("The document body"),
     JOB_FLAG,
   ],
@@ -190,9 +197,21 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --pinned true --order 4 --query type=thread --query status=open --query tag=finance --from agent',
+        'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --query type=thread --query status=open --query tag=finance --from agent',
       description:
-        "SPEC.md §10's “pin me a view of unresolved finance threads”, in one command: the view document lands in `data/docs/views/`, the board grows a fourth column live over SSE, and `git log` records the agent as its author.",
+        "SPEC.md §10's “give me a view of unresolved finance threads”: the view document lands in `data/docs/views/` and `git log` records the agent as its author. It is a saved query and nothing more — it appears on a board when a board names its id in `--columns`, which is the next command.",
+    },
+    {
+      command:
+        'corpus doc create --type board --title "Attention" --folder views --evergreen true --columns doc_v1e2w3,doc_v4e5w6 --order 1 --default-open true --from agent',
+      description:
+        "A board, in one command (rider 2): its columns are the ids of two view documents, in that order, and `--default-open true` makes it the board a browser opens onto — clearing the flag from whichever board held it, which the output names on its own line.",
+    },
+    {
+      command:
+        'corpus doc create --type board --title "Triage" --folder views --evergreen true --kanban \'{"field":"stage","stages":["triage","doing","done"],"transitions":{"triage":["doing"],"doing":["done","triage"]},"status":{"done":"resolved"}}\' --query type=note --from agent',
+      description:
+        "A kanban (rider 6): one derived column per stage, drawn from the `--query` scope, with a drag following the graph and `done` deciding `status: resolved` through the explicit map. It carries no `--columns` — a kanban's columns are its stages, not view documents.",
     },
     {
       command: 'corpus doc create --type note --title "Notes" --file notes.md --json',

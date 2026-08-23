@@ -1,5 +1,5 @@
 /*
- * The three-part shell (SPEC.md §10): top bar · board · console. A flex column,
+ * The shell (SPEC.md §10): top bar · board bar · main · console. A flex column,
  * not a grid with a fixed console row — the console has to *push* the board
  * when it expands (UI-011) and must never overlay content.
  */
@@ -8,4 +8,20 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+
+/*
+ * `design/navigation.html`'s `.main`: the explorer and the board, side by side.
+ *
+ * The explorer takes width from the board here exactly as the console takes
+ * height from `.app` above — §10's drawer rule, on the other axis. `min-width`
+ * is what keeps the board's own horizontal scroller inside the row: without it
+ * a flex item refuses to shrink below its content, and a wide board would push
+ * the explorer off screen instead of scrolling under it.
+ */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
 }

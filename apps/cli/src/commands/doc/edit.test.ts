@@ -862,13 +862,13 @@ describe("the --extra value grammar", () => {
   });
 });
 
-describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
-  it("pins, positions and reconfigures a column in one request", async () => {
+describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
+  it("repositions a board and reconfigures its query in one request", async () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, {
       args: ARGS,
       flags: {
-        pinned: "true",
+        columns: "doc_v1e2w3,doc_v4e5w6",
         order: "1.5",
         query: ["type=thread", "status=open", "tag=finance"],
       },
@@ -879,21 +879,58 @@ describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
 
     expect(stub.requests[0]?.method).toBe("PUT");
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
-      pinned: true,
+      columns: ["doc_v1e2w3", "doc_v4e5w6"],
       order: 1.5,
       query: { type: "thread", status: "open", tag: "finance" },
     });
-    // No read: the view keys cost no round trip, unlike `--add-tag`/`--status`.
+    // No read: the board keys cost no round trip, unlike `--add-tag`/`--status`.
     expect(stub.requests).toHaveLength(1);
   });
 
-  it("unpins without touching anything else", async () => {
+  it("takes a board off the default without touching anything else", async () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
-    const harness = stubContext(stub, { args: ARGS, flags: { pinned: "false" } });
+    const harness = stubContext(stub, { args: ARGS, flags: { "default-open": "false" } });
 
     await runDocEdit(harness.context, { stdinIsBodySource: false });
 
-    expect(stub.requests[0]?.body).toBe('{"pinned":false}');
+    expect(stub.requests[0]?.body).toBe('{"defaultOpen":false}');
+  });
+
+  it("sends an empty columns list, which is a board with no columns and not a removal", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { columns: "" } });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(stub.requests[0]?.body).toBe('{"columns":[]}');
+  });
+
+  it("removes named frontmatter keys with --unset, and needs no key to do it", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { unset: ["pinned", "default-open"] },
+    });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    // File spellings, in the order they were given, and no `--key`: `unset`
+    // names its own delta exactly as `removeTags` does.
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ unset: ["pinned", "default-open"] });
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  it("refuses --unset id before anything is sent", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { unset: ["id"] } });
+
+    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("id");
+    expect(stub.requests).toHaveLength(0);
   });
 
   it("clears each key with the `null` the update schema gives a meaning to", async () => {
@@ -926,7 +963,8 @@ describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
       flags: {
         title: "Finance",
         extra: ["width=640"],
-        pinned: "true",
+        stage: "doing",
+        unset: ["pinned"],
         key: KEY,
       },
     });
@@ -936,7 +974,8 @@ describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       title: "Finance",
       extra: { width: 640 },
-      pinned: true,
+      stage: "doing",
+      unset: ["pinned"],
       key: KEY,
       body: "body\n",
     });
@@ -949,7 +988,7 @@ describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
     });
     const harness = stubContext(stub, {
       args: ARGS,
-      flags: { status: "open", pinned: "true" },
+      flags: { status: "open", stage: "doing" },
     });
 
     const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
@@ -964,9 +1003,14 @@ describe("corpus doc edit — the §10 view keys (CLI-018)", () => {
   it.each([
     { order: "1e400" },
     { order: '"4"' },
-    { pinned: "maybe" },
+    { "default-open": "maybe" },
+    { stage: "" },
+    { columns: "a,,b" },
+    { kanban: "{nope}" },
+    { unset: ["created"] },
     { query: ["filters={}"] },
     { query: ["null", "type=note"] },
+    { query: ['{"type":"note"}', "status=open"] },
   ])("refuses %o before any request", async (flags) => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags });

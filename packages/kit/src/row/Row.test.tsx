@@ -520,3 +520,65 @@ describe("the keyboard cursor", () => {
     expect(container.querySelector(".row")?.getAttribute("data-row-status")).toBe("archived");
   });
 });
+
+/**
+ * SPEC.md §10, rider 3: "the row stays highlighted as the path's origin while
+ * the path is open", and "a row open elsewhere on the board carries a dot".
+ * Both are host-derived props, never row state — the same rule as `cursor`.
+ */
+describe("the path marks", () => {
+  it("carries `.origin` while its path is open, and origin outranks the dot", () => {
+    const { container } = renderRow({
+      row: docRowFixture(),
+      origin: true,
+      openElsewhere: true,
+    });
+    expect(container.querySelector(".row")?.className).toBe("row origin");
+  });
+
+  it("carries `.open-elsewhere` for a document showing in some other column", () => {
+    const { container } = renderRow({ row: docRowFixture(), openElsewhere: true });
+    expect(container.querySelector(".row")?.className).toBe("row open-elsewhere");
+  });
+
+  it("carries neither by default — the marks are claims, not decoration", () => {
+    const { container } = renderRow({ row: docRowFixture() });
+    expect(container.querySelector(".row")?.className).toBe("row");
+  });
+});
+
+/**
+ * SPEC.md §7's rider 9: "a document whose `updated` is later than `reflected` is
+ * marked on every board … when the job lands, the marks clear".
+ */
+describe("the unreflected mark", () => {
+  it("draws the diamond when the host says the agent has not been round", () => {
+    const { container } = renderRow({ row: docRowFixture(), unreflected: true });
+    const mark = container.querySelector(".changed-mark");
+    expect(mark).not.toBeNull();
+    // It carries a name: a 6px shape with no accessible text is invisible to a
+    // screen reader, and this is the row's only cue that anything is unreflected.
+    expect(mark?.getAttribute("aria-label")).toBe("Changed since the agent last reflected");
+    // A distinct glyph from the board's circles (rider 3's "open elsewhere" dot).
+    expect(container.querySelector(".open-dot")).toBeNull();
+  });
+
+  it("draws nothing when the host says nothing", () => {
+    expect(renderRow({ row: docRowFixture() }).container.querySelector(".changed-mark")).toBeNull();
+    expect(
+      renderRow({ row: docRowFixture(), unreflected: false }).container.querySelector(
+        ".changed-mark",
+      ),
+    ).toBeNull();
+  });
+
+  /**
+   * The row never decides this for itself. The rule needs the corpus's clock,
+   * which is one request per board rather than one per row — so a row handed no
+   * verdict issues nothing and claims nothing.
+   */
+  it("asks the server nothing to draw it", () => {
+    const { requests } = renderRow({ row: docRowFixture(), unreflected: true });
+    expect(requests.filter((call) => call.path.includes("reflect"))).toHaveLength(0);
+  });
+});

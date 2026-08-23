@@ -51,6 +51,8 @@ export interface KeyChord {
   readonly shift?: boolean | undefined;
   /** `true` requires ⌘ or Ctrl; omitted requires neither. */
   readonly mod?: boolean | undefined;
+  /** `true` requires ⌥; omitted requires it absent (`⌥↵` is "open here"). */
+  readonly alt?: boolean | undefined;
   /** The `<kbd>` chip in the cheat sheet. Omitted when the description names the key. */
   readonly label?: string | undefined;
 }
@@ -60,6 +62,14 @@ export interface ShortcutContext {
   readonly openCompose: () => void;
   readonly openSearch: () => void;
   readonly toggleCheatSheet: () => void;
+  /**
+   * `⌘1`…`⌘9`: shows the nth board **in bar order**, 0-based. A workspace with
+   * fewer boards than the digit pressed does nothing — the bar is the authority
+   * on how many there are.
+   */
+  readonly showNthBoard: (index: number) => void;
+  /** `⌘B`: retracts or shows the explorer (SPEC.md §10, rider 1). */
+  readonly toggleExplorer: () => void;
   /** The board's imperative surface, published through `BoardCommandsProvider`. */
   readonly board: BoardCommands;
 }
@@ -149,7 +159,7 @@ export function chordDirection(event: KeyboardEvent): -1 | 1 {
 
 export function matchesChord(chord: KeyChord, event: KeyboardEvent): boolean {
   if (!chord.keys.includes(event.key)) return false;
-  if (event.altKey) return false;
+  if ((chord.alt ?? false) !== event.altKey) return false;
   if ((chord.mod ?? false) !== (event.metaKey || event.ctrlKey)) return false;
   if (chord.shift !== undefined && chord.shift !== event.shiftKey) return false;
   return true;
@@ -165,6 +175,7 @@ export function chordProbes(chord: KeyChord): readonly KeyboardEventInit[] {
     key,
     shiftKey: chord.shift ?? false,
     metaKey: chord.mod === true,
+    altKey: chord.alt === true,
   }));
 }
 
@@ -201,9 +212,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     scope: "board",
     yieldsToFocusedControl: true,
     group: "rows",
-    description: "open document",
+    description: "open — a new column to the right",
     run: (context) => {
-      context.board.openRowAtCursor(false);
+      context.board.openRowAtCursor("path");
+    },
+  },
+  {
+    id: "rows.openHere",
+    chords: [{ keys: ["Enter"], shift: false, alt: true, label: "⌥↵" }],
+    scope: "board",
+    /** A button activates on `↵` whatever the modifiers, so this yields too. */
+    yieldsToFocusedControl: true,
+    group: "rows",
+    description: "open here, in this column",
+    run: (context) => {
+      context.board.openRowAtCursor("here");
     },
   },
   {
@@ -215,7 +238,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: "rows",
     description: "open in full screen",
     run: (context) => {
-      context.board.openRowAtCursor(true);
+      context.board.openRowAtCursor("fullScreen");
     },
   },
   {
@@ -241,7 +264,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
     scope: "global",
     boundBy: "escape-layer",
     group: "layers",
-    description: "close / back",
+    description: "close the active path column / back",
+  },
+  {
+    /**
+     * Rider 3's "close every path on this board". Dispatched by the board's
+     * own escape layer (`EscapeLayerPriority.PathStrip`), which outranks the
+     * readers and yields to focus mode and the overlays — declared here so the
+     * cheat sheet stays provably complete, exactly as `layers.close` is.
+     */
+    id: "paths.closeAll",
+    chords: [{ keys: ["Escape"], shift: true, label: "⇧esc" }],
+    scope: "board",
+    boundBy: "escape-layer",
+    group: "layers",
+    description: "close every path on this board",
   },
   {
     id: "columns.switch",
@@ -269,6 +306,39 @@ export const SHORTCUTS: readonly Shortcut[] = [
     description: "move column",
     run: (context, event) => {
       context.board.moveActiveColumn(chordDirection(event));
+    },
+  },
+  {
+    id: "explorer.toggle",
+    chords: [{ keys: ["b", "B"], mod: true, label: "⌘B" }],
+    /**
+     * Global, and live inside a writing surface, for ⌘K's reason: it is chrome
+     * rather than a document key, and a person editing a document is exactly
+     * who wants the tree out of the way. It is also what lets `⌘B` still close
+     * the explorer while the keyboard is inside the tree, which declares
+     * `data-shortcuts="off"` and would otherwise suppress every binding.
+     */
+    scope: "global",
+    allowInInput: true,
+    group: "columns",
+    description: "toggle the explorer",
+    run: (context) => {
+      context.toggleExplorer();
+    },
+  },
+  {
+    id: "boards.switch",
+    /**
+     * One entry, nine keys — the cheat sheet shows `⌘1…⌘9` as the prototype's
+     * legend does, and the digit pressed is read off the event exactly as the
+     * directional pairs read their direction.
+     */
+    chords: [{ keys: ["1", "2", "3", "4", "5", "6", "7", "8", "9"], mod: true, label: "⌘1…⌘9" }],
+    scope: "board",
+    group: "columns",
+    description: "show the nth board",
+    run: (context, event) => {
+      context.showNthBoard(Number(event.key) - 1);
     },
   },
   {

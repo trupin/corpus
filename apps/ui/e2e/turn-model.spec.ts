@@ -44,7 +44,6 @@ const INBOX: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -54,7 +53,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Threads",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 2,
   query: { folder: "threads" },
 };

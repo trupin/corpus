@@ -210,6 +210,33 @@
 }
 
 /*
+ * **Changed since the agent last looked** — SPEC.md §7's rider 9, signed
+ * 2026-08-22 ("a document whose `updated` is later than `reflected` is marked on
+ * every board … when the job lands, the marks clear").
+ *
+ * A **diamond**, and the shape is the whole point. The board's dot vocabulary is
+ * circles — the pulsing `.working-dot`, the hollow `.queued-dot`, and the
+ * prototype's accent `.open-dot` for *open elsewhere on this board* — and the
+ * issue asks for a glyph distinct from that last one, which sits on the same
+ * rows. A rotated square is not a circle at any size, so the two never blur
+ * together in the corner of an eye. It carries no colour axis: `--accent` is the
+ * agent/unread axis and `--signal` is needs-you, and neither is what this means.
+ * Unreflected is not an alarm and not a reply waiting — it is a note that the
+ * agent has not been round yet, so it is drawn in ink and does not move.
+ *
+ * Declared here rather than beside each of its three surfaces (a row, a column
+ * head, a board tab) because it is one mark meaning one thing: three copies is
+ * three glyphs one refactor away from drifting apart.
+ */
+.changed-mark {
+  width: 6px;
+  height: 6px;
+  background: var(--ink-3);
+  transform: rotate(45deg);
+  flex: none;
+}
+
+/*
  * The age chip (SPEC.md §10's rider, signed 2026-08-20 — "Nothing resizes
  * because of what it holds").
  *
@@ -353,4 +380,37 @@
 .r-chip.r-stale {
   background: var(--sepia-wash-2);
   color: var(--sepia-ink);
+}
+
+/* ── Path origin, and open-elsewhere (SPEC.md §10, rider 3) ─────────────────
+   The origin row: the one row whose path is open to the right of its column.
+   It reuses the staleness rail's reserved ::before as the accent bar — while a
+   path hangs off the row, the origin claim outranks the ramp's tint — and puts
+   its `▸` in the badge cluster, where the geometry is already reserved so the
+   mark moves nothing (§10: "nothing resizes because of what it holds"). */
+.row.origin {
+  background: var(--accent-wash);
+  border-color: transparent;
+}
+
+.row.origin::before {
+  background: var(--accent);
+}
+
+.row.origin .row-title {
+  color: var(--accent-ink);
+}
+
+.row.origin .row-badges::after {
+  content: "▸";
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* A row whose document is open elsewhere on the board carries a dot. */
+.row.open-elsewhere .row-badges::after {
+  content: "●";
+  color: var(--accent);
+  font-size: 8px;
+  opacity: 0.6;
 }

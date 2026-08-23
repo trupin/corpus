@@ -20,6 +20,7 @@ import {
 import { CommentPopover, restoredRecipient, type CommentRestore } from "../anchors/CommentPopover";
 import { escapeSelectorValue } from "../anchors/cssEscape";
 import { domRangeOfRendered, renderedTextOf } from "../anchors/renderedRange";
+import { POPOVER_ANCHOR_GAP, type PopoverAnchor } from "../anchors/popoverDrag";
 import { setAnchorHighlights } from "../anchors/textHighlight";
 import type { SelectionRange, TextQuoteSelector } from "../editor/selection";
 import { useSelectionContextMenu } from "../menu/useSelectionContextMenu";
@@ -73,8 +74,8 @@ interface TurnDraft {
   /** Rendered-text offsets, for the highlight that outlives the DOM selection. */
   readonly rendered: SelectionRange;
   readonly selector: TextQuoteSelector;
-  readonly top: number;
-  readonly left: number;
+  /** The words' two edges, for a composer that picks its own side (UI-159). */
+  readonly anchor: PopoverAnchor;
   /**
    * Only on a draft re-opened because the server refused the comment: what the
    * composer held when it closed, words and attachments alike (UI-111).
@@ -179,16 +180,20 @@ export function useTurnComments({
       // the viewport, rather than not opening at all.
       const box =
         typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect() : null;
-      const top = (box?.bottom ?? 74) + 6;
-      const left = box?.left ?? 0;
+      // The whole range, so a box put **over** the quote clears all of it
+      // (UI-159); the composer decides which side from the room it has.
+      const anchor: PopoverAnchor = {
+        below: (box?.bottom ?? 74) + POPOVER_ANCHOR_GAP,
+        above: (box?.top ?? 74) - POPOVER_ANCHOR_GAP,
+        left: box?.left ?? 0,
+      };
       return () => {
         setDraft({
           turnTs: turn.ts,
           partIndex,
           rendered: captured.rendered,
           selector: captured.selector,
-          top,
-          left,
+          anchor,
         });
       };
     },
@@ -320,8 +325,7 @@ export function useTurnComments({
       draft === null ? null : (
         <CommentPopover
           quote={draft.selector.exact}
-          top={draft.top}
-          left={draft.left}
+          anchor={draft.anchor}
           pending={create.isPending}
           // A comment on a selection **inside** a turn is made in this
           // conversation, so it shares the reply box's standing choice.

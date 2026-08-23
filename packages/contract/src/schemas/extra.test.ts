@@ -146,10 +146,36 @@ describe("RESERVED_FRONTMATTER_KEYS drift pin", () => {
     expect(RESERVED_FRONTMATTER_KEYS).toContain("turnModels");
   });
 
-  it("covers the §10 view keys, now first-class core fields", () => {
-    for (const key of ["pinned", "order", "query"]) {
+  it("covers the §10 view and board keys, now first-class core fields", () => {
+    for (const key of ["order", "query", "columns", "kanban", "default-open"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
     }
+  });
+
+  /**
+   * CONTRACT-074. `default-open` is the frontmatter key and `defaultOpen` is
+   * its wire name, and **both** are reserved: `extra` is a client-supplied merge
+   * patch, so an unreserved `default-open` would let an ordinary
+   * `PUT /api/docs/{id}` set the flag past the arbitration that clears it from
+   * every other board — the hazard `resident` was reserved against, reproduced.
+   */
+  it.each(["default-open", "defaultOpen"])("reserves the %s spelling of the board flag", (key) => {
+    expect(ExtraFrontmatterSchema.safeParse({ [key]: true }).success).toBe(false);
+  });
+
+  it("covers §5's workflow position, which drives a kanban's status coupling", () => {
+    expect(RESERVED_FRONTMATTER_KEYS).toContain("stage");
+  });
+
+  /**
+   * `pinned` went the way `column` did (rider 2, signed 2026-08-22): a board
+   * lists its own columns, so nothing reads it and it stopped being a core key.
+   * Absent from this list is what lets a view written before the removal keep
+   * its key here, verbatim, until `corpus upgrade`'s migration drops it.
+   */
+  it("no longer reserves `pinned`, so a pre-removal view keeps its key", () => {
+    expect(RESERVED_FRONTMATTER_KEYS).not.toContain("pinned");
+    expect(ExtraFrontmatterSchema.safeParse({ pinned: true }).success).toBe(true);
   });
 
   /**

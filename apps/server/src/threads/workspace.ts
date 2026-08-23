@@ -12,7 +12,7 @@
 
 import type { Lane } from "@corpus/contract";
 import type { AttachmentLimits } from "../attachments/index.js";
-import type { DocsWorkspace } from "../docs/index.js";
+import type { DocsWorkspace, WriteReflectObserver } from "../docs/index.js";
 
 /** What an enqueue answers with; only the id reaches the wire. */
 export interface EnqueuedEvent {
@@ -43,9 +43,23 @@ export interface EnqueueInput {
  */
 export type EnqueueEvent = (input: EnqueueInput) => Promise<EnqueuedEvent>;
 
+/**
+ * {@link WriteReflectObserver} plus the one thing only the thread surface can
+ * report: SPEC.md §7's digest.
+ *
+ * A reflection posts one standalone thread and then completes its job. Nothing
+ * on the finished event says which thread that was — a `workspace.reflect`
+ * payload is `{ since }` and names nothing — so the note has to be taken where
+ * the thread is made.
+ */
+export interface ThreadReflectObserver extends WriteReflectObserver {
+  observeThreadCreated(job: string | undefined, threadId: string): void;
+}
+
 export interface ThreadsWorkspace extends DocsWorkspace {
-  /** `.corpus/`, which holds `seen.json`. */
+  /** `.corpus/`, which holds `seen.json` and `reflect.json`. */
   readonly corpusDir: string;
+  readonly reflect?: ThreadReflectObserver | undefined;
   readonly enqueue: EnqueueEvent;
   /**
    * Upload caps (SERVER-010). Read from `.corpus/config.json` by `createServer`;

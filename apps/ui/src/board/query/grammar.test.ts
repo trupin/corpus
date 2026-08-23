@@ -47,10 +47,13 @@ describe("the query grammar", () => {
     expect(queryField("sort")?.values).toEqual({ kind: "fixed", values: DOC_SORTS });
   });
 
-  it("marks the two comma-separated fields, and only those", () => {
+  it("marks the comma-separated fields, and only those", () => {
+    // `stage` joined them with CONTRACT-074: `stage=` is an OR list, which is
+    // exactly why a stage value may not contain a comma.
     expect(QUERY_FIELDS.filter((field) => field.multi).map((field) => field.name)).toEqual([
       "type",
       "tag",
+      "stage",
     ]);
   });
 

@@ -127,7 +127,6 @@ test.describe("the board's column count", () => {
         type: "view",
         title: LONG_TITLE,
         path: "data/docs/views/nine.md",
-        pinned: true,
         order: 1,
         query: { folder: "nine" },
       },
@@ -136,7 +135,6 @@ test.describe("the board's column count", () => {
         type: "view",
         title: LONG_TITLE,
         path: "data/docs/views/twelve.md",
-        pinned: true,
         order: 2,
         query: { folder: "twelve" },
       },
@@ -179,7 +177,6 @@ test.describe("the kit row's unread pill", () => {
         type: "view",
         title: "Unread",
         path: "data/docs/views/unread.md",
-        pinned: true,
         order: 1,
         query: { folder: "unread" },
       },
@@ -286,7 +283,6 @@ test.describe("the reader's thread count", () => {
         // differ by a digit are two different `.back` widths — see above.
         title: "Notes",
         path: `data/docs/views/${subject}.md`,
-        pinned: true,
         order,
         query: { folder: subject },
         /*
@@ -322,9 +318,13 @@ test.describe("the reader's thread count", () => {
       subject: string,
       count: string,
     ): Promise<{ head: Box; id: Box; button: Box }> => {
+      // "Open here" — the head under test is the column's own, at the 240px
+      // the column carries; a plain click now opens a 440px path column
+      // instead (UI-149, rider 3).
       await page
         .locator(`.col[data-col="doc_view_${subject}"] .row[data-row-doc="doc_${subject}"]`)
-        .click();
+        .click({ button: "right" });
+      await page.locator('[role="menuitem"][data-act="open-here"]').click();
       const reader = page.locator(
         `.col[data-col="doc_view_${subject}"] .reader[data-reader-doc="doc_${subject}"] .reader-head`,
       );
@@ -406,7 +406,6 @@ test.describe("the console's failed-chunk count", () => {
         type: "view",
         title: "Inbox",
         path: "data/docs/views/inbox.md",
-        pinned: true,
         order: 1,
         query: { folder: "inbox" },
       },
@@ -470,7 +469,6 @@ test.describe("the pending row's clock", () => {
           type: "view",
           title: "Conversations",
           path: "data/docs/views/threads.md",
-          pinned: true,
           order: 1,
           query: { type: "thread" },
         },

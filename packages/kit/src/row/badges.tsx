@@ -147,6 +147,32 @@ export function AgentActivityDot({ activity }: AgentActivityDotProps): ReactElem
   return null;
 }
 
+/**
+ * **Changed since the agent last looked** (SPEC.md §7's rider 9): the diamond a
+ * row, a column head and a board tab all draw.
+ *
+ * Shipped as a component rather than left to each surface's markup for the
+ * reason `row.css` gives its class: it is one mark meaning one thing, and it
+ * carries a name — a bare `<span>` with a class is invisible to a screen reader,
+ * and this is the only cue on the row that says the agent has not been round.
+ *
+ * It says nothing about *how many* and nothing about *when*. The count is the
+ * column head's, and the clock is the Reflect control's; a mark that repeated
+ * either would be two places to keep in step.
+ */
+export const CHANGED_MARK_LABEL = "Changed since the agent last reflected";
+
+export function ChangedMark(): ReactElement {
+  return (
+    <span
+      className="changed-mark"
+      role="img"
+      aria-label={CHANGED_MARK_LABEL}
+      title={CHANGED_MARK_LABEL}
+    />
+  );
+}
+
 export interface AgeChipProps {
   readonly label: string;
 }

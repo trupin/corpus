@@ -186,8 +186,7 @@ function commentPopoverProbe(body: string): Probe {
     <ReaderHost transport={transport}>
       <CommentPopover
         quote="assume a 30-year fixed at 6.1%"
-        top={120}
-        left={80}
+        anchor={{ below: 120, above: 108, left: 80 }}
         pending={false}
         weightScope="doc:doc_a"
         recipientScope="doc_a"

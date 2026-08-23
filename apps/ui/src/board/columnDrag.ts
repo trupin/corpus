@@ -45,9 +45,12 @@ export function previewOrder(
 export function measureColumns(board: HTMLElement): ColumnBox[] {
   const boxes: ColumnBox[] = [];
   for (const element of board.querySelectorAll<HTMLElement>(".col")) {
-    // The ghost column carries no `data-col`; nothing inserts after it.
+    // The ghost column carries no `data-col`; nothing inserts after it. Path
+    // columns carry one but are not board-document columns: a drag reorders
+    // `columns`, and paths follow their anchoring view through reconciliation
+    // (SPEC.md §10, rider 3), so they are not insertion points either.
     const id = element.dataset["col"];
-    if (id === undefined) continue;
+    if (id === undefined || id.startsWith("path:")) continue;
     const rect = element.getBoundingClientRect();
     boxes.push({ id, left: rect.left, width: rect.width });
   }

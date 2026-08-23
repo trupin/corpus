@@ -30,6 +30,7 @@ function boardSpy(): BoardCommands & { readonly calls: string[] } {
     calls,
     moveRowCursor: record("moveRowCursor"),
     openRowAtCursor: record("openRowAtCursor"),
+    closeAllPaths: record("closeAllPaths"),
     switchColumn: record("switchColumn"),
     moveActiveColumn: record("moveActiveColumn"),
     toggleFocusMode: record("toggleFocusMode"),
@@ -55,11 +56,19 @@ describe("useShortcuts", () => {
     const openCompose = vi.fn();
     const openSearch = vi.fn();
     const toggleCheatSheet = vi.fn();
-    mount({ openCompose, openSearch, toggleCheatSheet, board });
+    mount({
+      openCompose,
+      openSearch,
+      toggleCheatSheet,
+      showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
+      board,
+    });
 
     fireEvent.keyDown(document, { key: "j" });
     fireEvent.keyDown(document, { key: "ArrowUp" });
     fireEvent.keyDown(document, { key: "Enter" });
+    fireEvent.keyDown(document, { key: "Enter", altKey: true });
     fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
     fireEvent.keyDown(document, { key: "]" });
     fireEvent.keyDown(document, { key: "ArrowRight", shiftKey: true });
@@ -73,8 +82,9 @@ describe("useShortcuts", () => {
     expect(board.calls).toEqual([
       "moveRowCursor:1",
       "moveRowCursor:-1",
-      "openRowAtCursor:false",
-      "openRowAtCursor:true",
+      "openRowAtCursor:path",
+      "openRowAtCursor:here",
+      "openRowAtCursor:fullScreen",
       "switchColumn:1",
       "moveActiveColumn:1",
       "toggleFocusMode",
@@ -98,6 +108,8 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       },
       <Layered />,
@@ -136,7 +148,14 @@ describe("useShortcuts", () => {
       const board = boardSpy();
       const openCompose = vi.fn();
       const openSearch = vi.fn();
-      mount({ openCompose, openSearch, toggleCheatSheet: vi.fn(), board });
+      mount({
+        openCompose,
+        openSearch,
+        toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
+        board,
+      });
 
       const field = document.createElement("input");
       document.body.append(field);
@@ -171,7 +190,14 @@ describe("useShortcuts", () => {
   it("ignores a keystroke that is an IME composition", () => {
     const board = boardSpy();
     const openCompose = vi.fn();
-    mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+    mount({
+      openCompose,
+      openSearch: vi.fn(),
+      toggleCheatSheet: vi.fn(),
+      showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
+      board,
+    });
 
     fireEvent.keyDown(document, { key: "c", isComposing: true });
     fireEvent.keyDown(document, { key: "c", keyCode: 229 });
@@ -247,6 +273,8 @@ describe("useShortcuts", () => {
           openCompose: vi.fn(),
           openSearch: vi.fn(),
           toggleCheatSheet: vi.fn(),
+          showNthBoard: vi.fn(),
+          toggleExplorer: vi.fn(),
           board,
         });
         const open = menu();
@@ -268,7 +296,14 @@ describe("useShortcuts", () => {
       it("keeps the board's other keys off the board behind it", () => {
         const board = boardSpy();
         const openCompose = vi.fn();
-        mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+        mount({
+          openCompose,
+          openSearch: vi.fn(),
+          toggleCheatSheet: vi.fn(),
+          showNthBoard: vi.fn(),
+          toggleExplorer: vi.fn(),
+          board,
+        });
         menu();
 
         for (const pressed of ["c", "e", "f", "r", "j", "k"]) {
@@ -382,6 +417,8 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       const trigger = document.createElement("button");
@@ -402,13 +439,15 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       focus('<div class="row" data-row-doc="doc_a" role="button">x</div>');
 
       fireEvent.keyDown(document, { key: "Enter" });
       fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
-      expect(board.calls).toEqual(["openRowAtCursor:false", "openRowAtCursor:true"]);
+      expect(board.calls).toEqual(["openRowAtCursor:path", "openRowAtCursor:fullScreen"]);
     });
 
     it("still opens the highlighted row when nothing focusable holds focus", () => {
@@ -417,10 +456,12 @@ describe("useShortcuts", () => {
         openCompose: vi.fn(),
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       fireEvent.keyDown(document, { key: "Enter" });
-      expect(board.calls).toEqual(["openRowAtCursor:false"]);
+      expect(board.calls).toEqual(["openRowAtCursor:path"]);
     });
   });
 
@@ -430,6 +471,8 @@ describe("useShortcuts", () => {
       openCompose: vi.fn(),
       openSearch: vi.fn(),
       toggleCheatSheet: vi.fn(),
+      showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
       board,
     });
     fireEvent.keyDown(document, { key: "q" });

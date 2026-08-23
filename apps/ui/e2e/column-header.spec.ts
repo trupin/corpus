@@ -29,7 +29,6 @@ function view(width: number, query: ViewQuery = {}): StubRow {
     type: "view",
     title: "Conversations",
     path: "data/docs/views/threads.md",
-    pinned: true,
     order: 1,
     // Two chips and the default `-updated` sort: "last activity ↓".
     query: Object.keys(query).length === 0 ? { type: "thread", status: "open" } : query,

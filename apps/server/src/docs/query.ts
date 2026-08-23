@@ -218,9 +218,11 @@ interface RawRow {
   readonly evergreen: number;
   readonly origin: string | null;
   readonly excerpt: string;
-  readonly pinned: number;
+  readonly stage: string | null;
+  readonly last_actor: string;
   readonly sort_order: number | null;
   readonly query_json: string | null;
+  readonly board_json: string | null;
   readonly extra_json: string;
   readonly snippets_json: string | null;
   readonly stale: string | null;
@@ -277,6 +279,26 @@ function parseJsonObject(json: string | null): Record<string, unknown> | null {
   }
 }
 
+/**
+ * The three board keys out of `documents.board_json` (SPEC.md §9.1), always
+ * present on the row.
+ *
+ * The column holds NULL for the documents — nearly all of them — that carry no
+ * board key at all, and the wire says all three fields are present on every
+ * response, so NULL unpacks to the absent state of each: no columns, no kanban,
+ * not the default-open board. The stored object is already the wire shape (the
+ * projection wrote it from the contract's own readers), so nothing here parses
+ * or validates it a second time.
+ */
+function boardFields(json: string | null): Pick<DocRow, "columns" | "kanban" | "defaultOpen"> {
+  const stored = parseJsonObject(json);
+  return {
+    columns: (stored?.["columns"] ?? null) as DocRow["columns"],
+    kanban: (stored?.["kanban"] ?? null) as DocRow["kanban"],
+    defaultOpen: stored?.["defaultOpen"] === true,
+  };
+}
+
 function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
   return {
     id: row.id,
@@ -294,12 +316,20 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     evergreen: row.evergreen !== 0,
     origin: row.origin,
     excerpt: row.excerpt,
-    // The §10 view keys, from the columns the projection filled by parsing the
-    // file with the contract's own schemas — so the row and `GET /api/docs/{id}`
-    // report one file's frontmatter identically (CONTRACT-011).
-    pinned: row.pinned !== 0,
+    // SPEC.md §5's workflow position, straight off the column the filter reads.
+    stage: row.stage,
+    // Parsed with the contract's enum for the reason `status` is: the projection
+    // only ever writes an `Actor`, so the column can only hold a declared value.
+    lastActor: row.last_actor as DocRow["lastActor"],
+    // The §10 view and board keys, from the columns the projection filled by
+    // parsing the file with the contract's own schemas — so the row and
+    // `GET /api/docs/{id}` report one file's frontmatter identically
+    // (CONTRACT-011, CONTRACT-074). `board_json` holds the three board keys as
+    // one object under their wire spellings, so it is unpacked rather than
+    // re-derived.
     order: row.sort_order,
     query: parseJsonObject(row.query_json) as DocRow["query"],
+    ...boardFields(row.board_json),
     extra: parseJsonObject(row.extra_json) ?? {},
     // Same reasoning as `status`: the tier is this module's own CASE over the
     // contract's closed enum, and `agent`/`last_author` are parsed with the
@@ -354,9 +384,9 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
   const rowsSql = `${searching ? `WITH ${HITS_CTE}\n` : ""}SELECT d.id AS id, d.type AS type, d.title AS title, d.path AS path,
          d.status AS status, d.tags_json AS tags_json, d.created AS created, d.updated AS updated,
          d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.origin AS origin,
-         d.body_excerpt AS excerpt,
-         d.pinned AS pinned, d.sort_order AS sort_order, d.query_json AS query_json,
-         d.extra_json AS extra_json,
+         d.body_excerpt AS excerpt, d.stage AS stage, d.last_actor AS last_actor,
+         d.sort_order AS sort_order, d.query_json AS query_json,
+         d.board_json AS board_json, d.extra_json AS extra_json,
          ${searching ? "m.snippets" : "NULL"} AS snippets_json,
          ${ROW_COLUMNS},
          ${REASON_COLUMNS}
@@ -414,4 +444,44 @@ export function queryDocIds(db: ProjectionDb, query: FilterQuery, nowMs: number)
 
   const rows = db.prepare(sql).all(paramsFor(sql, compiled.binder.all())) as { id: string }[];
   return rows.map((row) => row.id);
+}
+
+/**
+ * Whether **one** document matches a filter set — {@link queryDocIds} asked about
+ * a single id, and deliberately built the same way (SERVER-138).
+ *
+ * §5's coupling rule decides "is this document in a kanban" by the board's own
+ * scope query, and §9.2 promises a saved query means one thing wherever it is
+ * asked. A membership test written by hand against the row would be a second
+ * implementation of `docs/filters.ts` — it would answer differently the first
+ * time somebody added a filter, and it would answer differently from the very
+ * list the board draws from that same query. So this is the same
+ * {@link compileFilters}, the same {@link FROM_SQL} and the same
+ * {@link whereClause}, with `d.id = @doc` conjoined. `docs/query.test.ts` pins
+ * the parity: for every document in a workspace, this agrees with
+ * `GET /api/docs`'s own result set.
+ *
+ * The `LIMIT 1` is not an optimisation. `FROM_SQL`'s joins are keyed on their
+ * tables' primary keys and cannot multiply a row, so the statement returns at
+ * most one anyway; it says out loud that the answer is a boolean.
+ */
+export function matchesQuery(
+  db: ProjectionDb,
+  query: FilterQuery,
+  docId: string,
+  nowMs: number,
+): boolean {
+  const compiled = compileFilters(query, nowMs);
+  // A `q` that carried no indexable token is an empty result set by
+  // construction, so no document is in it — including this one.
+  if (compiled.emptyByQuery) return false;
+  const searching = compiled.match !== null;
+  compiled.binder.fixed("doc", docId);
+  const sql = `${searching ? `WITH ${COUNT_MATCH_CTE}\n` : ""}SELECT 1 AS matched
+  ${FROM_SQL}
+  ${searching ? "JOIN m ON m.id = d.id" : ""}
+  ${whereClause(compiled)} AND d.id = @doc
+  LIMIT 1`;
+
+  return db.prepare(sql).get(paramsFor(sql, compiled.binder.all())) !== undefined;
 }

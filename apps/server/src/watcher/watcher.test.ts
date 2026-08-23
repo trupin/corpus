@@ -20,7 +20,12 @@ import { computeContext } from "../anchors/index.js";
 import { createInvalidationBus, type InvalidationBus } from "../events/index.js";
 import { disableAutoMaintenance } from "../git/index.js";
 import { createLogger, silentLogger, type LogSink } from "../logger.js";
-import { openProjection, populateFromFiles, type ProjectionDb } from "../projection/index.js";
+import {
+  openProjection,
+  populateFromFiles,
+  projectDocument,
+  type ProjectionDb,
+} from "../projection/index.js";
 import type { ReadHeadVersion } from "./git-head.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "./self-writes.js";
 import { startWatcher, type WatcherHandle } from "./watcher.js";
@@ -126,6 +131,26 @@ describe("the watcher — documents", () => {
     ]);
     // A file appearing changes the folder tree; a body edit below does not.
     expect(flat()).toContain(JSON.stringify(["tree"]));
+  });
+
+  /**
+   * SPEC.md §9.1's `last_actor`, and §4 decides it: a change that reached the
+   * watcher came from outside the server, so nobody attributed it to the agent,
+   * so it is a person's. §7's reflection reads this column, and it must not be
+   * told that a hand-edited file is the agent's own output.
+   */
+  it("records an out-of-band change as the person's, whatever the row said before", async () => {
+    write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+    await startWatching();
+    db.prepare("UPDATE documents SET last_actor = 'agent' WHERE id = 'doc_mortgage'").run();
+
+    write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.4%."));
+
+    await vi.waitFor(() => {
+      expect(rows("SELECT last_actor FROM documents WHERE id = 'doc_mortgage'")).toEqual([
+        { last_actor: "user" },
+      ]);
+    }, WAIT);
   });
 
   it("upserts an edit instead of failing against a missing row", async () => {
@@ -309,7 +334,11 @@ describe("the watcher — ignores", () => {
     // either side of it. The `structural` heuristic used to announce the key
     // here purely because a file had appeared (SERVER-020).
     expect(new Set(flat())).toEqual(
-      new Set([JSON.stringify(["docs"]), JSON.stringify(["docs", "doc_real"])]),
+      new Set([
+        JSON.stringify(["docs"]),
+        JSON.stringify(["docs", "doc_real"]),
+        JSON.stringify(["reflect"]),
+      ]),
     );
   });
 });
@@ -588,7 +617,7 @@ describe("the watcher — §7's roster", () => {
     // independent events and neither carries where the file came from, so
     // without that read this is indistinguishable from an arrival.
     await vi.waitFor(() => {
-      expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"]]);
+      expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]]);
     }, WAIT);
   });
 
@@ -601,7 +630,7 @@ describe("the watcher — §7's roster", () => {
     await waitForKey(["queue"]);
     // A lane reports the work it is *holding*; a pending event is held by
     // nobody, so this frame is the queue's own table and nothing more.
-    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"]]);
+    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["reflect"]]);
     expect(flat()).not.toContain(JSON.stringify(["agents"]));
   });
 
@@ -637,7 +666,13 @@ describe("the watcher — §7's roster", () => {
     write(`data/threads/${LANE}.md`, designatedThread("Claims review, out of band"));
 
     await vi.waitFor(() => {
-      expect(batches).toContainEqual([["docs"], ["docs", LANE], ["threads", LANE], ["agents"]]);
+      expect(batches).toContainEqual([
+        ["docs"],
+        ["docs", LANE],
+        ["threads", LANE],
+        ["agents"],
+        ["reflect"],
+      ]);
     }, WAIT);
   });
 
@@ -683,7 +718,7 @@ describe("the watcher — §7's roster", () => {
     write("data/docs/note.md", doc("doc_note", "Note", "Still nothing to do with a lane."));
 
     await waitForKey(["docs", "doc_note"]);
-    expect(batches).toContainEqual([["docs"], ["docs", "doc_note"]]);
+    expect(batches).toContainEqual([["docs"], ["docs", "doc_note"], ["reflect"]]);
     expect(flat()).not.toContain(JSON.stringify(["agents"]));
   });
 });
@@ -795,5 +830,40 @@ describe("the watcher — out-of-band anchor reconciliation", () => {
     await waitForKey(["docs", "doc_fresh"]);
     expect(rows("SELECT doc_id FROM anchors")).toEqual([{ doc_id: "doc_fresh" }]);
     expect(logLines.join("\n")).not.toContain('"level":"error"');
+  });
+});
+
+/**
+ * A directory renamed to another case on a case-insensitive filesystem
+ * (SERVER-136). chokidar keeps watching **both** spellings for the life of the
+ * process, so every later write to a file under it arrives twice — once under
+ * the name the directory used to have and once under the name it has.
+ *
+ * The server's own `POST /api/folders/rename` moves the rows itself, in the same
+ * pass as the write; what this pins is that the watcher's later events do not
+ * move them back.
+ */
+describe("the watcher — a folder renamed to another case", () => {
+  it("keys later writes on the spelling the filesystem has, not the one it had", async () => {
+    write("data/docs/Finance/deed.md", doc("doc_deed", "Deed", "the deed"));
+    await startWatching();
+
+    // The rename, and then the row correction the write path performs for it.
+    renameSync(abs("data/docs/Finance"), abs("data/docs/.tmp-rename"));
+    renameSync(abs("data/docs/.tmp-rename"), abs("data/docs/finance"));
+    db.prepare("DELETE FROM documents WHERE id = 'doc_deed'").run();
+    projectDocument(db, abs("data/docs/finance/deed.md"));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    batches.length = 0;
+
+    write("data/docs/finance/deed.md", doc("doc_deed", "Deed", "the deed, revised"));
+
+    await waitForKey(["docs", "doc_deed"]);
+    // One row, at the path the file is really at. Before the correction the
+    // stale spelling arrived as its own event and moved the row to a path
+    // nothing is at, which `db doctor` reports as `orphan_row`.
+    expect(rows("SELECT id, path FROM documents")).toEqual([
+      { id: "doc_deed", path: "data/docs/finance/deed.md" },
+    ]);
   });
 });

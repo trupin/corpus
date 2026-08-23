@@ -1,0 +1,289 @@
+/*
+ * The board bar (`design/navigation.html`'s `.boardbar`): one tab per board, in
+ * `order`, above the board.
+ *
+ * **It is chrome** (SPEC.md §10 — "nothing resizes because of what it holds"):
+ * `flex: none` and a fixed height, so a board with nine tabs and a board with
+ * one occupy exactly the same room and the board below never moves. A title
+ * longer than the room truncates in place and gives the whole of itself to the
+ * tab's tooltip, which is §10's reveal-rather-than-accommodate rule.
+ *
+ * **The width a tab gets is derived from the room, never chosen** (SHARED-061).
+ * The strip is `flex: 1; min-width: 0`, each tab shrinks inside it, and the
+ * title's floor is `8ch` — a count of characters in the bar's own font rather
+ * than a pixel constant measured once on one screen. A bar with room shows every
+ * title whole; a bar without it truncates, and only once every tab has reached
+ * the floor does the strip scroll.
+ */
+
+.boardbar {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex: none;
+  height: 38px;
+}
+
+/* The explorer toggle, left of the tabs (`design/navigation.html`'s
+   `.icon-btn`). `flex: none` so it never shrinks when the tabs run out of room:
+   the switch for column zero has to stay pressable on a full bar. */
+.explorer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: none;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.explorer-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.board-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin-left: 6px;
+  /* Sized to its tabs, shrinking only when the bar runs out of room — which is
+     what puts `＋` immediately after the last tab, as the prototype draws it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* Takes whatever the tabs and `＋` leave, so nothing after them drifts left as
+   boards are added. UI-149's paths pill and UI-153's Reflect control land here. */
+.boardbar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.board-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+/* The clickable half of a tab. A sibling of `×` rather than its parent: an
+   interactive element inside a `<button>` is invalid, and the outer control's
+   accessible name then swallows the inner one's. */
+.board-tab-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0 4px;
+  height: 100%;
+}
+
+.board-tab:hover:not([disabled]) {
+  color: var(--ink);
+}
+
+.board-tab.on {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.board-tab[disabled] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* The one part that may not grow with what it holds. */
+.board-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 8ch;
+}
+
+/*
+ * The unreflected mark's slot (SPEC.md §7's rider 9), **reserved on every tab
+ * and painted only when there is something to say**.
+ *
+ * The same arrangement `.row::before` uses for the staleness rail, and for the
+ * same reason: a mark that joined the flow when it appeared made the tab 14px
+ * wider and shifted every tab after it, which is exactly what §10's "nothing
+ * resizes because of what it holds" rules out. 6px of box is what a tab pays for
+ * a fact it may one day carry, and it pays it whether or not it does.
+ */
+.board-tab-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 6px;
+  flex: none;
+}
+
+.board-tab .tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.board-tab-close {
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 0 2px;
+  opacity: 0;
+  border-radius: 4px;
+  flex: none;
+}
+
+.board-tab:hover .board-tab-close,
+.board-tab.on .board-tab-close,
+.board-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.board-tab .tag {
+  flex: none;
+}
+
+.board-tab-close:hover {
+  color: var(--signal);
+  background: var(--signal-wash);
+}
+
+.board-tab.dragging {
+  opacity: 0.45;
+}
+
+.board-tab.drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.board-tab.drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+/* Renaming happens in place, exactly as a column header renames. */
+.board-tab-input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  min-width: 8ch;
+  width: 14ch;
+}
+
+.board-add {
+  align-self: center;
+  color: var(--ink-3);
+  font-size: 16px;
+  padding: 0 8px;
+  border-radius: 6px;
+  height: 26px;
+  flex: none;
+}
+
+.board-add:hover {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+
+/* ── The paths pill and "close paths" (SPEC.md §10, rider 3) ─────────────
+   `design/navigation.html`'s `.paths-pill` and `.btn-ghost`. Mono and quiet:
+   a count changing from 1 to 12 moves nothing ("nothing resizes because of
+   what it holds" is served by the bar's fixed height and the spacer). */
+.paths-pill {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.paths-pill b {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn-ghost {
+  align-self: center;
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  color: var(--ink-2);
+  background: none;
+  white-space: nowrap;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-ghost[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-ghost[disabled]:hover {
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+/*
+ * What a drag on the showing board does (SPEC.md §10, rider 6) — the
+ * prototype's status line, in the bar.
+ *
+ * It sits left of `.boardbar-spacer`, so a hint that grows a clause eats slack
+ * instead of moving a tab (§10: "nothing resizes because of what it holds"), and
+ * it truncates rather than wrapping: the bar is one fixed-height row and the
+ * whole sentence is in the tooltip.
+ */
+.board-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

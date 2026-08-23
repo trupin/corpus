@@ -67,6 +67,13 @@ export {
   QUERY_KEY_NAMES,
   QUERY_KEY_VOCABULARY,
   QUEUE_KEY,
+  // `REFLECT_KEY` joined its siblings here in UI-153, and its absence was the
+  // same defect `AGENTS_KEY`'s was (see `packages/kit/src/index.ts`):
+  // CONTRACT-076 published the key in `../query-keys.js` and the vocabulary test
+  // pinned it, but this subpath — the one a browser consumer imports — did not
+  // re-export it, so the kit could read `GET /api/workspace/reflect` and had no
+  // supported way to cache it under the key the server names.
+  REFLECT_KEY,
   TREE_KEY,
   describeQueryKeyVocabulary,
   docKey,

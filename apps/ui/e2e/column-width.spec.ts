@@ -16,8 +16,6 @@ function view(extra: Readonly<Record<string, unknown>> = {}) {
     type: "view",
     title: "Inbox",
     path: "data/docs/views/inbox.md",
-    pinned: true,
-    order: 1,
     query: { folder: "inbox" },
     extra,
   };
@@ -81,10 +79,11 @@ test.describe("column width", () => {
         mine: "keep me",
         width: 352,
       });
+    // The width write touched `extra` and nothing else: the view's own query and
+    // title are as seeded (a view has no `pinned` and no `order` since rider 2).
     const stored = await corpus.doc("doc_view_inbox");
     expect(stored?.query).toEqual({ folder: "inbox" });
-    expect(stored?.pinned).toBe(true);
-    expect(stored?.order).toBe(1);
+    expect(stored?.title).toBe("Inbox");
   });
 
   test("the chosen width survives a reload, from the document and not from storage", async ({
@@ -98,70 +97,43 @@ test.describe("column width", () => {
     await expect(page.locator(".col[data-col]")).toHaveCSS("width", "520px");
   });
 
-  test("opening a document widens the column relative to its chosen base", async ({ page }) => {
+  /**
+   * UI-149 (SPEC.md §10, rider 3): "a query column no longer widens when it
+   * opens a reader: the reader column has its own width". A row click opens a
+   * path column at 440px, and the query column keeps its chosen width at every
+   * size — narrower than the old floor, or wider than the old ceiling. The
+   * UI-113 widening machinery (`readingFloor`/`renderedWidth`) is deleted.
+   */
+  test("opening a document leaves the column at its chosen width — the reader is a path's", async ({
+    page,
+  }) => {
     await stubCorpus(page, [view({ width: 300 }), NOTE]);
     await page.goto("/");
 
-    const column = page.locator(".col[data-col]");
+    const column = page.locator(".qcol[data-col]");
     await expect(column).toHaveCSS("width", "300px");
 
     await page.locator('.row[data-row-doc="doc_note"]').click();
-    await expect(page.locator(".reader")).toBeVisible();
-    // 300 × (560 / 336) — not a fixed 560.
-    await expect(column).toHaveCSS("width", "500px");
+    await expect(page.locator(".pcol .reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "300px");
+    await expect(page.locator(".pcol")).toHaveCSS("width", "440px");
   });
 
-  /**
-   * UI-113, and the case that reversed UI-023.
-   *
-   * UI-023 stopped the widening at the reader's content measure, on the
-   * reasoning that width past it is dead gutter. True of a column nobody chose;
-   * false of one somebody dragged — and applied as a *cap* it took 340 px off a
-   * column the user had set to 900. Reported with two screenshots: *"I don't
-   * want the size to shrink, ever."*
-   *
-   * The measure survives as a **floor** (the next test); what dies is its use as
-   * a ceiling on a chosen width.
-   */
-  test("a column wider than the content measure keeps its width when a reader opens", async ({
-    page,
-  }) => {
+  test("a wide column keeps its width when a path opens and when it closes", async ({ page }) => {
     await stubCorpus(page, [view({ width: 900 }), NOTE]);
     await page.goto("/");
 
-    const column = page.locator(".col[data-col]");
+    const column = page.locator(".qcol[data-col]");
     await expect(column).toHaveCSS("width", "900px");
 
     await page.locator('.row[data-row-doc="doc_note"]').click();
-    await expect(page.locator(".reader")).toBeVisible();
+    await expect(page.locator(".pcol .reader")).toBeVisible();
     await expect(column).toHaveCSS("width", "900px");
 
-    // And closing changes nothing either — there is nothing to return from.
-    await page.locator(".col.reading .back").click();
+    // Closing the path changes nothing either — the column never moved.
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".pcol")).toHaveCount(0);
     await expect(column).toHaveCSS("width", "900px");
-  });
-
-  /**
-   * The one automatic change the user kept: *"it can resize up automatically but
-   * not down"*. A column too narrow to show a document grows when one opens —
-   * and, crucially, **stays grown when it closes**, because snapping back would
-   * be the app resizing it downward on its own, which is the complaint.
-   */
-  test("a narrow column grows to the measure, and does not snap back on close", async ({
-    page,
-  }) => {
-    await stubCorpus(page, [view({ width: 336 }), NOTE]);
-    await page.goto("/");
-
-    const column = page.locator(".col[data-col]");
-    await expect(column).toHaveCSS("width", "336px");
-
-    await page.locator('.row[data-row-doc="doc_note"]').click();
-    await expect(page.locator(".reader")).toBeVisible();
-    await expect(column).toHaveCSS("width", "560px");
-
-    await page.locator(".col.reading .back").click();
-    await expect(column).toHaveCSS("width", "560px");
   });
 
   /**
@@ -175,12 +147,15 @@ test.describe("column width", () => {
     await stubCorpus(page, [view({ width: 700 }), NOTE]);
     await page.goto("/");
 
-    const column = page.locator(".col[data-col]");
-    await page.locator('.row[data-row-doc="doc_note"]').click();
-    await expect(page.locator(".reader")).toBeVisible();
+    const column = page.locator(".qcol[data-col]");
+    // "Open here" keeps the reader in the column itself — the case this drag
+    // test is about; a plain click now opens a path column instead (rider 3).
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
+    await expect(page.locator(".qcol .reader")).toBeVisible();
     await expect(column).toHaveCSS("width", "700px");
 
-    const resizer = page.locator(".col-resizer");
+    const resizer = page.locator(".qcol .col-resizer");
     const box = await resizer.boundingBox();
     expect(box).not.toBeNull();
     await page.mouse.move((box?.x ?? 0) + 3, (box?.y ?? 0) + 40);
@@ -200,7 +175,7 @@ test.describe("column width", () => {
     await stubCorpus(page, [view({ width: 700 }), NOTE]);
     await page.goto("/");
 
-    await expect(page.locator(".col[data-col]")).toHaveCSS("scroll-snap-align", "start");
+    await expect(page.locator(".qcol[data-col]")).toHaveCSS("scroll-snap-align", "start");
     await expect(page.locator(".board .ghost-col")).toHaveCSS("width", "220px");
   });
 

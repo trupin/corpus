@@ -39,7 +39,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 1,
   query: { type: "thread" },
 };
@@ -305,7 +304,6 @@ test.describe("designating a resident", () => {
         type: "view",
         title: "Skills & agents",
         path: "data/docs/views/personas.md",
-        pinned: true,
         order: 2,
         query: { type: "agent-def" },
       },
@@ -433,6 +431,13 @@ test.describe("designating a resident", () => {
     await expect(page.locator(BADGE)).toBeVisible();
 
     const picker = '[data-composer-address="th_solo"]';
+    // The composer foot first: in the 440px path column a row click opens
+    // (UI-149, rider 3) the foot sits at the clipped edge, and a click on a
+    // half-clipped control scrolls it under the pointer instead of pressing it.
+    // Put the whole foot in view the way `address-room-geometry` does.
+    await page.locator(".pcol .reader-scroll").evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
     // Two lanes now exist, which is when the line opens at all (UI-126: the
     // rows sit behind the composer's address line).
     await page.locator('button[data-address-line="th_solo"]').click();

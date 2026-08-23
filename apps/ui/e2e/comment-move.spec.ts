@@ -26,9 +26,13 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
+  // The reading width this suite's drag-room measurements assume. It used to
+  // arrive by the reader-open widening (336 → 560); UI-149 removed the
+  // widening (rider 3), so `openMemo` opens in the column ("open here") at the
+  // width the view carries.
+  extra: { width: 560 },
 };
 
 /** Long enough that the reader scrolls, which is what the second half needs. */
@@ -52,7 +56,8 @@ async function openMemo(page: Page): Promise<void> {
   await stubCorpus(page, [VIEW, MEMO]);
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="doc_note"]').click();
+  await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+  await page.locator('[role="menuitem"][data-act="open-here"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
   // Every coordinate below is read off the document, and the document is still
   // moving for ~210ms after `.ProseMirror` appears (`settle.ts`, UI-146).
@@ -286,7 +291,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 1,
   query: { type: "thread" },
 };

@@ -8,8 +8,6 @@ tags: []
 status: open
 anchors: {}
 evergreen: true
-pinned: true
-order: 1
 query:
   needs: me
 ---

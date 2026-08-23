@@ -77,14 +77,23 @@ export interface WriteWorkspaceOptions {
    * no other fixture has to know the window exists.
    */
   readonly editAckIdleMs?: number | undefined;
+  /**
+   * SPEC.md §7's quiet window in minutes (SERVER-137). Shortened — or set to
+   * `0` — by the suites that watch the automatic path; omitted, the server
+   * resolves the shipped default and nothing arms inside a test, because these
+   * fixtures never call `start()`.
+   */
+  readonly reflectQuietMinutes?: number | undefined;
 }
 
 const serverConfig = (
   workspaceRoot: string,
   attachments: AttachmentLimits,
   editAckIdleMs: number | undefined,
+  reflectQuietMinutes: number | undefined,
 ): ServerConfig => ({
   ...(editAckIdleMs === undefined ? {} : { editAcknowledgment: { idleMs: editAckIdleMs } }),
+  ...(reflectQuietMinutes === undefined ? {} : { reflect: { quiet: reflectQuietMinutes } }),
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
   attachments,
@@ -145,6 +154,7 @@ export function createWriteWorkspace(
     workspaceRoot,
     options.attachments ?? DEFAULT_ATTACHMENT_LIMITS,
     options.editAckIdleMs,
+    options.reflectQuietMinutes,
   );
   const db = openProjection(config, { populate: false });
 
@@ -212,6 +222,11 @@ export function createWriteWorkspace(
       populateFromFiles(db);
     },
     close() {
+      // Disarms SPEC.md §7's quiet window before the handle it would query goes
+      // away. These fixtures never call `server.close()`, so its disposers do
+      // not run, and a timer armed by a write in this test must not fire
+      // against a closed database in the next one.
+      server.reflect?.stop();
       db.close();
       rmSync(root, { recursive: true, force: true });
     },

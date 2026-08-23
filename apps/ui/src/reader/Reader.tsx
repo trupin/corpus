@@ -35,6 +35,16 @@ export interface ReaderProps {
   readonly selectTitle: boolean;
   /** Only the active column's reader consumes Escape (SPEC.md §10's active column). */
   readonly isActive: boolean;
+  /**
+   * Overrides what following a link does (SPEC.md §10, rider 3). A query
+   * column's reader omits it and keeps pushing onto its own stack — "the
+   * existing reader, unchanged" — while a **path column's** host passes it, so
+   * a followed ref continues the path to the right instead of navigating in
+   * place. `currentScrollY` is where this reader is right now, for the entry
+   * being left.
+   */
+  readonly onFollow?:
+    ((docId: string, currentScrollY: number, reveal?: RevealTarget) => void) | undefined;
   readonly onFocusMode: (docId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -46,6 +56,7 @@ export function Reader({
   setNav,
   selectTitle,
   isActive,
+  onFollow,
   onFocusMode,
   onNotify,
 }: ReaderProps): ReactElement | null {
@@ -71,6 +82,7 @@ export function Reader({
         isActive={isActive}
         stack={stack}
         reader={reader}
+        onFollow={onFollow}
         onFocusMode={onFocusMode}
         onNotify={onNotify}
       />
@@ -99,6 +111,7 @@ function ColumnReader({
   isActive,
   stack,
   reader,
+  onFollow,
   onFocusMode,
   onNotify,
 }: ColumnReaderProps): ReactElement | null {
@@ -168,19 +181,27 @@ function ColumnReader({
 
   const navigate = useCallback(
     (next: string, reveal?: RevealTarget) => {
+      // A path column's host takes the follow (the path continues right); a
+      // query column's reader keeps pushing onto its own stack, unchanged.
+      if (onFollow !== undefined) {
+        onFollow(next, surface.currentScroll(), reveal);
+        return;
+      }
       stack.push(next, surface.currentScroll(), reveal);
     },
-    [stack, surface],
+    [onFollow, stack, surface],
   );
 
   useEscapeLayer({
     active: isActive && stack.depth > 0,
     priority: EscapeLayerPriority.Reader,
-    // `⇧esc` is the keyboard form of shift-clicking Back: one act, straight to
-    // the list, with no intermediate document rendered.
+    // `⇧esc` is "close every path on this board" since rider 3, dispatched by
+    // the board's own layer; with no paths that layer is absent, and this one
+    // consumes the press as the no-op the legend promises. Straight-to-list
+    // stays on shift-clicking Back.
     onEscape: (event) => {
-      if (event.shiftKey) stack.toList();
-      else stack.back();
+      if (event.shiftKey) return;
+      stack.back();
     },
   });
 

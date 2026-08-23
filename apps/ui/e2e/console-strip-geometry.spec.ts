@@ -40,7 +40,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };

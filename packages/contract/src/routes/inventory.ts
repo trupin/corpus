@@ -178,6 +178,46 @@
  * three above, **§9.2 does not list it yet**: it joins the pending amendments
  * rather than the undocumented, and the bullet is the orchestrator's to draft.
  *
+ * The four **folder acts** (CONTRACT-075) are §9.2's own, in its own bullet:
+ * "`POST /api/folders/rename` (`{ from, to }`), `POST /api/folders/archive`,
+ * `POST /api/folders/unarchive`, `POST /api/folders/delete` (each `{ path }`)"
+ * — rider 7, signed 2026-08-22. They sit immediately after `GET /api/tree`
+ * because that is where the bullet sits, and the same review discipline applies
+ * as to every entry above: the bullet was quoted verbatim into CONTRACT-075's
+ * E2E log and walked against these four by hand, because nothing here parses
+ * `SPEC.md`.
+ *
+ * `POST /api/boards/order` (CONTRACT-080) is derived from SPEC.md §10's rider
+ * 2, signed 2026-08-22. **§9.2 gained a catalogue line for it on 2026-08-23**,
+ * stating only what the rider mandates; the line is unratified and says so. The derivation is one sentence of the
+ * rider — "reordering boards writes `order` on every board, **in one commit**" —
+ * and the deriving step is that no other route can say it. §4's commit window
+ * folds one party's editing session on one document, so a `PUT` per board is a
+ * commit per board by construction; `POST /api/docs/bulk` lands one commit but
+ * carries §10's *selection* acts, which §9.2 enumerates and a reorder is not
+ * one of. An act over a set with no route is an act the rider cannot have, so
+ * the route is the rider. It sits after the folder acts because those are its
+ * only neighbours in kind. The §9.2 bullet has been drafted and awaits the user.
+ *
+ * `POST /api/workspace/reflect` and `GET /api/workspace/reflect`
+ * (CONTRACT-076) are derived from SPEC.md §7's reflection rider (rider 9,
+ * signed 2026-08-22) rather than from §9.2. **§9.2 gained a catalogue line for
+ * them on 2026-08-23**, stating only what the rider mandates; it is
+ * unratified and says so.
+ * The derivation is short because the rider is explicit. It says a person asks
+ * for a reflection from "the board bar's Reflect control, or `corpus reflect`",
+ * and a person reaches the workspace only through the server (Architecture
+ * Decision 2), so the ask is a server endpoint — one that §9.3 makes a route
+ * declared here rather than invented in the server. It also says the board
+ * "shows what is unreflected", carrying "the corpus count" on the control and a
+ * clock rendered as *reflected 2h ago*: a corpus-wide count and a clock are a
+ * read, and a read is an endpoint plus an invalidate key
+ * (`../query-keys.ts`'s `reflect`). Two routes rather than one because the
+ * rider keeps two acts apart — asking, and looking — and the whole point of the
+ * board bar's control is that it shows the state before anybody presses it. No
+ * §9.2 bullet has been drafted for them here: this package never edits
+ * SPEC.md, and the amendment is the orchestrator's to take to the user.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -209,6 +249,11 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/search",
 
   "GET /api/tree",
+  "POST /api/folders/rename",
+  "POST /api/folders/archive",
+  "POST /api/folders/unarchive",
+  "POST /api/folders/delete",
+  "POST /api/boards/order",
   "POST /api/capture",
 
   "POST /api/threads",
@@ -237,6 +282,9 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/queue/{id}/fail",
   "POST /api/queue/{id}/defer",
   "DELETE /api/queue/{id}",
+
+  "POST /api/workspace/reflect",
+  "GET /api/workspace/reflect",
 
   "GET /api/jobs",
   "GET /api/jobs/{id}/log",

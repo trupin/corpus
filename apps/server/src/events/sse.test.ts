@@ -8,7 +8,7 @@ import { createServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { createLogger, silentLogger, type LogSink } from "../logger.js";
 import { createInvalidationBus } from "./bus.js";
-import { DOCS_KEY, QUEUE_KEY, docKey } from "./keys.js";
+import { DOCS_KEY, QUEUE_KEY, REFLECT_KEY, docKey } from "./keys.js";
 import {
   GREETING_FRAME,
   HEARTBEAT_FRAME,
@@ -108,9 +108,11 @@ describe("createSseHub", () => {
       expect(second.chunks).toHaveLength(3);
     });
 
+    // Each frame carries `["reflect"]` beside the key the test published: the
+    // bus applies CONTRACT-076's rule on the way out (SERVER-137).
     expect(first.chunks.slice(1)).toEqual([
-      invalidateFrame([DOCS_KEY]),
-      invalidateFrame([QUEUE_KEY]),
+      invalidateFrame([DOCS_KEY, REFLECT_KEY]),
+      invalidateFrame([QUEUE_KEY, REFLECT_KEY]),
     ]);
     expect(second.chunks).toEqual(first.chunks);
   });

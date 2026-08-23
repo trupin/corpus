@@ -15,6 +15,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes, type Warning } from "@corpus/contract";
 import { actorOf } from "./actor.js";
 import { setArchived } from "./archive.js";
+import { reorderBoards } from "./board-order.js";
 import { applyBulkAction } from "./bulk.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
@@ -105,6 +106,29 @@ export function mountDocWriteRoutes(
         // mix (SPEC.md §4), so one `action` for the act would be a lie here in
         // exactly the way it is on the wire (CONTRACT-048).
         changed: result.changed.map((outcome) => `${outcome.id}:${outcome.action}`),
+        code: warning.code,
+        detail: warning.detail,
+        note: "the file mutation stands; a §11 warning never fails a write",
+      });
+    }
+    return c.json(result, 200);
+  });
+
+  // SPEC.md §10, rider 2 — "reordering boards writes `order` on every board, in
+  // one commit". Mounted here rather than in a surface of its own because it
+  // writes the same files `PUT /api/docs/{id}` writes and must queue in the same
+  // lanes: a bar drag and an agent editing one of those boards contend for the
+  // document, and two mutexes would serialize each against itself and neither
+  // against the other.
+  app.openapi(contractRoutes.reorderBoards, async (c) => {
+    const actor = actorOf(c.req.valid("header"));
+    const result = await reorderBoards(workspace, mutex, actor, c.req.valid("json").boards);
+    // §11's log half, scoped to the act rather than to each board: the warnings
+    // belong to one commit over a set, so repeating them per document would say
+    // the same thing four times.
+    for (const warning of result.warnings) {
+      workspace.logger.info("mutation completed with a warning", {
+        changed: result.boards.filter((board) => board.changed).map((board) => board.id),
         code: warning.code,
         detail: warning.detail,
         note: "the file mutation stands; a §11 warning never fails a write",

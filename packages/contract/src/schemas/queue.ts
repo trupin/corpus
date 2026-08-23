@@ -40,6 +40,15 @@ import { IsoDateTimeSchema } from "./time.js";
  *   not a release** and never produces one: §7's fallback is computed at claim
  *   time and writes nothing. Payload shape in `./agents.ts`
  *   (`ResidentReleasedPayloadSchema`).
+ * - `workspace.reflect` — the corpus's periodic reflection (§7, rider 9 signed
+ *   2026-08-22). Two things produce it: a person asking
+ *   (`POST /api/workspace/reflect`, `corpus reflect`), and the server, once
+ *   something has changed after the clock and nothing has changed for the quiet
+ *   window. It falls in no scope and takes the **orchestrator's** lane, which is
+ *   a third name beside the two carve-outs above rather than an exception to
+ *   them: a reflection is over the whole corpus, so there is no scope for it to
+ *   fall in. Payload shape in `./reflect.ts`
+ *   (`WorkspaceReflectPayloadSchema`) — one field, `since`.
  * - `agent.done` — background subagent wake-back, which §7 marks **reserved**:
  *   nothing produces it, and an arriving one is settled like a report. It is
  *   last because of that, not because it is newest.
@@ -66,6 +75,7 @@ export const CORE_QUEUE_EVENT_TYPES = [
   "doc.edited",
   "resident.designated",
   "resident.released",
+  "workspace.reflect",
   "agent.done",
 ] as const;
 
@@ -163,7 +173,8 @@ export const QueueEventSchema = z
           "endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries " +
           "`{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` " +
           "(SPEC.md §7) — one release produces exactly one such event, and a lapse produces " +
-          "none.\n\n" +
+          "none; `workspace.reflect` carries `{since}`, the corpus's last reflection, `null` for " +
+          "one never reflected on (SPEC.md §7).\n\n" +
           "**One key crosses every type: `weight`.** When the request that enqueued the event " +
           "stated the weight its work should be done at (SPEC.md §7, §10), that level name rides " +
           "here verbatim, and the dispatch honours it rather than weighing the work again. It is " +

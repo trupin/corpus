@@ -3,21 +3,36 @@ import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { boardTransport, viewRow } from "../testing/boardFixture";
+import type { Board } from "./boardDoc";
 import { useColumns } from "./useColumns";
+
+/** A board listing the given views — what `useColumns` resolves against. */
+const listing = (columnIds: readonly string[]): Board => ({
+  id: "board_a",
+  title: "Board",
+  order: 1,
+  columnIds,
+  kanban: null,
+  defaultOpen: false,
+  query: null,
+  width: null,
+});
 
 afterEach(cleanup);
 
+const VIEWS = [
+  viewRow({ id: "doc_1", title: "One", query: { folder: "inbox" } }),
+  viewRow({ id: "doc_2", title: "Two", query: { type: "thread" } }),
+  viewRow({ id: "doc_3", title: "Three" }),
+];
+
 describe("useColumns", () => {
-  it("asks for the whole column set in one bounded request", async () => {
-    const wire = boardTransport({
-      views: [
-        viewRow({ id: "doc_1", title: "One", order: 10, query: { folder: "inbox" } }),
-        viewRow({ id: "doc_2", title: "Two", order: 20, query: { type: "thread" } }),
-        viewRow({ id: "doc_3", title: "Three", order: 30 }),
-      ],
-    });
+  it("asks for every view document in one bounded request", async () => {
+    const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_3"])), {
+      wrapper: harness.Wrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.columns).toHaveLength(3);
@@ -25,41 +40,92 @@ describe("useColumns", () => {
 
     const reads = wire.calls.filter((call) => call.path === "/api/docs");
     expect(reads).toHaveLength(1);
-    expect(reads[0]?.search).toContain("pinned=true");
     expect(reads[0]?.search).toContain("type=view");
-    expect(reads[0]?.search).toContain("sort=order");
+    // `pinned` left the API with rider 2: what puts a view on a board is the
+    // board's own list, so the column query no longer filters on it.
+    expect(reads[0]?.search).not.toContain("pinned");
     // Three columns and no per-column follow-up read: the N+1 this shape exists
     // to prevent.
     expect(wire.calls.filter((call) => call.path.startsWith("/api/docs/"))).toHaveLength(0);
   });
 
-  it("orders columns by the documented tiebreak, not by arrival order", async () => {
-    const wire = boardTransport({
-      views: [
-        viewRow({ id: "doc_z", title: "Zulu", order: null }),
-        viewRow({ id: "doc_b", title: "Beta", order: 20 }),
-        viewRow({ id: "doc_a", title: "Alpha", order: 20 }),
-        viewRow({ id: "doc_c", title: "Gamma", order: 10 }),
-      ],
-    });
+  /** The board document decides the order — not the view's own frontmatter. */
+  it("renders the columns in the board's order", async () => {
+    const wire = boardTransport({ views: VIEWS });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(listing(["doc_3", "doc_1", "doc_2"])), {
+      wrapper: harness.Wrapper,
+    });
 
     await waitFor(() => {
-      expect(result.current.columns).toHaveLength(4);
+      expect(result.current.columns.every((column) => !column.missing)).toBe(true);
     });
-    expect(result.current.columns.map((column) => column.id)).toEqual([
-      "doc_c",
-      "doc_a",
-      "doc_b",
-      "doc_z",
+    expect(result.current.columns.map((column) => column.viewId)).toEqual([
+      "doc_3",
+      "doc_1",
+      "doc_2",
     ]);
+    expect(result.current.columns.map((column) => column.title)).toEqual(["Three", "One", "Two"]);
+  });
+
+  /**
+   * UI-148's second edge case: "a board whose `columns` lists the same view
+   * twice: render it twice (the file says so), no dedupe". Both copies are the
+   * same view document and separate **places** on the board, which is what the
+   * distinct slot id is for.
+   */
+  it("renders a view the board lists twice as two columns with distinct slots", async () => {
+    const wire = boardTransport({ views: VIEWS });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_2", "doc_1"])), {
+      wrapper: harness.Wrapper,
+    });
+
+    await waitFor(() => {
+      expect(result.current.columns.every((column) => !column.missing)).toBe(true);
+    });
+    expect(result.current.columns.map((column) => column.viewId)).toEqual([
+      "doc_1",
+      "doc_2",
+      "doc_1",
+    ]);
+    expect(result.current.columns.map((column) => column.id)).toEqual([
+      "doc_1",
+      "doc_2",
+      "doc_1#1",
+    ]);
+  });
+
+  /**
+   * "An id that resolves to nothing renders an error column card naming the id
+   * (the §10 error card pattern), never a crash."
+   */
+  it("renders a column the board lists and the corpus cannot answer for", async () => {
+    const wire = boardTransport({ views: VIEWS });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useColumns(listing(["doc_1", "doc_gone"])), {
+      wrapper: harness.Wrapper,
+    });
+
+    // The slots exist from the first render — one per id the board lists — so
+    // the wait is for the *resolution*, not for the count.
+    await waitFor(() => {
+      expect(result.current.columns[0]?.missing).toBe(false);
+    });
+    const missing = result.current.columns[1];
+    expect(missing?.missing).toBe(true);
+    expect(missing?.viewId).toBe("doc_gone");
+    // The id is the only thing known about it, so the id is what the card names.
+    expect(missing?.title).toBe("doc_gone");
+    expect(missing?.error).toContain("no `type: view` document");
+    // …and the column that does resolve is untouched by its neighbour's defect.
+    expect(result.current.columns[0]?.title).toBe("One");
   });
 
   it("has no columns before the corpus answers, and says so honestly", async () => {
     const wire = boardTransport({ views: [] });
     const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const { result } = renderHook(() => useColumns(), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(listing([])), { wrapper: harness.Wrapper });
 
     expect(result.current.columns).toEqual([]);
     await waitFor(() => {
@@ -69,16 +135,68 @@ describe("useColumns", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("surfaces a failed column-set read rather than pretending the board is empty", async () => {
+  /** No board at all — the third edge case. Nothing to resolve, so nothing is asked. */
+  it("resolves nothing when no board is showing", async () => {
+    const wire = boardTransport({ views: VIEWS });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useColumns(null), { wrapper: harness.Wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isPending).toBe(false);
+    });
+    expect(result.current.columns).toEqual([]);
+  });
+
+  it("surfaces a failed view read rather than pretending the board is empty", async () => {
     const failing = (): Promise<Response> => Promise.reject(new TypeError("Failed to fetch"));
     const harness = createCorpusTestHarness({
       fetch: failing as unknown as typeof globalThis.fetch,
     });
-    const { result } = renderHook(() => useColumns(), { wrapper: harness.Wrapper });
+    const { result } = renderHook(() => useColumns(listing(["doc_1"])), {
+      wrapper: harness.Wrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.error).not.toBeNull();
     });
-    expect(result.current.columns).toEqual([]);
+    // A read that failed is not the same as a board that lists nothing: every id
+    // resolves to nothing, so each renders its own error card rather than
+    // silently disappearing.
+    expect(result.current.columns).toHaveLength(1);
+    expect(result.current.columns[0]?.missing).toBe(true);
+  });
+
+  it("derives a kanban's columns from its stages, resolving no view document", () => {
+    const wire = boardTransport({ views: VIEWS });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const kanban: Board = {
+      ...listing([]),
+      id: "board_k",
+      kanban: { field: "stage", stages: ["a", "b"] },
+      query: { tag: "housing" },
+    };
+    const { result } = renderHook(() => useColumns(kanban), { wrapper: harness.Wrapper });
+
+    // Ready on the first render: nothing is fetched to derive a stage column,
+    // so the board never shows its empty state waiting for the view query.
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.columns.map((column) => column.id)).toEqual(["board_k#a", "board_k#b"]);
+    expect(result.current.columns[0]?.filter).toEqual({ tag: "housing", stage: ",a" });
+  });
+
+  it("ignores a kanban board's `columns` entirely — its columns are its stages", async () => {
+    const wire = boardTransport({ views: VIEWS });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const kanban: Board = {
+      ...listing(["doc_1", "doc_2"]),
+      id: "board_k",
+      kanban: { field: "status", stages: ["open", "resolved"] },
+    };
+    const { result } = renderHook(() => useColumns(kanban), { wrapper: harness.Wrapper });
+
+    await waitFor(() => {
+      expect(result.current.columns).toHaveLength(2);
+    });
+    expect(result.current.columns.map((column) => column.title)).toEqual(["open", "resolved"]);
   });
 });

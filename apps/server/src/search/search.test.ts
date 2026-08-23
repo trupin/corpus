@@ -113,7 +113,7 @@ beforeAll(() => {
     title: "Escrow view",
     body: "Escrow saved view.",
     updated: daysAgo(4),
-    frontmatter: { pinned: true, order: 1 },
+    frontmatter: { order: 1, stage: "triage" },
   });
   ws.doc({
     id: "doc_archived",
@@ -217,6 +217,13 @@ describe("filter parity with GET /api/docs", () => {
     ["since", { since: daysAgo(3) }],
     ["due", { due: "week" }],
     ["stale", { stale: "very-stale" }],
+    ["stage", { stage: "triage" }],
+    ["stage (multi)", { stage: "triage,doing" }],
+    // The null sentinel: `stage=` selects documents with no `stage` at all
+    // (CONTRACT-074), and it has to mean that on both endpoints or a kanban's
+    // first column would list one set and rank another.
+    ["stage (the null sentinel)", { stage: "" }],
+    ["stage (a stage beside the sentinel)", { stage: ",triage" }],
     ["unread", { unread: "true" }],
     ["needs", { needs: "me" }],
     ["needs (one reason)", { needs: "stale" }],
@@ -228,6 +235,22 @@ describe("filter parity with GET /api/docs", () => {
     const hits = [...ids(await search(ws, params))].sort();
     const rows = [...listIds(ws, params)].sort();
     expect(hits).toEqual(rows);
+  });
+
+  /**
+   * The table above proves the two endpoints **agree**; it cannot prove either
+   * one narrows, because a filter that no-ops on both sides passes every row of
+   * it. So `stage` gets a direct assertion as well: `GET /api/search` is one of
+   * the two endpoints §9.2 gives the filter to, and a kanban's column that
+   * ranked the whole corpus would look exactly like one that ranked its own
+   * stage.
+   */
+  it("narrows by `stage`, and its empty element still means the unstaged", async () => {
+    expect(ids(await search(ws, { q: "escrow", stage: "triage" }))).toEqual(["doc_view"]);
+    expect(ids(await search(ws, { q: "escrow", stage: "doing" }))).toEqual([]);
+    const unstaged = ids(await search(ws, { q: "escrow", stage: "" }));
+    expect(unstaged).not.toContain("doc_view");
+    expect(unstaged.length).toBeGreaterThan(0);
   });
 
   it("excludes archived by default, exactly as the list does", async () => {

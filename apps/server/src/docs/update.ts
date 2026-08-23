@@ -26,6 +26,16 @@ import {
 } from "../core/index.js";
 import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
+import { readStage } from "../core/board-frontmatter.js";
+import { withSpeculativeDocumentRow } from "../projection/index.js";
+import { UNSETTABLE_EXCLUSIONS } from "@corpus/contract";
+import {
+  clearOperations,
+  clearWarnings,
+  DEFAULT_OPEN_KEY,
+  planDefaultOpenClears,
+} from "./default-open.js";
+import { decideStageStatus, stageStatusWarning } from "./kanban.js";
 import { assertDocumentKey } from "./key.js";
 import { stampedOrigin } from "./create.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
@@ -96,10 +106,10 @@ const sameValue = (a: unknown, b: unknown): boolean => {
  * the fence, and copying the request's fields wholesale into the frontmatter
  * patch would write a `body:` key into the YAML block beside the real body.
  *
- * `pinned` belongs here rather than with the clearable keys because it is not
- * nullable on the wire: its absent and `false` states mean the same thing, so
- * `pinned: false` is written as itself — an explicit `pinned: false` in the
- * file and no `pinned` key at all both read back as `false` (CONTRACT-011).
+ * Every key here is spelled the same on the wire and in the file. `defaultOpen`
+ * is therefore **not** here — it is the one core key whose two spellings differ
+ * (`default-open` in the file), and it is applied by
+ * {@link applyDefaultOpenPatch} below.
  */
 export const UPDATABLE_FRONTMATTER_KEYS = [
   "title",
@@ -108,17 +118,20 @@ export const UPDATABLE_FRONTMATTER_KEYS = [
   "due",
   "reviewed",
   "evergreen",
-  "pinned",
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**
- * The §10 view keys whose `null` **clears the key from the file** rather than
- * writing `null` into it (CONTRACT-011). `due` and `reviewed` are pointedly not
- * here: they are §5 canonical-block fields whose `null` is a written value.
+ * The §5 and §10 keys whose `null` **clears the key from the file** rather than
+ * writing `null` into it (CONTRACT-011, widened to `stage`, `columns` and
+ * `kanban` by CONTRACT-074). `due` and `reviewed` are pointedly not here: they
+ * are §5 canonical-block fields whose `null` is a written value.
  */
 export const CLEARABLE_FRONTMATTER_KEYS = [
+  "stage",
   "order",
   "query",
+  "columns",
+  "kanban",
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**
@@ -195,6 +208,7 @@ export function changedFields(
   for (const key of CLEARABLE_FRONTMATTER_KEYS) {
     applyPatchEntry(changed, current, key, patch[key]);
   }
+  applyDefaultOpenPatch(changed, current, patch.defaultOpen);
   // §9.2's provenance, and the two directions it moves.
   //
   // **Detach** — `origin: null` — clears the key. It is user-only, and the
@@ -245,7 +259,74 @@ export function changedFields(
   for (const [key, value] of Object.entries(patch.extra ?? {})) {
     applyPatchEntry(changed, current, key, value);
   }
+  // **`unset` is applied last, so it wins.** A patch that both sets a key and
+  // names it in `unset` is contradictory, and the contract does not refuse the
+  // pair; removing is the more explicit of the two instructions — a caller
+  // listing a key under `unset` has said the key should not be in the file —
+  // and it is what a migration (§2.4) means when it echoes a document back with
+  // the key it is dropping still in the body.
+  for (const key of patch.unset ?? []) {
+    assertUnsettable(key);
+    // A key the document does not carry is a no-op rather than a failure
+    // (§9.2), which is what makes a migration re-runnable over a corpus where
+    // some documents have already been migrated.
+    if (Object.hasOwn(current, key)) changed[key] = undefined;
+  }
   return changed;
+}
+
+/**
+ * The three keys `unset` refuses, re-checked here rather than trusted from the
+ * boundary (SPEC.md §9.2).
+ *
+ * `UpdateDocRequestSchema` already refuses them with a `400` naming the key, so
+ * on the HTTP path this never fires. It fires for a caller that builds an
+ * `UpdateDocRequest` in TypeScript and reaches {@link updateDocumentLocked}
+ * directly — `docs/patch.ts` does, and so will any verb that grows a repair —
+ * and the three are exactly the keys a document cannot survive losing: its
+ * identity, its behaviour and its birth. A rule that only the wire enforces is
+ * not enforced (the lesson `assertNotUnarchivingByPut` records below).
+ */
+function assertUnsettable(key: string): void {
+  if (!(UNSETTABLE_EXCLUSIONS as readonly string[]).includes(key)) return;
+  validationError("request failed validation", [
+    {
+      path: "body.unset",
+      message:
+        `\`${key}\` cannot be unset: \`${UNSETTABLE_EXCLUSIONS.join("`, `")}\` are a document's ` +
+        "identity, its behaviour and its birth (SPEC.md §5, §9.2). Every other frontmatter key " +
+        "may be removed.",
+    },
+  ]);
+}
+
+/**
+ * `defaultOpen`, the one core key whose wire spelling and file spelling differ
+ * (CONTRACT-074): the file says `default-open`, and `unset` names the file's.
+ *
+ * **`false` removes the key rather than writing `false` into it.** The two
+ * states are one — the wire says `defaultOpen` is `false` "when the file carries
+ * no `default-open` key" — so writing the negative would leave a line on every
+ * board that ever briefly held the flag, and the arbitration that clears the
+ * *other* boards would have to choose between two spellings of the same fact.
+ * One rule instead: the key is present exactly on the board that is the default.
+ *
+ * (The predecessor key `pinned` went the other way, writing `false` as itself.
+ * That key is gone — a board lists its own columns now — and the reason it went
+ * that way, that a view's `pinned: false` was worth stating, does not survive
+ * into a flag at most one document in the workspace may carry.)
+ */
+function applyDefaultOpenPatch(
+  changed: Record<string, unknown>,
+  current: Readonly<Record<string, unknown>>,
+  value: boolean | undefined,
+): void {
+  if (value === undefined) return;
+  if (value) {
+    if (current[DEFAULT_OPEN_KEY] !== true) changed[DEFAULT_OPEN_KEY] = true;
+    return;
+  }
+  if (Object.hasOwn(current, DEFAULT_OPEN_KEY)) changed[DEFAULT_OPEN_KEY] = undefined;
 }
 
 /**
@@ -515,11 +596,72 @@ export async function updateDocumentLocked(
   // editing and reset the very clock the act is about.
   const stampUpdated = bodyChanged || Object.keys(fields).some((key) => key !== "reviewed");
 
-  const nextParsed = setFrontmatterFields(setBody(parsed, nextBody), {
+  let nextParsed = setFrontmatterFields(setBody(parsed, nextBody), {
     ...fields,
     ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
     ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
   });
+
+  // SPEC.md §5's coupling: **while a document is in a kanban, its stage decides
+  // its status**. Decided against the document as this save will leave it — the
+  // stored row still holds the stage the document is leaving, and a scope query
+  // asked about that row would answer for the wrong document.
+  //
+  // Only when this save actually moves `stage`. `changedFields` has already
+  // dropped a `stage` equal to the file's, so the autosave that re-sends the
+  // stored value never reaches here — which is also what makes "a write that
+  // changes only `status` never touches `stage`" true without a second rule.
+  //
+  // The coupling **outranks a `status` in the same patch**: §5 says the stage
+  // decides, and a caller that sent both asked for two things that cannot both
+  // hold. Which is why this runs after `fields` is complete and writes over it.
+  const stageMoved = Object.hasOwn(fields, "stage");
+  const nextStage = stageMoved ? readStage(nextParsed.data) : null;
+  const coupling = stageMoved
+    ? withSpeculativeDocumentRow(workspace.projection, loaded.path, nextParsed, () =>
+        decideStageStatus(workspace.projection, id, loaded.path, nextStage, workspace.now()),
+      )
+    : null;
+  const coupledStatus = coupling?.status ?? null;
+  // Against the status **this write is about to leave on disk**, which is the
+  // patch's when it carries one and the file's otherwise — never the file's
+  // alone. `nextParsed` already holds `fields`, so this reads the pending value
+  // in one place rather than re-deriving it (the create path asks the same
+  // question of its own pending `fields["status"]`).
+  //
+  // The comparison has two jobs, and only the pending status does both:
+  //
+  // - **Override.** A caller that sent `stage` and a conflicting `status` asked
+  //   for two things that cannot both hold, and §5 says the stage decides.
+  //   Compared against the *stored* status instead, the override stood aside
+  //   whenever the coupled status happened to equal the one the document was
+  //   already carrying — so a board mapping two stages to `resolved` let a
+  //   `PUT {stage, status: "open"}` land `open` beside a stage mapped to
+  //   `resolved`, and an unmapped stage let a `resolved` stand on a document
+  //   that was `open` (PR #58 review).
+  // - **Silence on a no-op.** A stage move whose coupled status is what the
+  //   document already has, with no `status` in the patch, still writes nothing
+  //   and warns about nothing: pending equals stored, so this is false — which
+  //   keeps an ordinary drag between two stages the board maps the same way off
+  //   both the diff and §11's warnings.
+  const statusCoupled = coupledStatus !== null && coupledStatus !== nextParsed.data["status"];
+  // Deliberately **not** through `assertNotUnarchivingByPut`. That rule refuses
+  // a *caller* writing `status` off `archived` through this route, because for a
+  // §7 skill the archive is a folder move a field edit cannot undo — and
+  // `decideStageStatus` has already declined for every document whose root
+  // decides its status, which is exactly that set. What is left is a document
+  // whose status **is** its frontmatter, where §5's signed rider is unqualified:
+  // a stage the board maps to a status writes that status on entry. Refusing
+  // here would make a kanban whose map names `archived` a one-way trip, and §5
+  // includes archived documents in a board's scope precisely so it is not.
+  if (statusCoupled) nextParsed = setFrontmatterFields(nextParsed, { status: coupledStatus });
+
+  // §10's "at most one board carries `default-open`" — the same plan, so the
+  // flag and the clears land in one commit (§9.2's warning rule).
+  const cleared =
+    fields[DEFAULT_OPEN_KEY] === true
+      ? planDefaultOpenClears(workspace.workspaceRoot, workspace.projection, id)
+      : [];
   // Before anything is written, and only when the patch can move `extra` at
   // all — the autosave path carries no `extra` and must not pay for the walk.
   if (patch.extra !== undefined) {
@@ -540,16 +682,25 @@ export async function updateDocumentLocked(
     };
   }
 
-  const warnings = validateBeforeWrite(workspace, loaded.path, text);
+  const warnings = [
+    ...validateBeforeWrite(workspace, loaded.path, text),
+    ...(coupling !== null && statusCoupled && coupledStatus !== null
+      ? [stageStatusWarning(coupling, nextStage, coupledStatus)]
+      : []),
+    ...clearWarnings(cleared),
+  ];
 
   const result = await runMutation(workspace, {
     docId: id,
     actor,
     warnings,
     plan: {
-      operations: [{ kind: "write", path: loaded.path, content: text }],
-      stage: [loaded.path],
-      project: [loaded.path],
+      operations: [
+        { kind: "write", path: loaded.path, content: text },
+        ...clearOperations(cleared),
+      ],
+      stage: [loaded.path, ...cleared.map((board) => board.path)],
+      project: [loaded.path, ...cleared.map((board) => board.path)],
       unproject: [],
       commit: {
         // The name the reader was shown and the name `changedFields` compared
@@ -568,13 +719,18 @@ export async function updateDocumentLocked(
         // re-sends the stored value is not an act (SERVER-092).
         act: Object.hasOwn(fields, "reviewed") ? "names-the-window" : undefined,
       },
-      keys: [DOCS_KEY, docKey(id)],
+      keys: [DOCS_KEY, docKey(id), ...cleared.map((board) => docKey(board.id))],
       // `PUT` may set `status: archived`, and archived documents are counted
       // in no folder — so an edit that carries a status is exactly as
       // tree-changing as `POST /archive` (SERVER-018). Every other field the
       // route can write is invisible to `docs/tree.ts`, and a body edit is
       // the autosave path, which must not pay for a tree query.
-      mayChangeTree: "status" in fields,
+      //
+      // §5's coupling counts too, and it is exactly the case a call site cannot
+      // re-derive: the caller sent `stage` and never mentioned `status`, and a
+      // board's map turned that into an archive. `runMutation` still measures,
+      // so this only decides whether it looks.
+      mayChangeTree: "status" in fields || statusCoupled,
       // §4's edit acknowledgment (SERVER-052): this verb *is* the edit session
       // — but only when the save changes the **body**.
       //

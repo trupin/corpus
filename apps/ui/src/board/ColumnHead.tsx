@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { ColumnMenuItems } from "../menu/ColumnMenuItems";
+import { ColumnMenuItems, type StageColumnActs } from "../menu/ColumnMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { keepsNativeMenu } from "../menu/nativeMenu";
 import { QueryEditor } from "./query/QueryEditor";
 import { shortSortLabel, useSortFit } from "./sortFit";
-import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
+import {
+  chipClassName,
+  formatQueryString,
+  parseQueryString,
+  sameQuery,
+  type BoardColumn,
+} from "./viewDoc";
 
 /**
  * A column's header: title, kind, live count, `＋`, `⋯`, and the stored query
@@ -35,10 +41,33 @@ export interface ColumnHeadProps {
   readonly column: BoardColumn;
   /** The live result count, or `null` while it is unknown. */
   readonly count: number | null;
+  /**
+   * How many of the rows this column has loaded changed since the agent last
+   * reflected (SPEC.md §7's rider 9: "each column counts its own").
+   *
+   * Defaults to `0`, which is also what an unread clock produces — so a head
+   * that has been told nothing says nothing, rather than claiming a corpus the
+   * agent has never looked at.
+   */
+  readonly changed?: number;
+  /**
+   * The acts of a kanban **stage** column, or `null` on a view column
+   * (SPEC.md §10, rider 6). Present, the `⋯` offers these and nothing else, and
+   * neither the title nor the query is editable here — a stage has no view
+   * document to rename and its query is the board's scope.
+   */
+  readonly stageActs?: StageColumnActs | null;
+  /**
+   * Whether this column offers `＋`. Off on every stage column but the first:
+   * a new document is created with no value for the field, so it lands in the
+   * first column whichever column's `＋` was pressed (SPEC.md §10, rider 6) —
+   * and a button that always creates somewhere else is a button that lies.
+   */
+  readonly canAdd?: boolean;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
-  readonly onUnpin: () => void;
+  readonly onRemove: () => void;
   /** Arms/disarms the column's `draggable` attribute. */
   readonly onHandle: (armed: boolean) => void;
 }
@@ -48,10 +77,13 @@ type Editing = "title" | "query" | null;
 export function ColumnHead({
   column,
   count,
+  changed = 0,
+  stageActs = null,
+  canAdd = true,
   onAdd,
   onRename,
   onEditQuery,
-  onUnpin,
+  onRemove,
   onHandle,
 }: ColumnHeadProps): ReactElement {
   const [editing, setEditing] = useState<Editing>(null);
@@ -84,13 +116,15 @@ export function ColumnHead({
       items: (close) => (
         <ColumnMenuItems
           close={close}
+          missing={column.missing}
+          stage={stageActs}
           onRename={() => {
             startEditing("title");
           }}
           onEditQuery={() => {
             startEditing("query");
           }}
-          onUnpin={onUnpin}
+          onRemove={onRemove}
         />
       ),
     });
@@ -160,16 +194,36 @@ export function ColumnHead({
           </span>
         )}
         <span className="col-kind">{column.kind}</span>
+        {/*
+         * §7's per-column count. Present only when there is something to say:
+         * "0 changed" beside every column on a quiet board would be five words
+         * of chrome reporting nothing. `.col-title` is the truncating item in
+         * this row (see `Column.css`), so this appearing re-cuts the title and
+         * moves neither the count nor the two buttons after it.
+         */}
+        {changed > 0 ? (
+          <span
+            className="col-changed"
+            title={
+              `${String(changed)} of this list’s documents changed since the agent last ` +
+              `reflected on the corpus. Each one carries the same mark.`
+            }
+          >
+            {`${String(changed)} changed`}
+          </span>
+        ) : null}
         <span className="col-count">{count === null ? "—" : count}</span>
-        <button
-          type="button"
-          className="col-add"
-          aria-label={`New document in ${column.title}`}
-          title="New document in this list"
-          onClick={onAdd}
-        >
-          ＋
-        </button>
+        {canAdd ? (
+          <button
+            type="button"
+            className="col-add"
+            aria-label={`New document in ${column.title}`}
+            title="New document in this list"
+            onClick={onAdd}
+          >
+            ＋
+          </button>
+        ) : null}
         <button
           ref={menuButton}
           type="button"
@@ -202,7 +256,7 @@ export function ColumnHead({
       ) : (
         <div className="chips" ref={sortFit.row}>
           {column.chips.map((chip) => (
-            <span key={chip.key} className="chip on">
+            <span key={chip.key} className={chipClassName(chip.tone)} title={chip.title}>
               {chip.label}
             </span>
           ))}
@@ -218,7 +272,7 @@ export function ColumnHead({
            */}
           <div className="chips-probe" aria-hidden="true" ref={sortFit.probe}>
             {column.chips.map((chip) => (
-              <span key={chip.key} className="chip on">
+              <span key={chip.key} className={chipClassName(chip.tone)}>
                 {chip.label}
               </span>
             ))}

@@ -28,7 +28,6 @@ const ATTENTION_VIEW = {
   type: "view",
   title: "Attention",
   path: "data/docs/views/attention.md",
-  pinned: true,
   order: 1,
   query: { needs: "me" },
 };
@@ -39,7 +38,6 @@ const ALL_THREADS_VIEW = {
   type: "view",
   title: "Threads",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 2,
   query: { type: "thread" },
 };
@@ -167,6 +165,9 @@ const REPLY_THREAD = {
 const column = (page: import("@playwright/test").Page) =>
   page.locator('.col[data-col="doc_view_attention"]');
 
+/** The reader a row click opens — a path column since UI-149 (rider 3). */
+const reader = (page: import("@playwright/test").Page) => page.locator(".pcol");
+
 const row = (page: import("@playwright/test").Page, id: string) =>
   column(page).locator(`.row[data-row-doc="${id}"]`);
 
@@ -186,14 +187,14 @@ test.describe("the Attention row a form leaves behind", () => {
 
     // The control: reading the reply is what its reason asked for, so it goes.
     await row(page, "th_reply").click();
-    await expect(column(page).locator(".thread-card")).toBeVisible();
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await expect(reader(page).locator(".thread-card")).toBeVisible();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_reply")).toHaveCount(0);
 
     // The assertion this whole feature exists for: the form's row is still here.
     await row(page, "th_form").click();
-    await expect(column(page).locator(".form-comment")).toBeVisible();
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await expect(reader(page).locator(".form-comment")).toBeVisible();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form")).toBeVisible();
     await expect(row(page, "th_form").locator('[data-reason="form"]')).toHaveText(
       "awaiting your answer",
@@ -205,7 +206,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_form").click();
-    const form = column(page).locator(".form-comment");
+    const form = reader(page).locator(".form-comment");
     await expect(form).toBeVisible();
 
     // Submit is unavailable until every required field has an answer, and the
@@ -236,13 +237,13 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.keyboard.press("ControlOrMeta+Enter");
 
     // The controls become the record, in place, each question beside what was given.
-    const record = column(page).locator(".form-comment.form-answered");
+    const record = reader(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-row")).toHaveCount(3);
     await expect(record.locator(".form-record-a").nth(0)).toHaveText("Lemonade — $1,840/yr");
     await expect(record.locator(".form-record-a").nth(1)).toHaveText("Water backup");
     await expect(record.locator(".form-record-a").nth(2)).toHaveText("left blank");
-    await expect(column(page).locator(".form-submit")).toHaveCount(0);
+    await expect(reader(page).locator(".form-submit")).toHaveCount(0);
 
     const answered = (await corpus.of("POST")).find((call) => call.path.endsWith("/form"));
     expect(answered?.body).toEqual({
@@ -253,7 +254,7 @@ test.describe("the Attention row a form leaves behind", () => {
     });
 
     // And the Attention row clears — the action, not the reading, is what did it.
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form")).toHaveCount(0);
   });
 
@@ -291,29 +292,29 @@ test.describe("the Attention row a form leaves behind", () => {
 
     // Answer the first ask, and only the first.
     await row(page, "th_two").click();
-    const open = column(page).locator(".form-comment:not(.form-answered)");
+    const open = reader(page).locator(".form-comment:not(.form-answered)");
     await expect(open).toHaveCount(2);
     await open.first().locator('input[type="radio"]').first().focus();
     await page.keyboard.press("Space");
     await open.first().locator(".form-submit").click();
-    await expect(column(page).locator(".form-comment.form-answered")).toHaveCount(1);
+    await expect(reader(page).locator(".form-comment.form-answered")).toHaveCount(1);
     await expect(open).toHaveCount(1);
 
     // Still on the board — one ask is still open — and now saying so with no
     // number, which is the same row reading the ordinary way.
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_two").locator('[data-reason="form"]')).toHaveText(
       "awaiting your answer",
     );
 
     // Answering the second is what takes the row away.
     await row(page, "th_two").click();
-    const last = column(page).locator(".form-comment:not(.form-answered)");
+    const last = reader(page).locator(".form-comment:not(.form-answered)");
     await expect(last).toHaveCount(1);
     await last.locator('input[type="radio"]').first().focus();
     await page.keyboard.press("Space");
     await last.locator(".form-submit").click();
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_two")).toHaveCount(0);
 
     // Two answers, each to its own ask — never one form answered twice.
@@ -425,13 +426,13 @@ test.describe("the Attention row a form leaves behind", () => {
     // submit, so the record can only have come off the turn's own prose.
     const all = page.locator('.col[data-col="doc_view_all"]');
     await all.locator('.row[data-row-doc="th_form"]').click();
-    const record = all.locator(".form-comment.form-answered");
+    const record = reader(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-a").nth(0)).toHaveText("State Farm — $1,975/yr");
     await expect(record.locator(".form-record-a").nth(1)).toHaveText("Extended replacement");
     await expect(record.locator(".form-record-a").nth(2)).toHaveText("left blank");
     await expect(record).toContainText("the roof is new");
-    await expect(all.locator(".form-submit")).toHaveCount(0);
+    await expect(reader(page).locator(".form-submit")).toHaveCount(0);
   });
 
   test("shows both signals at once, and neither suppresses the other", async ({ page }) => {
@@ -445,8 +446,8 @@ test.describe("the Attention row a form leaves behind", () => {
 
     // Reading it takes the reply's reason and leaves the form's.
     await row(page, "th_form").click();
-    await expect(column(page).locator(".form-comment")).toBeVisible();
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await expect(reader(page).locator(".form-comment")).toBeVisible();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form").locator('[data-reason="unread-reply"]')).toHaveCount(0);
     await expect(row(page, "th_form").locator('[data-reason="form"]')).toBeVisible();
   });
@@ -492,7 +493,7 @@ test.describe("the Attention row a form leaves behind", () => {
     // In the card: the form still asks, and §8's row still counts — measured
     // from the requesting turn, which is what survives a reload.
     await row(page, "th_form").click();
-    const card = column(page).locator(".thread-card");
+    const card = reader(page).locator(".thread-card");
     const working = card.locator(".working");
     await expect(card.locator(".form-comment")).toBeVisible();
     await expect(card.locator(".form-submit")).toBeVisible();
@@ -505,8 +506,8 @@ test.describe("the Attention row a form leaves behind", () => {
     await card.locator('input[type="radio"]').first().click();
     await card.locator('input[type="checkbox"]').first().click();
     await card.locator(".form-submit").click();
-    await expect(column(page).locator(".form-comment.form-answered")).toBeVisible();
-    await expect(column(page).locator(".form-submit")).toHaveCount(0);
+    await expect(reader(page).locator(".form-comment.form-answered")).toBeVisible();
+    await expect(reader(page).locator(".form-submit")).toHaveCount(0);
     await expect(working).toBeVisible();
     expect((await corpus.of("POST")).some((call) => call.path.endsWith("/form"))).toBe(true);
   });
@@ -563,7 +564,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_form").click();
-    const working = column(page).locator(".thread-card .working");
+    const working = reader(page).locator(".thread-card .working");
     await expect(working).toBeVisible();
     await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:05:00Z");
 
@@ -577,11 +578,11 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_form").click();
-    await column(page).locator(".t-resolve").click();
+    await reader(page).locator(".t-resolve").click();
     // Resolving re-asserts the collapse rule (§10), so the card folds — what is
     // being asserted here is the reason, not the card.
     await expect.poll(async () => (await corpus.doc("th_form"))?.status).toBe("resolved");
-    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await reader(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form")).toHaveCount(0);
   });
 
@@ -617,12 +618,14 @@ test.describe("the Attention row a form leaves behind", () => {
     const all = page.locator('.col[data-col="doc_view_all"]');
     await all.locator('.row[data-row-doc="th_broken"]').click();
 
-    await expect(all.locator(".form-broken")).toBeVisible();
-    await expect(all.locator(".form-warning")).toContainText("This form could not be read");
+    await expect(reader(page).locator(".form-broken")).toBeVisible();
+    await expect(reader(page).locator(".form-warning")).toContainText(
+      "This form could not be read",
+    );
     // Never a partial set of controls: not the field it did understand either.
-    await expect(all.locator(".form-comment")).toHaveCount(0);
-    await expect(all.locator(".form-opt")).toHaveCount(0);
-    await expect(all.locator(".form-submit")).toHaveCount(0);
+    await expect(reader(page).locator(".form-comment")).toHaveCount(0);
+    await expect(reader(page).locator(".form-opt")).toHaveCount(0);
+    await expect(reader(page).locator(".form-submit")).toHaveCount(0);
 
     /*
      * PR #28 finding 6. The warning is all the reader gets, so it has to say
@@ -633,7 +636,7 @@ test.describe("the Attention row a form leaves behind", () => {
      * same bytes, and it names the second field, its `kind`, and the three kinds
      * it could have been.
      */
-    const warning = all.locator(".form-warning");
+    const warning = reader(page).locator(".form-warning");
     await expect(warning).toContainText("fields.1.kind");
     await expect(warning).toContainText("choose one");
     await expect(warning).toContainText("choose any");
@@ -659,7 +662,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_write").click();
-    const form = column(page).locator(".form-comment");
+    const form = reader(page).locator(".form-comment");
     await expect(form).toBeVisible();
 
     const first = form.locator(".form-field").first();
@@ -687,7 +690,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(submit).toBeEnabled();
     await page.keyboard.press("ControlOrMeta+Enter");
 
-    const record = column(page).locator(".form-comment.form-answered");
+    const record = reader(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-a").nth(0)).toHaveText("the file moved. Note: mine");
   });
@@ -709,7 +712,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_write").click();
-    const form = column(page).locator(".form-comment");
+    const form = reader(page).locator(".form-comment");
     await expect(form).toBeVisible();
 
     const first = form.locator(".form-field").first();
@@ -739,7 +742,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(submit).toBeEnabled();
     await page.keyboard.press("ControlOrMeta+Enter");
 
-    const record = column(page).locator(".form-comment.form-answered");
+    const record = reader(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-a").nth(0)).toContainText("npm run build");
   });
@@ -760,7 +763,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_write").click();
-    const form = column(page).locator(".form-comment");
+    const form = reader(page).locator(".form-comment");
     await expect(form).toBeVisible();
 
     const first = form.locator(".form-field").first();
@@ -791,7 +794,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(submit).toBeEnabled();
     await page.keyboard.press("ControlOrMeta+Enter");
 
-    const record = column(page).locator(".form-comment.form-answered");
+    const record = reader(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-a").nth(0)).toContainText(`> ${heading}`);
   });
@@ -878,7 +881,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await page.goto("/");
 
     await row(page, "th_optional").click();
-    const form = column(page).locator(".form-comment");
+    const form = reader(page).locator(".form-comment");
     await expect(form).toBeVisible();
 
     // Blank is where an untouched optional field starts, and it is shown as a
@@ -903,9 +906,9 @@ test.describe("the Attention row a form leaves behind", () => {
 
     // And blank means blank: no entry at all, never `option: ""`.
     await page.keyboard.press("ControlOrMeta+Enter");
-    await expect(column(page).locator(".form-comment.form-answered")).toBeVisible();
+    await expect(reader(page).locator(".form-comment.form-answered")).toBeVisible();
     const answered = (await corpus.of("POST")).find((call) => call.path.endsWith("/form"));
     expect(answered?.body).toEqual({ answers: [] });
-    await expect(column(page).locator(".form-record-a")).toHaveText("left blank");
+    await expect(reader(page).locator(".form-record-a")).toHaveText("left blank");
   });
 });

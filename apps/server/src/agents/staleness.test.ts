@@ -144,7 +144,7 @@ describe("a queue transition and the roster", () => {
       await claimOne(id);
     });
 
-    expect(observed.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["agents"]]]);
+    expect(observed.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]]]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);
     expect(await rosterBody()).toContain("working Claims review");
@@ -160,7 +160,7 @@ describe("a queue transition and the roster", () => {
       expect((await ws.post(`/api/queue/${eventId}/complete`, {})).status).toBe(200);
     });
 
-    expect(observed.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["agents"]]]);
+    expect(observed.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]]]);
     expectLawful(observed);
   });
 
@@ -179,7 +179,7 @@ describe("a queue transition and the roster", () => {
       await enqueueOn(id);
     });
 
-    expect(observed.frames).toContainEqual([["queue"], ["jobs"], ["docs"]]);
+    expect(observed.frames).toContainEqual([["queue"], ["jobs"], ["docs"], ["reflect"]]);
     expect(observed.rosterMoved).toBe(false);
     expectLawful(observed);
   });
@@ -201,14 +201,14 @@ describe("a queue transition and the roster", () => {
     const halted = await observe(async () => {
       expect((await ws.post("/api/queue/halt", { reason: "maintenance" })).status).toBe(200);
     });
-    expect(halted.frames).toEqual([[["queue"], ["jobs"], ["docs"]]]);
+    expect(halted.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["reflect"]]]);
     expect(halted.rosterMoved).toBe(false);
     expectLawful(halted);
 
     const resumed = await observe(async () => {
       expect((await ws.post("/api/queue/resume", {})).status).toBe(200);
     });
-    expect(resumed.frames).toEqual([[["queue"], ["jobs"], ["docs"]]]);
+    expect(resumed.frames).toEqual([[["queue"], ["jobs"], ["docs"], ["reflect"]]]);
     expect(resumed.rosterMoved).toBe(false);
     expectLawful(resumed);
   });
@@ -225,7 +225,7 @@ describe("a document write and the roster", () => {
       );
     });
 
-    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["agents"]]]);
+    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["agents"], ["reflect"]]]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);
     expect(await rosterBody()).toContain("Renamed while resident");
@@ -239,7 +239,9 @@ describe("a document write and the roster", () => {
       expect((await ws.del(`/api/docs/${id}`)).status).toBe(200);
     });
 
-    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["agents"]]]);
+    expect(observed.frames).toEqual([
+      [["docs"], ["docs", id], ["threads", id], ["agents"], ["reflect"]],
+    ]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);
   });
@@ -262,7 +264,7 @@ describe("a document write and the roster", () => {
       expect((await ws.put(`/api/docs/${doc.id}`, { title: "Still unrelated" })).status).toBe(200);
     });
 
-    expect(observed.frames).toEqual([[["docs"], ["docs", doc.id]]]);
+    expect(observed.frames).toEqual([[["docs"], ["docs", doc.id], ["reflect"]]]);
     expect(observed.rosterMoved).toBe(false);
     expectLawful(observed);
   });
@@ -283,7 +285,7 @@ describe("a document write and the roster", () => {
       );
     });
 
-    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["threads", id]]]);
+    expect(observed.frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["reflect"]]]);
     expect(observed.rosterMoved).toBe(false);
     expectLawful(observed);
   });
@@ -308,8 +310,8 @@ describe("a document write and the roster", () => {
     });
 
     expect(observed.frames).toEqual([
-      [["docs"], ["docs", id], ["threads", id], ["agents"]],
-      [["queue"], ["jobs"], ["docs"]],
+      [["docs"], ["docs", id], ["threads", id], ["agents"], ["reflect"]],
+      [["queue"], ["jobs"], ["docs"], ["reflect"]],
     ]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);

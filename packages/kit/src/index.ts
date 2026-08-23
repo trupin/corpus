@@ -103,6 +103,16 @@ export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCapture } from "./query/useCapture.js";
 export { useCreateThread, type CreateThreadVariables } from "./query/useCreateThread.js";
 export { useDeleteDoc } from "./query/useDeleteDoc.js";
+// SPEC.md §9.2's folder acts (rider 7), behind the explorer's folder menu.
+export {
+  useDeleteFolder,
+  useRenameFolder,
+  useSetFolderArchived,
+  type FolderArchiveVariables,
+  type RenameFolderVariables,
+} from "./query/useFolderActs.js";
+// SPEC.md §10's rider 2: the bar's order, written as one act and one commit.
+export { useReorderBoards } from "./query/useReorderBoards.js";
 export {
   useMarkThreadSeen,
   useSetThreadStatus,
@@ -149,6 +159,11 @@ export {
   jobsListKey,
   JOBS_KEY,
   QUEUE_KEY,
+  // `REFLECT_KEY` joined in UI-153, for `AGENTS_KEY`'s reason above: the
+  // Reflect control reads `GET /api/workspace/reflect` from `apps/ui`, and a
+  // consumer that cached it under a key no `invalidate` frame names would serve
+  // a stale clock forever.
+  REFLECT_KEY,
   relatedKey,
   searchKey,
   threadKey,
@@ -168,6 +183,10 @@ export {
   // One call for the row's agent signal, so no row implementation has to decide
   // for itself which of the two dots an unclaimed event gets (SPEC.md §8).
   AgentActivityDot,
+  // §7's unreflected mark. Exported because three surfaces draw it — a row, a
+  // column head, a board tab — and one of them is not a row at all.
+  CHANGED_MARK_LABEL,
+  ChangedMark,
   NeedsYouBadge,
   QueuedDot,
   UnreadBadge,

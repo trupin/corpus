@@ -3,7 +3,7 @@ id: doc_seedreadme
 type: note
 title: Workspace README
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-17T00:00:00Z
+updated: 2026-08-22T00:00:00Z
 tags: []
 status: open
 anchors: {}
@@ -27,10 +27,23 @@ corpus server start
 ```
 
 It prints the board URL — `http://127.0.0.1:<port>`. That is the whole UI: a horizontally
-scrolling strip of columns, with a console drawer along the bottom showing what the agent is
-doing. This workspace ships with three columns — Attention, Inbox, and Open threads — which
-are ordinary documents under `data/docs/views/`. Rename them, reorder them, add your own, or
-delete them.
+scrolling strip of columns, with an explorer at the left edge and a console drawer along the
+bottom showing what the agent is doing.
+
+**A board is a document.** Each one lives under `data/docs/boards/`, and its frontmatter lists
+its `columns` — the ids of the `type: view` documents that draw them, in order — and its
+`order` among the boards in the bar above the board. A view under `data/docs/views/` is a
+saved query and nothing more: what puts it on a board is that board naming its id, so the same
+view may sit on two boards. This workspace ships three boards:
+
+- **Attention** — three columns: Attention, Inbox, and Open threads.
+- **By status** — a **kanban**: one column per status, over every note. A kanban carries no
+  `columns` at all; its columns are derived, one per stage, from the board's own `query`.
+- **Files** — no columns, and `default-open: true`, so this is the board a browser opens onto
+  and the board the explorer opens documents into.
+
+Rename them, reorder them, add your own, or delete them. Nothing here is hardwired. One board
+is always showing, so the board bar refuses to archive the last one.
 
 **2. Start the agent.** In a second terminal, in this same directory:
 

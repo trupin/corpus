@@ -1,6 +1,5 @@
-import type { Doc, SearchHit } from "@corpus/contract";
-import { docKey, useCorpusClient, useTree } from "@corpus/kit";
-import { useQueryClient } from "@tanstack/react-query";
+import type { SearchHit } from "@corpus/contract";
+import { useTree } from "@corpus/kit";
 import {
   useCallback,
   useEffect,
@@ -9,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
 } from "react";
-import { docSubject, useOpenInColumn, type OpenSubject } from "../board/openInColumn";
+import { useOpenInColumn } from "../board/openInColumn";
 import { INBOX_TARGET, useCreateInColumn } from "../board/useCreateInColumn";
 import { useSaveAsView } from "../board/useSaveAsView";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -27,10 +26,10 @@ import "./search.css";
  * query input, a chip row, snippet-highlighted results grouped by type, and a
  * footer legend — over a blurred scrim.
  *
- * Three acts hang off it and all three write to the corpus rather than to the
- * browser: `↵` opens a result in its home column, `⇧↵` and the `save as view`
- * chip pin the current search as a new column (a document), and the create row
- * makes the query into a document in `inbox/`.
+ * Three acts hang off it: `↵` opens a result as a loose path at the board's
+ * left edge (SPEC.md §10, rider 3 — browser-local), while `⇧↵` / the
+ * `save as view` chip pin the current search as a new column (a document) and
+ * the create row makes the query into a document in `inbox/`.
  *
  * **The keyboard is handled on the panel, not on the document.** While the
  * overlay is open it owns `↑`, `↓`, `↵`, `⇧↵` and `Escape`, and the board's own
@@ -58,8 +57,6 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
   const createInColumn = useCreateInColumn();
   const board = useOpenInColumn();
   const toast = useToast();
-  const client = useCorpusClient();
-  const queries = useQueryClient();
 
   const panel = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -87,40 +84,18 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
   }, [targets.length]);
 
   /**
-   * `↵` opens the hit **in its list** — the footer legend's promise, and
-   * SPEC.md §10's "clicking a row opens the document _in that column_".
-   *
-   * Working out which column that is needs the document's folder, type and
-   * status (`resolveColumn`), and a ranked hit carries none of the three: it is
-   * an address and a line of context, never a row. So the document is read
-   * first — through the very cache entry the reader about to open it will use,
-   * `["docs", id]`, which makes this the reader's own request moved a moment
-   * earlier rather than an extra one. A refused read still opens the document,
-   * in the first column, because "nothing happened" is the worst possible answer
-   * to `↵`.
+   * `↵` opens the hit as a **loose path at the left edge** of the showing
+   * board (SPEC.md §10, rider 3) — an open with no origin, which is exactly
+   * what a ranked hit is: an address and a line of context, never a row. The
+   * pre-rider home-column resolution, and the read it needed, are gone with
+   * `resolveColumn`.
    */
   const openRow = useCallback(
     (hit: SearchHit) => {
       onClose();
-      void (async () => {
-        let subject: OpenSubject | null;
-        try {
-          const doc = await queries.fetchQuery<Doc>({
-            queryKey: docKey(hit.id),
-            queryFn: () => client.getDoc(hit.id),
-          });
-          subject = docSubject({
-            path: doc.path,
-            type: doc.frontmatter.type,
-            status: doc.frontmatter.status,
-          });
-        } catch {
-          subject = null;
-        }
-        board.open({ docId: hit.id, subject });
-      })();
+      board.open({ docId: hit.id });
     },
-    [board, client, onClose, queries],
+    [board, onClose],
   );
 
   const createFromQuery = useCallback(() => {
@@ -129,15 +104,9 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
     void (async () => {
       try {
         const doc = await createInColumn.createDocument(INBOX_TARGET, title);
-        board.open({
-          docId: doc.frontmatter.id,
-          subject: docSubject({
-            path: doc.path,
-            type: doc.frontmatter.type,
-            status: doc.frontmatter.status,
-          }),
-          selectTitle: true,
-        });
+        // Rider 3: the omnibox create has no origin row, so the new document
+        // lands as a loose path at the left edge, title selected.
+        board.open({ docId: doc.frontmatter.id, selectTitle: true });
         toast({
           tone: "info",
           message: `Created “${title}” — committed in inbox/; the title is selected.`,
@@ -161,8 +130,8 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
         toast({
           tone: "info",
           message: duplicate
-            ? "Pinned — a column already queries exactly this; the new view document was created anyway."
-            : "Pinned — a view document was created for this search (pinned: true, order: last).",
+            ? "Added — a column on this board already queries exactly this; the new view document was created anyway."
+            : "Added — a view document was created for this search and listed last on this board.",
         });
       } catch (cause) {
         // The overlay stays open: there is no column, so there is nothing to

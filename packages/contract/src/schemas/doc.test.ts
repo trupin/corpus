@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   CORE_DOC_TYPES,
   CoreDocTypeSchema,
+  KANBAN_FIELDS,
+  KanbanSchema,
+  StageValueSchema,
+  UNSETTABLE_EXCLUSIONS,
   CreateDocRequestSchema,
   DeleteDocResultSchema,
   DocFrontmatterSchema,
@@ -36,9 +40,12 @@ const frontmatter = {
   reviewed: null,
   evergreen: false,
   origin: null,
-  pinned: false,
+  stage: null,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
 };
 
@@ -53,9 +60,39 @@ const viewFrontmatter = {
   title: "Attention",
   evergreen: true,
   origin: null,
-  pinned: true,
-  order: 1,
+  order: null,
   query: { needs: "me" },
+};
+
+/**
+ * A `type: board` document as rider 2 describes one: the ids of the views it
+ * lists, its position among boards, and the flag that makes it receive an open
+ * that names no board.
+ */
+const boardFrontmatter = {
+  ...frontmatter,
+  id: "doc_seedboard",
+  type: "board",
+  title: "Everything",
+  order: 1,
+  columns: ["doc_seedattention", "doc_seedinbox"],
+  defaultOpen: true,
+};
+
+/** A kanban board: a scope query, and stages instead of columns (rider 6). */
+const kanbanFrontmatter = {
+  ...frontmatter,
+  id: "doc_seedpipeline",
+  type: "board",
+  title: "Pipeline",
+  order: 2,
+  query: { tag: "deal" },
+  kanban: {
+    field: "stage",
+    stages: ["triage", "drafting", "review", "done"],
+    transitions: { triage: ["drafting"], drafting: ["review"], review: ["drafting", "done"] },
+    status: { done: "resolved" },
+  },
 };
 
 const doc = {
@@ -82,7 +119,7 @@ describe("DocFrontmatter", () => {
   });
 
   /** SPEC.md §12's M6: a type this build never heard of parses like any other. */
-  it("accepts an unrecognised type, since the core's six are not all there are", () => {
+  it("accepts an unrecognised type, since the core's seven are not all there are", () => {
     expect(DocFrontmatterSchema.parse({ ...frontmatter, type: "ledger" }).type).toBe("ledger");
   });
 
@@ -173,7 +210,7 @@ describe("view frontmatter keys", () => {
     expect(Object.keys(DocFrontmatterSchema.shape)).not.toContain("column");
   });
 
-  it.each(["pinned", "order", "query", "extra"] as const)(
+  it.each(["stage", "order", "query", "columns", "kanban", "defaultOpen", "extra"] as const)(
     "requires %s to be present — absent-on-disk is false/null/{}, never a missing key",
     (field) => {
       const { [field]: _dropped, ...without } = frontmatter as Record<string, unknown>;
@@ -181,7 +218,7 @@ describe("view frontmatter keys", () => {
     },
   );
 
-  it.each(["pinned", "order", "query", "extra"] as const)(
+  it.each(["stage", "order", "query", "columns", "kanban", "defaultOpen", "extra"] as const)(
     "describes %s identically to the list row, since they describe the same file key",
     (field) => {
       expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
@@ -207,6 +244,148 @@ describe("view frontmatter keys", () => {
   it("rejects a core key smuggled through extra, on the read shape too", () => {
     const shadowed = { ...frontmatter, extra: { title: "shadowed" } };
     expect(DocFrontmatterSchema.safeParse(shadowed).success).toBe(false);
+  });
+
+  /** Rider 2: a board lists its columns, its position and which browser opens it. */
+  it("round-trips a board's frontmatter", () => {
+    expect(DocFrontmatterSchema.parse(boardFrontmatter)).toEqual(boardFrontmatter);
+  });
+
+  /** Rider 6: a kanban's columns are derived, so it carries stages instead of ids. */
+  it("round-trips a kanban board's frontmatter, graph and status map included", () => {
+    expect(DocFrontmatterSchema.parse(kanbanFrontmatter)).toEqual(kanbanFrontmatter);
+  });
+
+  it("rejects a column entry that is not a document id", () => {
+    const broken = { ...boardFrontmatter, columns: ["attention"] };
+    expect(DocFrontmatterSchema.safeParse(broken).success).toBe(false);
+  });
+
+  /** Rider 5: `stage` is free-form, so anything a file can hold reads back. */
+  it("round-trips an arbitrary stage value", () => {
+    expect(DocFrontmatterSchema.parse({ ...frontmatter, stage: "in review" }).stage).toBe(
+      "in review",
+    );
+  });
+
+  /**
+   * CONTRACT-037's invariant, applied where the temptation is greatest: a
+   * `KanbanSchema.nullable()` on the row would have rewritten the shared
+   * `Kanban` component to `type: ["object","null"]` for every route referencing
+   * it. Asserted from the parse side, so the union is exercised rather than
+   * merely inspected in the generated document.
+   */
+  it("accepts a null kanban without the component ever becoming nullable", () => {
+    expect(DocFrontmatterSchema.parse({ ...frontmatter, kanban: null }).kanban).toBeNull();
+    expect(KanbanSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+/**
+ * CONTRACT-074, rider 6. The contract validates the **shape of the graph**, and
+ * deliberately not where a document may be: §10 says the server enforces the
+ * status map and never the transitions, so nothing here refuses a document for
+ * sitting in a stage no drag could reach.
+ */
+describe("Kanban", () => {
+  const kanban = {
+    field: "stage" as const,
+    stages: ["triage", "drafting", "review", "done"],
+    transitions: { triage: ["drafting"], drafting: ["review"], review: ["drafting", "done"] },
+    status: { done: "resolved" as const },
+  };
+
+  it("round-trips a kanban over `stage` with a graph and a status map", () => {
+    expect(KanbanSchema.parse(kanban)).toEqual(kanban);
+  });
+
+  it("round-trips a kanban over `status`, whose stages are the three of §5", () => {
+    const overStatus = { field: "status" as const, stages: ["open", "resolved", "archived"] };
+    expect(KanbanSchema.parse(overStatus)).toEqual(overStatus);
+  });
+
+  it("offers exactly two fields to draw over", () => {
+    expect([...KANBAN_FIELDS]).toEqual(["status", "stage"]);
+  });
+
+  /** Absent is not empty: no `transitions` is the linear funnel, `{}` is a frozen board. */
+  it("keeps an absent graph absent rather than defaulting it to an empty one", () => {
+    const parsed = KanbanSchema.parse({ field: "stage", stages: ["a"] });
+    expect("transitions" in parsed).toBe(false);
+    expect(
+      KanbanSchema.parse({ field: "stage", stages: ["a"], transitions: {} }).transitions,
+    ).toEqual({});
+  });
+
+  it.each([
+    ["a field that is neither status nor stage", { ...kanban, field: "tags" }, "field"],
+    [
+      "no stages at all",
+      { ...kanban, stages: [], transitions: undefined, status: undefined },
+      "stages",
+    ],
+    ["a duplicate stage", { ...kanban, stages: ["triage", "triage"] }, "stages"],
+    [
+      "a transition leaving a stage the board does not declare",
+      { ...kanban, transitions: { nowhere: ["done"] } },
+      "transitions",
+    ],
+    [
+      "a transition reaching a stage the board does not declare",
+      { ...kanban, transitions: { triage: ["nowhere"] } },
+      "transitions",
+    ],
+    [
+      "a stage that leads to itself",
+      { ...kanban, transitions: { triage: ["triage"] } },
+      "transitions",
+    ],
+    [
+      "a status mapped for a stage the board does not declare",
+      { ...kanban, status: { nowhere: "resolved" } },
+      "status",
+    ],
+    ["a status outside the lifecycle", { ...kanban, status: { done: "shipped" } }, "status"],
+    [
+      "a stage that is not a status, on a kanban over `status`",
+      { field: "status", stages: ["open", "shipped"] },
+      "stages",
+    ],
+  ])("refuses %s, naming the field", (_label, value, field) => {
+    const result = KanbanSchema.safeParse(value);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.some((issue) => issue.path[0] === field)).toBe(true);
+  });
+
+  /** Strict, so a typo fails loudly instead of silently meaning nothing (CONTRACT-038's rule). */
+  it("refuses an unknown key rather than dropping it", () => {
+    expect(KanbanSchema.safeParse({ ...kanban, transitionz: {} }).success).toBe(false);
+  });
+});
+
+/**
+ * CONTRACT-074. `stage=` is a comma-separated OR list whose empty element is the
+ * null sentinel, so a written stage must be non-empty and comma-free or the
+ * filter could never select it — the same price `tag` pays for the same
+ * separator.
+ */
+describe("StageValueSchema", () => {
+  it("accepts an ordinary free-form stage", () => {
+    expect(StageValueSchema.parse("in review")).toBe("in review");
+  });
+
+  it("refuses the empty string, which is what makes the null sentinel unambiguous", () => {
+    expect(StageValueSchema.safeParse("").success).toBe(false);
+  });
+
+  it("refuses a comma, naming the filter that could not otherwise select it", () => {
+    const result = StageValueSchema.safeParse("triage,done");
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("comma-separated");
+  });
+
+  it("refuses a comma inside a kanban's stages too, since those are stage values", () => {
+    expect(KanbanSchema.safeParse({ field: "stage", stages: ["a,b"] }).success).toBe(false);
   });
 });
 
@@ -342,15 +521,40 @@ describe("CreateDocRequest", () => {
     expect(CreateDocRequestSchema.shape.folder.meta()?.description).toContain(".claude/agents");
   });
 
-  it("creates a pinned view in one call — the new-list picker's shape", () => {
+  it("creates a view in one call — the new-list picker's shape", () => {
+    const request = { type: "view", title: "Finance", query: { folder: "finance" } };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("creates a board in one call, with its columns, position and default-open flag", () => {
     const request = {
-      type: "view",
-      title: "Finance",
-      pinned: true,
+      type: "board",
+      title: "Everything",
       order: 40,
-      query: { folder: "finance" },
+      columns: ["doc_seedattention"],
+      defaultOpen: true,
     };
     expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("creates a kanban board in one call, with its scope, stages, graph and status map", () => {
+    const request = {
+      type: "board",
+      title: "Pipeline",
+      query: { tag: "deal" },
+      kanban: {
+        field: "stage",
+        stages: ["triage", "done"],
+        transitions: { triage: ["done"] },
+        status: { done: "resolved" },
+      },
+    };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("no longer accepts `pinned`: a view is a saved query and a board lists its columns", () => {
+    const request = { type: "view", title: "Finance", pinned: true };
+    expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
   });
 
   it("accepts extra frontmatter on create", () => {
@@ -364,7 +568,13 @@ describe("CreateDocRequest", () => {
   });
 
   it("takes a `column` key only through extra, since the core no longer defines one", () => {
-    const request = { type: "view", title: "T", pinned: true, extra: { column: "ledger/board" } };
+    const request = { type: "view", title: "T", extra: { column: "ledger/board" } };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  /** Rider 2, same shape as `column`: a removed core key rides in `extra`. */
+  it("takes a `pinned` key only through extra, since the core no longer defines one", () => {
+    const request = { type: "view", title: "T", extra: { pinned: true } };
     expect(CreateDocRequestSchema.parse(request)).toEqual(request);
   });
 
@@ -479,7 +689,10 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
     ["a tag set", { tags: ["finance"] }],
     ["a status flip", { status: "archived" as const }],
     ['a "still current" mark', { reviewed: "2026-07-26T12:00:00Z" }],
-    ["a view key", { pinned: true }],
+    ["a view key", { query: { needs: "me" } }],
+    ["a board key", { columns: ["doc_a1b2c3"] }],
+    ["a stage", { stage: "review" }],
+    ["a key removal", { unset: ["pinned"] }],
     ["an extra-frontmatter merge patch", { extra: { "ledger.items": [] } }],
     ["a save that names no change at all", {}],
   ])("takes no key on %s, which names its own delta", (_label, patch) => {
@@ -493,6 +706,47 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
    */
   it("accepts a key on a delta write too", () => {
     expect(UpdateDocRequestSchema.parse({ tags: [], key: DOC_KEY }).key).toBe(DOC_KEY);
+  });
+
+  /**
+   * CONTRACT-074, SPEC.md §9.2 and §2.4: `unset` is how a migration drops a key
+   * the tool has stopped reading, so it names **file** keys — the keys most
+   * worth removing are ones the core no longer defines, and those have no wire
+   * spelling at all.
+   */
+  describe("unset", () => {
+    it("removes the keys a migration drops, named as the file writes them", () => {
+      expect(UpdateDocRequestSchema.parse({ unset: ["pinned", "column"] }).unset).toEqual([
+        "pinned",
+        "column",
+      ]);
+    });
+
+    it("names the frontmatter spelling of a core key whose wire name differs", () => {
+      expect(UpdateDocRequestSchema.parse({ unset: ["default-open"] }).unset).toEqual([
+        "default-open",
+      ]);
+    });
+
+    it.each([...UNSETTABLE_EXCLUSIONS])("refuses to unset %s, naming the key", (key) => {
+      const result = UpdateDocRequestSchema.safeParse({ unset: [key] });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(["unset", 0]);
+      expect(result.error?.issues[0]?.message).toContain(key);
+    });
+
+    it("reports every refused key at once rather than stopping at the first", () => {
+      const result = UpdateDocRequestSchema.safeParse({ unset: ["id", "title", "created"] });
+      expect(result.error?.issues).toHaveLength(2);
+    });
+
+    it("refuses an empty key name, which names nothing", () => {
+      expect(UpdateDocRequestSchema.safeParse({ unset: [""] }).success).toBe(false);
+    });
+
+    it("refuses the three by exactly the list SPEC.md §9.2 names", () => {
+      expect([...UNSETTABLE_EXCLUSIONS]).toEqual(["id", "type", "created"]);
+    });
   });
 
   it.each([

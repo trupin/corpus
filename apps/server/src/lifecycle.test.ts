@@ -586,9 +586,9 @@ describe("runServerProcess — boot", () => {
       // and the completion out again, and both move what `GET /api/agents`
       // reports the lane is doing.
       expect(batches).toEqual([
-        '[["queue"],["jobs"],["docs"]]',
-        '[["queue"],["jobs"],["docs"],["agents"]]',
-        '[["queue"],["jobs"],["docs"],["agents"]]',
+        '[["queue"],["jobs"],["docs"],["reflect"]]',
+        '[["queue"],["jobs"],["docs"],["agents"],["reflect"]]',
+        '[["queue"],["jobs"],["docs"],["agents"],["reflect"]]',
       ]);
     } finally {
       await server.close();

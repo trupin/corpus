@@ -6,10 +6,12 @@ import type {
   CreateThreadRequest,
   CreateThreadResponse,
   DeleteDocResult,
+  DeleteFolderResult,
   DeleteTurnResult,
   Doc,
   DocList,
   DocMutationResponse,
+  FolderStatusResult,
   FolderTree,
   FormAnswerResponse,
   FormFieldAnswer,
@@ -23,7 +25,11 @@ import type {
   ReattachRefusalReason,
   ReattachThreadRequest,
   ReattachThreadResponse,
+  ReflectAskResult,
+  ReorderBoardsResult,
+  ReflectStatus,
   RelatedDocs,
+  RenameFolderResult,
   SearchResults,
   Thread,
   ThreadMutationResponse,
@@ -225,6 +231,54 @@ export interface CorpusClient {
   getThreadScope(threadId: string, options?: RequestOptions): Promise<ThreadScope>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
   /**
+   * The four **folder acts** (SPEC.md §9.2, rider 7 signed 2026-08-22), behind
+   * the explorer's folder menu (§10, rider 1).
+   *
+   * Four methods rather than one with a verb, because the contract declares four
+   * routes answering three different result shapes — and because only `delete`
+   * is user-only and only `rename` can conflict.
+   *
+   * **The path is sent byte for byte.** It is relative to `data/docs/`, carries
+   * no `data/docs/` prefix and no leading or trailing slash, and is compared
+   * exactly by the server: `FINANCE` is a `404` in a workspace holding
+   * `finance` (SERVER-136). Nothing here normalises a caller's spelling, because
+   * a rename that resolved a guess wrongly moves files.
+   *
+   * **Each result names every document the act changed**, and `documents` is the
+   * state *after* the act rather than what changed: archive lists documents that
+   * were already archived, because the act applied to them.
+   */
+  renameFolder(from: string, to: string): Promise<RenameFolderResult>;
+  archiveFolder(path: string): Promise<FolderStatusResult>;
+  unarchiveFolder(path: string): Promise<FolderStatusResult>;
+  /**
+   * `POST /api/folders/delete` — user-only, like deleting a document.
+   *
+   * **It does not remove the folder's threads**, which survive as orphaned
+   * records naming a deleted parent, and the response does not name them
+   * (SERVER-136). A caller must not present a count from this result as a count
+   * of everything the act touched. It also leaves the folder itself behind when
+   * something that is not a document is still in it.
+   */
+  deleteFolder(path: string): Promise<DeleteFolderResult>;
+  /**
+   * `POST /api/boards/order` — the board bar, renumbered in **one** commit
+   * (SPEC.md §10, rider 2: "reordering boards writes `order` on every board, in
+   * one commit").
+   *
+   * **The ids are the bar, in the order it should be in**, first tab first; the
+   * positions are the server's to derive, and it numbers them from one. Nothing
+   * here sends an `order` value, because a caller that computed its own could
+   * disagree with the next caller about the same bar.
+   *
+   * **Boards it does not name are left alone**, so a bar showing only unarchived
+   * boards states its own order without inventing positions for boards nobody
+   * can see. The whole reorder is refused before anything is written when an id
+   * names no document (`404`) or names something that is not a board (`400`) —
+   * `order` is a board's position among boards and nothing else.
+   */
+  reorderBoards(boards: readonly string[]): Promise<ReorderBoardsResult>;
+  /**
    * `GET /api/search` — ranked retrieval (SPEC.md §9.2).
    *
    * **Not `listDocs({ q, sort: "relevance" })`, and the difference is the
@@ -287,6 +341,33 @@ export interface CorpusClient {
    * destructive act reachable from a pill that only reports.
    */
   getIndexStatus(options?: RequestOptions): Promise<IndexStatus>;
+  /**
+   * `GET /api/workspace/reflect` — the reflection clock, what is unreflected,
+   * the pending reflection, the last digest thread and the quiet window
+   * (SPEC.md §7's rider 9).
+   *
+   * Read-only and parameterless, like {@link getQueueStatus}. **`changed` is a
+   * corpus-wide count and rides on the response rather than being derived here**:
+   * deriving it client-side means listing every document to produce one number,
+   * and the server counts it with the contract's own `isUnreflected` — the same
+   * call the board applies row by row — so the number in the control and the
+   * marks on the rows cannot disagree.
+   */
+  getReflectStatus(options?: RequestOptions): Promise<ReflectStatus>;
+  /**
+   * `POST /api/workspace/reflect` — **ask for a reflection over the whole
+   * corpus** (SPEC.md §7: the board bar's Reflect control, and `corpus reflect`).
+   *
+   * **`202` always, never a `409`.** An ask while one is pending is answered
+   * with the pending one rather than doubled or refused, and `pending: true` is
+   * what tells the two apart — so a caller says "asked" or "already asked"
+   * without comparing ids, and never renders an error for a person who pressed
+   * the button twice.
+   *
+   * It carries no body: the window is server state, and a caller that could name
+   * its own `since` would be asking for a different act than the one §7 defines.
+   */
+  askReflection(): Promise<ReflectAskResult>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
@@ -870,6 +951,41 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap("GET /api/tree", await api.GET("/api/tree", { ...signalOf(options) }));
     },
 
+    async renameFolder(from, to) {
+      return unwrap(
+        "POST /api/folders/rename",
+        await api.POST("/api/folders/rename", { body: { from, to } }),
+      );
+    },
+
+    async archiveFolder(path) {
+      return unwrap(
+        "POST /api/folders/archive",
+        await api.POST("/api/folders/archive", { body: { path } }),
+      );
+    },
+
+    async unarchiveFolder(path) {
+      return unwrap(
+        "POST /api/folders/unarchive",
+        await api.POST("/api/folders/unarchive", { body: { path } }),
+      );
+    },
+
+    async deleteFolder(path) {
+      return unwrap(
+        "POST /api/folders/delete",
+        await api.POST("/api/folders/delete", { body: { path } }),
+      );
+    },
+
+    async reorderBoards(boards) {
+      return unwrap(
+        "POST /api/boards/order",
+        await api.POST("/api/boards/order", { body: { boards: [...boards] } }),
+      );
+    },
+
     async searchCorpus(params, options) {
       // Same widening as `listDocs`: the canonicalised record forwards filters
       // the kit has never heard of, which the generated query type cannot
@@ -926,6 +1042,17 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         "GET /api/index/status",
         await api.GET("/api/index/status", { ...signalOf(options) }),
       );
+    },
+
+    async getReflectStatus(options) {
+      return unwrap(
+        "GET /api/workspace/reflect",
+        await api.GET("/api/workspace/reflect", { ...signalOf(options) }),
+      );
+    },
+
+    async askReflection() {
+      return unwrap("POST /api/workspace/reflect", await api.POST("/api/workspace/reflect", {}));
     },
 
     async getHealth(options) {

@@ -31,6 +31,15 @@ export function attachWatcher(server: CorpusServer): WatcherHandle | undefined {
     // present here; the option stays optional because `startWatcher` is also
     // constructed directly by tests that have no repository.
     ...(server.commitOutOfBand === undefined ? {} : { commitOutOfBand: server.commitOutOfBand }),
+    // SPEC.md §7's quiet window. An out-of-band edit is a person's write
+    // (§9.1), so it restarts the window exactly as a `PUT` does.
+    ...(server.reflect === undefined
+      ? {}
+      : {
+          observeOutOfBandWrite: () => {
+            server.reflect?.observeWrite("user");
+          },
+        }),
   });
   let stopped = false;
   server.registerDisposer(async () => {

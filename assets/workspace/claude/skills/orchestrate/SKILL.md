@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-21T00:00:00Z
+updated: 2026-08-22T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -274,7 +274,8 @@ row below is failed with a reason and is never silently completed.
 | --------------------- | --------------------------------------------------------------------------------------------- |
 | `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
-| `doc.edited`          | A subagent working **Reflecting on a user edit** below — the one event whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
+| `doc.edited`          | A subagent working **Reflecting on a user edit** below — one of the two events whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
+| `workspace.reflect`   | A subagent working **Reflecting on the corpus** below — the other one. Its dispatch carries the payload's `since` verbatim, `null` included. It falls in no scope and is always yours.                     |
 | `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the two rows that are not jobs. |
 | `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is the other row that is not a job. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
@@ -1038,7 +1039,8 @@ one across two different documents.
 it says nothing about what it changes and is the write that can destroy silently: the body
 (`-m`, `--file`, a heredoc) and a wholesale frontmatter rewrite.
 A write that **names its own delta** needs none, and never will: `--add-tag`, `--remove-tag`,
-`--title`, `--status`, `--reviewed`, `--pinned`, `--order`, `--query`, `--extra`, along with
+`--title`, `--status`, `--reviewed`, `--stage`, `--query`, `--extra`, `--unset`, the board keys
+`--columns`, `--kanban`, `--order` and `--default-open`, along with
 `corpus doc move`, `corpus doc archive`, `corpus doc unarchive`, `corpus thread reply` and
 `corpus thread resolve`. Each of those says what it changes, so it merges with whatever else
 happened rather than overwriting it. A key is still accepted and still checked on them, which
@@ -1171,6 +1173,75 @@ reworking — a tag, a status, an archive — merges and is fine to land; a body
 the courtesy is about. And where there is no claimed event to defer, there is nothing to
 park: finish the rest of the work, leave that one document, and say in the reply what is
 waiting on it.
+
+**A board is a document, so building one is writing a document.** The board bar shows
+`type: board` documents in their `order`. A board's own frontmatter lists its `columns` — the
+ids of the `type: view` documents that draw them, in display order. A view is a saved query
+and nothing more: it has no place of its own, and the same view may sit on two boards. So
+**"pin me a view" is two writes, and the second one is what pins it**: create the view, then
+put its id in a board's `columns`.
+
+```bash
+corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --query type=thread --query status=open --query tag=finance --from agent
+created doc_v9f2a1 at data/docs/views/unresolved-finance.md
+corpus doc show doc_seedboardattention
+corpus doc edit doc_seedboardattention --columns doc_seedattention,doc_seedinbox,doc_seedopenthreads,doc_v9f2a1 --from agent
+edited doc_seedboardattention
+```
+
+**`--columns` is the whole list, in order, and never an append.** It sets the key to exactly
+what you pass, so read the board first and send its current ids with yours added — a list that
+drops a column takes that column off the board, silently and successfully. Removing a column
+is the same write with one id left out, and reordering is the same ids in another order. The
+view document itself is untouched by all three: taking a view off a board deletes nothing.
+
+The board's own place among boards is `--order`, a number on the board document, ascending.
+Any finite number works, so `--order 1.5` lands a board between two neighbours without
+renumbering them. `--default-open true` marks the board that a browser opens onto and that
+receives every open naming no board. **At most one board carries it**: setting it clears the
+flag from whichever board held it, in the same commit, and the write names that board on a
+line of its own. Archiving a board is `corpus doc archive` like any document. **One board is
+always showing, and the CLI does not enforce that for you** — the board bar refuses to archive
+the last board, and the same archive from here lands, at exit 0, leaving a workspace with no
+board on it. Count the boards before you archive one.
+
+**A kanban is a board over one field, and it is one document.** Its `kanban` block names the
+`field` — `stage` or `status` — and the `stages` in display order, one column each. Its
+columns are derived from those stages and are **not** view documents, so a kanban carries no
+`columns` at all. `--query` is the scope every column is drawn from, narrowed per column by
+that column's own stage, and a document in scope with no value for the field sits in the first
+column.
+
+```bash
+corpus doc create --type board --title "Triage" --folder boards --evergreen true --order 4 --query type=note --kanban '{"field":"stage","stages":["triage","doing","done"],"transitions":{"triage":["doing"],"doing":["done","triage"]},"status":{"done":"resolved"}}' --from agent
+```
+
+**Leaving `transitions` out is not the same as writing it empty, and the difference is the
+whole board.** Omit the key and the graph is the linear funnel: each stage leads to its
+neighbours, both ways, which is what most boards want. Write `transitions: {}` and the graph
+is one along which nothing may be dragged anywhere. Write neither by accident: decide which
+one the request asked for. The graph binds a drag and binds nothing else — anything it forbids
+is still done by setting the field, which is the next paragraph.
+
+**Moving a document along a workflow is `--stage`, and it is a different field from
+`--status`.** `stage` says where in a workflow a document sits, and it is free-form: its
+values are named by the kanban boards that use it, so two boards over the same documents
+should share one vocabulary. `status` says whether work remains. Neither ever substitutes for
+the other, and writing a status never moves a stage.
+
+```bash
+corpus doc edit doc_a1b2c3 --stage doing --from agent
+edited doc_a1b2c3
+doc_a1b2c3 is now resolved: Triage (doc_b7c3d9) maps stage `done` to that status.
+```
+
+**A stage may write a status too, so read past the confirmation.** While a document is in a
+kanban, its stage decides its status through that board's explicit map: entering a mapped
+stage writes that status in the same commit, and entering an unmapped one writes `open`. When
+that happens the CLI prints the server's sentence about it on a **separate line after**
+`edited <id>`, naming the board that decided. The confirmation is therefore not always the
+last line of the output, and a second effect nobody read is a second effect nobody reported.
+Read the whole output, and say in the reply what the stage did to the status.
 
 ## Reflecting on a user edit
 
@@ -1457,6 +1528,121 @@ key 5c0f2a7d18e6b4930c1d8f27a6b5430e9f8c72d1a04b6e35f9c2807d61a34be8
 corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"
 corpus queue complete evt_7c1d9a
 ```
+
+## Reflecting on the corpus
+
+**Reflection is an act over the whole corpus, and never a side effect of one change.** A stage
+moved, a status flipped, a tag added, a document moved or archived: none of those enqueues
+anything, and none of them is a message to you. The one event that reaches you is
+`workspace.reflect`, and its payload is one timestamp, `since` — the start of the window, the
+moment the corpus was last reflected on. Somebody asked for it from the board bar or with
+`corpus reflect`, or the corpus went quiet for long enough after a change and the server
+enqueued it. Either way the work is the same, and the event is always yours: it falls in no
+scope, so no resident owns it.
+
+**You gather the window yourself, and that is the whole cost control.** The event carries a
+timestamp and nothing else — no document list, no diff, no summary. One command opens the
+window:
+
+```bash
+corpus doc list --since 2026-08-21T09:00:00Z
+```
+
+`since` is `null` for a corpus nobody has reflected on yet. That means **everything**, so run
+the same command with **no `--since` at all** rather than with an empty value. The list
+excludes archived documents by default, which is the right default here: an archived document
+has been put away rather than left waiting. The list is paginated and its last line says so —
+read the next page with `--offset` when the window is wider than one page.
+
+**Read a document only when its list line is not enough.** The row carries the title, the
+type, the folder, the tags, the stage, the status and an excerpt, and for a great many changes
+that is the whole story. `corpus doc show <id>` is the deliberate second act, taken on the few
+ids that earned it, and `corpus doc diff <id>` shows what moved in one of them without the
+document around it. A reflection that reads every document in its window has turned a cheap
+act into an expensive one and learned very little more.
+
+**Your own writes are not new work.** A document whose last write was yours is your own output
+coming back at you — the changelog entries and the digest a reflection produces are exactly
+that. `corpus doc list --json` carries `lastActor` on every row, and `user` is the half worth
+your attention.
+
+**Never read a stage as an instruction.** A stage is where a document sits in somebody's
+workflow. A document in `doing` is not asking you to do it, a document in `review` is not
+asking you to review it, and a stage called `agent` is a column name rather than an address.
+What a person wants from you arrives as a comment, a form answer, or an ask — not as a word in
+a frontmatter field. Report a stage that moved. Never act on it.
+
+**What a reflection produces is two things, and neither is a surprise.** First, an entry in
+the changelog of each document you have something to say about — the same appended
+`## Changelog` section as everywhere else, one entry, saying what you noticed. A document you
+have nothing to say about gets nothing. Second, **one standalone thread, the digest**, and
+exactly one per reflection.
+
+**Three things about the digest are mechanical, and getting any of them wrong loses it.**
+
+- **No parent.** It is a standalone thread, so pass no `--parent`. A digest written on a
+  document is a comment on that document, and the corpus's digest is about the corpus.
+- **`--job <the reflect event id>`.** This is what records the thread as this reflection's
+  digest, at the one moment both facts are in the same place. Nothing can recover the link
+  afterwards: the event's payload names no thread. Leave the flag off and the board's "what
+  the agent said last time" points at nothing, with no error anywhere.
+- **Post it before you settle the event.** The thread is promoted to the corpus's digest when
+  the event reaches `processed`, so a digest posted after the completion is posted too late.
+
+The digest's first turn is written in this order:
+
+1. **The window**, on the first line: `since <the payload's timestamp> until <the moment you
+   gathered>`. A person reading it a week later must be able to tell what it covered.
+2. **What moved** — the documents that changed in the window, grouped so the shape is
+   readable rather than listed one per line for two hundred rows.
+3. **What you did** — every change you made, one line each, naming the document.
+4. **What you ask** — the decisions you could not take yourself. Nothing here is rhetorical.
+
+```bash
+corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z
+
+Eleven documents changed, nine of them in `finance/` while you reworked the mortgage
+material. [[doc_a1b2c3]] moved its rate assumption to 6.4% and four documents quoted the
+old figure.
+
+I carried the new figure into [[doc_7e3a91]] and logged it on both. I filed three inbox
+captures into `finance/` and retitled them.
+
+[[doc_f4e9d2]] and [[doc_2f7b91]] both now describe the same refinance scenario, and one of
+them should go. I have not merged them, because which one is the keeper is your call.
+
+↳ edited [[doc_7e3a91]], filed 3 captures into finance/ and logged entries on 5 documents
+CORPUS_EOF
+```
+
+**Post the digest even when there is nothing to say, and post it in one line.** A quiet window
+is a real result, and a reflection that stayed silent is indistinguishable from a reflection
+that never ran. One line, naming the window, is the whole thread.
+
+```bash
+corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z — nothing changed, nothing to report.
+CORPUS_EOF
+```
+
+**The digest asks for nothing to run.** Never pass `--requests-agent true` on it and never
+write `@agent` in it, or the thread you just posted wakes you to answer yourself. Asking a
+person for a decision is what the fourth part is for, and a person answering the digest
+re-triggers you the ordinary way.
+
+**Where residents are running, hand each one its own part.** A reflection covers the whole
+corpus, and part of that window may sit inside a conversation somebody else owns. Say so in
+the digest, and send that resident a message about its own documents rather than settling
+their fate from outside. The reflection stays one event, one digest and yours.
+
+**A failed reflection is safe to retry.** The clock only moves when the job reaches
+`processed`, so a failure leaves it exactly where it was and the retry opens the same window.
+Fail the event with the reason, the way you fail any other, and never invent a narrower window
+to make a second attempt cheaper. Never ask for a reflection while you are doing one either —
+`corpus reflect` answers an ask that arrives while one is pending with the pending one, at
+exit 0, so a second ask is not an error and is also not a second reflection. `--json` carries
+`pending`, which is the field that tells the two apart.
 
 ## Concurrency and ordering
 

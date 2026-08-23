@@ -39,6 +39,10 @@ describe("the shortcut registry", () => {
           (other.scope === shortcut.scope ||
             other.scope === "global" ||
             shortcut.scope === "global") &&
+          // Two escape-layer entries may share a key: the layer chain resolves
+          // them by z-order (`useEscapeStack`), never this dispatcher, and
+          // `esc` vs `⇧esc` is exactly such a pair (rider 3).
+          !(other.boundBy !== undefined && shortcut.boundBy !== undefined) &&
           matchesShortcut(other, press),
       );
       expect(
@@ -51,7 +55,11 @@ describe("the shortcut registry", () => {
   it("matches every key it declares, and no modified form it does not", () => {
     for (const { shortcut, probe } of shortcutProbes()) {
       expect(matchesShortcut(shortcut, event(probe)), shortcut.id).toBe(true);
-      expect(matchesShortcut(shortcut, event({ ...probe, altKey: true })), shortcut.id).toBe(false);
+      // Flipping ⌥ must always un-match: it is what separates `↵` from `⌥↵`.
+      expect(
+        matchesShortcut(shortcut, event({ ...probe, altKey: !(probe.altKey ?? false) })),
+        shortcut.id,
+      ).toBe(false);
     }
   });
 
@@ -105,25 +113,30 @@ describe("the shortcut registry", () => {
 
   it("generates one probe per accepted key of a chord", () => {
     expect(chordProbes({ keys: ["k", "K"], mod: true })).toEqual([
-      { key: "k", shiftKey: false, metaKey: true },
-      { key: "K", shiftKey: false, metaKey: true },
+      { key: "k", shiftKey: false, metaKey: true, altKey: false },
+      { key: "K", shiftKey: false, metaKey: true, altKey: false },
     ]);
   });
 
   /**
-   * SPEC.md §10's enumeration and `design/index.html`'s twelve rows, item by
-   * item. A binding present in one and absent from the other is a scheme that
-   * has quietly changed without the spec saying so.
+   * SPEC.md §10's enumeration and the prototypes' rows, item by item. A binding
+   * present in one and absent from the other is a scheme that has quietly
+   * changed without the spec saying so. `⌘1`…`⌘9` joined it with rider 2, and
+   * `design/navigation.html` draws it in the cheat sheet beside the column keys.
    */
   it("is exactly SPEC.md §10's scheme, in the prototype's order", () => {
     expect(SHORTCUTS.map((shortcut) => shortcut.id)).toEqual([
       "rows.move",
       "rows.open",
+      "rows.openHere",
       "rows.openFullScreen",
       "menu.open",
       "layers.close",
+      "paths.closeAll",
       "columns.switch",
       "columns.move",
+      "explorer.toggle",
+      "boards.switch",
       "doc.focusMode",
       "doc.archive",
       "doc.reply",
@@ -133,12 +146,16 @@ describe("the shortcut registry", () => {
     ]);
     expect(SHORTCUTS.map((shortcut) => shortcut.description)).toEqual([
       "move rows (also j / k)",
-      "open document",
+      "open — a new column to the right",
+      "open here, in this column",
       "open in full screen",
       "actions for the highlighted row",
-      "close / back",
+      "close the active path column / back",
+      "close every path on this board",
       "switch column (also [ / ])",
       "move column",
+      "toggle the explorer",
+      "show the nth board",
       "focus mode",
       "archive open / highlighted doc",
       "reply in open thread",
@@ -160,7 +177,11 @@ describe("the shortcut registry", () => {
       (shortcut) =>
         shortcut.scope === "board" && shortcut.chords.some((chord) => chord.keys.includes("Enter")),
     );
-    expect(enter.map((shortcut) => shortcut.id)).toEqual(["rows.open", "rows.openFullScreen"]);
+    expect(enter.map((shortcut) => shortcut.id)).toEqual([
+      "rows.open",
+      "rows.openHere",
+      "rows.openFullScreen",
+    ]);
     for (const shortcut of enter) {
       expect(shortcut.yieldsToFocusedControl, shortcut.id).toBe(true);
     }
@@ -179,9 +200,19 @@ describe("the shortcut registry", () => {
     expect(claimed.map((shortcut) => shortcut.id)).toEqual([]);
   });
 
-  it("only ⌘K survives a writing surface", () => {
+  /**
+   * Two entries, and both are **chrome rather than text**: ⌘K opens the search
+   * overlay and ⌘B retracts the explorer. Neither types anything, and a person
+   * writing a document is exactly who wants the tree out of the way. ⌘B is also
+   * what closes the explorer while the keyboard is *inside* the tree, which
+   * declares `data-shortcuts="off"` and would otherwise suppress every binding.
+   *
+   * Anything else added here takes a key away from every writing surface in the
+   * app, so the list is pinned rather than described.
+   */
+  it("lets only the two chrome toggles survive a writing surface", () => {
     const permitted = SHORTCUTS.filter((shortcut) => shortcut.allowInInput === true);
-    expect(permitted.map((shortcut) => shortcut.id)).toEqual(["search.open"]);
+    expect(permitted.map((shortcut) => shortcut.id)).toEqual(["explorer.toggle", "search.open"]);
   });
 });
 

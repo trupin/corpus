@@ -1,5 +1,6 @@
 import { UsageError } from "./errors.js";
 import { GLOBAL_FLAGS } from "./registry/globals.js";
+import { removedFlagHint, removedFlagMessage } from "./removed-flags.js";
 import type { ArgSpec, FlagSpec } from "./registry/types.js";
 import { suggest } from "./suggest.js";
 
@@ -147,6 +148,10 @@ export function parseFlags(
 
     const spec = isLong ? byName.get(key) : byAlias.get(key);
     if (spec === undefined) {
+      // A flag that used to exist is a different mistake from a misspelled one:
+      // the spelling is right and the surface moved, so the answer names the
+      // release and what replaced it rather than listing every valid flag.
+      if (isLong) assertNotRemoved(key);
       throw unknownFlagError(token, target.name, specs);
     }
 
@@ -166,6 +171,22 @@ export function parseFlags(
 
   applyDefaults(values, specs);
   return { flags: new ParsedFlags(values), positionals };
+}
+
+/**
+ * Refuses a flag this CLI has removed, with the epitaph `removed-flags.ts`
+ * carries for it.
+ *
+ * Checked before the "unknown flag" fallback and **not** per command: a removed
+ * flag is removed from the tool, and the caller who types it on a verb that
+ * never had it is making the same mistake — carrying an older surface — as the
+ * one who types it on the verb that did.
+ */
+function assertNotRemoved(name: string): void {
+  const message = removedFlagMessage(name);
+  if (message === undefined) return;
+  const hint = removedFlagHint(name);
+  throw new UsageError(message, hint === undefined ? {} : { hint });
 }
 
 function unknownFlagError(

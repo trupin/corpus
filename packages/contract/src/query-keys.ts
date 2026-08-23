@@ -81,6 +81,23 @@ export const INDEX_KEY: QueryKey = ["index"];
 export const AGENTS_KEY: QueryKey = ["agents"];
 
 /**
+ * The reflection clock behind `GET /api/workspace/reflect` (SPEC.md §7, rider 9).
+ *
+ * **A key of its own, because nothing else invalidates on the right events.**
+ * The resource moves on two unrelated things: a document write changes
+ * `changed`, and a queue transition changes `pending`, `reflected` and
+ * `lastDigest`. A client caching it under `["docs"]` would refetch it on the
+ * first and miss the second; under `["queue"]`, the reverse. So the emitter's
+ * rule is the union — **name this key wherever `["docs"]` is named, and wherever
+ * `["queue"]` is named** — which is a rule an emitter can follow without
+ * knowing what a reflection is.
+ *
+ * One segment, like {@link QUEUE_KEY} and {@link AGENTS_KEY}: the resource is
+ * named, not the endpoint.
+ */
+export const REFLECT_KEY: QueryKey = ["reflect"];
+
+/**
  * One document, by id. Threads are documents, so a thread id is legal here and
  * both `["docs", threadId]` and `["threads", threadId]` are emitted for a turn.
  */
@@ -107,6 +124,7 @@ export const QUERY_KEY_NAMES = [
   "job",
   "index",
   "agents",
+  "reflect",
 ] as const;
 
 export type QueryKeyName = (typeof QUERY_KEY_NAMES)[number];
@@ -237,6 +255,22 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
       "invalidation may not",
     refetchedBy:
       "`GET /api/agents` — the composer's recipient picker and every surface showing who is running",
+  },
+  reflect: {
+    shape: '["reflect"]',
+    key: () => [...REFLECT_KEY],
+    parameterised: false,
+    emittedBy:
+      '**every frame that names `["docs"]` or `["queue"]`, and no others** — the union, ' +
+      "because the resource moves on two unrelated things and each half would miss the other: a " +
+      "document mutation or an out-of-band file change moves the unreflected count, while a " +
+      "queue transition moves whether a reflection is pending, when the clock last advanced and " +
+      "which thread is the latest digest. Stating it as a rule rather than as a list is " +
+      "deliberate: an emitter can follow it without knowing what a reflection is, and a write " +
+      "added later inherits it",
+    refetchedBy:
+      "`GET /api/workspace/reflect` — the board bar's Reflect control, its unreflected count and " +
+      "the marks each column renders",
   },
 };
 

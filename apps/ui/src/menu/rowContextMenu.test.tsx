@@ -1,12 +1,17 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { Board } from "../shell/Board";
-import { ToastProvider } from "../shell/Toasts";
-import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { createBoardHarness } from "../testing/boardHarness";
+import {
+  boardTransport,
+  DEFAULT_BOARD_ID,
+  viewRow,
+  type BoardTransport,
+} from "../testing/boardFixture";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { ContextMenuProvider } from "./ContextMenuHost";
@@ -54,15 +59,13 @@ function renderColumns(
   rows: readonly ReturnType<typeof docRowFixture>[],
 ): BoardTransport {
   const wire = boardTransport({ views, defaultRows: rows });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <ContextMenuProvider>
-            <KeyboardHarness>{children}</KeyboardHarness>
-          </ContextMenuProvider>
-        </ToastProvider>
+        <ContextMenuProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ContextMenuProvider>
       </harness.Wrapper>
     );
   }
@@ -100,13 +103,27 @@ describe("a row's context menu", () => {
     expect(screen.getByRole("menu", { name: "Actions for Mortgage options" })).toBeTruthy();
     // `resolve` is in the row set since UI-094: SPEC.md §5's statuses are one
     // vocabulary, so a note's set is a thread's set.
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("keeps resolve on a thread row, which is now the same set a note offers", async () => {
     renderBoard([THREAD]);
     fireEvent.contextMenu(await row("th_1"), { clientX: 40, clientY: 60 });
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("shows the staleness quick actions only where the ramp already shows them", async () => {
@@ -120,6 +137,7 @@ describe("a row's context menu", () => {
     fireEvent.contextMenu(await row("doc_c"), { clientX: 10, clientY: 10 });
     expect(menuActions()).toEqual([
       "open",
+      "open-here",
       "open-focus",
       "review",
       "resolve",
@@ -181,7 +199,7 @@ describe("a row's context menu", () => {
     expect(wire.writes("DELETE")[0]?.path).toBe("/api/docs/doc_a");
   });
 
-  it("opens the row in its column", async () => {
+  it("opens the row in a path off its column (rider 3)", async () => {
     renderBoard([FRESH]);
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     const openItem = document.querySelector<HTMLElement>('[role="menuitem"][data-act="open"]');
@@ -189,8 +207,21 @@ describe("a row's context menu", () => {
     fireEvent.click(openItem);
 
     await waitFor(() => {
-      expect(document.querySelector('.reader[data-reader-doc="doc_a"]')).not.toBeNull();
+      expect(document.querySelector('.pcol .reader[data-reader-doc="doc_a"]')).not.toBeNull();
     });
+  });
+
+  it("opens the row here, in the column's own reader, from Open here", async () => {
+    renderBoard([FRESH]);
+    fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
+    const hereItem = document.querySelector<HTMLElement>('[role="menuitem"][data-act="open-here"]');
+    if (hereItem === null) throw new Error("no open-here item");
+    fireEvent.click(hereItem);
+
+    await waitFor(() => {
+      expect(document.querySelector('.qcol .reader[data-reader-doc="doc_a"]')).not.toBeNull();
+    });
+    expect(document.querySelector(".pcol")).toBeNull();
   });
 
   it("leaves the native menu alone off any row, and on a field", async () => {
@@ -222,7 +253,14 @@ describe("a row's context menu", () => {
 
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     expect(screen.getByRole("menu", { name: "Actions for Inbox chores" })).toBeTruthy();
-    expect(menuActions()).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(menuActions()).toEqual([
+      "open",
+      "open-here",
+      "open-focus",
+      "resolve",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("acts on the document — the menu archives through the core route", async () => {
@@ -282,23 +320,31 @@ describe("a column header's context menu", () => {
 
     fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
     expect(screen.getByRole("menu", { name: "List options for Inbox" })).toBeTruthy();
-    expect(menuActions()).toEqual(["rename", "edit-query", "unpin"]);
+    expect(menuActions()).toEqual(["rename", "edit-query", "remove"]);
   });
 
-  it("unpins by archiving the view document, never by deleting it", async () => {
+  /**
+   * "Remove from this board" edits the **board** document and leaves the view
+   * alone (SPEC.md §10, rider 2). It replaced "Unpin", which archived the view —
+   * the right act while a column *was* a pinned view, and the wrong one now,
+   * because the same view may sit on another board this gesture must not touch.
+   */
+  it("removes the column from the board document, and touches no view", async () => {
     const wire = renderBoard([FRESH]);
     await row("doc_a");
     const header = document.querySelector<HTMLElement>(".col-head");
     if (header === null) throw new Error("no header");
 
     fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unpin/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Remove from this board/ }));
 
     await waitFor(() => {
-      expect(wire.writes("PUT").filter((call) => call.path === "/api/docs/doc_view")).toHaveLength(
-        1,
-      );
+      expect(
+        wire.writes("PUT").filter((call) => call.path === `/api/docs/${DEFAULT_BOARD_ID}`),
+      ).toHaveLength(1);
     });
+    expect(wire.writes("PUT").filter((call) => call.path === "/api/docs/doc_view")).toHaveLength(0);
     expect(wire.writes("DELETE")).toHaveLength(0);
+    expect(wire.calls.filter((call) => call.path.endsWith("/archive"))).toHaveLength(0);
   });
 });

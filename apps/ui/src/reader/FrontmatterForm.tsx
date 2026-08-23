@@ -16,10 +16,12 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { useMaybeBoardSurface } from "../board/BoardsProvider";
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
 import { statusLock } from "../doc/statusLock";
+import { offeredStages, stageChoicesFor } from "./stageChoices";
 import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 import { SaveChipView } from "../editor/SaveChip";
 import { AUTOSAVE_DEBOUNCE_MS, type SaveState } from "../editor/useAutosave";
@@ -83,12 +85,17 @@ interface Draft {
   readonly title: string;
   readonly tags: string;
   readonly status: DocStatus;
+  /** `""` is *no stage*, which is what the wire spells `null` (SPEC.md §5). */
+  readonly stage: string;
   readonly due: string;
 }
 
 type FieldName = keyof Draft;
 
-const FIELD_NAMES: readonly FieldName[] = ["title", "tags", "status", "due"];
+const FIELD_NAMES: readonly FieldName[] = ["title", "tags", "status", "stage", "due"];
+
+/** The `<option>` value that clears the field — never a legal stage (non-empty). */
+export const CLEAR_STAGE = "";
 
 /** The fields the person has touched and the server has not yet confirmed. */
 type Local = { -readonly [K in FieldName]?: Draft[K] };
@@ -111,6 +118,7 @@ function draftOf(doc: Doc): Draft {
     title: frontmatter.title,
     tags: tagsToText(frontmatter.tags),
     status: frontmatter.status,
+    stage: frontmatter.stage ?? "",
     due: frontmatter.due ?? "",
   };
 }
@@ -165,7 +173,7 @@ function statusOptions(current: DocStatus): readonly DocStatus[] {
  * arrive and short enough that a deliberate clear still lands by itself.
  */
 export function isDeliberate(field: FieldName, value: string): boolean {
-  if (field === "status") return true;
+  if (field === "status" || field === "stage") return true;
   if (field === "due") return value !== "";
   return false;
 }
@@ -200,6 +208,19 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
     changes.status = draft.status;
   }
   if (draft.tags.trim() !== current.tags) changes.tags = textToTags(draft.tags);
+  /*
+   * `stage` is cleared with an explicit `null`, like `due` and for the same
+   * reason: omission means "leave it alone" on this route, so a stage could
+   * never be removed. §5 makes clearing the **unmapped** case — a document in a
+   * kanban whose stage is cleared is written `open` in the same commit, by the
+   * server, which then says so in a `stage_status` warning.
+   *
+   * **`status` is never sent alongside it.** The coupling has one home
+   * (SERVER-138), and the two controls here write one patch: a user who moved
+   * both in one sitting is asking for two things §5 says cannot both hold, and
+   * the stage is the one §5 gives the last word.
+   */
+  if (draft.stage !== current.stage) changes.stage = draft.stage === "" ? null : draft.stage;
   if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
   return changes;
 }
@@ -277,6 +298,8 @@ function withField(local: Local, name: FieldName, value: string): Local {
       return { ...local, tags: value };
     case "due":
       return { ...local, due: value };
+    case "stage":
+      return { ...local, stage: value };
     case "status": {
       const status = DOC_STATUSES.find((each) => each === value);
       return status === undefined ? local : { ...local, status };
@@ -371,6 +394,14 @@ export function FrontmatterForm({
    */
   useEditSurface(docId);
   const queryClient = useQueryClient();
+  /*
+   * The boards, for the `stage ▾` control's vocabulary (SPEC.md §10, rider 6).
+   * `useMaybeBoardSurface` because a reader is legitimately rendered without a
+   * board provider in component tests, and a document's frontmatter form is not
+   * a surface that *needs* one — with no boards there is simply nothing to
+   * offer, which is the honest state of a workspace holding no kanban.
+   */
+  const boardSurface = useMaybeBoardSurface();
 
   const [local, setLocal] = useState<Local>({});
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
@@ -436,6 +467,17 @@ export function FrontmatterForm({
        */
       queryClient.setQueryData(docQueryKey(docId), response.doc);
       clearSettled();
+      /*
+       * §11's `stage_status`: this write moved a stage and the board's
+       * `kanban.status` map decided a status in the same commit (SPEC.md §5).
+       * The caller asked for one field and got two, so the second one is
+       * reported here rather than left to be noticed in `git log` — the server's
+       * own sentence, which names the board that decided.
+       */
+      for (const warning of response.warnings) {
+        if (warning.code !== "stage_status") continue;
+        notify.current({ tone: "info", message: warning.detail });
+      }
       setSave({
         kind: "saved",
         remapped: response.anchors.remapped.length,
@@ -620,6 +662,17 @@ export function FrontmatterForm({
   const value = valueOf(doc, local);
   const statusReason = statusLock(doc.frontmatter);
   const folder = folderOf(doc.path);
+  /*
+   * Which kanbans claim this document, and therefore which words its `stage`
+   * may take. A workspace with no kanban over `stage` offers none, and the
+   * control is absent rather than empty — there is no vocabulary to pick from
+   * and an empty `<select>` would be a control that cannot be used.
+   */
+  const stageGroups = stageChoicesFor(boardSurface?.boards ?? [], {
+    frontmatter: doc.frontmatter,
+    folder,
+  });
+  const stages = offeredStages(stageGroups, doc.frontmatter.stage);
 
   return (
     <>
@@ -638,6 +691,14 @@ export function FrontmatterForm({
           </span>
         ))}
         <span className="chip on">{doc.frontmatter.status}</span>
+        {/* A stage is shown when there is one, or when a board offers words for
+            it — a document no kanban claims says nothing about a field it does
+            not use. */}
+        {doc.frontmatter.stage === null && stages.length === 0 ? null : (
+          <span className={doc.frontmatter.stage === null ? "chip" : "chip on"}>
+            stage: {doc.frontmatter.stage ?? "none"}
+          </span>
+        )}
         {doc.frontmatter.updated === null ? null : (
           <span className="chip">updated {doc.frontmatter.updated.slice(0, 10)}</span>
         )}
@@ -737,6 +798,51 @@ export function FrontmatterForm({
             ))}
           </select>
         </Field>
+        {/*
+         * `stage ▾` (SPEC.md §10, rider 6): "anything the graph does not allow
+         * is done by setting the field in the document". This is that control,
+         * and it is deliberately **not** restricted by any transition graph — it
+         * is the way past one. The options are grouped by the board that names
+         * them, because two kanbans over one document share one `stage` value
+         * and two vocabularies (`stageChoices.ts`).
+         *
+         * Absent when no kanban over `stage` claims this document: a `<select>`
+         * with nothing but "Clear the stage" in it is a control with no act.
+         */}
+        {stages.length === 0 ? null : (
+          <Field
+            label="stage"
+            lock={null}
+            hint="any stage on any board that claims this document — this is how a transition is skipped"
+          >
+            <select
+              className="fm-input"
+              value={value.stage}
+              onKeyDown={leaveOnEscape}
+              onChange={(event) => {
+                patch("stage", event.target.value);
+              }}
+            >
+              <option value={CLEAR_STAGE}>Clear the stage</option>
+              {stageGroups.map((group) => (
+                <optgroup key={group.boardId} label={group.boardTitle}>
+                  {group.stages.map((stage) => (
+                    <option key={`${group.boardId}:${stage}`} value={stage}>
+                      {stage}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              {/* A stage the document carries that no board on the bar draws:
+                  kept so the control shows the value it is looking at, rather
+                  than rendering blank over a document that has one. */}
+              {value.stage !== "" &&
+              stageGroups.every((group) => !group.stages.includes(value.stage)) ? (
+                <option value={value.stage}>{`${value.stage} (no board draws this)`}</option>
+              ) : null}
+            </select>
+          </Field>
+        )}
         {/*
          * `due` is live on every document, and `lock={null}` says so with no
          * branch: nothing computes a deadline from a document's content, so a

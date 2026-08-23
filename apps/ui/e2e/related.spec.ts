@@ -24,7 +24,6 @@ const INBOX_VIEW = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -108,18 +107,24 @@ test.describe("the related panel", () => {
     expect(order).toEqual(["backlinks", "related"]);
   });
 
-  test("a row pushes the navigation stack, and Back returns", async ({ page }) => {
+  test("a row continues the path to the right, and Back returns", async ({ page }) => {
     await stubCorpus(page, CORPUS);
     await openReader(page, "doc_mortgage");
 
     // A `similar` row, so the click path is exercised on a relation the
-    // reference graph could never have produced.
+    // reference graph could never have produced. Inside a path column a
+    // followed link continues the path (UI-149, rider 3) — a second column,
+    // not a push in place.
     await page.locator('.reader .related [data-related="doc_offers"]').click();
-    await expect(page.locator(".reader .doc-title")).toHaveValue("Lender offers");
+    const second = page.locator('.pcol[data-col="path:1:1"]');
+    await expect(second.locator(".doc-title")).toHaveValue("Lender offers");
 
-    const back = page.locator(".reader .back");
+    // Back at the root of a continuation column returns to where it came from
+    // by closing the column.
+    const back = second.locator(".reader .back");
     await expect(back).toBeVisible();
     await back.click();
+    await expect(second).toHaveCount(0);
     await expect(page.locator(".reader .doc-title")).toHaveValue("Mortgage options");
   });
 

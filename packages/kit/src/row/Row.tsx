@@ -1,8 +1,9 @@
 import type { DocRow } from "@corpus/contract";
-import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
 import {
   AgentActivityDot,
   AgeChip,
+  ChangedMark,
   NeedsYouBadge,
   UnreadBadge,
   unreadBadgeProps,
@@ -76,6 +77,55 @@ export interface RowProps {
    * row is highlighted.
    */
   readonly cursor?: boolean | undefined;
+  /**
+   * This document changed since the agent last reflected on the corpus
+   * (SPEC.md §7's rider 9) — the diamond in the badge cluster.
+   *
+   * **A prop, and never derived here.** The rule is `isUnreflected` in
+   * `@corpus/contract`, and it takes a second argument this row does not have
+   * and must not go looking for: the corpus's reflection clock, which arrives on
+   * `GET /api/workspace/reflect` and belongs to the surface that hosts the
+   * column, not to a list item. A row that fetched the clock for itself would be
+   * one request per row for a fact that is one request per board.
+   *
+   * Absent means **unmarked**, which is also what an unread clock produces: a
+   * host that has not read the status yet passes nothing, and the row says
+   * nothing, rather than claiming the agent has never been round.
+   */
+  readonly unreflected?: boolean | undefined;
+  /**
+   * This row is the **origin** of an open path (SPEC.md §10, rider 3): the
+   * document it names is the root of the chain of reader columns to this
+   * column's right. Accent wash, accent bar, and `▸` in the badge cluster.
+   *
+   * A prop derived by the host from its strip at render time, never stored on
+   * the row — the same rule as {@link RowProps.cursor}, for the same reason.
+   */
+  readonly origin?: boolean | undefined;
+  /**
+   * The row may be picked up and dragged (SPEC.md §10, rider 6 — a kanban's
+   * rows move between its stage columns).
+   *
+   * **A prop, like every other, because a row knows nothing about any column.**
+   * What a drag *means* is the host's entirely: which field it writes, which
+   * columns will take it, and whether the graph allows the drop. This row only
+   * says "this element is draggable" and reports the two events, so the same
+   * component still renders in a search result list, where nothing drags.
+   *
+   * Absent means not draggable, which is what every list but a kanban's is.
+   */
+  readonly draggable?: boolean | undefined;
+  /** The drag began on this row. The host decides what is in flight. */
+  readonly onDragStart?: ((row: DocRow, event: DragEvent<HTMLDivElement>) => void) | undefined;
+  /** The drag ended, dropped or not — the host clears whatever it lit. */
+  readonly onDragEnd?: (() => void) | undefined;
+  /**
+   * The document is open elsewhere on the board — the top of some other path
+   * column or in-place reader — and this row is not the origin: a small dot in
+   * the badge cluster (rider 3: "a row open elsewhere on the board carries a
+   * dot").
+   */
+  readonly openElsewhere?: boolean | undefined;
 }
 
 /**
@@ -95,7 +145,8 @@ function needsYouText(attention: readonly string[]): string | null {
 }
 
 export function Row(props: RowProps): ReactElement {
-  const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor } = props;
+  const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor, unreflected } = props;
+  const { origin, openElsewhere, draggable, onDragStart, onDragEnd } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -137,6 +188,9 @@ export function Row(props: RowProps): ReactElement {
     stalenessClass(level),
     actions.isLeaving ? "leaving" : "",
     cursor === true ? "kbd" : "",
+    // Origin outranks the dot: a row cannot be both, and the host already
+    // resolves the tie (SPEC.md §10, rider 3).
+    origin === true ? "origin" : openElsewhere === true ? "open-elsewhere" : "",
   ]
     .filter((part) => part !== "")
     .join(" ");
@@ -151,8 +205,23 @@ export function Row(props: RowProps): ReactElement {
       data-row-status={row.status}
       data-row-level={String(level)}
       aria-label={`${row.type}: ${row.title}`}
+      /* `undefined` rather than `false`: the attribute's presence is what the
+         prototype's `.row[draggable="true"]` grab cursor selects on, and a row
+         nobody made draggable must not carry it at all. */
+      draggable={draggable === true ? true : undefined}
       onClick={open}
       onKeyDown={onKeyDown}
+      onDragStart={(event: DragEvent<HTMLDivElement>) => {
+        if (draggable !== true) return;
+        // Chromium refuses to start a drag with an empty data transfer.
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", row.id);
+        onDragStart?.(row, event);
+      }}
+      onDragEnd={() => {
+        if (draggable !== true) return;
+        onDragEnd?.();
+      }}
     >
       <div className="row-top">
         <span className="type-glyph">{row.type}</span>
@@ -161,6 +230,7 @@ export function Row(props: RowProps): ReactElement {
           {unread !== null ? <UnreadBadge {...unread} /> : null}
           {needsYou !== null ? <NeedsYouBadge text={needsYou} /> : null}
           <AgentActivityDot activity={activity} />
+          {unreflected === true ? <ChangedMark /> : null}
           {/* One age element per row. It sits in the badge cluster exactly when
               the quick actions have taken the meta line's place. */}
           {showActions ? <AgeChip label={age} /> : null}

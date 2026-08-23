@@ -183,9 +183,9 @@ export interface Compiled {
  * Written as the collection query's own type minus the three parameters ranked
  * retrieval does not carry (`sort`, `limit`, `offset` are ordering and paging,
  * not predicates), so a filter added to the contract's shared `docFilterShape`
- * reaches this builder as a type error rather than as silence. `pinned` and
- * `isParent` stay optional here because `GET /api/docs` declares them and
- * `/api/search` does not — the builder simply finds them absent, which is what
+ * reaches this builder as a type error rather than as silence. `isParent` stays
+ * optional here because `GET /api/docs` declares it and
+ * `/api/search` does not — the builder simply finds it absent, which is what
  * lets one builder serve an endpoint whose query type is the smaller of the two
  * without ranked retrieval growing a filter §9.2 never signed for it.
  */
@@ -300,13 +300,32 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
     );
   }
 
-  // Not thread-only: any document may carry `pinned`, though only a view
-  // renders as a column (SPEC.md §10). `pinned=true&type=view&sort=order` is
-  // the board's entire column set, in one bounded query. Ranked retrieval does
-  // not declare it (a board concern, not a retrieval one), so this branch is
-  // simply never taken there.
-  if (query.pinned !== undefined) {
-    conditions.push(`d.pinned = ${binder.next("pinned", query.pinned ? 1 : 0)}`);
+  // SPEC.md §5's `stage`, and the one filter in the set whose **empty element
+  // is a value** (CONTRACT-074).
+  //
+  // Values OR together like `type` and `tag`, and each is an exact match — but
+  // `csv` above drops empty parts, and here an empty part means something: it
+  // selects documents with no `stage` at all. That is what makes a kanban's
+  // first column one request rather than two ORed responses, since §10 puts
+  // "a document in scope with no value for the field" in that column *beside*
+  // the documents actually in its first stage: `stage=,triage`.
+  //
+  // The sentinel cannot collide with a real stage. A written stage is a
+  // non-empty comma-free string (`StageValueSchema`, refused at every write
+  // boundary), so the empty element names a value no document can hold.
+  //
+  // `stage=` on its own is therefore the unstaged, and never "filter nothing" —
+  // which is why the branch is entered on `!== undefined` and the "no values at
+  // all" case cannot arise: splitting any string on `,` yields at least one
+  // element, and every element is either a name or the sentinel.
+  //
+  // Not thread-only: any document may carry a stage.
+  if (query.stage !== undefined) {
+    const requested = new Set(query.stage.split(",").map((part) => part.trim()));
+    const named = [...requested].filter((stage) => stage !== "");
+    const branches = named.map((stage) => `d.stage = ${binder.next("stage", stage)}`);
+    if (requested.has("")) branches.push("d.stage IS NULL");
+    conditions.push(`(${branches.join(" OR ")})`);
   }
 
   // `isParent` — "is this document a child of something?" (CONTRACT-042). The

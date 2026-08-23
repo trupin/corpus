@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-132 — the toast stack, in a real browser.
@@ -59,6 +60,10 @@ async function threeToasts(page: Page): Promise<void> {
 test.describe("the toast stack", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
+    // A board with no columns, which is what the ghost belongs to since UI-148:
+    // a column is a view document *a board lists*, so a workspace with no board
+    // document has no ghost either.
+    await stubCorpus(page, []);
     await page.goto("/");
     await expect(page.locator(".ghost-col")).toBeVisible();
   });
@@ -191,7 +196,7 @@ test.describe("the toast stack", () => {
     await page.locator(".ghost-col").click();
     await page.getByRole("menuitem", { name: /Due this week/ }).click();
     const tall = page.locator('.toast[data-slot="1"]');
-    await expect(tall).toContainText("Pin failed", { timeout: 15_000 });
+    await expect(tall).toContainText("New list failed", { timeout: 15_000 });
 
     // The long notice did not decide its own height…
     const tallBox = await tall.boundingBox();
@@ -240,7 +245,7 @@ test.describe("the toast stack", () => {
     await page.locator(".ghost-col").click();
     await page.getByRole("menuitem", { name: /Due this week/ }).click();
     const failed = page.locator('.toast[data-tone="error"]');
-    await expect(failed).toContainText("Pin failed", { timeout: 15_000 });
+    await expect(failed).toContainText("New list failed", { timeout: 15_000 });
 
     const message = failed.locator(".msg");
     // The box really does cut this one…

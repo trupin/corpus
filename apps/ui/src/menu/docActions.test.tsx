@@ -203,12 +203,13 @@ describe("both presentations show one set", () => {
         }}
         close={() => undefined}
         onOpen={() => undefined}
+        onOpenHere={() => undefined}
         onOpenFocus={() => undefined}
         onNotify={() => undefined}
       />,
       { wrapper: harness.Wrapper },
     );
-    expect(rendered()).toEqual(["open", "open-focus", "unarchive", "delete"]);
+    expect(rendered()).toEqual(["open", "open-here", "open-focus", "unarchive", "delete"]);
     expect(screen.getByText("Unarchive")).toBeDefined();
   });
 });
@@ -352,6 +353,7 @@ describe("Resolve is offered wherever a status is settable", () => {
         subject={{ ...NOTE, staleLevel: 0 }}
         close={() => undefined}
         onOpen={() => undefined}
+        onOpenHere={() => undefined}
         onOpenFocus={() => undefined}
         onNotify={() => undefined}
       />,
@@ -360,7 +362,7 @@ describe("Resolve is offered wherever a status is settable", () => {
     const fromRow = [...document.querySelectorAll("[role='menuitem']")].map(
       (node) => (node as HTMLElement).dataset["act"] ?? "",
     );
-    expect(fromRow).toEqual(["open", "open-focus", "resolve", "archive", "delete"]);
+    expect(fromRow).toEqual(["open", "open-here", "open-focus", "resolve", "archive", "delete"]);
     cleanup();
 
     const doc = docFixture({ frontmatter: { id: "doc_m", title: "Mortgage options" } });

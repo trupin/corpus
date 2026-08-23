@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, type ReactElement, type ReactNode } from "react";
@@ -9,7 +8,7 @@ import {
   useRegisterBoardNavigation,
   type BoardNavigation,
 } from "../board/openInColumn";
-import { ToastProvider } from "../shell/Toasts";
+import { createBoardHarness } from "../testing/boardHarness";
 import { SearchOverlay } from "./SearchOverlay";
 import { hitFixture, searchTransport, type SearchTransportOptions } from "./searchTransport";
 
@@ -33,11 +32,16 @@ const HITS = [
 interface Handlers {
   readonly open: ReturnType<typeof vi.fn>;
   readonly revealColumn: ReturnType<typeof vi.fn>;
+  readonly openFullScreen: ReturnType<typeof vi.fn>;
 }
 
 function FakeBoard({ handlers }: { readonly handlers: Handlers }): ReactElement {
   const navigation = useMemo<BoardNavigation>(
-    () => ({ open: handlers.open, revealColumn: handlers.revealColumn }),
+    () => ({
+      open: handlers.open,
+      revealColumn: handlers.revealColumn,
+      openFullScreen: handlers.openFullScreen,
+    }),
     [handlers],
   );
   useRegisterBoardNavigation(navigation);
@@ -51,19 +55,17 @@ function renderOverlay(options: SearchTransportOptions = {}) {
     docs: { doc_mortgage: { path: "data/docs/finance/housing/mortgage.md" } },
     ...options,
   });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   const onClose = vi.fn();
-  const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn() };
+  const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn(), openFullScreen: vi.fn() };
 
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <BoardNavigationProvider>
-            <FakeBoard handlers={handlers} />
-            {children}
-          </BoardNavigationProvider>
-        </ToastProvider>
+        <BoardNavigationProvider>
+          <FakeBoard handlers={handlers} />
+          {children}
+        </BoardNavigationProvider>
       </harness.Wrapper>
     );
   }
@@ -382,7 +384,13 @@ describe("the keyboard", () => {
     expect(container.querySelector<HTMLElement>(".sr.kbd")?.dataset["sr"]).toBe("doc_mortgage");
   });
 
-  it("opens the highlighted hit in its home column and closes", async () => {
+  /*
+   * Rider 3 (SPEC.md §10): the overlay's `↵` is an open with no origin, so it
+   * lands as a loose path at the board's left edge — a bare `docId`, with no
+   * placement read at all. The pre-rider home-column resolution and the
+   * document fetch it needed are gone with `resolveColumn`.
+   */
+  it("opens the highlighted hit — a loose path at the left edge — and closes", async () => {
     const user = userEvent.setup();
     const { handlers, onClose } = renderOverlay();
     await search(user, "mortgage options");
@@ -390,27 +398,8 @@ describe("the keyboard", () => {
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect(onClose).toHaveBeenCalled();
-    /*
-     * A hit carries no folder, type or status, so the overlay reads the
-     * document — through the reader's own `["docs", id]` cache entry — and hands
-     * `resolveColumn` the same subject a board row would have.
-     */
     await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({
-        docId: "doc_mortgage",
-        subject: { folder: "finance/housing", type: "note", status: "open" },
-      });
-    });
-  });
-
-  it("still opens the document when the placement read is refused", async () => {
-    const user = userEvent.setup();
-    const { handlers } = renderOverlay({ failing: { "/api/docs/doc_mortgage": 500 } });
-    await search(user, "mortgage options");
-
-    await user.keyboard("{ArrowDown}{Enter}");
-    await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_mortgage", subject: null });
+      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_mortgage" });
     });
   });
 
@@ -432,7 +421,7 @@ describe("the keyboard", () => {
    * is byte-identical to the one the pre-change overlay wrote for the same
    * search, because `toApiParams`/`toViewFrontmatter` never moved.
    */
-  it("⇧↵ pins the search as the same `GET /api/docs` view document it always did", async () => {
+  it("⇧↵ adds the search to the board as the view document it always did", async () => {
     const user = userEvent.setup();
     const { wire, handlers } = renderOverlay();
     await search(user, "mortgage");
@@ -443,12 +432,14 @@ describe("the keyboard", () => {
       expect(wire.writes("POST").length).toBe(1);
     });
     const fromKeyboard = wire.writes("POST")[0]?.body;
+    // A view is a saved query and nothing more (rider 2): no `pinned`, no
+    // `order`. What puts it on the board is the board's own `columns`.
     expect(fromKeyboard).toMatchObject({
       type: "view",
-      pinned: true,
       title: "mortgage",
       query: { q: "mortgage", sort: "relevance" },
     });
+    expect(fromKeyboard).not.toHaveProperty("pinned");
     await waitFor(() => {
       expect(handlers.revealColumn).toHaveBeenCalledWith("doc_created");
     });
@@ -478,7 +469,6 @@ describe("the keyboard", () => {
     });
     expect(wire.writes("POST")[0]?.body).toMatchObject({
       type: "view",
-      pinned: true,
       query: { unread: "true" },
     });
     // …and it cost no ranked request, because there was no `q` to rank.
@@ -545,11 +535,9 @@ describe("the create row", () => {
     });
     expect(onClose).toHaveBeenCalled();
     await waitFor(() => {
-      expect(handlers.open).toHaveBeenCalledWith({
-        docId: "doc_created",
-        subject: { folder: "inbox", type: "note", status: "open" },
-        selectTitle: true,
-      });
+      // Rider 3: the omnibox create has no origin row — a loose path, title
+      // selected.
+      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_created", selectTitle: true });
     });
     // The toast surface is an `aria-live` region, not a `role="status"` element:
     // the console strip owns that role (see `Toasts.tsx`).

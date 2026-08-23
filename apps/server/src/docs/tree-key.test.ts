@@ -129,6 +129,7 @@ describe("the ['tree'] invalidation key", () => {
         `["threads","${thread}"]`,
         `["docs","${parent}"]`,
         '["tree"]',
+        '["reflect"]',
       ]);
     });
 
@@ -148,6 +149,7 @@ describe("the ['tree'] invalidation key", () => {
         '["docs"]',
         `["docs","${thread}"]`,
         `["threads","${thread}"]`,
+        '["reflect"]',
       ]);
     });
 
@@ -390,7 +392,7 @@ describe("the ['tree'] invalidation key", () => {
     // segment. SERVER-018 changed when `["tree"]` is emitted, never what the
     // emitted names are.
     const names = new Set(frames.flat().map((key) => key[0]));
-    expect([...names].sort()).toEqual(["docs", "threads", "tree"]);
+    expect([...names].sort()).toEqual(["docs", "reflect", "threads", "tree"]);
     for (const key of frames.flat()) {
       expect(key.every((segment) => typeof segment === "string")).toBe(true);
       expect(key.length).toBeLessThanOrEqual(2);

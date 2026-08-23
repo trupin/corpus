@@ -8,9 +8,29 @@
  * `.ac-item` has never had to carry — a destructive item.
  */
 
-.ctx-menu {
-  min-width: 220px;
-  max-height: min(60vh, 420px);
+/*
+ * **Two classes, and never one** (UI-145).
+ *
+ * `.ctx-menu { max-height: min(60vh, 420px) }` and `.ctx-menu { min-width:
+ * 220px }` both stood here and **neither ever applied**: each ties on
+ * specificity with `.ac-menu`'s own, and `main.tsx` imports `./app/App` before
+ * the kit's sheets, so every kit rule is injected after every app rule and wins
+ * a tie. Measured in Chromium: a five-item row menu computed `max-height:
+ * 200px` and `min-width: 250px` — the kit's numbers, in a 720px window with
+ * 520px unused.
+ *
+ * The `min-width` is simply gone: 250px is what has always shipped and is wider
+ * than the 220px that never applied, so there is nothing to restore.
+ *
+ * The ceiling is the room, measured in `ContextMenu.tsx` and applied inline —
+ * SPEC.md §10, *"a bound is derived from the room, not chosen as a number"*.
+ * What is left here is the value before that measurement lands and if it ever
+ * fails to, and it is written on two classes so that it cannot lose a tie
+ * again. It is still a derivation and not a constant: the whole window, less
+ * the margin a menu keeps at each edge.
+ */
+.ac-menu.ctx-menu {
+  max-height: calc(100vh - 8px);
 }
 
 /* The description sits under the label here, not beside it: these are acts, and

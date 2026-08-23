@@ -26,7 +26,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
   // Wide enough that the body has gutter to be dragged into, and well inside
@@ -41,7 +40,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 2,
   query: { type: "thread" },
   // Wide, for the same reason the inbox is: the point is the gutter a
@@ -143,7 +141,11 @@ async function openNote(page: Page): Promise<void> {
   await stubCorpus(page, [VIEW, NOTE, THREAD]);
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator('.row[data-row-doc="doc_note"]').click();
+  // "Open here" — the column's own reader, at the column's 900px. A plain
+  // click now opens a 440px path column (UI-149, rider 3), which is not the
+  // wide-gutter surface this suite measures.
+  await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+  await page.locator('[role="menuitem"][data-act="open-here"]').click();
   await page.locator(".reader .ProseMirror").waitFor();
 }
 
@@ -267,7 +269,8 @@ test.describe("the document body's width, in a column", () => {
     // Navigation: §10 asks for a width that persists across it, and navigation
     // is exactly what changes the document — so the width is the reader's.
     await page.locator(".reader .back").click();
-    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
     await page.locator(".reader .ProseMirror").waitFor();
     await expect
       .poll(async () => Math.round(await widthOf(page, `.reader ${BODY}`)))
@@ -285,7 +288,8 @@ test.describe("the document body's width, in a column", () => {
     const corpus = await stubCorpus(page, [VIEW, NOTE, THREAD]);
     await page.goto("/");
     await page.locator(".board").waitFor();
-    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
     await page.locator(".reader .ProseMirror").waitFor();
 
     await page.locator(`.reader ${HANDLE}`).focus();
@@ -352,7 +356,12 @@ test.describe("the document body's width, in a column", () => {
     await stubCorpus(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
     await page.goto("/");
     await page.locator(".board").waitFor();
-    await page.locator('.col[data-col="doc_view_threads"] .row[data-row-doc="th_1"]').click();
+    // "Open here": the 900px column is the gutter this test measures; a plain
+    // click would open a 440px path column instead (UI-149, rider 3).
+    await page
+      .locator('.col[data-col="doc_view_threads"] .row[data-row-doc="th_1"]')
+      .click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
     const reader = page.locator('.reader[data-reader-doc="th_1"]');
     await expect(reader).toHaveCount(1);
     await reader.locator(".thread-conversation").waitFor();

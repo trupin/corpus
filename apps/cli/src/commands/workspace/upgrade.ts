@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES, type Actor } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
 import { plural } from "../../input.js";
+import { renderMigrations } from "../../migrations/render.js";
+import { detectMigrations, type DetectedMigration } from "../../migrations/registry.js";
 import type { Output } from "../../output.js";
 import { TEMPLATE_MANIFEST_FILE, templateManifestPath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
@@ -21,7 +23,7 @@ import {
   type UpgradeAction,
   type UpgradeDecision,
 } from "../../template/plan.js";
-import { CONFIG_DIR } from "../../workspace.js";
+import { CONFIG_DIR, DEFAULT_DATA_DIR } from "../../workspace.js";
 import { commitPaths, gitExitCode, gitFailure, identityFor, runGit } from "../init/git.js";
 import { ensureMaintenanceSettings, missingMaintenanceSettings } from "./maintenance.js";
 
@@ -196,6 +198,17 @@ export interface UpgradeReport {
    * workspace made last week is in the hazardous configuration now.
    */
   readonly maintenanceSettings: readonly string[];
+  /**
+   * **Data migrations** this workspace needs (SPEC.md §2.4 rider 8, CLI-061) —
+   * files the installed tool no longer reads as they are written, each carrying
+   * the commands that perform it. Always present, `[]` when nothing fires.
+   *
+   * Reported, never performed: that is the rider, and it is why nothing on this
+   * path acts on them. It also does not touch {@link UpgradeReport.upToDate} or
+   * the exit code — a migration is the agent's work, not the upgrade's failure,
+   * and a workspace whose template files are current can still need one.
+   */
+  readonly migrations: readonly DetectedMigration[];
 }
 
 /**
@@ -224,6 +237,12 @@ export interface WorkspaceUpgradeRequest {
   readonly dryRun?: boolean;
   readonly restore?: boolean;
   readonly adopt?: boolean;
+  /**
+   * `dataDir` from the workspace config — where the migration detectors look for
+   * `docs/`. Defaults to the config's own default, so a caller that does not
+   * care keeps working; every real call passes the workspace's value.
+   */
+  readonly dataDir?: string;
 }
 
 export async function runWorkspaceUpgrade(
@@ -238,11 +257,17 @@ export async function runWorkspaceUpgrade(
       dryRun: context.flags.boolean("dry-run"),
       restore: context.flags.boolean("restore"),
       adopt: context.flags.boolean("adopt"),
+      dataDir: context.workspace.dataDir,
     },
     dependencies,
   );
   context.out.emit(report);
   renderUpgradeReport(context.out, report);
+  // Last, and outside `renderUpgradeReport`: `corpus upgrade` renders that
+  // report *nested*, under a "workspace template:" heading, and a data migration
+  // is not a template file. §2.4 wants it listed distinctly, which means at the
+  // end of the report rather than inside one of its sections.
+  renderMigrations(context.out, report.migrations);
 }
 
 export async function applyWorkspaceUpgrade(
@@ -296,6 +321,16 @@ export async function applyWorkspaceUpgrade(
     manifestCommitted: false,
     commit: null,
     maintenanceSettings,
+    // Read-only, off disk, and computed before any early return: a workspace
+    // whose template files are already current is exactly the workspace whose
+    // *data* may still be written for the version before this one (SPEC.md §2.4
+    // rider 8). It is also why this is not gated on `dryRun` — detecting a
+    // migration writes nothing in either mode.
+    migrations: detectMigrations({
+      root,
+      dataDir: request.dataDir ?? DEFAULT_DATA_DIR,
+      actor: request.actor,
+    }),
   };
 
   const pending = decisions.filter((decision) => writes(decision.action, restore));
@@ -719,6 +754,13 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "in that state now. The repository is never **packed** here — an upgrade may run with the " +
     "server up, and packing beside the sole writer is the race being repaired; packing happens " +
     "at `corpus server start` and in `corpus workspace maintain`.\n\n" +
+    "**Data migrations are reported, never performed.** A release that stops reading a " +
+    "frontmatter key leaves every existing workspace written for the release before it, so the " +
+    "report ends with a `migrations` section: one block per migration, a line saying what the " +
+    "tool no longer reads, and the commands that perform it, ready to paste (SPEC.md §2.4). The " +
+    "section says `none` when nothing fires, and a migration never changes the exit code — it is " +
+    "work for the agent, not a failure of the upgrade. Under `--json` it is the `migrations` " +
+    "array. Every command in it is safe to run twice.\n\n" +
     "This command and `corpus init` are the only two that write workspace files directly and " +
     "commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the " +
     "server stopped, because a workspace whose skills are broken is exactly the one whose loop " +
@@ -766,7 +808,9 @@ export const upgradeCommand: WorkspaceCommandSpec = {
         'One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0",' +
         '"dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md",' +
         '"action":"keep-modified","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],' +
-        '"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab"}`.',
+        '"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab",' +
+        '"migrations":[{"id":"views-to-board","statement":"…","commands":["corpus doc create --type board …"],' +
+        '"optional":[]}]}`.',
     },
   ],
   handler: (context) => runWorkspaceUpgrade(context),

@@ -28,7 +28,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -39,7 +38,6 @@ const SECOND_VIEW: StubRow = {
   type: "view",
   title: "Also inbox",
   path: "data/docs/views/two.md",
-  pinned: true,
   order: 2,
   query: { folder: "inbox" },
 };
@@ -338,17 +336,32 @@ test.describe("the rule and the reader", () => {
     await expectOpen(page, "th_open");
   });
 
+  /**
+   * "Sticks through navigating away and back" is a claim about a **surface**
+   * (§10 says it sticks the way the reader's width does), and the stable
+   * surface is the column's own reader — so this is exercised through "open
+   * here" (UI-149, rider 3): a plain click now opens a *path*, and a path
+   * closed is an excursion ended; a fresh path is a fresh surface, exactly as
+   * a fresh focus-mode excursion is.
+   */
   test("keeps a hand-made fold through navigating away and back, and through a reload", async ({
     page,
   }) => {
-    await openNote(page);
+    await stubCorpus(page, BASE);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').first().click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+    await page.locator(".reader [data-thread-panel]").first().waitFor();
     await panel(page, "th_open").locator(".t-collapse").click();
     await expectFolded(page, "th_open");
 
     // Back to the list and in again — a fresh reader over the same document.
     await page.keyboard.press("Escape");
     await expect(page.locator(".reader")).toHaveCount(0);
-    await page.locator('.row[data-row-doc="doc_note"]').first().click();
+    await page.locator('.row[data-row-doc="doc_note"]').first().click({ button: "right" });
+    await page.locator('[role="menuitem"][data-act="open-here"]').click();
     await page.locator(".reader .ProseMirror").waitFor();
     await expectFolded(page, "th_open");
 
@@ -361,14 +374,17 @@ test.describe("the rule and the reader", () => {
   });
 
   test("leaves a second column showing the same document with its own answer", async ({ page }) => {
+    // Two picks from two columns are two paths, each with its own reader —
+    // and the loop rule does not apply across paths (rider 3 is per path).
     await openNote(page, [VIEW, SECOND_VIEW, NOTE, OPEN_THREAD, RESOLVED_THREAD]);
-    const first = page.locator('.col[data-col="doc_view_inbox"]');
-    const second = page.locator('.col[data-col="doc_view_two"]');
+    const first = page.locator('.pcol[data-col="path:1:0"]');
+    await expect(first.locator(".reader")).toBeVisible();
 
     await panel(first, "th_open").locator(".t-collapse").click();
     await expectFolded(first, "th_open");
 
-    await second.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator('.col[data-col="doc_view_two"] .row[data-row-doc="doc_note"]').click();
+    const second = page.locator('.pcol[data-col="path:2:0"]');
     await second.locator(".reader .ProseMirror").waitFor();
     await expectOpen(second, "th_open");
     // …and the first column did not change its mind.
@@ -392,7 +408,6 @@ test.describe("a thread opened as its own document", () => {
     type: "view",
     title: "Conversations",
     path: "data/docs/views/threads.md",
-    pinned: true,
     order: 2,
     query: { type: "thread" },
   };

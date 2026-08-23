@@ -82,7 +82,7 @@ describe("catchUpOnWatcherReady", () => {
     await runCatchUp();
 
     expect(documentIds()).toEqual(["doc_aaa", "doc_window"]);
-    expect(batches).toEqual([REBUILD_QUERY_KEYS]);
+    expect(batches).toEqual([[...REBUILD_QUERY_KEYS, ["reflect"]]]);
     // The queue's reader has the last word on `events` after any repopulate,
     // exactly as at boot and after `POST /api/db/rebuild`.
     expect(attachMirror).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe("catchUpOnWatcherReady", () => {
     await runCatchUp();
 
     expect(documentIds()).toEqual([]);
-    expect(batches).toEqual([REBUILD_QUERY_KEYS]);
+    expect(batches).toEqual([[...REBUILD_QUERY_KEYS, ["reflect"]]]);
   });
 
   it("re-reads a file edited in the window", async () => {
@@ -106,7 +106,7 @@ describe("catchUpOnWatcherReady", () => {
       body_excerpt: string;
     };
     expect(row.body_excerpt).toContain("Edited behind the scan.");
-    expect(batches).toEqual([REBUILD_QUERY_KEYS]);
+    expect(batches).toEqual([[...REBUILD_QUERY_KEYS, ["reflect"]]]);
   });
 
   it("does nothing at all when the files and the rows already agree", async () => {

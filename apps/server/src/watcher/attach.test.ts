@@ -127,7 +127,7 @@ describe("attachWatcher", () => {
         },
         { timeout: 8000, interval: 25 },
       );
-      expect(batches).toEqual([REBUILD_QUERY_KEYS]);
+      expect(batches).toEqual([[...REBUILD_QUERY_KEYS, ["reflect"]]]);
     } finally {
       await watcher?.close();
       await server.close();

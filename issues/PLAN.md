@@ -1229,7 +1229,12 @@ left in a report.
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
 | UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
 | UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
-| UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | todo | P1 | SHARED-061 |
+| UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
+| UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | todo | P1 | UI-145 |
+| UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | todo | P2 | UI-149 |
+| UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | todo | P1 | UI-150 |
+| UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
+| UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | todo | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
@@ -1266,9 +1271,13 @@ was written for.
 | AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
 | SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
+| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | todo | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
-| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | todo | P0 | SHARED-067 |
+| CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
+| CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
 | CONTRACT-077 | Delete the contract's plugin types and the /api/x route note | done | P0 | CLI-062 |
+| CONTRACT-078 | A folder act cannot report a document it refused (SERVER-136 escalation) | todo | P2 | CONTRACT-075, SERVER-136 |
+| CONTRACT-079 | Record the two warning codes Phase 41 added from the server's tree (PR #58 review) | todo | P3 | CONTRACT-074, SERVER-138 |
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
@@ -1416,6 +1425,23 @@ default, `0` disables) after an unreflected change; the agent gathers the
 window itself, writes changelog entries and one digest thread; the board marks
 what is unreflected.
 
+**Prep applied 2026-08-22, before any agent read these files.** The v0.18.0
+ID-collision rename swept this phase's issue files and left three kinds of
+damage, all repaired in one commit: nineteen dependency references pointed at
+the plugin-deletion issues that had taken their numbers (`CONTRACT-077` for
+`CONTRACT-074`, `SERVER-139` for `SERVER-136`, `CLI-060` for `CLI-062`,
+`AGENT-042` for `AGENT-044`); forty-odd `§11` citations still meant the UI
+section, which v0.18.0 renumbered to `§10`; and four clauses in SERVER-138,
+UI-152, UI-149 and AGENT-042 described derived status, plugin rows and
+`docs/PLUGINS.md`, all of which v0.18.0 deleted. Those four are struck in place
+with a dated note rather than removed, and SPEC §5 and §10 were checked to carry
+no derived-status carve-out — the carve-out lived only in the issue files.
+
+**Riding along in the same PR, by the v0.19.0 release scope:** UI-145 (the
+context menu's ceiling never applies, and UI-149 adds four items to that menu)
+and UI-147 (`design/index.html` still draws the column-open this phase
+replaces). They keep their rows in their own phases.
+
 **Order of work.** SHARED-064 first, rider by rider. Then CONTRACT-074,
 CONTRACT-075 and CONTRACT-076 together. Then SERVER-138, SERVER-136, SERVER-137
 and UI-148 (three at a time on this machine). Then CLI-060, UI-149 and UI-152.
@@ -1425,19 +1451,20 @@ SHARED-064 → CONTRACT-074 → UI-148 → UI-149 → UI-150.
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
 | SHARED-064 | SPEC riders for the navigation model: explorer, boards as documents, paths, kanban graphs, reflection | done | P0 | fable | — |
-| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | todo | P0 | opus | SHARED-064 |
-| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | todo | P1 | opus | SHARED-064 |
-| CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | todo | P1 | opus | SHARED-064 |
-| AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | todo | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
-| SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | todo | P0 | opus | CONTRACT-074 |
-| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | todo | P1 | opus | CONTRACT-075 |
-| SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | todo | P1 | opus | CONTRACT-076 |
-| CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | todo | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
-| CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | todo | P0 | opus | CONTRACT-074, CLI-060 |
-| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | todo | P0 | opus | CONTRACT-074, SERVER-138 |
-| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | todo | P0 | fable | UI-148 |
-| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | todo | P1 | opus | UI-148, SERVER-138 |
-| UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | todo | P0 | opus | UI-149, CONTRACT-075 |
-| UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | todo | P1 | opus | UI-149 |
-| UI-153 | The Reflect control, and what changed since the agent last looked | todo | P1 | opus | UI-148, SERVER-137 |
+| CONTRACT-074 | Board fields, `stage`, and the end of `pinned` | done | P0 | opus | SHARED-064 |
+| CONTRACT-075 | Folder routes: rename, archive, unarchive, delete | done | P1 | opus | SHARED-064 |
+| CONTRACT-076 | `workspace.reflect`: the event, the ask route, and the status route | done | P1 | opus | SHARED-064 |
+| AGENT-042 | Seed boards and a kanban; the skills and template say "a board is a document"; the skill handles `workspace.reflect` | done | P0 | opus | SHARED-064, CLI-060, SERVER-137 |
+| SERVER-138 | Project boards and `stage`, keep one default-open board, and let a stage decide a status | done | P0 | opus | CONTRACT-074 |
+| SERVER-136 | Folder acts: rename moves every document, archive flips every status, delete removes them | done | P1 | opus | CONTRACT-075 |
+| SERVER-137 | Reflect on demand and when the dust settles: the event, the clock, the quiet window | done | P1 | opus | CONTRACT-076 |
+| CLI-060 | Board flags, `--stage`, `--unset`, `corpus folder` and `corpus reflect`; `--pinned` and view `--order` go | done | P1 | opus | CONTRACT-074, CONTRACT-075, CONTRACT-076, SERVER-138, SERVER-136, SERVER-137 |
+| CLI-061 | `corpus upgrade` and `corpus workspace upgrade` report the data migrations a workspace needs, as commands an agent can run | done | P0 | opus | CONTRACT-074, CLI-060 |
+| UI-148 | Boards: the board bar, columns read from the board document, order and pin writes go to the board, one board always open | done | P0 | opus | CONTRACT-074, SERVER-138 |
+| UI-149 | Paths: a row opens a column to the right, no loops, open here, restart, new path right, keep, close, close all — and every `open()` caller lands in a path | done | P0 | fable | UI-148 |
+| UI-152 | Kanban boards: derived stage columns, a drag follows the transition graph, stage and status chips, the graph drawn | done | P1 | opus | UI-148, SERVER-138 |
+| UI-150 | Explorer: a retractable tree at the left, preview and keep, open in a chosen board, document and folder menus | done | P0 | opus | UI-149, CONTRACT-075 |
+| UI-151 | Column strip: one tab per column, grouped by path, dimmed when off screen, click scrolls, × closes | done | P1 | opus | UI-149 |
+| UI-153 | The Reflect control, and what changed since the agent last looked | done | P1 | opus | UI-148, SERVER-137 |
+| CONTRACT-080 | A board reorder is one commit: `POST /api/boards/order` — PR #58's second blocking finding, one vertical (contract, server, kit/UI) | done | P0 | opus | UI-148, SERVER-138 |
 | PLUGINS-019 | A plugin column lives on a board — **closed**, the plugin surface is deleted (SHARED-067) | closed | P2 | opus | UI-149, AGENT-042 |

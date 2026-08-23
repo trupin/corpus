@@ -275,7 +275,12 @@ describe("corpus workspace upgrade", () => {
     const harness = harnessFor(root);
     await upgrade(harness, { template });
 
-    expect(harness.stdout()).toBe("already up to date.\n");
+    // The migrations section prints in every run, including this one: a
+    // workspace whose template files are current can still hold data written
+    // for the release before this one (SPEC.md §2.4 rider 8, CLI-061).
+    expect(harness.stdout()).toBe(
+      "already up to date.\nmigrations: none — every document is written the way this tool reads it.\n",
+    );
     expect(await git(root, "rev-parse", "HEAD")).toBe(head);
   });
 
@@ -574,7 +579,7 @@ describe("corpus workspace upgrade", () => {
     // Idempotent: a second run has nothing to do at all.
     const second = harnessFor(root);
     await upgrade(second, { template });
-    expect(second.stdout()).toBe("already up to date.\n");
+    expect(second.stdout()).toContain("already up to date.\n");
   });
 
   it("creates but does not stage a marker the workspace's own .gitignore excludes", async () => {
@@ -676,6 +681,155 @@ describe("corpus workspace upgrade", () => {
     expect(existsSync(join(root, ".corpus", "queue", "deferred", ".gitkeep"))).toBe(true);
     expect(existsSync(templateManifestPath(root))).toBe(false);
     expect(harness.stdout()).toContain("no template file was written");
+  });
+});
+
+/**
+ * SPEC.md §2.4 rider 8 (signed 2026-08-22), CLI-061: the report ends with the
+ * data migrations the workspace needs, as commands, and performs none of them.
+ * The detector's own cases live in `src/migrations/`; what is tested here is the
+ * half only this verb can be wrong about — that the section is reached, that it
+ * survives an otherwise up-to-date run, and that nothing on disk moved.
+ */
+describe("corpus workspace upgrade reports data migrations", () => {
+  /** A workspace written before Phase 41: pinned views, and no board document. */
+  function seedPrePhase41(root: string): void {
+    write(
+      root,
+      "data/docs/views/attention.md",
+      "---\nid: doc_seedattention\ntype: view\ntitle: Attention\npinned: true\norder: 1\n---\n",
+    );
+    write(
+      root,
+      "data/docs/views/inbox.md",
+      "---\nid: doc_seedinbox\ntype: view\ntitle: Inbox\npinned: true\norder: 2\n---\n",
+    );
+  }
+
+  it("names the views, the board to build, and the unsets, and writes nothing", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+    const before = read(root, "data/docs/views/attention.md");
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    const stdout = harness.stdout();
+    expect(stdout).toContain("1 data migration");
+    expect(stdout).toContain("views-to-board:");
+    expect(stdout).toContain(
+      "Run the commands below, or ask the agent to. Nothing here was performed",
+    );
+    expect(stdout).toContain(
+      'corpus doc create --type board --title "Board" --folder boards ' +
+        "--columns doc_seedattention,doc_seedinbox --default-open true",
+    );
+    expect(stdout).toContain("corpus doc edit doc_seedattention --unset pinned --unset order");
+    expect(stdout).toContain("corpus doc edit doc_seedinbox --unset pinned --unset order");
+
+    // Reported, never performed: the files are byte-for-byte what they were.
+    expect(read(root, "data/docs/views/attention.md")).toBe(before);
+    expect(existsSync(join(root, "data", "docs", "boards"))).toBe(false);
+  });
+
+  it("reports the migration even when the template files are already current", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    expect(harness.stdout()).toContain("already up to date.");
+    expect(harness.stdout()).toContain("views-to-board:");
+  });
+
+  it("carries the migrations under --json, and an empty array when none fires", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    const withMigration = harnessFor(root, { json: true });
+    await upgrade(withMigration, { template });
+    const migrations = withMigration.report().migrations;
+    expect(migrations).toHaveLength(1);
+    expect(migrations[0]?.id).toBe("views-to-board");
+    expect(migrations[0]?.statement).toContain("no longer read");
+    expect(migrations[0]?.commands).toEqual([
+      'corpus doc create --type board --title "Board" --folder boards ' +
+        "--columns doc_seedattention,doc_seedinbox --default-open true",
+      "corpus doc edit doc_seedattention --unset pinned --unset order",
+      "corpus doc edit doc_seedinbox --unset pinned --unset order",
+    ]);
+    expect(migrations[0]?.optional).toEqual([]);
+
+    const plain = await makeWorkspace(template);
+    const none = harnessFor(plain, { json: true });
+    await upgrade(none, { template });
+    expect(none.report().migrations).toEqual([]);
+  });
+
+  it("looks under the workspace's own dataDir, not a hardcoded `data/`", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(
+      root,
+      "corpus-data/docs/views/attention.md",
+      "---\nid: doc_relocated\ntype: view\ntitle: Attention\npinned: true\n---\n",
+    );
+
+    const harness = harnessFor(root);
+    const relocated = { ...harness.context.workspace, dataDir: "corpus-data" };
+    await runWorkspaceUpgrade(
+      { ...harness.context, workspace: relocated },
+      { templateRoot: template },
+    );
+
+    expect(harness.stdout()).toContain(
+      "corpus doc edit doc_relocated --unset pinned --unset order",
+    );
+  });
+
+  it("says the section is empty rather than dropping it", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    expect(harness.stdout()).toContain("migrations: none");
+  });
+
+  it("goes quiet once the commands it printed have been carried out", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    seedPrePhase41(root);
+
+    // Exactly what the printed commands produce, applied by hand: a board that
+    // lists both views, and the two views with the dead keys gone.
+    write(
+      root,
+      "data/docs/boards/board.md",
+      "---\nid: doc_board\ntype: board\ntitle: Board\ndefault-open: true\n" +
+        "columns:\n  - doc_seedattention\n  - doc_seedinbox\n---\n",
+    );
+    write(
+      root,
+      "data/docs/views/attention.md",
+      "---\nid: doc_seedattention\ntype: view\ntitle: Attention\n---\n",
+    );
+    write(
+      root,
+      "data/docs/views/inbox.md",
+      "---\nid: doc_seedinbox\ntype: view\ntitle: Inbox\n---\n",
+    );
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    expect(harness.stdout()).toContain("migrations: none");
+    expect(harness.stdout()).not.toContain("views-to-board");
   });
 });
 

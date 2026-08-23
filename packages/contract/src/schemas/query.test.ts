@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CreateDocRequestSchema } from "./doc.js";
 import {
   DEFAULT_DOC_SORT,
   DOC_SORTS,
@@ -25,6 +26,7 @@ const row = {
   title: "Mortgage options",
   path: "data/docs/finance/mortgage-options.md",
   status: "open",
+  stage: null,
   tags: ["finance"],
   created: "2026-07-19T10:00:00Z",
   updated: "2026-07-19T10:42:00Z",
@@ -32,10 +34,13 @@ const row = {
   reviewed: "2026-07-20T09:00:00Z",
   evergreen: false,
   origin: null,
+  lastActor: "user",
   excerpt: "Body is plain markdown.",
-  pinned: false,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
   stale: null,
   parent: null,
@@ -177,15 +182,16 @@ describe("DocsQuery filter grammar", () => {
     expect(DocsQuerySchema.safeParse({ references: "finance" }).success).toBe(false);
   });
 
-  it.each([
-    ["true", true],
-    ["false", false],
-  ])("reads pinned=%s as the boolean it spells", (raw, expected) => {
-    expect(DocsQuerySchema.parse({ pinned: raw }).pinned).toBe(expected);
-  });
-
-  it.each(["maybe", ""])("rejects pinned=%s rather than coercing it", (raw) => {
-    expect(DocsQuerySchema.safeParse({ pinned: raw }).success).toBe(false);
+  /**
+   * Rider 7 removed `pinned` from the API on 2026-08-22, and the strict-bodies,
+   * tolerant-reads policy means a query is *tolerant*: a client still sending
+   * it is answered rather than refused, with the parameter dropped. Pinned so
+   * the tolerance is a recorded decision rather than a discovery.
+   */
+  it("no longer accepts `pinned`, and strips it rather than refusing the read", () => {
+    const parsed = DocsQuerySchema.parse({ pinned: "true", type: "view" });
+    expect("pinned" in parsed).toBe(false);
+    expect(parsed.type).toBe("view");
   });
 
   /**
@@ -240,14 +246,47 @@ describe("DocsQuery filter grammar", () => {
     expect("isParent" in DocsQuerySchema.parse({})).toBe(false);
   });
 
-  /** The board's one column-set query (SPEC.md §10; sprint-009 TEST-2). */
-  it("composes the board query: pinned views sorted by order", () => {
-    expect(DocsQuerySchema.parse({ pinned: "true", type: "view", sort: "order" })).toEqual({
-      pinned: true,
-      type: "view",
+  /** The board bar's one query (SPEC.md §10, rider 2 — `order` is now a board's). */
+  it("composes the board-bar query: boards sorted by order", () => {
+    expect(DocsQuerySchema.parse({ type: "board", sort: "order" })).toEqual({
+      type: "board",
       sort: "order",
       limit: 50,
       offset: 0,
+    });
+  });
+
+  /**
+   * CONTRACT-074's null sentinel. A kanban's first column holds its first stage
+   * *and* everything unstaged (SPEC.md §10), so the empty element is what makes
+   * it one request instead of two responses ORed in the client.
+   */
+  describe("the stage filter's null sentinel", () => {
+    it("accepts a single stage", () => {
+      expect(DocsQuerySchema.parse({ stage: "review" }).stage).toBe("review");
+    });
+
+    it("accepts a kanban's first column in one request: the sentinel ORed with a stage", () => {
+      expect(DocsQuerySchema.parse({ stage: ",triage" }).stage).toBe(",triage");
+    });
+
+    it("accepts the bare sentinel, which selects the unstaged alone", () => {
+      expect(DocsQuerySchema.parse({ stage: "" }).stage).toBe("");
+    });
+
+    it("leaves stage absent when it is not sent, so nothing is filtered", () => {
+      expect("stage" in DocsQuerySchema.parse({})).toBe(false);
+    });
+
+    /**
+     * The whole reason the sentinel is the empty element rather than a word:
+     * a written stage is a non-empty string, so the empty element names a value
+     * no document can hold and can never collide with a real one.
+     */
+    it("cannot collide, because a written stage is never empty", () => {
+      expect(
+        CreateDocRequestSchema.safeParse({ type: "note", title: "t", stage: "" }).success,
+      ).toBe(false);
     });
   });
 });
@@ -479,30 +518,73 @@ describe("DocRow", () => {
   });
 
   /**
-   * CONTRACT-011: the row carries the whole §10 view surface, so one
-   * `pinned=true&type=view&sort=order` query is the entire column set — no
-   * per-view `GET /api/docs/{id}` follow-up (sprint-009 TEST-2).
+   * CONTRACT-011, widened by CONTRACT-074: the row carries the whole §10 view
+   * *and board* surface, so one `type=board&sort=order` query is the whole
+   * board bar and one `type=view` query is every column definition — no
+   * per-document `GET /api/docs/{id}` follow-up (sprint-009 TEST-2).
    */
-  it("carries a pinned view row with its query, order and extra", () => {
+  it("carries a view row with its query and extra", () => {
     const viewRow = {
       ...row,
       id: "doc_seedattention",
       type: "view",
       title: "Attention",
-      pinned: true,
-      order: 1,
       query: { needs: "me" },
       extra: { boardIcon: "🔔" },
     };
     expect(DocRowSchema.parse(viewRow)).toEqual(viewRow);
   });
 
-  it.each([
-    ["pinned", { pinned: undefined }],
-    ["extra", { extra: undefined }],
-  ])("requires %s — the absent-on-disk reading is false/{}, not a missing key", (_l, override) => {
-    expect(DocRowSchema.safeParse({ ...row, ...override }).success).toBe(false);
+  it("carries a board row with its columns, its position and its default-open flag", () => {
+    const boardRow = {
+      ...row,
+      id: "doc_seedboard",
+      type: "board",
+      title: "Everything",
+      order: 1,
+      columns: ["doc_seedattention", "doc_seedinbox"],
+      defaultOpen: true,
+    };
+    expect(DocRowSchema.parse(boardRow)).toEqual(boardRow);
   });
+
+  it("carries a kanban board row with its whole definition, graph and status map", () => {
+    const kanbanRow = {
+      ...row,
+      id: "doc_seedpipeline",
+      type: "board",
+      title: "Pipeline",
+      order: 2,
+      query: { tag: "deal" },
+      kanban: {
+        field: "stage",
+        stages: ["triage", "drafting", "done"],
+        transitions: { triage: ["drafting"], drafting: ["done"] },
+        status: { done: "resolved" },
+      },
+    };
+    expect(DocRowSchema.parse(kanbanRow)).toEqual(kanbanRow);
+  });
+
+  /** §7's reflection reads this off the row; it is never absent and never null. */
+  it("carries the acting party of the last write, and requires it", () => {
+    expect(DocRowSchema.parse({ ...row, lastActor: "agent" }).lastActor).toBe("agent");
+    expect(DocRowSchema.safeParse({ ...row, lastActor: undefined }).success).toBe(false);
+    expect(DocRowSchema.safeParse({ ...row, lastActor: null }).success).toBe(false);
+  });
+
+  it.each([
+    ["stage", { stage: undefined }],
+    ["columns", { columns: undefined }],
+    ["kanban", { kanban: undefined }],
+    ["defaultOpen", { defaultOpen: undefined }],
+    ["extra", { extra: undefined }],
+  ])(
+    "requires %s — the absent-on-disk reading is false/null/{}, not a missing key",
+    (_l, override) => {
+      expect(DocRowSchema.safeParse({ ...row, ...override }).success).toBe(false);
+    },
+  );
 
   it("rejects a core key inside a row's extra — shadowing is impossible on reads too", () => {
     expect(DocRowSchema.safeParse({ ...row, extra: { id: "doc_other" } }).success).toBe(false);

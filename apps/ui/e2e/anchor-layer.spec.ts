@@ -27,7 +27,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -38,7 +37,6 @@ const THREADS_VIEW: StubRow = {
   type: "view",
   title: "Conversations",
   path: "data/docs/views/threads.md",
-  pinned: true,
   order: 2,
   query: { type: "thread" },
 };
@@ -236,7 +234,9 @@ test.describe("a document that arrives with an anchor already on it", () => {
 test.describe("closing full screen with the pointer parked over another column", () => {
   test("keeps the origin column active, and esc keeps working", async ({ page }) => {
     await openNote(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
-    const origin = page.locator('.col[data-col="doc_view_inbox"]');
+    // The click opened a path column and made it active (UI-149, rider 3):
+    // *it* is the origin surface this test parks the pointer away from.
+    const origin = page.locator('.pcol[data-col="path:1:0"]');
     const neighbour = page.locator('.col[data-col="doc_view_threads"]');
     await expect(neighbour).toHaveCount(1);
     await expect(origin).toHaveClass(/kactive/);
@@ -270,7 +270,7 @@ test.describe("closing full screen with the pointer parked over another column",
     await expect(origin).toHaveClass(/kactive/);
     await expect(neighbour).not.toHaveClass(/kactive/);
 
-    // Which is the point: `esc` still has the reader beneath to act on.
+    // Which is the point: `esc` still has the path column beneath to act on.
     await expect(page.locator(".reader")).toHaveCount(1);
     await page.keyboard.press("Escape");
     await expect(page.locator(".reader")).toHaveCount(0);

@@ -62,10 +62,12 @@ export interface paths {
                     offset?: number;
                     /** @description Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry `snippets`; without `q` every row's `snippets` array is empty. */
                     q?: string;
-                    /** @description Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
+                    /** @description Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
                     type?: string;
                     /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter. */
                     status?: "open" | "resolved" | "archived";
+                    /** @description Comma-separated stage values (SPEC.md §5); values OR together like `type` and `tag`, and each is an **exact** match. **An empty element selects documents with no `stage` at all** — the null sentinel — so a kanban's first column, which holds its first stage *and* everything unstaged (SPEC.md §10), is one request: `stage=,triage`. It can never collide with a real stage, because a written stage is a non-empty comma-free string, so the empty element names a value no document can hold. `stage=` on its own therefore selects the unstaged, and omitting the parameter filters nothing at all. Duplicate elements collapse. **Not thread-only**: any document may carry a stage. A kanban over `status` needs none of this — every document has a status — and draws its columns with `status=`. */
+                    stage?: string;
                     /** @description Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's "include archived" reading (SPEC.md §10) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`. */
                     includeArchived?: boolean;
                     /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
@@ -88,13 +90,11 @@ export interface paths {
                     stale?: "aging" | "stale" | "very-stale";
                     /** @description Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     unread?: boolean;
-                    /** @description Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a missing key reads as `false`). The board's column set is one bounded query — `pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` on the rows, so no per-column follow-up read is ever needed (SPEC.md §10). Not thread-only: any type may carry the key, though only views render as columns. */
-                    pinned?: boolean;
                     /** @description Whether the document is a **child of something** (SPEC.md §9.2). `true` selects **roots** — documents whose `parent` is null or absent — which is what lets a view show top-level documents without their child threads mixed in among them; `false` selects documents that **are** a child. Absent filters nothing, exactly like every other optional filter: there is no default of `true`, so a view that never sets it shows what it always showed. **It does not mean "has children."** A standalone note that nothing hangs off still matches `isParent=true` — the filter asks what a document is *under*, never what is *under it*. The "has at least one child" reading matches the name more literally and was considered and **rejected** (a parents-only view that hid every uncommented note would be nearly empty); the name is the one the user asked for and is kept deliberately, so do not "fix" it into the other meaning. **Not thread-only**, unlike `parent`: a non-thread document has no parent at all, so `isParent=true` genuinely matches it and `isParent=false` genuinely excludes it — an answer, not a no-op, and a mixed top-level list of notes and standalone threads is the point. `parent=<id>` together with `isParent=true` is a contradiction and is **refused with `400`** rather than answered with an empty set: `parent` no-ops for non-thread types, so an intersection would quietly return every root document that is not a thread — a confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely redundant and is accepted. */
                     isParent?: boolean;
                     /** @description The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
                     needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
-                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §10 view key — the board's column ordering — with the documented tiebreak: `order` with nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`. */
+                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §10 key — a **board's position among boards** — with the documented tiebreak: `order` with nulls last (a board with no `order` key is placed, never dropped), then `title`, then `id`. The board bar's whole set is therefore one bounded query, `type=board&sort=order`, with each board's `columns`, `kanban` and `defaultOpen` on the rows. */
                     sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "order" | "relevance";
                 };
                 header?: never;
@@ -1106,17 +1106,19 @@ export interface paths {
         };
         /**
          * Ranked retrieval across the corpus
-         * @description Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the same set with the same semantics as `GET /api/docs`, archived default included, and are declared from the same schema so the two cannot drift; `pinned`, `sort` and `offset` are not among them and are ignored if sent (a ranked set has one order and no pages), and neither is `isParent`, which §9.2's signed parameter string declares on the collection query alone. Each hit is an **address plus a line of context** — the document id, its title, the heading path of the best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` on a retrieved id. Phase A ranks lexically (FTS5); from Retrieval Phase B, lexical and semantic relevance combine into one list with this exact response shape, and `semanticIndex` reports when that half is not caught up (SPEC.md §9.1) — the response's one Phase B seam, inert today. Read-only; no acting party.
+         * @description Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the same set with the same semantics as `GET /api/docs`, archived default included, and are declared from the same schema so the two cannot drift; `sort` and `offset` are not among them and are ignored if sent (a ranked set has one order and no pages), and neither is `isParent`, which §9.2's signed parameter string declares on the collection query alone. Each hit is an **address plus a line of context** — the document id, its title, the heading path of the best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` on a retrieved id. Phase A ranks lexically (FTS5); from Retrieval Phase B, lexical and semantic relevance combine into one list with this exact response shape, and `semanticIndex` reports when that half is not caught up (SPEC.md §9.1) — the response's one Phase B seam, inert today. Read-only; no acting party.
          */
         get: {
             parameters: {
                 query: {
                     /** @description The query, and the only required parameter. Phase A matches it lexically (FTS5) across document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from Phase B the same string is also matched semantically and the two relevances combine into one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything. */
                     q: string;
-                    /** @description Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
+                    /** @description Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
                     type?: string;
                     /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter. */
                     status?: "open" | "resolved" | "archived";
+                    /** @description Comma-separated stage values (SPEC.md §5); values OR together like `type` and `tag`, and each is an **exact** match. **An empty element selects documents with no `stage` at all** — the null sentinel — so a kanban's first column, which holds its first stage *and* everything unstaged (SPEC.md §10), is one request: `stage=,triage`. It can never collide with a real stage, because a written stage is a non-empty comma-free string, so the empty element names a value no document can hold. `stage=` on its own therefore selects the unstaged, and omitting the parameter filters nothing at all. Duplicate elements collapse. **Not thread-only**: any document may carry a stage. A kanban over `status` needs none of this — every document has a status — and draws its columns with `status=`. */
+                    stage?: string;
                     /** @description Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's "include archived" reading (SPEC.md §10) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`. */
                     includeArchived?: boolean;
                     /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
@@ -1229,6 +1231,400 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rename or move a folder, and every document in it
+         * @description Moves `data/docs/<from>` to `data/docs/<to>`, carrying every document and thread under it (SPEC.md §9.2). **Ids never change** — the path is presentation and the id is identity (§5) — so every `[[ref]]`, anchor entry and thread `parent` keeps resolving, and the response lists each document's new path rather than a new id. **The paths are in the body, not the URL**, because a folder path carries slashes. `404` when `from` names no folder, `409` when `to` already exists — a rename never merges two folders — and `400` when either path is malformed or `to` is inside `from`. It lands as the single auto-commit §4 requires, authored by the acting party.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The folder to rename and where it is going. A rename names both. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RenameFolderRequest"];
+                };
+            };
+            responses: {
+                /** @description Every document the rename moved, each at its new path, and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RenameFolderResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive every document in a folder
+         * @description Flips `status` to `archived` on every document and thread under `data/docs/<path>` (SPEC.md §9.2, rider 7). **It moves nothing**: archiving a folder is a status act, not a relocation, so the folder stays where it is and every path is unchanged — which is what makes it reversible by `POST /api/folders/unarchive` rather than by remembering where things were. A document already archived is left as it is and is still listed, because the act applied to it. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The folder to archive. An act on a folder names one, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FolderPathRequest"];
+                };
+            };
+            responses: {
+                /** @description Every document in the folder, with its status after the act, and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FolderStatusResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore every archived document in a folder
+         * @description The inverse flip, back to `status: resolved` — the state archiving already implied (SPEC.md §5) — on every document and thread under `data/docs/<path>`. It moves nothing, for the reason archiving moves nothing. A document that was not archived is left as it is and is still listed. `404` when the folder is unknown. One action, one commit (§4), authored by the acting party.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The folder to restore. An act on a folder names one, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FolderPathRequest"];
+                };
+            };
+            responses: {
+                /** @description Every document in the folder, with its status after the act, and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FolderStatusResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete a folder and every document in it (user-only)
+         * @description **User-only**, exactly as deleting a document is (SPEC.md §9.2, rider 7): a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (§7). Nothing is hard-deleted from history; git preserves every file and every version of it, and the threads of a deleted document become orphaned records that still name it as `parent` (§9.2). The response lists the ids and nothing more, because there is no field left to report: a client drops those rows. `404` when the folder is unknown. **A `POST`, not a `DELETE`**, for the reason the whole family is: the folder is named in the body because a folder path carries slashes, and a `DELETE` with a body is a request intermediaries are entitled to strip.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The folder to delete. An act on a folder names one, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FolderPathRequest"];
+                };
+            };
+            responses: {
+                /** @description The ids of every document the delete removed, and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteFolderResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the order of the board bar, in one commit
+         * @description Renumbers the boards named in the body to `1 … n`, in the order given, and lands every write as the **single** auto-commit SPEC.md §4 requires — rider 2's "reordering boards writes `order` on every board, in one commit". A board already at the position it would be given is left alone, so the commit contains exactly the documents whose position changed (§4) and a bar dragged back where it started writes nothing at all.
+         *
+         *     **All or nothing.** The whole request is refused before anything is written when an id names no document (`404`) or names a document that is not a `type: board` (`400` — rider 2: a view document has no `order`), and the file writes are applied as one group that rolls back if any of them fails. No caller can observe half an order, which is the failure one-`PUT`-per-board could not rule out.
+         *
+         *     **It names the bar, not the corpus.** Boards the body does not name keep the `order` they carry, so a client showing only unarchived boards states its own order without inventing positions for boards nobody can see. Two boards may then tie, which is the state a hand-edited file can be in anyway, and `GET /api/docs?sort=order` breaks a tie by title and then by id.
+         *
+         *     Authored by the acting party like every other write (§4), and the commit folds in neither direction: it is an act over a set, so it never joins a preceding editing session and no later save joins it.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The board bar, in the order it should be in. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReorderBoardsRequest"];
+                };
+            };
+            responses: {
+                /** @description Every board named, with the position it now carries and whether this act wrote it, plus the one commit and any §11 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReorderBoardsResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3200,6 +3596,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/reflect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The reflection clock, what is unreflected, and the quiet window
+         * @description What the board bar's Reflect control reads (SPEC.md §7, §10): when the corpus was last reflected on, whether a reflection is pending, **how many documents are unreflected**, the digest thread of the last one, and the configured quiet window.
+         *
+         *     `changed` is a corpus-wide count and is here so the control is **one request rather than a list**. It counts documents whose `updated` is later than `reflected`, whose `lastActor` is not `agent`, and which are not archived — the same predicate the board applies to mark each row, shipped as this package's `isUnreflected` so the count and the marks cannot disagree.
+         *
+         *     Read-only; no acting party. Refetch it on the `["reflect"]` invalidate key (`GET /events`).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The clock, the pending reflection, the unreflected count, the last digest, and the window. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReflectStatus"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Ask for a reflection over the whole corpus
+         * @description Enqueues a `workspace.reflect` event carrying one timestamp — the corpus's last reflection (SPEC.md §7). The event falls in no scope and takes the orchestrator's lane. This is the board bar's Reflect control and `corpus reflect`; the other way one happens is the server enqueuing it after the quiet window (see `GET /api/workspace/reflect`).
+         *
+         *     **An ask while one is pending is answered with the pending one, never doubled and never refused.** Ten people pressing Reflect produce one reflection, and the tenth is told so: the response names the event already pending or in progress and sets `pending: true`. That is a `202` rather than a `409` because nothing is wrong — the thing the caller wanted is already going to happen, and no different body would change the answer.
+         *
+         *     It writes a queue event and no document, so it makes no commit. It still carries the acting party, like every other queue verb (`halt`, `complete`, `fail`): the header records who asked, which is what the job log and the digest thread report.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The reflection that will run — newly enqueued, or the one already pending. */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReflectAskResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -4048,7 +4544,7 @@ export interface paths {
          * Server-sent invalidation stream
          * @description Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.
          *
-         *     The key vocabulary is **closed** — these 9 shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift.
+         *     The key vocabulary is **closed** — these 10 shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift.
          *
          *     **An emitter names every key a route carrying the changed fact is cached under, not the key of the route the fact is named after** — so several of these travel in frames named after some other resource, and each entry below says which and why:
          *
@@ -4061,6 +4557,7 @@ export interface paths {
          *     - `["jobs", "<eventId>"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.
          *     - `["index"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.
          *     - `["agents"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window — **plus every write that moves a row a lane is derived from**: a queue transition or a job-log append, over HTTP or out of band, since a lane's `summary` is read off the same `events` and `jobs` rows that write touches; a designated root thread being retitled or deleted, since a row carries that conversation's title and its existence; and a projection rebuild, which re-derives all of it. The rule behind that list is worth stating, because no single call site shows it: **a lane row is computed at read time and never stored**, so the roster goes stale on frames named after other resources, and an emitter names this key whenever it writes a row the roster reads — not only when it writes something called an agent. The derivation itself may change without a contract change (`AgentLane.summary` says as much of its own content); the invalidation may not. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.
+         *     - `["reflect"]` — emitted by **every frame that names `["docs"]` or `["queue"]`, and no others** — the union, because the resource moves on two unrelated things and each half would miss the other: a document mutation or an out-of-band file change moves the unreflected count, while a queue transition moves whether a reflection is pending, when the clock last advanced and which thread is the latest digest. Stating it as a rule rather than as a list is deliberate: an emitter can follow it without knowing what a reflection is, and a write added later inherits it. Refetch: `GET /api/workspace/reflect` — the board bar's Reflect control, its unreflected count and the marks each column renders.
          */
         get: {
             parameters: {
@@ -4202,7 +4699,7 @@ export interface components {
              */
             id: string;
             /**
-             * @description Document type. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
+             * @description Document type. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
              * @example note
              */
             type: string;
@@ -4213,6 +4710,8 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "resolved" | "archived";
+            /** @description **Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban boards that use it (§10), written comma-free, and filterable with `GET /api/docs?stage=`. `null` when the file carries no `stage` key, which is what puts a document in a kanban's **first column**. **It is not `status`, and neither substitutes for the other**: `status` says whether work remains, `stage` says where in a workflow the document is, and a document in any stage is ordinarily `open`. While a document is in a kanban its stage decides its status — a stage the board's `kanban.status` map names writes that status on entry, a stage with no mapping writes `open`, in the same commit and named in the response — while writing `status` never moves a stage. Two kanbans over the same documents share this one value, so they should share a vocabulary. */
+            stage: string | null;
             tags: string[];
             /**
              * Format: date-time
@@ -4242,17 +4741,27 @@ export interface components {
              * @example th_x9y8z7
              */
             origin: string | null;
+            /**
+             * @description The acting party of this document's **last write** (SPEC.md §4, projected as `documents.last_actor`, §9.1). Never absent and never null: a document the server has never written reads `user`, and so does an out-of-band edit the watcher picked up, because a change nobody attributed to the agent is a person's. It is not frontmatter and it is not settable — no request carries it. **It is what §7's reflection reads**: a document changed only by the agent since the corpus's last reflection is not marked and not counted, since the changelog entries and the digest a reflection produces are its output rather than new work for it. Pair it with `updated`, `status` and the clock from `GET /api/workspace/reflect` — or call `isUnreflected`, which is the one implementation of that predicate and the same one the server counts `changed` with.
+             * @example user
+             * @enum {string}
+             */
+            lastActor: "user" | "agent";
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
-            /** @description True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
-            pinned: boolean;
-            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            /** @description **A board's position among boards**, ascending under `sort=order` (SPEC.md §10, rider 7). `null` when the file carries no `order` key — such a board is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every board. **It is a board's position and nothing else**: a `type: view` document is a saved query with no position of its own, the same view may sit on two boards, and a column's place is its index in that board's `columns`. */
             order: number | null;
-            /** @description The stored board query of a `type: view` document (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            /** @description **A view's query, or a kanban board's scope** (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). On a `type: view` document it is the stored query the column lists; on a kanban board it is the scope every derived stage column is drawn from, narrowed per column by that column's own `stage=` or `status=`. The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
             query: {
                 [key: string]: string | number | boolean | (string | number | boolean)[];
             } | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description **The columns of a `type: board` document**: the ids of the `type: view` documents that render them, in display order (SPEC.md §10, rider 2). `null` when the file carries no `columns` key — which is every non-board document, and also a **kanban** board, whose columns are derived one per stage from `kanban.stages` and are not view documents at all. Adding, removing or reordering a column edits the board document and never the view, so the same view may sit on two boards without either knowing about the other. */
+            columns: string[] | null;
+            /** @description **The kanban definition of a `type: board` document** (SPEC.md §10), or `null` when the file carries no `kanban` key — which is every non-board document and every ordinary board, whose columns are the view ids in `columns` instead. A board carries one or the other, never both: a kanban's columns are derived from its stages. */
+            kanban: components["schemas"]["Kanban"] | null;
+            /** @description True on the one board that **receives every open that names no board** (SPEC.md §10, rider 2 as amended 2026-08-22): the explorer's clicks, and the first load of a browser that remembers no board. `false` when the file carries no `default-open` key. **At most one board carries it** — setting it on one clears the others, in the same commit, and the response names the documents it changed (SPEC.md §9.2) — and when no board carries it the first board in `order` receives those opens instead. The frontmatter key is `default-open`; `defaultOpen` is its wire spelling, and `unset` names the frontmatter one. */
+            defaultOpen: boolean;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, stage, order, query, columns, kanban, default-open, defaultOpen) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -4297,6 +4806,24 @@ export interface components {
             attention: ("unread-reply" | "form" | "due" | "stale" | "failed-job")[];
             /** @description Search highlights for this row; empty when the query carried no `q`. */
             snippets: components["schemas"]["Snippet"][];
+        };
+        /** @description A board drawn as a **kanban** over one field (SPEC.md §10): the field, the stages in display order, and optionally the transition graph and the stage-to-status map of §5. Its columns are derived one per stage from the board's `query` scope and are not view documents; a document in scope with no value for the field sits in the first column. A drag follows a transition and nothing else, and anything the graph forbids is still done by setting the field in the document — **the server enforces the status map, never the transitions**. */
+        Kanban: {
+            /**
+             * @description The document field this board's columns are drawn over (SPEC.md §10). `stage` is the free-form workflow position of §5; `status` is the three-value lifecycle. Those are the only two — a kanban over an arbitrary frontmatter key would be a board over a value the server neither filters nor arbitrates.
+             * @enum {string}
+             */
+            field: "status" | "stage";
+            /** @description The stages in **display order**, one column each, distinct. The first is where a document in scope with no value for the field sits (SPEC.md §10), which is why a client asks for that column with `stage=,<first>` — the first stage or nothing at all, in one request. **A kanban over `status` may name only the three statuses of §5**, `open`, `resolved`, `archived`, because those are the only values that field holds. */
+            stages: string[];
+            /** @description For each stage, the stages a **drag** may reach — the board's transition graph (SPEC.md §10). Every key and every value must be one of `stages`, and a stage may not lead to itself. **Omitted means the linear funnel**: each stage leads to its neighbours, both ways. An empty object is not the same thing — it is a graph nothing may be dragged along. A stage the graph does not reach is still reachable by setting the field in the document, from the reader or the CLI: the server enforces the status map, never the transitions. */
+            transitions?: {
+                [key: string]: string[];
+            };
+            /** @description **How a stage decides a status** (SPEC.md §5's coupling rule): entering a stage named here writes that status in the same commit, and entering a stage that is not named here writes `open`. Every key must be one of `stages`. The coupling is by this explicit map and never by a stage's name, so a stage called `archived` couples to nothing unless the board says so. Omitted means the board couples no stage at all. */
+            status?: {
+                [key: string]: "open" | "resolved" | "archived";
+            };
         };
         Snippet: {
             /**
@@ -4376,7 +4903,7 @@ export interface components {
              */
             id: string;
             /**
-             * @description Document type. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
+             * @description Document type. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
              * @example note
              */
             type: string;
@@ -4399,6 +4926,8 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "resolved" | "archived";
+            /** @description **Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban boards that use it (§10), written comma-free, and filterable with `GET /api/docs?stage=`. `null` when the file carries no `stage` key, which is what puts a document in a kanban's **first column**. **It is not `status`, and neither substitutes for the other**: `status` says whether work remains, `stage` says where in a workflow the document is, and a document in any stage is ordinarily `open`. While a document is in a kanban its stage decides its status — a stage the board's `kanban.status` map names writes that status on entry, a stage with no mapping writes `open`, in the same commit and named in the response — while writing `status` never moves a stage. Two kanbans over the same documents share this one value, so they should share a vocabulary. */
+            stage: string | null;
             /** @description Text-quote selectors for threads on this document, keyed by anchor id. */
             anchors: {
                 [key: string]: components["schemas"]["TextQuoteSelector"];
@@ -4422,15 +4951,19 @@ export interface components {
              * @example th_x9y8z7
              */
             origin: string | null;
-            /** @description True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
-            pinned: boolean;
-            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            /** @description **A board's position among boards**, ascending under `sort=order` (SPEC.md §10, rider 7). `null` when the file carries no `order` key — such a board is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every board. **It is a board's position and nothing else**: a `type: view` document is a saved query with no position of its own, the same view may sit on two boards, and a column's place is its index in that board's `columns`. */
             order: number | null;
-            /** @description The stored board query of a `type: view` document (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            /** @description **A view's query, or a kanban board's scope** (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). On a `type: view` document it is the stored query the column lists; on a kanban board it is the scope every derived stage column is drawn from, narrowed per column by that column's own `stage=` or `status=`. The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
             query: {
                 [key: string]: string | number | boolean | (string | number | boolean)[];
             } | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description **The columns of a `type: board` document**: the ids of the `type: view` documents that render them, in display order (SPEC.md §10, rider 2). `null` when the file carries no `columns` key — which is every non-board document, and also a **kanban** board, whose columns are derived one per stage from `kanban.stages` and are not view documents at all. Adding, removing or reordering a column edits the board document and never the view, so the same view may sit on two boards without either knowing about the other. */
+            columns: string[] | null;
+            /** @description **The kanban definition of a `type: board` document** (SPEC.md §10), or `null` when the file carries no `kanban` key — which is every non-board document and every ordinary board, whose columns are the view ids in `columns` instead. A board carries one or the other, never both: a kanban's columns are derived from its stages. */
+            kanban: components["schemas"]["Kanban"] | null;
+            /** @description True on the one board that **receives every open that names no board** (SPEC.md §10, rider 2 as amended 2026-08-22): the explorer's clicks, and the first load of a browser that remembers no board. `false` when the file carries no `default-open` key. **At most one board carries it** — setting it on one clears the others, in the same commit, and the response names the documents it changed (SPEC.md §9.2) — and when no board carries it the first board in `order` receives those opens instead. The frontmatter key is `default-open`; `defaultOpen` is its wire spelling, and `unset` names the frontmatter one. */
+            defaultOpen: boolean;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, stage, order, query, columns, kanban, default-open, defaultOpen) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra: {
                 [key: string]: unknown;
             };
@@ -4478,10 +5011,10 @@ export interface components {
         };
         Warning: {
             /**
-             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. Both are silent when there is nothing to say — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. `stage_status`: this write moved a document's `stage`, the document is **in a kanban**, and the board's `kanban.status` map therefore decided its `status` in the same commit (SPEC.md §5's coupling rule, rider signed 2026-08-22). One warning, naming the stage, the status it wrote and the board that decided — and, when the document is in more than one kanban over `stage`, the boards that did not decide, since "the one with the lowest `order`" is a rule a caller cannot check from the response alone. It is about the document the request named, unlike the carried pair above, and it is here because the caller asked for one field and got two: a `status` a caller neither sent nor was told about is exactly the effect §11 says must not be learned from `git log`. Silent when the write moved no stage and when no kanban claims the document. A stage the board maps writes that status; any other stage, a stage the board does not draw included, writes `open` (SPEC.md §5). `default_open_cleared`: this write set `default-open: true` on a board, and **at most one board carries it** (SPEC.md §10, rider 2), so every other board that carried the flag lost it in the same commit. One warning per board cleared, naming its id and title. Silent when no other board carried it. The last two are silent when there is nothing to say, and so are the carried pair — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
              * @enum {string}
              */
-            code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref" | "carried_skill" | "carried_reconciliation";
+            code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref" | "carried_skill" | "carried_reconciliation" | "stage_status" | "default_open_cleared";
             /** @description Human-readable specifics — the hook's own output, the offending anchor id, the unresolved ref, the carried document's id and path. Rendered verbatim in the console; never parsed, which is why every distinction a client must act on lives in `code`. */
             detail: string;
         };
@@ -4499,7 +5032,7 @@ export interface components {
              */
             job?: string;
             /**
-             * @description Document type. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
+             * @description Document type. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold a document whose type this build has never heard of — from its own history, or hand-written — and such a document still opens, renders and searches (SPEC.md §5, §12's M6).
              * @example note
              */
             type: string;
@@ -4524,15 +5057,21 @@ export interface components {
             due?: string | null;
             /** @description True opts the document out of staleness entirely. Defaults to `false`. */
             evergreen?: boolean;
-            /** @description True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. Defaults to `false` — a view renders as a board column only once pinned. */
-            pinned?: boolean;
-            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. Null is the same as omitting it: no `order` key. */
+            /** @description **Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban boards that use it (§10), written comma-free, and filterable with `GET /api/docs?stage=`. `null` when the file carries no `stage` key, which is what puts a document in a kanban's **first column**. **It is not `status`, and neither substitutes for the other**: `status` says whether work remains, `stage` says where in a workflow the document is, and a document in any stage is ordinarily `open`. While a document is in a kanban its stage decides its status — a stage the board's `kanban.status` map names writes that status on entry, a stage with no mapping writes `open`, in the same commit and named in the response — while writing `status` never moves a stage. Two kanbans over the same documents share this one value, so they should share a vocabulary. Null is the same as omitting it: no `stage` key. */
+            stage?: string | null;
+            /** @description **A board's position among boards**, ascending under `sort=order` (SPEC.md §10, rider 7). `null` when the file carries no `order` key — such a board is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every board. **It is a board's position and nothing else**: a `type: view` document is a saved query with no position of its own, the same view may sit on two boards, and a column's place is its index in that board's `columns`. Null is the same as omitting it: no `order` key. */
             order?: number | null;
-            /** @description The stored board query of a `type: view` document (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. Null is the same as omitting it: no `query` key. */
+            /** @description **A view's query, or a kanban board's scope** (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). On a `type: view` document it is the stored query the column lists; on a kanban board it is the scope every derived stage column is drawn from, narrowed per column by that column's own `stage=` or `status=`. The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. Null is the same as omitting it: no `query` key. */
             query?: {
                 [key: string]: string | number | boolean | (string | number | boolean)[];
             } | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description **The columns of a `type: board` document**: the ids of the `type: view` documents that render them, in display order (SPEC.md §10, rider 2). `null` when the file carries no `columns` key — which is every non-board document, and also a **kanban** board, whose columns are derived one per stage from `kanban.stages` and are not view documents at all. Adding, removing or reordering a column edits the board document and never the view, so the same view may sit on two boards without either knowing about the other. Null is the same as omitting it: no `columns` key. */
+            columns?: string[] | null;
+            /** @description **The kanban definition of a `type: board` document** (SPEC.md §10), or `null` when the file carries no `kanban` key — which is every non-board document and every ordinary board, whose columns are the view ids in `columns` instead. A board carries one or the other, never both: a kanban's columns are derived from its stages. Null is the same as omitting it: no `kanban` key. */
+            kanban?: components["schemas"]["Kanban"] | null;
+            /** @description True on the one board that **receives every open that names no board** (SPEC.md §10, rider 2 as amended 2026-08-22): the explorer's clicks, and the first load of a browser that remembers no board. `false` when the file carries no `default-open` key. **At most one board carries it** — setting it on one clears the others, in the same commit, and the response names the documents it changed (SPEC.md §9.2) — and when no board carries it the first board in `order` receives those opens instead. The frontmatter key is `default-open`; `defaultOpen` is its wire spelling, and `unset` names the frontmatter one. Defaults to `false` — creating a board never displaces the one a browser opens onto unless the create says so. */
+            defaultOpen?: boolean;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, stage, order, query, columns, kanban, default-open, defaultOpen) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4771,7 +5310,7 @@ export interface components {
              *
              *     **It is opaque. Echo it back exactly as received.** It is *derived from the document's stored content*, which is what makes it need no acquiring, releasing, expiry or reaping: an edit made outside the app invalidates it for free, and it survives a server restart. How it is derived is not contract and is deliberately unpublished. **Never compute, construct, parse, truncate or order a key** — a key is evidence that you read a version, and evidence you manufactured is not evidence; two keys are only ever equal or unequal. It is not a claim, a lease or a handle: there is nothing to release, and holding one confers nothing on you. Every write that lands answers with the document it wrote, carrying a fresh key for the next one.
              *
-             *     **Required when this request carries `body`**, which is the write that replaces a block without naming what it changes; a `body` with no key is a `400` naming this field. **Not required by a write that names its own delta** — a tag, a status, `reviewed`, a view key — which merges with whatever else happened rather than overwriting it. Sending one anyway is welcome and is **still checked**: presenting a key always means *I am writing against this version*, so a stale one is refused whatever else the request changes. A caller that always sends what it read therefore needs no rule about which fields are which.
+             *     **Required when this request carries `body`**, which is the write that replaces a block without naming what it changes; a `body` with no key is a `400` naming this field. **Not required by a write that names its own delta** — a tag, a status, `reviewed`, a view or board key, an `unset` — which merges with whatever else happened rather than overwriting it. Sending one anyway is welcome and is **still checked**: presenting a key always means *I am writing against this version*, so a stale one is refused whatever else the request changes. A caller that always sends what it read therefore needs no rule about which fields are which.
              * @example 3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3
              */
             key?: string;
@@ -4797,15 +5336,23 @@ export interface components {
              */
             reviewed?: string | null;
             evergreen?: boolean;
-            /** @description True pins this `type: view` document to the board as a column (SPEC.md §10). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
-            pinned?: boolean;
-            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §10). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. On update, `null` clears the key from the file. */
+            /** @description **Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban boards that use it (§10), written comma-free, and filterable with `GET /api/docs?stage=`. `null` when the file carries no `stage` key, which is what puts a document in a kanban's **first column**. **It is not `status`, and neither substitutes for the other**: `status` says whether work remains, `stage` says where in a workflow the document is, and a document in any stage is ordinarily `open`. While a document is in a kanban its stage decides its status — a stage the board's `kanban.status` map names writes that status on entry, a stage with no mapping writes `open`, in the same commit and named in the response — while writing `status` never moves a stage. Two kanbans over the same documents share this one value, so they should share a vocabulary. On update, `null` clears the key from the file. */
+            stage?: string | null;
+            /** @description **A board's position among boards**, ascending under `sort=order` (SPEC.md §10, rider 7). `null` when the file carries no `order` key — such a board is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every board. **It is a board's position and nothing else**: a `type: view` document is a saved query with no position of its own, the same view may sit on two boards, and a column's place is its index in that board's `columns`. On update, `null` clears the key from the file. */
             order?: number | null;
-            /** @description The stored board query of a `type: view` document (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. On update, `null` clears the key from the file. */
+            /** @description **A view's query, or a kanban board's scope** (SPEC.md §10): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). On a `type: view` document it is the stored query the column lists; on a kanban board it is the scope every derived stage column is drawn from, narrowed per column by that column's own `stage=` or `status=`. The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. On update, `null` clears the key from the file. */
             query?: {
                 [key: string]: string | number | boolean | (string | number | boolean)[];
             } | null;
-            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, pinned, order, query) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            /** @description **The columns of a `type: board` document**: the ids of the `type: view` documents that render them, in display order (SPEC.md §10, rider 2). `null` when the file carries no `columns` key — which is every non-board document, and also a **kanban** board, whose columns are derived one per stage from `kanban.stages` and are not view documents at all. Adding, removing or reordering a column edits the board document and never the view, so the same view may sit on two boards without either knowing about the other. On update, `null` clears the key from the file. */
+            columns?: string[] | null;
+            /** @description **The kanban definition of a `type: board` document** (SPEC.md §10), or `null` when the file carries no `kanban` key — which is every non-board document and every ordinary board, whose columns are the view ids in `columns` instead. A board carries one or the other, never both: a kanban's columns are derived from its stages. On update, `null` clears the key from the file. */
+            kanban?: components["schemas"]["Kanban"] | null;
+            /** @description True on the one board that **receives every open that names no board** (SPEC.md §10, rider 2 as amended 2026-08-22): the explorer's clicks, and the first load of a browser that remembers no board. `false` when the file carries no `default-open` key. **At most one board carries it** — setting it on one clears the others, in the same commit, and the response names the documents it changed (SPEC.md §9.2) — and when no board carries it the first board in `order` receives those opens instead. The frontmatter key is `default-open`; `defaultOpen` is its wire spelling, and `unset` names the frontmatter one. Setting it `true` clears the flag from every other board in the same commit, and the response names those documents. */
+            defaultOpen?: boolean;
+            /** @description Frontmatter keys to **remove** from the file (SPEC.md §9.2) — how a migration (§2.4) drops a key the tool has stopped reading, and what `corpus doc update --unset` sends. Keys are named **exactly as the file writes them**, not as this API spells them: the keys most worth removing are ones the core no longer defines, and those have no wire spelling at all. Where a core key differs, the file's spelling is the one that works — `default-open`, never `defaultOpen`. Removing a key the document does not carry is a no-op rather than a failure, exactly as `removeTags` is. **`id`, `type` and `created` are refused**, with the offending key named: they are the document's identity, its behaviour and its birth. It names its own delta, so it presents no `key`. */
+            unset?: string[];
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim — any key the core does not define (SPEC.md §5, §9.1). The server stores and returns these keys and **never interprets them**; meaning belongs to whoever wrote the key, never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, origin, parent, anchor, agent, resident, turnModels, stage, order, query, columns, kanban, default-open, defaultOpen) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
             extra?: {
                 [key: string]: unknown;
             };
@@ -4923,6 +5470,100 @@ export interface components {
             /** @description `count` plus every descendant folder's count. */
             totalCount: number;
             children: components["schemas"]["FolderNode"][];
+        };
+        RenameFolderResult: {
+            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. */
+            documents: components["schemas"]["MovedFolderDoc"][];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        MovedFolderDoc: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description The document's path after the rename, relative to the workspace root. */
+            path: string;
+        };
+        ConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+        };
+        RenameFolderRequest: {
+            /**
+             * @description The folder to rename, as it stands now. A folder under `data/docs/`, relative to it: `finance`, `finance/mortgage`. No leading or trailing slash, no empty segment, and no segment beginning with a dot — which rules out `.` and `..` and every document root outside this one. The `data/docs/` prefix is refused rather than accepted, so the path can never be ambiguous. A malformed path is `400` naming the reason; a well-formed path this workspace does not hold is `404`.
+             * @example finance/mortgage
+             */
+            from: string;
+            /**
+             * @description The folder's new path. **Compared exactly**: a rename that differs only in case is a rename, and what a case-insensitive filesystem then does with it is the server's problem, not a different request. `409` when `to` already exists — a rename never merges two folders, because merging is an act nobody asked for and cannot be undone by renaming back. A folder under `data/docs/`, relative to it: `finance`, `finance/mortgage`. No leading or trailing slash, no empty segment, and no segment beginning with a dot — which rules out `.` and `..` and every document root outside this one. The `data/docs/` prefix is refused rather than accepted, so the path can never be ambiguous. A malformed path is `400` naming the reason; a well-formed path this workspace does not hold is `404`.
+             * @example finance/mortgage
+             */
+            to: string;
+        };
+        FolderStatusResult: {
+            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. */
+            documents: components["schemas"]["FolderStatusChange"][];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        FolderStatusChange: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /**
+             * @description The document's status after the act.
+             * @enum {string}
+             */
+            status: "open" | "resolved" | "archived";
+        };
+        FolderPathRequest: {
+            /**
+             * @description The folder to act on. A folder under `data/docs/`, relative to it: `finance`, `finance/mortgage`. No leading or trailing slash, no empty segment, and no segment beginning with a dot — which rules out `.` and `..` and every document root outside this one. The `data/docs/` prefix is refused rather than accepted, so the path can never be ambiguous. A malformed path is `400` naming the reason; a well-formed path this workspace does not hold is `404`.
+             * @example finance/mortgage
+             */
+            path: string;
+        };
+        DeleteFolderResult: {
+            /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. Deletion reports ids alone, because there is no field left to report: the client drops these rows. */
+            documents: components["schemas"]["DeletedFolderDoc"][];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        DeletedFolderDoc: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            id: string;
+        };
+        ReorderBoardsResult: {
+            /** @description Every board the request named, in the order it asked for, each with the position it now carries and whether this act wrote it. The act is all-or-nothing, so this is the order the corpus holds — never a partial one. */
+            boards: components["schemas"]["BoardPosition"][];
+            /** @description The **single** auto-commit this reorder landed as (SPEC.md §4), authored by the acting party, containing exactly the board documents whose position changed. One sha, never a list: that is the whole of what rider 2's "in one commit" promises, and it is why this route exists rather than one `PUT` per board. Null in three cases, none of them an error — every board was already at its position, so there was nothing to commit; the workspace is not a git repository (`commit_skipped` in `warnings`); or the workspace's hooks rejected the commit, leaving the writes on disk and uncommitted (`commit_failed` in `warnings`, §11). */
+            commit: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        /** @description One board and where it sits after the reorder. Every board the request named is here, in the order it asked for, whether or not this act had to write it. */
+        BoardPosition: {
+            /**
+             * @description The board this position is about.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description The position this board **now** carries — its place in the list the request sent, counting from one. Read back from the document rather than predicted, so a caller renders what the corpus holds. */
+            order: number;
+            /** @description Whether this act wrote the board's file. False for a board already at that position: nothing was written for it and nothing about it is in `commit`. A caller reporting "how many boards moved" counts these, never the length of the list it sent. */
+            changed: boolean;
+        };
+        ReorderBoardsRequest: {
+            /** @description **The bar, in the order it should be in** — every board this caller is ordering, by id, first tab first. The positions are derived from the list: the first board is given `1`, the next `2`, and so on in steps of one. A board already sitting at the number it would be given is **not** written, because a write that changes nothing still stamps `updated` and lands a line in the log the agent reads. An id may appear at most once — a board has one position, so a repeat is a caller bug rather than something to resolve. Boards this list does not name are left exactly as they are, which is what lets a bar that hides archived boards state its own order without inventing positions for boards nobody can see. */
+            boards: string[];
         };
         CaptureResult: {
             /**
@@ -5304,11 +5945,6 @@ export interface components {
              */
             via: "self" | "parent" | "origin";
         };
-        ConflictError: {
-            /** @enum {string} */
-            code: "conflict";
-            message: string;
-        };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"];
@@ -5591,7 +6227,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name. */
             type: string;
             /**
              * Format: date-time
@@ -5601,7 +6237,7 @@ export interface components {
             /** @description What produced the event, e.g. `ui` or `cli`. */
             source: string;
             /**
-             * @description Type-specific payload; the shape belongs to whatever defines the type, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7) — a union would close the same set `type` deliberately leaves open, and make every event this build has not heard of unrepresentable on the wire. The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries `{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` (SPEC.md §7) — one release produces exactly one such event, and a lapse produces none.
+             * @description Type-specific payload; the shape belongs to whatever defines the type, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7) — a union would close the same set `type` deliberately leaves open, and make every event this build has not heard of unrepresentable on the wire. The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7); `doc.edited` carries `{docId, sessionId, actor, endedBy, from, to, stats}` (SPEC.md §4); `resident.designated` carries `{threadId, resident}` and `resident.released` carries `{threadId, resident, reason}` (SPEC.md §7) — one release produces exactly one such event, and a lapse produces none; `workspace.reflect` carries `{since}`, the corpus's last reflection, `null` for one never reflected on (SPEC.md §7).
              *
              *     **One key crosses every type: `weight`.** When the request that enqueued the event stated the weight its work should be done at (SPEC.md §7, §10), that level name rides here verbatim, and the dispatch honours it rather than weighing the work again. It is **absent** when the request stated nothing, which means the orchestrator decides — never a default level, and never `null`. It is deliberately not part of any one payload shape: a weight is a property of *a request that asked for work*, so any event type carries it the same way with no contract change.
              */
@@ -5624,7 +6260,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
+            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
             type: string;
             /**
              * Format: date-time
@@ -5667,6 +6303,43 @@ export interface components {
             /** @description Human-readable deferral note, shown in the console beside the blocking document. No `deferred:` prefix is needed or wanted — the status says that now. */
             reason?: string;
         };
+        ReflectAskResult: {
+            /**
+             * @description The `workspace.reflect` event that will run — newly enqueued when nothing was pending or in progress, and otherwise the one already there.
+             * @example evt_7c1d
+             */
+            eventId: string;
+            /**
+             * Format: date-time
+             * @description **The window's start**: the `created` time of the corpus's last processed reflection (SPEC.md §7). `null` means a corpus that has never been reflected on, and it means **everything** — the agent's gather runs with no `--since` rather than with an empty window. A failed job leaves the clock where it was, so a retry sees the same window.
+             * @example 2026-07-19T10:05:00Z
+             */
+            since: string | null;
+            /** @description **True when this ask enqueued nothing** and `eventId` names a reflection that was already pending or in progress. Ten people pressing Reflect produce one reflection (SPEC.md §7), and the tenth is told so rather than refused: retrying cannot help, and the thing they wanted is already happening. False when this ask is what created the event. */
+            pending: boolean;
+        };
+        ReflectStatus: {
+            /**
+             * Format: date-time
+             * @description **The clock** (SPEC.md §7): the `created` time of the last reflection whose job was processed, held as server state in `.corpus/`. `null` for a corpus never reflected on. A failed job leaves it, so a retry sees the same window.
+             * @example 2026-07-19T10:05:00Z
+             */
+            reflected: string | null;
+            /**
+             * @description The `workspace.reflect` event currently pending or in progress, or `null` when none is. It is what makes the Reflect control say *reflecting…* rather than offering to ask again, and it is the id `POST /api/workspace/reflect` answers with while it is set.
+             * @example evt_7c1d
+             */
+            pending: string | null;
+            /** @description **How many documents are unreflected**: those whose `updated` is later than `reflected`, **whose last write was not the agent's** (`lastActor` is not `agent`, SPEC.md §7 — the changelog entries and digest a reflection produces are its output, not new work for it), and which are **not archived** (an archived document shows on no board, so a mark for it is impossible, and the agent's own gather sees archives at the next reflection with `--include-archived`). With no clock yet, every document meeting the other two conditions counts. It is **the same predicate the UI applies row by row** — the `isUnreflected` this package exports — so the corpus count and the marks on the rows cannot disagree. It rides here rather than being derived by a client because deriving it means listing the whole corpus to produce one number. */
+            changed: number;
+            /**
+             * @description The standalone **digest thread** of the most recent reflection (SPEC.md §7), so "reflected 2h ago" links to what was said. `null` until one exists. A reflection with nothing to say still posts its thread, in one line, so this is null only before the first reflection lands.
+             * @example th_x9y8
+             */
+            lastDigest: string | null;
+            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens. */
+            quiet: number;
+        };
         JobList: {
             /** @description Console rows, most recent first. */
             jobs: components["schemas"]["Job"][];
@@ -5677,7 +6350,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent parked it because a person had an edit session open on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that session ends. Nothing refused it: the agent deferred because it saw, not because it was blocked.

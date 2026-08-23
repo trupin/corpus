@@ -12,6 +12,7 @@ import { basename, dirname } from "node:path";
 import {
   AnchorIdSchema,
   DocStatusSchema,
+  type Actor,
   DocumentIdSchema,
   TextQuoteSelectorSchema,
   ThreadAgentSchema,
@@ -23,7 +24,11 @@ import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
 import { readThreadForms } from "../core/form.js";
 import { documentTitle } from "../core/title.js";
-import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
+import {
+  readBoardFrontmatter,
+  readStage,
+  type BoardFrontmatter,
+} from "../core/board-frontmatter.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { turnModelsOf } from "../core/turn-model.js";
@@ -39,6 +44,7 @@ import {
 import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 import { originOrNull } from "../core/provenance.js";
+import { DEFAULT_LAST_ACTOR } from "./last-actor.js";
 import { storedResident } from "../core/resident.js";
 
 /** How much of the body a list row shows (§9.1 `body_excerpt`). */
@@ -137,12 +143,15 @@ type DocumentFields = {
   /** SPEC.md §7 scope / §9.2 provenance: the thread this document came from, or null. */
   readonly origin: string | null;
   readonly anchors: Record<string, TextQuoteSelector>;
+  /** SPEC.md §5's workflow position, or null (rider 5, 2026-08-22). */
+  readonly stage: string | null;
   /**
-   * §7's view keys, plus every frontmatter key the core does not define, read by
-   * the same functions `docs/read.ts` uses — so a row and a single-document read
-   * can never describe one file's frontmatter differently (CONTRACT-011).
+   * The §10 view and board keys, plus every frontmatter key the core does not
+   * define, read by the same functions `docs/read.ts` uses — so a row and a
+   * single-document read can never describe one file's frontmatter differently
+   * (CONTRACT-011, CONTRACT-074).
    */
-  readonly view: ViewFrontmatter;
+  readonly board: BoardFrontmatter;
 };
 
 /**
@@ -169,7 +178,7 @@ function readDocumentFields(
 
   const tags = TagsSchema.safeParse(data["tags"]);
   const type = resolveDocumentType(root, data);
-  const view = readViewFrontmatter(data);
+  const board = readBoardFrontmatter(data);
 
   return {
     id,
@@ -184,7 +193,8 @@ function readDocumentFields(
     evergreen: data["evergreen"] === true,
     origin: originOrNull(data["origin"]),
     anchors: readAnchors(data["anchors"]),
-    view,
+    stage: readStage(data),
+    board,
   };
 }
 
@@ -285,23 +295,44 @@ function deleteRowsAtPath(db: ProjectionDb, path: string): void {
   db.prepare("DELETE FROM file_hashes WHERE path = ?").run(path);
 }
 
+/**
+ * The three board keys as the one JSON object `documents.board_json` holds, or
+ * `null` for a document carrying none of them — which is nearly every document.
+ *
+ * NULL rather than `{}` so the column costs an ordinary note nothing, and so the
+ * arbitration's `json_extract(board_json, '$.defaultOpen') = 1` reads a row that
+ * genuinely carries board state. The keys are spelled the **wire** way, because
+ * this object is what `docs/query.ts` puts on the row unchanged.
+ */
+export function boardJsonOf(board: BoardFrontmatter): string | null {
+  if (board.columns === null && board.kanban === null && !board.defaultOpen) return null;
+  return JSON.stringify({
+    columns: board.columns,
+    kanban: board.kanban,
+    defaultOpen: board.defaultOpen,
+  });
+}
+
 function insertDocumentRow(
   db: ProjectionDb,
   path: string,
   fields: DocumentFields,
   body: string,
+  lastActor: Actor,
 ): void {
   db.prepare(
     `INSERT INTO documents
-       (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
-        origin, body_excerpt, pinned, sort_order, query_json, extra_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, type, title, path, status, stage, last_actor, tags_json, created, updated, due,
+        reviewed, evergreen, origin, body_excerpt, sort_order, query_json, board_json, extra_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     fields.type,
     fields.title,
     path,
     fields.status,
+    fields.stage,
+    lastActor,
     JSON.stringify(fields.tags),
     fields.created,
     fields.updated,
@@ -310,13 +341,69 @@ function insertDocumentRow(
     fields.evergreen ? 1 : 0,
     fields.origin,
     bodyExcerpt(body),
-    fields.view.pinned ? 1 : 0,
-    fields.view.order,
-    fields.view.query === null ? null : JSON.stringify(fields.view.query),
+    fields.board.order,
+    fields.board.query === null ? null : JSON.stringify(fields.board.query),
+    boardJsonOf(fields.board),
     // Always a JSON object, `{}` for a file with only core keys — the wire says
     // the field is present on every response, so the column is NOT NULL.
-    JSON.stringify(fields.view.extra),
+    JSON.stringify(fields.board.extra),
   );
+}
+
+/** The savepoint {@link withSpeculativeDocumentRow} opens; never nested. */
+const SPECULATION_SAVEPOINT = "corpus_speculate";
+
+/**
+ * Runs `read` with the `documents` row this **not-yet-written** document would
+ * have, and then throws that row away (SERVER-138).
+ *
+ * §5's coupling rule asks whether a document is "in a kanban", and §5 answers it
+ * with the board's own scope query — a `GET /api/docs` filter set, compiled to
+ * SQL over `documents`. A create has no row yet, and a save's row still holds
+ * the *old* stage, so both would be asking the question about a document that
+ * does not exist or has already moved on. The honest input is the document as
+ * the write will leave it, and the honest way to ask a SQL question about it is
+ * to let SQL see it.
+ *
+ * **This is what makes the coupling reuse the query compiler instead of
+ * reimplementing the filter grammar.** The alternative — deciding scope
+ * membership in TypeScript against the pending frontmatter — is a second
+ * implementation of `docs/filters.ts` that would drift the first time somebody
+ * adds a filter, and would answer a *different* question from the one
+ * `GET /api/docs` answers for the very same board.
+ *
+ * A savepoint rather than a transaction, and rolled back in a `finally`: the row
+ * must not survive a throw from `read`, and no caller is inside a transaction
+ * when it asks (a write path speculates *before* `runMutation` opens one). Only
+ * the `documents` row is written — no search rows, no chunks, no anchors — since
+ * the filter builder reads `documents`, `threads` and `seen` and this document's
+ * thread and read-state rows, where it has any, are already correct.
+ *
+ * A file with no projectable id runs `read` with the projection untouched, which
+ * is the same answer that document gets from every other read path.
+ */
+export function withSpeculativeDocumentRow<T>(
+  db: ProjectionDb,
+  relativePath: string,
+  parsed: ParsedDocument,
+  read: () => T,
+): T {
+  const root = classifyPath(relativePath);
+  const fields = root === null ? null : readDocumentFields(root, relativePath, parsed);
+  if (fields === null) return read();
+
+  db.sqlite.exec(`SAVEPOINT ${SPECULATION_SAVEPOINT}`);
+  try {
+    // Both, because either can collide: the row this path already has (a save),
+    // and a row some other path holds under the same id (never, in practice, but
+    // the PRIMARY KEY would refuse it rather than answer the question).
+    db.prepare("DELETE FROM documents WHERE path = ? OR id = ?").run(relativePath, fields.id);
+    insertDocumentRow(db, relativePath, fields, parsed.body, DEFAULT_LAST_ACTOR);
+    return read();
+  } finally {
+    db.sqlite.exec(`ROLLBACK TO ${SPECULATION_SAVEPOINT}`);
+    db.sqlite.exec(`RELEASE ${SPECULATION_SAVEPOINT}`);
+  }
 }
 
 type ThreadProjection = {
@@ -546,7 +633,22 @@ export function hashContent(content: Buffer): string {
  * an id may change under a stable path, so a diffing engine would be a second
  * implementation of the same mapping with twice the ways to go stale.
  */
-export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOutcome {
+export function projectDocument(
+  db: ProjectionDb,
+  absPath: string,
+  /**
+   * SPEC.md §4's acting party for the write this projection is of — what lands
+   * in `documents.last_actor` (§9.1).
+   *
+   * Every caller knows it, and each knows a different thing. A write path passes
+   * the actor its mutation carried. The watcher passes `user`, because a change
+   * that arrived from outside the server was made by a person editing a file
+   * (§4). A rebuild passes what git recorded (`./last-actor.ts`). The default is
+   * `user` for the same reason those three converge on it: a change nobody
+   * attributed to the agent is a person's.
+   */
+  lastActor: Actor = DEFAULT_LAST_ACTOR,
+): ProjectionOutcome {
   const relativePath = workspaceRelativePath(db.config.workspaceRoot, absPath);
   if (relativePath === null) return { kind: "ignored", path: absPath };
   const root = classifyPath(relativePath);
@@ -612,7 +714,7 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
 
   const run = db.transaction(() => {
     deleteRowsAtPath(db, relativePath);
-    insertDocumentRow(db, relativePath, fields, parsed.body);
+    insertDocumentRow(db, relativePath, fields, parsed.body, lastActor);
     const thread =
       fields.type === "thread" ? projectThread(db, fields, parsed.data, parsed.body) : null;
     const anchors = insertAnchors(db, fields.id, fields, parsed.body);

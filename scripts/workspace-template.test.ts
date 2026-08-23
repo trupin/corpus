@@ -1,7 +1,13 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CORE_DOC_TYPES, DocumentIdSchema, IsoDateTimeSchema } from "@corpus/contract";
+import {
+  CORE_DOC_TYPES,
+  DOC_STATUSES,
+  DocumentIdSchema,
+  IsoDateTimeSchema,
+  KanbanSchema,
+} from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 // Read-only, and deliberately the real thing: `corpus init` creates exactly these
 // directories, so importing them is what stops the install contract from drifting
@@ -49,6 +55,9 @@ const EXPECTED_TREE = [
   "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
   "claude/skills/profile/SKILL.md",
+  "data/docs/boards/attention.md",
+  "data/docs/boards/by-status.md",
+  "data/docs/boards/files.md",
   "data/docs/inbox/.gitkeep",
   "data/docs/templates/note.md",
   "data/docs/views/attention.md",
@@ -202,7 +211,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(9);
+    expect(documents.length).toBe(12);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -397,15 +406,21 @@ describe("the workspace CLAUDE.md (AGENT-037)", () => {
 describe("seed views", () => {
   const views = documents.filter((document) => document.frontmatter.type === "view");
 
-  it("ships exactly three pinned columns with contiguous order", () => {
+  /**
+   * SPEC.md §10, rider 2 (signed 2026-08-22): "A view document is a saved query
+   * and nothing more: it has no `pinned` and no `order`." Both keys were removed
+   * from the product rather than deprecated, so a seed still carrying one is a
+   * seed teaching a shape the tool has stopped reading — and, worse, one that
+   * would make `corpus upgrade` report a migration against a brand-new
+   * workspace (CLI-061's `views-to-board` fires on exactly `pinned`/`order`).
+   */
+  it("ships exactly three saved queries, with no place of their own", () => {
     expect(views.length).toBe(3);
     for (const { relPath, frontmatter, body } of views) {
-      expect(frontmatter.pinned, `${relPath}: pinned`).toBe(true);
-      expect(Number.isInteger(frontmatter.order), `${relPath}: order`).toBe(true);
+      expect("pinned" in frontmatter, `${relPath}: carries pinned`).toBe(false);
+      expect("order" in frontmatter, `${relPath}: carries order`).toBe(false);
       expect(body.trim(), `${relPath}: body`).not.toBe("");
     }
-    const orders = views.map((view) => view.frontmatter.order).sort();
-    expect(orders).toEqual([1, 2, 3]);
   });
 
   it("queries only with GET /api/docs parameter names", () => {
@@ -418,18 +433,13 @@ describe("seed views", () => {
     }
   });
 
-  it("pins the Attention, Inbox and Open threads queries", () => {
-    const attention = documentAt("data/docs/views/attention.md").frontmatter;
-    expect(attention.order).toBe(1);
-    expect(attention.query).toEqual({ needs: "me" });
-
-    const inbox = documentAt("data/docs/views/inbox.md").frontmatter;
-    expect(inbox.order).toBe(2);
-    expect(inbox.query).toEqual({ folder: "inbox" });
-
-    const openThreads = documentAt("data/docs/views/open-threads.md").frontmatter;
-    expect(openThreads.order).toBe(3);
-    expect(openThreads.query).toEqual({ type: "thread", status: "open" });
+  it("ships the Attention, Inbox and Open threads queries", () => {
+    expect(documentAt("data/docs/views/attention.md").frontmatter.query).toEqual({ needs: "me" });
+    expect(documentAt("data/docs/views/inbox.md").frontmatter.query).toEqual({ folder: "inbox" });
+    expect(documentAt("data/docs/views/open-threads.md").frontmatter.query).toEqual({
+      type: "thread",
+      status: "open",
+    });
   });
 
   it("writes folder values with no leading or trailing slash", () => {
@@ -438,6 +448,106 @@ describe("seed views", () => {
       if (folder === undefined) continue;
       expect(folder, `${relPath}: folder`).toMatch(/^[^/].*[^/]$|^[^/]$/);
     }
+  });
+});
+
+/**
+ * SPEC.md §10, rider 2 and rider 6 (both signed 2026-08-22). "The seed ships
+ * three boards — Attention, a kanban over `status`, and Files — and no board is
+ * hardwired." A board is an ordinary `type: board` document, so what these pin
+ * is what the *bytes* say: nothing in the product may hardwire these ids, and
+ * nothing in the product creates a board for a workspace that has one.
+ */
+describe("seed boards", () => {
+  const boards = documents.filter((document) => document.frontmatter.type === "board");
+  const columnsOf = (relPath: string): unknown => documentAt(relPath).frontmatter.columns;
+
+  it("ships exactly three boards, each with a body and a distinct place", () => {
+    expect(boards.length).toBe(3);
+    for (const { relPath, body } of boards) {
+      expect(relPath.startsWith("data/docs/boards/"), `${relPath}: not under boards/`).toBe(true);
+      expect(body.trim(), `${relPath}: body`).not.toBe("");
+    }
+    const orders = boards.map((board) => board.frontmatter.order).sort();
+    expect(orders).toEqual([1, 2, 3]);
+  });
+
+  it("puts the three seed views on the Attention board, in order", () => {
+    const attention = documentAt("data/docs/boards/attention.md").frontmatter;
+    expect(attention.id).toBe("doc_seedboardattention");
+    expect(attention.order).toBe(1);
+    // Rider 2: a column is a line in a board document, and the order *is* the
+    // value. Written out rather than derived, so reordering the seed views'
+    // files cannot silently reorder the shipped board.
+    expect(attention.columns).toEqual([
+      "doc_seedattention",
+      "doc_seedinbox",
+      "doc_seedopenthreads",
+    ]);
+  });
+
+  it("names only view documents that ship, on every board that names any", () => {
+    const viewIds = new Set(
+      documents
+        .filter((document) => document.frontmatter.type === "view")
+        .map((document) => document.frontmatter.id),
+    );
+    for (const { relPath, frontmatter } of boards) {
+      const columns = frontmatter.columns;
+      if (columns === undefined) continue;
+      expect(Array.isArray(columns), `${relPath}: columns`).toBe(true);
+      for (const id of columns as unknown[]) {
+        expect(viewIds, `${relPath}: column ${String(id)} names no seed view`).toContain(id);
+      }
+    }
+  });
+
+  /**
+   * Rider 6, and the distinction CLI-060 measured: **omitting `transitions` is
+   * the linear funnel, `{}` is a graph nothing may be dragged along**. The seed
+   * wants the funnel, so the key must be *absent* — `toEqual({})` would pass on
+   * either shape, which is why absence is asserted on its own.
+   */
+  it("draws the kanban over status, as the linear funnel", () => {
+    const board = documentAt("data/docs/boards/by-status.md").frontmatter;
+    expect(board.id).toBe("doc_seedboardbystatus");
+    expect(board.order).toBe(2);
+    expect(board.query).toEqual({ type: "note" });
+    // A kanban's columns are derived one per stage and are not view documents,
+    // so the key is absent rather than empty (`columns: []` is the Files board).
+    expect("columns" in board, "by-status carries a columns key").toBe(false);
+    const kanban = KanbanSchema.safeParse(board.kanban);
+    expect(kanban.success ? "" : JSON.stringify(kanban.error?.issues)).toBe("");
+    expect(kanban.success && kanban.data.field).toBe("status");
+    expect(kanban.success && kanban.data.stages).toEqual([...DOC_STATUSES]);
+    const raw = board.kanban as Record<string, unknown>;
+    expect("transitions" in raw, "the seed kanban writes a transition graph").toBe(false);
+  });
+
+  it("ships the Files board empty, and it is the one that opens", () => {
+    const files = documentAt("data/docs/boards/files.md").frontmatter;
+    expect(files.id).toBe("doc_seedboardfiles");
+    expect(files.order).toBe(3);
+    // Empty, not absent: rider 2's Files board has no query columns, while a
+    // kanban has no `columns` key at all. The two states are different.
+    expect(files.columns).toEqual([]);
+    expect(files["default-open"]).toBe(true);
+  });
+
+  it("carries `default-open` on exactly one board", () => {
+    const open = boards.filter((board) => board.frontmatter["default-open"] === true);
+    expect(open.map((board) => board.relPath)).toEqual(["data/docs/boards/files.md"]);
+  });
+
+  it("writes the board keys as the file spells them", () => {
+    // `default-open`, never `defaultOpen`: the wire spelling is reserved and
+    // deliberately unread on disk, so a camel-cased seed would install a board
+    // whose flag nothing sees (apps/server/src/core/board-frontmatter.ts).
+    for (const { relPath, frontmatter } of boards) {
+      expect(frontmatter, `${relPath}: wire spelling on disk`).not.toHaveProperty("defaultOpen");
+      expect("pinned" in frontmatter, `${relPath}: carries pinned`).toBe(false);
+    }
+    expect(columnsOf("data/docs/boards/attention.md")).toBeDefined();
   });
 });
 
@@ -521,6 +631,7 @@ describe("skills", () => {
         "routing",
         "delegation",
         "user edit",
+        "reflecting on the corpus",
         "concurrency",
         "writing a document",
         "job logs",
@@ -1563,7 +1674,7 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(16);
+    expect(sections.size).toBe(17);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -2987,6 +3098,156 @@ describe("orchestrate skill body", () => {
    * the dispatch: a row that matches a *shape* of type rather than a named one,
    * which is what routed `<plugin>.<action>` to a skill by its own first token.
    */
+  /**
+   * AGENT-042, SPEC.md §10 riders 2 and 6 (signed 2026-08-22). `pinned` and a
+   * view's `order` were removed rather than deprecated, so what the skill has to
+   * teach is the *replacement act*: a column appears because a board document
+   * names its id. Three pins here are the ones a rewrite loses first.
+   *
+   * - **`--columns` is the whole list.** An agent that reads it as an append
+   *   takes every other column off the board, at exit 0.
+   * - **Omitted `transitions` is not `{}`.** The first is the linear funnel and
+   *   the second is a board nothing may be dragged on — measured by CLI-060.
+   * - **The confirmation is not always the last line.** A `--stage` that decided
+   *   a status prints the server's sentence *after* `edited <id>`, so a skill
+   *   that reads one line reports half of what happened.
+   */
+  describe("a column is a line in a board document", () => {
+    const flat = body.replace(/\s+/g, " ");
+
+    it("names no removed key", () => {
+      // Rider 2 removed both. A skill naming either teaches a write the CLI
+      // refuses, and the flag is not a verb, so the invocation extractor and
+      // `REMOVED_VERBS` both look straight past it.
+      expect(body, "names --pinned").not.toMatch(/--pinned\b/);
+      expect(flat, "still calls a view pinned").not.toMatch(/pinned: true/);
+    });
+
+    it("teaches pinning a view as a write to the board", () => {
+      expect(flat).toMatch(
+        /\*\*A board is a document, so building one is writing a document\.\*\*/,
+      );
+      expect(flat).toMatch(/"pin me a view" is two writes, and the second one is what pins it/);
+      expect(body).toMatch(/corpus doc edit doc_seedboardattention --columns \S+ --from agent/);
+      expect(flat).toMatch(
+        /\*\*`--columns` is the whole list, in order, and never an append\.\*\*/,
+      );
+      expect(flat).toMatch(/drops a column takes that column off the board/i);
+      // Measured against a real server, 2026-08-22: `corpus doc archive` on the
+      // last board succeeds at exit 0. "One board is always showing" is the
+      // board bar's refusal (UI-148), so a skill stating it flatly would tell
+      // an agent it is protected where it is not.
+      expect(flat).toMatch(/\*\*One board is always showing, and the CLI does not enforce that/);
+      expect(flat).toMatch(/leaving a workspace with no board on it/);
+    });
+
+    it("keeps the two graphs apart, and says which one silence means", () => {
+      expect(flat).toMatch(/A kanban is a board over one field, and it is one document/);
+      expect(flat).toMatch(/so a kanban carries no `columns` at all/);
+      expect(flat).toMatch(/Leaving `transitions` out is not the same as writing it empty/);
+      expect(flat).toMatch(/Omit the key and the graph is the linear funnel/);
+      expect(flat).toMatch(/`transitions: \{\}` and the graph is one along which nothing may be/);
+    });
+
+    it("separates stage from status, and reads past the confirmation", () => {
+      expect(flat).toMatch(/Moving a document along a workflow is `--stage`/);
+      expect(flat).toMatch(/`stage` says where in a workflow a document sits/);
+      expect(flat).toMatch(/`status` says whether work remains/);
+      expect(flat).toMatch(/writing a status never moves a stage/i);
+      // The output shape, which is the half a parser gets wrong.
+      expect(flat).toMatch(/on a \*\*separate line after\*\* `edited <id>`/);
+      expect(flat).toMatch(/confirmation is therefore not always the last line/i);
+    });
+  });
+
+  /**
+   * AGENT-042, SPEC.md §7 rider 9 (signed 2026-08-22). Reflection is the second
+   * event whose procedure lives in this skill, and every pin below is a way the
+   * rider is misread rather than a restatement of it:
+   *
+   * - a stage change enqueues **nothing**, so the agent must not go looking for
+   *   one, and must not read a stage name as an instruction addressed to it;
+   * - `since: null` means *everything*, which is `corpus doc list` with the flag
+   *   left off — not an empty value, and not "nothing to do";
+   * - the digest is posted **even when there is nothing to say**, because a
+   *   silent reflection is indistinguishable from one that never ran.
+   */
+  describe("reflection is an act over the whole corpus", () => {
+    const flat = body.replace(/\s+/g, " ");
+    const section = body.slice(
+      body.indexOf("## Reflecting on the corpus"),
+      body.indexOf("## Concurrency and ordering"),
+    );
+
+    it("routes the event to a subagent like every other", () => {
+      const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+      expect(routing).toContain("`workspace.reflect`");
+      expect(routing).toMatch(/Reflecting on the corpus/);
+      expect(section.length, "no reflection section").toBeGreaterThan(400);
+    });
+
+    it("says what does not enqueue anything", () => {
+      expect(flat).toMatch(
+        /\*\*Reflection is an act over the whole corpus, and never a side effect of one change\.\*\*/,
+      );
+      expect(flat).toMatch(/none of those enqueues anything, and none of them is a message to you/);
+    });
+
+    it("gathers the window itself, and pays only for what it reads", () => {
+      expect(section).toMatch(/corpus doc list --since \S+/);
+      expect(flat).toMatch(/run the same command with \*\*no `--since` at all\*\*/);
+      expect(flat).toMatch(/\*\*Read a document only when its list line is not enough\.\*\*/);
+      expect(flat).toMatch(/\*\*Your own writes are not new work\.\*\*/);
+      expect(flat).toMatch(/carries `lastActor` on every row/);
+    });
+
+    it("says a failure leaves the clock, and an ask is never doubled", () => {
+      expect(flat).toMatch(/\*\*A failed reflection is safe to retry\.\*\*/);
+      expect(flat).toMatch(/clock only moves when the job reaches `processed`/);
+      expect(flat).toMatch(/the retry opens the same window/);
+      expect(flat).toMatch(/at\s?exit 0, so a second ask is not an error and is also not a second/);
+      expect(flat).toMatch(/`--json` carries `pending`, which is the field that tells the two/);
+    });
+
+    it("never reads a stage as an instruction", () => {
+      expect(flat).toMatch(/\*\*Never read a stage as an instruction\.\*\*/);
+      expect(flat).toMatch(/A document in `doing` is not asking you to do it/);
+      expect(flat).toMatch(/Report a stage that moved\. Never act on it\./);
+    });
+
+    it("posts one digest, window first, and posts it empty too", () => {
+      expect(flat).toMatch(/\*\*one standalone thread, the digest\*\*, and exactly one per/);
+      expect(flat).toMatch(/since <the payload's timestamp> until <the moment you gathered>/);
+      expect(section).toMatch(/^since \S+ until \S+$/m);
+      expect(flat).toMatch(
+        /\*\*Post the digest even when there is nothing to say, and post it in one line\.\*\*/,
+      );
+      expect(section).toMatch(/^since \S+ until \S+ — nothing changed, nothing to report\.$/m);
+      // Two `thread create` calls in this section, and neither wakes the agent.
+      const creates = section.match(/corpus thread create[^\n]*/g) ?? [];
+      expect(creates.length).toBe(2);
+      for (const create of creates) expect(create).not.toMatch(/--requests-agent/);
+      // SERVER-137: the digest is linked to its reflection at creation time and
+      // by nothing else — the event's payload names no thread, so a create with
+      // no `--job` leaves `lastDigest` null with no error anywhere. And it is
+      // standalone: a parented thread carrying the same job is ignored.
+      for (const create of creates) {
+        expect(create, "a worked digest carries no --job").toMatch(/--job evt_\w+/);
+        expect(create, "a worked digest is parented").not.toMatch(/--parent/);
+      }
+      expect(flat).toMatch(/\*\*No parent\.\*\* It is a standalone thread, so pass no `--parent`/);
+      expect(flat).toMatch(/\*\*`--job <the reflect event id>`\.\*\*/);
+      expect(flat).toMatch(/\*\*Post it before you settle the event\.\*\*/);
+      expect(flat).toMatch(/promoted to the corpus's digest when the event reaches `processed`/);
+      expect(flat).toMatch(/\*\*The digest asks for nothing to run\.\*\*/);
+      // And no worked digest body mentions the agent, which would wake it on
+      // the thread it just posted.
+      for (const block of fencedBlocks(section)) {
+        expect(block.content, "a worked digest wakes the agent").not.toContain("@agent");
+      }
+    });
+  });
+
   describe("an event type with no row", () => {
     const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
 

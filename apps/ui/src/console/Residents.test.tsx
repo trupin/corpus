@@ -182,6 +182,7 @@ function Register({ onOpen }: { onOpen: (id: string) => void }): null {
       onOpen(target.docId);
     },
     revealColumn: () => undefined,
+    openFullScreen: () => undefined,
   });
   return null;
 }

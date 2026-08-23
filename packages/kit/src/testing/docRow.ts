@@ -25,6 +25,9 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     reviewed: null,
     evergreen: false,
     origin: null,
+    // Never absent and never null (CONTRACT-074): a document the server has
+    // never written reads `user`, and so does an out-of-band edit.
+    lastActor: "user",
     excerpt: "",
     stale: null,
     parent: null,
@@ -42,9 +45,14 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     attention: [],
     snippets: [],
     parentTitle: null,
-    pinned: false,
+    stage: null,
     order: null,
     query: null,
+    // The board keys (CONTRACT-074). `null` on every non-board document, which
+    // is what a `type: view` row now looks like: a saved query and nothing more.
+    columns: null,
+    kanban: null,
+    defaultOpen: false,
     extra: {},
     ...overrides,
   };

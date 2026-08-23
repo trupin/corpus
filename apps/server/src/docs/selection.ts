@@ -54,7 +54,7 @@ const scalarToWire = (value: string | number | boolean): string =>
  * value that reaches here has a wire spelling. What a value *means* is
  * `DocsQuerySchema`'s question, and it answers with a `400`.
  */
-const valueToWire = (value: ViewQuery[string]): string =>
+export const valueToWire = (value: ViewQuery[string]): string =>
   Array.isArray(value) ? value.map(scalarToWire).join(",") : scalarToWire(value);
 
 /**

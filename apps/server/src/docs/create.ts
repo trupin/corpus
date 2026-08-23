@@ -23,6 +23,14 @@ import {
 } from "../core/index.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { invocableName } from "../threads/mentions.js";
+import { withSpeculativeDocumentRow } from "../projection/index.js";
+import {
+  clearOperations,
+  clearWarnings,
+  DEFAULT_OPEN_KEY,
+  planDefaultOpenClears,
+} from "./default-open.js";
+import { decideStageStatus, stageStatusWarning } from "./kanban.js";
 import { isIdTaken, loadDocument, toWireDoc } from "./read.js";
 import { findTemplate } from "./templates.js";
 import {
@@ -153,26 +161,35 @@ function claudeCodeFields(path: string, input: CreateDocRequest): Record<string,
 }
 
 /**
- * §7's view keys, plus every frontmatter key the core does not define, as
- * frontmatter keys of a brand-new document (CONTRACT-011).
+ * §5's `stage` and §10's view and board keys, plus every frontmatter key the
+ * core does not define, as frontmatter keys of a brand-new document
+ * (CONTRACT-011, widened by CONTRACT-074).
  *
  * Two rules, both the contract's own. **A key whose value is absent is not
- * written**: `order: null` "is the same as omitting it: no `order` key",
- * `pinned` defaults to `false` and an absent `pinned` reads as `false`, so a
- * plain note's frontmatter stays §5's canonical block and nothing else. And
- * **`extra` is flat, mirroring the file** — an extra key is a YAML key beside
- * the core ones, so each key is spread in as itself rather than nested under an
- * `extra:` mapping the file format has never had. A `null` extra value is a no-op on create, since there
- * is nothing yet to remove.
+ * written**: `order: null` "is the same as omitting it: no `order` key", and
+ * `defaultOpen` defaults to `false` while an absent `default-open` reads as
+ * `false`, so a plain note's frontmatter stays §5's canonical block and nothing
+ * else. And **`extra` is flat, mirroring the file** — an extra key is a YAML key
+ * beside the core ones, so each key is spread in as itself rather than nested
+ * under an `extra:` mapping the file format has never had. A `null` extra value
+ * is a no-op on create, since there is nothing yet to remove.
+ *
+ * **`defaultOpen` is the one key whose file spelling differs from its wire
+ * one**: the frontmatter key is `default-open`, and `defaultOpen` never reaches
+ * a file. Both spellings are reserved (`extra.ts`), so neither can be smuggled
+ * in through `extra` to bypass the arbitration in {@link createDocument}.
  *
  * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects every
  * reserved key with a `400` before the handler is reached.
  */
-function viewFields(input: CreateDocRequest): Record<string, unknown> {
+function boardFields(input: CreateDocRequest): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
-  if (input.pinned === true) fields["pinned"] = true;
+  if (input.stage !== undefined && input.stage !== null) fields["stage"] = input.stage;
   if (input.order !== undefined && input.order !== null) fields["order"] = input.order;
   if (input.query !== undefined && input.query !== null) fields["query"] = input.query;
+  if (input.columns !== undefined && input.columns !== null) fields["columns"] = input.columns;
+  if (input.kanban !== undefined && input.kanban !== null) fields["kanban"] = input.kanban;
+  if (input.defaultOpen === true) fields[DEFAULT_OPEN_KEY] = true;
   for (const [key, value] of Object.entries(input.extra ?? {})) {
     if (value === null) continue;
     fields[key] = value;
@@ -271,23 +288,60 @@ export async function createDocument(
       // cannot be recovered afterwards, so the cheap write now is what makes a
       // thread designated tomorrow capture what it produced today.
       origin: stampedOrigin(workspace, input.job),
-      ...viewFields(input),
+      ...boardFields(input),
     };
 
-    const text = serializeDocument(setFrontmatterFields(emptyDocument(body), fields));
-    const warnings = validateBeforeWrite(workspace, path, text);
+    let parsedDoc = setFrontmatterFields(emptyDocument(body), fields);
+
+    // SPEC.md §5's coupling, decided **before** the write so the status it
+    // chooses lands in the same bytes and therefore the same commit.
+    //
+    // Only when the create names `stage` at all: a create that says nothing
+    // about a workflow position is not a write that "changes `stage`", and
+    // paying a scope query on every create would put the whole board list on the
+    // path of the most common write in the product.
+    //
+    // The question is asked against a **speculative row** — the create has no
+    // row yet, and "in a kanban" is a query over rows — so the answer is about
+    // the document that is about to exist rather than about no document at all.
+    const coupling =
+      input.stage === undefined
+        ? null
+        : withSpeculativeDocumentRow(workspace.projection, path, parsedDoc, () =>
+            decideStageStatus(workspace.projection, id, path, input.stage ?? null, workspace.now()),
+          );
+    const coupledStatus = coupling?.status ?? null;
+    if (coupledStatus !== null && coupledStatus !== fields["status"]) {
+      parsedDoc = setFrontmatterFields(parsedDoc, { status: coupledStatus });
+    }
+
+    // §10's "at most one board carries `default-open`", cleared in this same
+    // plan so the arbitration and the flag land in one commit (§9.2).
+    const cleared =
+      input.defaultOpen === true
+        ? planDefaultOpenClears(workspace.workspaceRoot, workspace.projection, id)
+        : [];
+
+    const text = serializeDocument(parsedDoc);
+    const warnings = [
+      ...validateBeforeWrite(workspace, path, text),
+      ...(coupling !== null && coupledStatus !== null && coupledStatus !== fields["status"]
+        ? [stageStatusWarning(coupling, input.stage ?? null, coupledStatus)]
+        : []),
+      ...clearWarnings(cleared),
+    ];
 
     const result = await runMutation(workspace, {
       docId: id,
       actor,
       warnings,
       plan: {
-        operations: [{ kind: "write", path, content: text }],
-        stage: [path],
-        project: [path],
+        operations: [{ kind: "write", path, content: text }, ...clearOperations(cleared)],
+        stage: [path, ...cleared.map((board) => board.path)],
+        project: [path, ...cleared.map((board) => board.path)],
         unproject: [],
         commit: { subject: `doc create: ${input.title} (${id}) by ${actor}` },
-        keys: [DOCS_KEY, docKey(id)],
+        keys: [DOCS_KEY, docKey(id), ...cleared.map((board) => docKey(board.id))],
         // A note lands in a folder and moves its badge; a thread lands flat
         // under `data/threads/` and moves nothing. The runner compares.
         mayChangeTree: true,

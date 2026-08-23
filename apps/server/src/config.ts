@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
+import { DEFAULT_REFLECT_QUIET_MINUTES } from "@corpus/contract";
 import {
   DEFAULT_MAX_FILE_BYTES,
   DEFAULT_MAX_REQUEST_BYTES,
@@ -104,6 +105,26 @@ export const EditAcknowledgmentConfigSchema = z.object({
   idleMs: z.number().int().min(1_000).default(EDIT_ACK_IDLE_MS),
 });
 
+/**
+ * SPEC.md §7's quiet window (rider 9, 2026-08-22): how long the corpus must go
+ * without a change by anyone other than the agent before the server enqueues a
+ * `workspace.reflect` by itself.
+ *
+ * **Minutes, not milliseconds**, unlike every other window on this config. It is
+ * the one duration a person sets on purpose and reads back on a board — the
+ * Reflect control publishes it (`ReflectStatus.quiet`) — and half an hour spelled
+ * `1800000` is a number nobody checks.
+ *
+ * **`0` disables the automatic path** and is a value, not an absence: a
+ * workspace that wants reflection only when somebody asks for it says so, and
+ * the floor is therefore zero rather than one. The nested block follows the
+ * `attachments` and `editAcknowledgment` precedent, so a later key about
+ * reflection has somewhere to go.
+ */
+export const ReflectConfigSchema = z.object({
+  quiet: z.number().int().min(0).default(DEFAULT_REFLECT_QUIET_MINUTES),
+});
+
 export const WorkspaceConfigSchema = z.object({
   version: z.literal(1),
   port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
@@ -125,6 +146,7 @@ export const WorkspaceConfigSchema = z.object({
    */
   embedding: EmbeddingConfigSchema.optional(),
   editAcknowledgment: EditAcknowledgmentConfigSchema.default({ idleMs: EDIT_ACK_IDLE_MS }),
+  reflect: ReflectConfigSchema.default({ quiet: DEFAULT_REFLECT_QUIET_MINUTES }),
 });
 
 /**
@@ -199,6 +221,17 @@ export interface ServerConfig {
    * {@link EDIT_ACK_IDLE_MS}, resolved at the one place that builds the tracker.
    */
   readonly editAcknowledgment?: { readonly idleMs: number } | undefined;
+  /**
+   * SPEC.md §7's quiet window, in minutes (SERVER-137). Optional for
+   * {@link editAcknowledgment}'s reason — two dozen fixture literals have no
+   * opinion about it — and omitted means {@link DEFAULT_REFLECT_QUIET_MINUTES}.
+   *
+   * It is the value read **at boot**. The scheduler re-reads the file when it
+   * arms and when the status route answers, so an edit to `.corpus/config.json`
+   * takes effect without a restart; this is what that re-read falls back to when
+   * the file has since become unreadable ({@link readQuietMinutes}).
+   */
+  readonly reflect?: { readonly quiet: number } | undefined;
   /** Warnings worth surfacing at boot that are not fatal (e.g. a weak token). */
   readonly warnings: readonly string[];
 }
@@ -400,6 +433,40 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     uiDistDir: resolveUiDistDir(options.env, packageRoot),
     embedding: embedding.settings,
     editAcknowledgment: config.editAcknowledgment,
+    reflect: config.reflect,
     warnings,
   };
+}
+
+/**
+ * SPEC.md §7's quiet window as it stands **right now**, re-read from
+ * `.corpus/config.json` (SERVER-137).
+ *
+ * The issue asks for the key to be "read on start and on config change". There
+ * is no config watcher in this server and adding one would put every other key
+ * — the port, the token, the data directory — into a reload path nothing has
+ * asked for. So the window is read at the two moments it is used instead: when
+ * the scheduler arms a timer, and when `GET /api/workspace/reflect` reports it.
+ * An operator who edits the file gets the new window on the next write to the
+ * corpus, with no restart, and the config file stays a boot-time contract
+ * everywhere else.
+ *
+ * **Never throws, and never reports a value it did not read.** A file that has
+ * since gone missing, become unreadable, stopped being JSON or grown a
+ * `reflect` block this build refuses returns `fallback` — the value loaded at
+ * boot — because a malformed edit must not silently switch the automatic path
+ * on or off. It is one `readFileSync` of a few hundred bytes on a path that is
+ * already doing a projection query.
+ */
+export function readQuietMinutes(configPath: string, fallback: number): number {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return fallback;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+  const block = (parsed as Record<string, unknown>)["reflect"];
+  const result = ReflectConfigSchema.safeParse(block ?? {});
+  return result.success ? result.data.quiet : fallback;
 }

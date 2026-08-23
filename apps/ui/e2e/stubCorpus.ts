@@ -1,26 +1,34 @@
 import {
+  DEFAULT_PAGE_LIMIT,
   DEFAULT_RECENT_JOBS,
+  DEFAULT_REFLECT_QUIET_MINUTES,
+  MAX_PAGE_LIMIT,
   ORCHESTRATOR_LANE,
   extractFormSource,
   formAnswerRecord,
   formatFormAnswerBody,
   FormSchema,
   isFormAnswerBody,
+  isUnreflected,
   parseFormAnswerBody,
   turnHeadings,
   unreadableAnswer,
   unterminatedFence,
   validateFormAnswer,
   type CaptureResult,
+  type Actor,
   type ConflictError,
   type CreateThreadResponse,
   type DeleteDocResult,
+  type DeleteFolderResult,
   type DeleteTurnResult,
   type Doc,
   type DocList,
   type DocMutationResponse,
   type DocRow,
   type DocStatus,
+  type FolderNode,
+  type FolderStatusResult,
   type FolderTree,
   type Health,
   type Form,
@@ -40,7 +48,11 @@ import {
   type QueueEventStatus,
   type QueueStatus,
   type ReattachConflictError,
+  type RenameFolderResult,
+  type ReorderBoardsResult,
   type ReattachThreadResponse,
+  type ReflectAskResult,
+  type ReflectStatus,
   type Relation,
   type RelatedDocs,
   type Resident,
@@ -58,6 +70,7 @@ import {
   type UpdateDocResponse,
   type ValidationError,
   type ViewQuery,
+  type Warning,
 } from "@corpus/contract";
 import type { Page, Request, Route } from "@playwright/test";
 import { Buffer } from "node:buffer";
@@ -124,6 +137,9 @@ type StubPayload =
   | AppendTurnResponse
   | CaptureResult
   | ConflictError
+  | DeleteFolderResult
+  | FolderStatusResult
+  | RenameFolderResult
   | CreateThreadResponse
   | DeleteDocResult
   | DeleteTurnResult
@@ -143,6 +159,9 @@ type StubPayload =
   | QueueStatus
   | ReattachConflictError
   | ReattachThreadResponse
+  | ReflectAskResult
+  | ReflectStatus
+  | ReorderBoardsResult
   | RelatedDocs
   | StaleKeyError
   | SearchResults
@@ -198,11 +217,44 @@ export interface StubRow {
    * anything about it at all.
    */
   readonly due?: string | null;
-  readonly pinned?: boolean;
+  /**
+   * A board's position among boards (SPEC.md §10, rider 2 — CONTRACT-074
+   * removed `pinned` and a view's `order` in the same act).
+   */
   readonly order?: number | null;
-  /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
+  /** A view document's query, or a kanban board's scope. */
   readonly query?: ViewQuery | null;
+  /** A `type: board` document's columns: the ids of the views it lists. */
+  readonly columns?: readonly string[] | null;
+  /** A kanban board's block, exactly as the wire carries it. */
+  readonly kanban?: DocRow["kanban"];
+  /** The one board that receives every open naming no board. */
+  readonly defaultOpen?: boolean;
+  /** SPEC.md §5's workflow position. */
+  readonly stage?: string | null;
   readonly parent?: string | null;
+  /**
+   * When this document was last written, as the file holds it.
+   *
+   * Seeded because SPEC.md §7's reflection compares it against the corpus's
+   * clock, and every stubbed document was frozen at {@link SEEDED_AT} — so no
+   * spec could put a document on either side of a clock without moving the
+   * clock itself, which is the *other* half of the comparison. A spec about what
+   * changed needs both halves.
+   */
+  readonly updated?: string;
+  /**
+   * Who wrote last (`DocRow.lastActor`, CONTRACT-074).
+   *
+   * It was flatly `user` until UI-153, which is the value this stub's one writer
+   * — the page — genuinely has. §7's rule that **the agent's own writes never
+   * count as unreflected** cannot be reached from a stub that says everything
+   * was written by a person, so a spec seeds the agent's own documents here: the
+   * digest thread a reflection posts, and the changelog entries it writes.
+   * {@link StubCorpus.writeAsAgent} moves it too, because that write really is
+   * the agent's.
+   */
+  readonly lastActor?: Actor;
   readonly extra?: Readonly<Record<string, unknown>>;
   /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
   readonly stale?: StaleTier | null;
@@ -283,9 +335,12 @@ interface StoredDoc {
   status: DocStatus;
   /** See {@link StubRow.due}. */
   due: string | null;
-  pinned: boolean;
   order: number | null;
   query: ViewQuery | null;
+  columns: string[] | null;
+  kanban: DocRow["kanban"];
+  defaultOpen: boolean;
+  stage: string | null;
   parent: string | null;
   extra: Record<string, unknown>;
   stale: StaleTier | null;
@@ -304,6 +359,8 @@ interface StoredDoc {
    * that lands, and by an out-of-band one.
    */
   key: string;
+  /** Who wrote last (CONTRACT-074) — see {@link StubRow.lastActor}. */
+  lastActor: Actor;
   /**
    * Whether the agent is in this thread (SPEC.md §8) — `none` until a turn asks
    * for it. Meaningless on a non-thread document, and reported as `null` there.
@@ -566,7 +623,27 @@ export interface StubOptions {
    * not gets the composer exactly as it was before the feature.
    */
   readonly lanes?: readonly AgentLane[];
+  /**
+   * The reflection clock, as `GET /api/workspace/reflect` reports it
+   * (SPEC.md §7's rider 9) — everything except `changed`, which this stub
+   * **derives** (see below).
+   *
+   * The default is a clock *after* every seeded document, so no spec grows a
+   * mark it did not ask for: `SEEDED_AT` is 2026-07-01 and every write stamps
+   * seconds after it, so a corpus reflected on in 2026-08 is quiet. A spec about
+   * what changed moves the clock **back**, and the rows it seeded become
+   * unreflected without anything else moving.
+   */
+  readonly reflect?: {
+    readonly reflected?: string | null;
+    readonly pending?: string | null;
+    readonly lastDigest?: string | null;
+    readonly quiet?: number;
+  };
 }
+
+/** The clock a stub reports unless a spec moves it — after every seeded write. */
+export const STUB_REFLECTED_AT = "2026-08-01T09:00:00.000Z";
 
 export interface StubCorpus {
   /** Every `/api` request the page made, in order. */
@@ -635,6 +712,21 @@ export interface StubCorpus {
    * it is two moments, not a state.
    */
   readonly releaseLane: (lane: string) => Promise<void>;
+  /**
+   * **A reflection landing** — the queue transition SPEC.md §7's marks clear on.
+   *
+   * It happens in a process this suite does not run, so a spec that wants to see
+   * the board go quiet has to move the clock itself. Like every other writer on
+   * this interface it moves the corpus **behind the page's back**: nothing the
+   * page did caused it, so no `invalidateQueries` of its own is coming, and what
+   * repaints the bar and the columns is the `invalidate` frame a spec pushes
+   * afterwards — which is the whole point, since "the marks clear when the job
+   * lands" is otherwise indistinguishable from "they were never drawn".
+   *
+   * The clock advances to `at`, the pending reflection clears, and `digest`
+   * becomes the thread the control links to.
+   */
+  readonly landReflection: (at: string, digest?: string) => Promise<void>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -647,14 +739,18 @@ function seeded(row: StubRow): StoredDoc {
     turnModels: { ...(row.turnModels ?? {}) },
     status: row.status ?? "open",
     due: row.due ?? null,
-    pinned: row.pinned ?? false,
     order: row.order ?? null,
     query: row.query ?? null,
+    columns: row.columns === undefined || row.columns === null ? null : [...row.columns],
+    kanban: row.kanban ?? null,
+    defaultOpen: row.defaultOpen ?? false,
+    stage: row.stage ?? null,
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
-    updated: SEEDED_AT,
+    updated: row.updated ?? SEEDED_AT,
     key: nextStubKey(),
+    lastActor: row.lastActor ?? "user",
     agent: "none",
     related: row.related ?? null,
     unread: row.unread ?? false,
@@ -828,22 +924,67 @@ function isDocStatus(value: unknown): value is DocStatus {
  * which is precisely the state the mechanism exists to detect — and every
  * conflict spec would then be testing the stub's memory rather than the board's.
  */
-function stampUpdated(doc: StoredDoc): void {
+function stampUpdated(doc: StoredDoc, actor: Actor = "user"): void {
   writes += 1;
   doc.updated = new Date(Date.parse(SEEDED_AT) + writes * 1000).toISOString();
   doc.key = nextStubKey();
+  /*
+   * And who wrote it (CONTRACT-074). It travels with `updated` for the same
+   * reason the key does: SPEC.md §7 reads the pair together — a document is
+   * unreflected when it changed *and* somebody other than the agent changed it —
+   * so a stub that advanced one without the other could report a state the
+   * server never produces.
+   */
+  doc.lastActor = actor;
 }
 
 /**
  * Installs the stub. Call before `page.goto` — the board queries on first
  * render, and a route added afterwards would miss the first request.
  */
+/**
+ * The board every seed gets, unless the seed writes its own (UI-148).
+ *
+ * A column is a view document **a board lists** (SPEC.md §10, rider 2), so a
+ * workspace with view documents and no board document has no columns at all —
+ * which is a real state, and the one a workspace that never ran the migration is
+ * in, but not the state forty specs seeding a view meant to describe. So a seed
+ * naming no `type: board` document gets one listing every `type: view` row it
+ * seeded, in seed order: the shape those specs were written against, now spelled
+ * as two documents instead of a flag.
+ *
+ * A seed that names its own board — the boards suite, an empty board, a board
+ * naming a view that is not there — gets exactly what it named, and nothing is
+ * synthesised.
+ */
+export const STUB_BOARD_ID = "doc_board_stub";
+
+/** Where every seeded document lives, and what a folder path is relative to. */
+const DOCS_ROOT = "data/docs";
+
+function seedWithBoard(rows: readonly StubRow[]): readonly StubRow[] {
+  if (rows.some((row) => row.type === "board")) return rows;
+  const views = rows.filter((row) => row.type === "view").map((row) => row.id);
+  return [
+    ...rows,
+    {
+      id: STUB_BOARD_ID,
+      type: "board",
+      title: "Board",
+      path: `data/docs/boards/${STUB_BOARD_ID}.md`,
+      order: 1,
+      columns: views,
+      defaultOpen: true,
+    },
+  ];
+}
+
 export async function stubCorpus(
   page: Page,
   rows: readonly StubRow[],
   options: StubOptions = {},
 ): Promise<StubCorpus> {
-  const store = new Map<string, StoredDoc>(rows.map((row) => [row.id, seeded(row)]));
+  const store = new Map<string, StoredDoc>(seedWithBoard(rows).map((row) => [row.id, seeded(row)]));
   // A mutable copy: `claimJob` moves an event's status, and the seed the spec
   // handed in is not the stub's to rewrite.
   const jobs: StubJob[] = [...(options.jobs ?? [])];
@@ -865,6 +1006,18 @@ export async function stubCorpus(
   let halted = false;
 
   /*
+   * The reflection clock, the pending reflection and the last digest (SPEC.md
+   * §7's rider 9). Mutable for `halted`'s reason: the ask and the landing are
+   * the two things whose whole observable effect is this state, and a stub that
+   * answered them without moving it would let the Reflect control look correct
+   * while the corpus it reports never changed.
+   */
+  let reflectedAt: string | null = options.reflect?.reflected ?? STUB_REFLECTED_AT;
+  let pendingReflection: string | null = options.reflect?.pending ?? null;
+  let lastDigest: string | null = options.reflect?.lastDigest ?? null;
+  let reflectionAsks = 0;
+
+  /*
    * The roster **is** the set of designations, as it is on the server (SPEC.md
    * §7 names a lane after its designated root thread), so designating, releasing
    * and resolving all go through these three rather than each rewriting `lanes`.
@@ -872,6 +1025,71 @@ export async function stubCorpus(
    * every badge and every recipient picker reading the state before it.
    */
   const laneOf = (id: string): AgentLane | undefined => lanes.find((row) => row.lane === id);
+
+  /**
+   * Every seeded document filed under a folder, **compared byte for byte** —
+   * `data/docs/<path>/…`, prefix-matched so a folder act reaches its
+   * descendants (SPEC.md §9.2, rider 7). `FINANCE` finds nothing in a workspace
+   * holding `finance`, which is the `404` SERVER-136 documents.
+   */
+  const docsUnder = (path: string): readonly StoredDoc[] => {
+    if (path === "") return [];
+    const prefix = `${DOCS_ROOT}/${path}/`;
+    return [...store.values()].filter((doc) => doc.path.startsWith(prefix));
+  };
+
+  /**
+   * The folder hierarchy the seeded paths describe, in the shape `GET /api/tree`
+   * answers with: `count` is the documents filed **directly** in a folder and
+   * `totalCount` adds its descendants'.
+   */
+  const folderTree = (): FolderTree => {
+    interface Node {
+      readonly name: string;
+      readonly path: string;
+      count: number;
+      readonly children: Map<string, Node>;
+    }
+    const roots = new Map<string, Node>();
+    for (const doc of store.values()) {
+      if (!doc.path.startsWith(`${DOCS_ROOT}/`)) continue;
+      const segments = doc.path
+        .slice(DOCS_ROOT.length + 1)
+        .split("/")
+        .slice(0, -1);
+      if (segments.length === 0) continue;
+      let level = roots;
+      let node: Node | undefined;
+      let path = "";
+      for (const name of segments) {
+        path = path === "" ? name : `${path}/${name}`;
+        node = level.get(name);
+        if (node === undefined) {
+          node = { name, path, count: 0, children: new Map() };
+          level.set(name, node);
+        }
+        level = node.children;
+      }
+      if (node !== undefined) node.count += 1;
+    }
+    const toFolder = (node: Node): FolderNode => {
+      const children = [...node.children.values()]
+        .map(toFolder)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      return {
+        path: node.path,
+        name: node.name,
+        count: node.count,
+        totalCount: node.count + children.reduce((sum, child) => sum + child.totalCount, 0),
+        children,
+      };
+    };
+    return {
+      folders: [...roots.values()]
+        .map(toFolder)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    };
+  };
 
   const dropLane = (id: string): void => {
     const index = lanes.findIndex((row) => row.lane === id);
@@ -1048,9 +1266,19 @@ export async function stubCorpus(
       attention: attentionOf(doc),
       snippets: [],
       parentTitle: doc.parent === null ? null : (store.get(doc.parent)?.title ?? null),
-      pinned: doc.pinned,
+      /*
+       * Who wrote last (CONTRACT-074). Flatly `user` here: this stub has one
+       * writer, the page, and §7's reflection reads the field to decide what the
+       * agent has already looked at — a value no browser spec is in a position
+       * to move. UI-153 will need a seed for it.
+       */
+      lastActor: doc.lastActor,
+      stage: doc.stage,
       order: doc.order,
       query: doc.query,
+      columns: doc.columns,
+      kanban: doc.kanban,
+      defaultOpen: doc.defaultOpen,
       extra: doc.extra,
     };
   };
@@ -1137,16 +1365,25 @@ export async function stubCorpus(
       reviewed: null,
       evergreen: false,
       origin: null,
-      pinned: doc.pinned,
+      stage: doc.stage,
       order: doc.order,
       query: doc.query,
+      columns: doc.columns,
+      kanban: doc.kanban,
+      defaultOpen: doc.defaultOpen,
       extra: doc.extra,
     },
   });
 
   const matches = (doc: StoredDoc, params: URLSearchParams): boolean => {
-    const pinned = params.get("pinned");
-    if (pinned !== null && String(doc.pinned) !== pinned) return false;
+    /*
+     * `pinned=` left `GET /api/docs` with rider 2 (CONTRACT-074), so there is no
+     * branch for it: a spec that still sent one would be sending a parameter the
+     * server does not publish, and it should get every document rather than a
+     * filtered set this stub invented.
+     */
+    const stage = params.get("stage");
+    if (stage !== null && !stage.split(",").includes(doc.stage ?? "")) return false;
     const type = params.get("type");
     if (type !== null && !type.split(",").includes(doc.type)) return false;
     const parent = params.get("parent");
@@ -1185,9 +1422,78 @@ export async function stubCorpus(
         return false;
       }
     }
+    /*
+     * There is deliberately **no `tag=` branch**: `StoredDoc` carries no tags at
+     * all (they are fixed `[]` on every row), so this stub can neither match nor
+     * exclude on one. A spec that needs a scoped kanban scopes it by `folder` or
+     * `type`, both of which the stub really answers. A branch here would filter
+     * every document out and read as a board that shows nothing.
+     */
     const status = params.get("status");
     if (status !== null) return status.split(",").includes(doc.status);
+    /*
+     * `includeArchived=true` widens the default set into the union (SPEC.md
+     * §9.2), which is what a kanban's scope is asked with: a document in a stage
+     * mapped to `archived` is still in the kanban (§5).
+     */
+    if (params.get("includeArchived") === "true") return true;
     return doc.status !== "archived";
+  };
+
+  /**
+   * SPEC.md §5's coupling, as SERVER-138 implements it: **while a document is in
+   * a kanban, its stage decides its status**.
+   *
+   * Reproduced here rather than left out, for the reason UI-102 and UI-116 both
+   * name: a stub that answered a stage write without the status the server
+   * writes beside it would let a drag look correct on the wire while the board
+   * it produces disagrees with every other surface. It is also the only way a
+   * spec can watch "both fields changed", which is what the rider asks the toast
+   * to say.
+   *
+   * The deciding order is `GET /api/docs?sort=order`'s — `order` nulls last,
+   * then title, then id — because §5 says "the one with the lowest `order`
+   * decides", and that has to mean the same thing here and on the bar.
+   */
+  const decideStageStatus = (
+    doc: StoredDoc,
+  ): { board: StoredDoc; status: DocStatus | null } | null => {
+    const boards = [...store.values()]
+      .filter(
+        (row) =>
+          row.type === "board" &&
+          row.status !== "archived" &&
+          row.kanban !== null &&
+          row.kanban.field === "stage",
+      )
+      .sort((left, right) => {
+        const leftOrder = left.order ?? Number.POSITIVE_INFINITY;
+        const rightOrder = right.order ?? Number.POSITIVE_INFINITY;
+        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        const byTitle = left.title
+          .toLocaleLowerCase()
+          .localeCompare(right.title.toLocaleLowerCase());
+        return byTitle !== 0 ? byTitle : left.id.localeCompare(right.id);
+      });
+
+    for (const board of boards) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(board.query ?? {})) {
+        params.set(key, Array.isArray(value) ? value.map(String).join(",") : String(value));
+      }
+      params.set("includeArchived", "true");
+      if (!matches(doc, params)) continue;
+      const kanban = board.kanban;
+      if (kanban === null) continue;
+      // A stage the board maps writes that status; every other stage writes
+      // `open`, which is what SPEC.md §5's rider says and what the server does.
+      // The carve-out that used to sit here — an undrawn stage writing no
+      // status — was removed under PR #58's review, because the spec never
+      // said it and the code was citing §5 for it.
+      const status = (doc.stage === null ? undefined : kanban.status?.[doc.stage]) ?? "open";
+      return { board, status };
+    }
+    return null;
   };
 
   await page.route("**/api/**", async (route) => {
@@ -1328,7 +1634,119 @@ export async function stubCorpus(
       return json(route, asJob(moved));
     }
 
-    if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
+    /*
+     * `GET /api/tree` — the folder hierarchy, **derived from the seeded paths**
+     * rather than answered empty (UI-150).
+     *
+     * It was `{ folders: [] }`, which was survivable for as long as the only
+     * reader was the new-list picker's folder option: an empty offer looked like
+     * a workspace with no folders. The explorer draws the tree *from* this, so
+     * an empty answer is an empty explorer, and no spec could reach a single one
+     * of rider 1's rules.
+     */
+    if (url.pathname === "/api/tree") return json(route, folderTree() satisfies FolderTree);
+
+    /*
+     * SPEC.md §9.2's folder acts (rider 7). Each takes a path in the **body**,
+     * compares it **byte for byte** — `FINANCE` is a `404` in a workspace holding
+     * `finance` (SERVER-136) — and answers with every document under the folder
+     * *after* the act rather than with what changed.
+     */
+    const folderAct = /^\/api\/folders\/(rename|archive|unarchive|delete)$/.exec(url.pathname);
+    if (folderAct !== null && method === "POST") {
+      const input = inputOf();
+      const act = folderAct[1];
+      const path = typeof input["path"] === "string" ? input["path"] : "";
+      const from = typeof input["from"] === "string" ? input["from"] : "";
+      const subject = act === "rename" ? from : path;
+      const under = docsUnder(subject);
+      if (under.length === 0) {
+        return json(
+          route,
+          { code: "not_found", message: `no folder ${subject}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      if (act === "rename") {
+        const to = typeof input["to"] === "string" ? input["to"] : "";
+        if (to === "" || docsUnder(to).length > 0) {
+          return json(
+            route,
+            { code: "conflict", message: `${to} already exists` } satisfies ConflictError,
+            409,
+          );
+        }
+        const moved = under.map((doc) => {
+          // Ids never change: the path is presentation and the id is identity.
+          const next = doc.path.replace(`/${from}/`, `/${to}/`);
+          store.set(doc.id, { ...doc, path: next });
+          return { id: doc.id, path: next };
+        });
+        return json(route, { documents: moved, warnings: [] } satisfies RenameFolderResult);
+      }
+      if (act === "delete") {
+        // Threads survive as orphaned records and are **not** named in the
+        // response (SERVER-136), so neither are they here.
+        const removed = under
+          .filter((doc) => doc.type !== "thread")
+          .map((doc) => {
+            store.delete(doc.id);
+            return { id: doc.id };
+          });
+        return json(route, { documents: removed, warnings: [] } satisfies DeleteFolderResult);
+      }
+      const status: DocStatus = act === "archive" ? "archived" : "resolved";
+      const changed = under.map((doc) => {
+        // It moves nothing: a folder act on status leaves every path alone.
+        store.set(doc.id, { ...doc, status });
+        return { id: doc.id, status };
+      });
+      return json(route, { documents: changed, warnings: [] } satisfies FolderStatusResult);
+    }
+
+    /*
+     * `POST /api/boards/order` — the bar's order, as **one act and one commit**
+     * (SPEC.md §10, rider 2; CONTRACT-080).
+     *
+     * The stub cannot show the half that matters most — that git holds one
+     * commit — which is `apps/server/src/docs/board-order.test.ts`'s. What it
+     * can pin is that the bar issues **one** request stating the whole order
+     * rather than a `PUT` per board, and that it renders what comes back: the
+     * positions are derived here from the list's own order, exactly as the
+     * server derives them, and a board already at its number is reported
+     * unchanged so a spec asserting the count is asserting the rule.
+     */
+    if (url.pathname === "/api/boards/order" && method === "POST") {
+      const asked = inputOf()["boards"];
+      const ids = Array.isArray(asked)
+        ? asked.filter((id): id is string => typeof id === "string")
+        : [];
+      // Refused before anything is written, like the server: no caller can
+      // observe half an order.
+      const missing = ids.find((id) => !store.has(id));
+      if (missing !== undefined) {
+        return json(
+          route,
+          { code: "not_found", message: `no document with id ${missing}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      const positions = ids.map((id, index) => {
+        const subject = store.get(id);
+        const order = index + 1;
+        const changed = subject !== undefined && subject.order !== order;
+        if (subject !== undefined && changed) {
+          subject.order = order;
+          stampUpdated(subject);
+        }
+        return { id, order, changed };
+      });
+      return json(route, {
+        boards: positions,
+        commit: "c0mm1tstub",
+        warnings: [],
+      } satisfies ReorderBoardsResult);
+    }
     /*
      * `GET /api/index/status` — the strip's index pill (SPEC.md §10's
      * index-pill rider).
@@ -1425,6 +1843,53 @@ export async function stubCorpus(
     if (url.pathname === "/api/queue/status") return json(route, queueStatus());
 
     /*
+     * `GET /api/workspace/reflect` and the ask (SPEC.md §7's rider 9, UI-153).
+     *
+     * **`changed` is derived, never seeded.** The server counts it with the
+     * contract's `isUnreflected` and the board marks each row with the identical
+     * call, and a test asserts the two agree — so a stub that took a number for
+     * it could report `2 changes` over a board with three marks on it, and the
+     * one property the whole design rests on would be untestable here. It counts
+     * the same store the rows come from, with the same function.
+     *
+     * The ask answers **`202` always**, never a `409`: §7's "an ask while one is
+     * pending is answered with the pending one, never doubled". `pending` is
+     * what tells the two apart, and the second ask enqueues nothing.
+     */
+    const reflectStatus = (): ReflectStatus => ({
+      reflected: reflectedAt,
+      pending: pendingReflection,
+      changed: [...store.values()].filter((doc) =>
+        isUnreflected(
+          { updated: doc.updated, lastActor: doc.lastActor, status: doc.status },
+          reflectedAt,
+        ),
+      ).length,
+      lastDigest,
+      quiet: options.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES,
+    });
+
+    if (url.pathname === "/api/workspace/reflect") {
+      if (method === "POST") {
+        const already = pendingReflection !== null;
+        if (!already) {
+          reflectionAsks += 1;
+          pendingReflection = `evt_reflect_${String(reflectionAsks)}`;
+        }
+        return json(
+          route,
+          {
+            eventId: pendingReflection ?? "evt_reflect_0",
+            since: reflectedAt,
+            pending: already,
+          } satisfies ReflectAskResult,
+          202,
+        );
+      }
+      return json(route, reflectStatus());
+    }
+
+    /*
      * `POST /api/queue/halt` and `/api/queue/resume` — the strip's HALT control
      * (SPEC.md §7).
      *
@@ -1507,13 +1972,25 @@ export async function stubCorpus(
     }
 
     if (url.pathname === "/api/docs" && method === "GET") {
-      const items = [...store.values()]
+      const matching = [...store.values()]
         .filter((doc) => matches(doc, url.searchParams))
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
         .map(asRow);
+      /*
+       * **`limit` is honoured, and `page.total` is not.** The server pages with
+       * `LIMIT`/`OFFSET` and reports the whole match count regardless
+       * (`PageMeta`), which is what lets a caller say "this listing reached its
+       * bound" (SPEC.md §10). A stub that returned everything under a `limit: 50`
+       * it never applied made that state unreachable: the explorer's bound line
+       * could not be seen in any spec, because `items.length < page.total` was
+       * false by construction.
+       */
+      const asked = Number(url.searchParams.get("limit") ?? String(DEFAULT_PAGE_LIMIT));
+      const limit =
+        Number.isFinite(asked) && asked > 0 ? Math.min(asked, MAX_PAGE_LIMIT) : DEFAULT_PAGE_LIMIT;
       return json(route, {
-        items,
-        page: { total: items.length, limit: 50, offset: 0 },
+        items: matching.slice(0, limit),
+        page: { total: matching.length, limit, offset: 0 },
       } satisfies DocList);
     }
 
@@ -2416,12 +2893,94 @@ export async function stubCorpus(
           // RFC 7386 shallow merge, exactly as the server applies it.
           doc.extra = { ...doc.extra, ...(changes["extra"] as Record<string, unknown>) };
         }
+        /*
+         * The view and board keys (CONTRACT-074, UI-148).
+         *
+         * They used to be dropped on the floor: the response echoed the stored
+         * document, so a spec could watch a `PUT` go out and never see the board
+         * change — a column reorder, a board reorder and a column removal all
+         * looked correct on the wire and left the bar exactly as it was. Each is
+         * `null`-clearable, exactly as `UpdateDocRequest` declares them.
+         */
+        if (typeof changes["order"] === "number" || changes["order"] === null) {
+          doc.order = changes["order"];
+        }
+        /*
+         * `stage`, and the status SPEC.md §5 couples to it. The coupling is
+         * decided **after** the stage is written, against the document as this
+         * save leaves it, exactly as `SERVER-138` does — asking before would
+         * decide membership from the stage the document is leaving.
+         */
+        let coupled: Warning | null = null;
+        if (typeof changes["stage"] === "string" || changes["stage"] === null) {
+          const before = doc.status;
+          doc.stage = changes["stage"];
+          const coupling = decideStageStatus(doc);
+          if (coupling !== null && coupling.status !== null && coupling.status !== before) {
+            doc.status = coupling.status;
+            coupled = {
+              code: "stage_status",
+              detail:
+                `stage ${doc.stage === null ? "cleared" : `\`${doc.stage}\``} set status to ` +
+                `\`${coupling.status}\`: this document is in the kanban ${coupling.board.title} ` +
+                `(${coupling.board.id}), whose \`kanban.status\` map decides a status on entry ` +
+                "(SPEC.md §5).",
+            };
+          }
+        }
+        /*
+         * The `kanban` block (UI-152). It was dropped on the floor exactly as
+         * `columns` and `order` were before UI-148: the response echoed the
+         * stored board, so reordering a stage or editing the graph looked
+         * correct on the wire and left the board exactly as it was.
+         */
+        if (changes["kanban"] !== undefined) {
+          doc.kanban = changes["kanban"] as StoredDoc["kanban"];
+        }
+        if (Array.isArray(changes["columns"]) || changes["columns"] === null) {
+          doc.columns = changes["columns"] === null ? null : [...(changes["columns"] as string[])];
+        }
+        if (changes["query"] !== undefined) {
+          doc.query = changes["query"] === null ? null : (changes["query"] as ViewQuery);
+        }
+        /*
+         * **At most one board carries `default-open`, and the server is what
+         * keeps it unique** (SERVER-138: setting it on one clears every other
+         * board in the same commit). Reproduced here because the client
+         * deliberately does *not* clear the others — a spec run against a stub
+         * that let two boards carry the flag would be asserting a state the
+         * server cannot produce.
+         */
+        if (typeof changes["defaultOpen"] === "boolean") {
+          doc.defaultOpen = changes["defaultOpen"];
+          if (doc.defaultOpen) {
+            for (const other of store.values()) {
+              if (other !== doc && other.type === "board") other.defaultOpen = false;
+            }
+          }
+        }
+        /*
+         * `unset` names **file** keys, never wire ones (CONTRACT-074) — which is
+         * why `default-open` is spelled the file's way here and `defaultOpen` is
+         * not accepted at all.
+         */
+        if (Array.isArray(changes["unset"])) {
+          for (const key of changes["unset"] as string[]) {
+            if (key === "order") doc.order = null;
+            if (key === "stage") doc.stage = null;
+            if (key === "columns") doc.columns = null;
+            if (key === "kanban") doc.kanban = null;
+            if (key === "query") doc.query = null;
+            if (key === "default-open") doc.defaultOpen = false;
+            if (key in doc.extra) delete doc.extra[key];
+          }
+        }
         // Every save stamps `updated`, as the server's write path does.
         stampUpdated(doc);
         return json(route, {
           doc: asDoc(doc),
           anchors: { remapped: [], orphaned: [] },
-          warnings: [],
+          warnings: coupled === null ? [] : [coupled],
         } satisfies UpdateDocResponse);
       }
       return json(route, asDoc(doc));
@@ -2510,11 +3069,19 @@ export async function stubCorpus(
       jobs[index] = { ...job, status: "in-progress" };
       return Promise.resolve();
     },
+    landReflection: (at, digest) => {
+      reflectedAt = at;
+      pendingReflection = null;
+      if (digest !== undefined) lastDigest = digest;
+      return Promise.resolve();
+    },
     writeAsAgent: (docId, body) => {
       const doc = store.get(docId);
       if (doc === undefined) throw new Error(`writeAsAgent: no ${docId}`);
       doc.body = body;
-      stampUpdated(doc);
+      // The **agent's** write, so it stamps the agent (SPEC.md §7's amendment:
+      // what the agent writes is its output, not new work for it).
+      stampUpdated(doc, "agent");
       return Promise.resolve(doc.key);
     },
   };

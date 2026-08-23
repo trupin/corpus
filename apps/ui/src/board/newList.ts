@@ -6,11 +6,16 @@ import type { CreateDocInput } from "@corpus/kit";
  * trailing ghost column: "a folder, a library/preset view, or from current
  * search").
  *
- * Every choice lands the same way: **one `POST /api/docs` creating a pinned
- * `type: view` document**. There is no other mechanism for a column to come
- * into being, which is what makes a board reproducible from the workspace alone
- * and stewardable by the agent ("@agent pin me a view of unresolved finance
- * threads" is this same document, written by the agent instead).
+ * Every choice lands the same way: **one `POST /api/docs` creating a
+ * `type: view` document, then that id appended to the showing board's
+ * `columns`**. There is no other mechanism for a column to come into being,
+ * which is what makes a board reproducible from the workspace alone and
+ * stewardable by the agent ("@agent pin me a view of unresolved finance threads"
+ * is those same two writes, made by the agent instead).
+ *
+ * **The view carries no `pinned` and no `order`** (SPEC.md §10, rider 2). What
+ * puts it on a board is the board's own list, so the same view can be added to a
+ * second board without either write disturbing the other.
  */
 
 /** Where view documents are filed, matching the workspace the seed ships. */
@@ -130,13 +135,11 @@ export function searchChoice(query: string): NewListChoice | null {
  * be the staleness ramp (SPEC.md §5) firing at the furniture. The seed's own
  * view documents carry it for the same reason.
  */
-export function columnRequest(choice: NewListChoice, order: number): CreateDocInput {
+export function columnRequest(choice: NewListChoice): CreateDocInput {
   return {
     type: "view",
     title: choice.title,
     folder: VIEW_DOCUMENT_FOLDER,
-    pinned: true,
-    order,
     query: choice.query,
     evergreen: true,
   };

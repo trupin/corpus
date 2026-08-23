@@ -24,6 +24,7 @@ import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
+import { BoardFrontmatter } from "./BoardFrontmatter";
 import { DocWidthHandle } from "./DocWidthContext";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { RelatedPanel } from "./RelatedPanel";
@@ -430,6 +431,12 @@ export function DocView({
         <ScopeProvenance docId={doc.frontmatter.id} onOpenDoc={onNavigate} />
 
         {/*
+         * A board document says what it is (SPEC.md §10, rider 2, UI-148). It
+         * draws nothing at all on every other type.
+         */}
+        <BoardFrontmatter frontmatter={doc.frontmatter} />
+
+        {/*
          * The comments list, in place of the body — SPEC.md §10's rider: *"the
          * trade the user accepted is seeing one or the other, not both"*.
          *
@@ -642,8 +649,7 @@ export function DocView({
       {!showsBody || anchors.draft === null ? null : (
         <CommentPopover
           quote={anchors.draft.selection.selector.exact}
-          top={anchors.draft.top}
-          left={anchors.draft.left}
+          anchor={anchors.draft.anchor}
           pending={anchors.submitting}
           // A comment on a document selection is not yet in a conversation, so
           // the nearest scope §10's rule can mean is the document itself.

@@ -2,14 +2,16 @@ import type { DocRow } from "@corpus/contract";
 import { readStoredWidth } from "./columnWidth";
 
 /**
- * The view-document contract, read (SPEC.md §10 — "a column IS a `type: view`
- * document with `pinned: true`").
+ * The view-document contract, read (SPEC.md §10, rider 2 — "a view document is a
+ * saved query and nothing more").
  *
- * Everything a column *is* — its title, its query, its board position, its
- * width — lives in that document's frontmatter and reaches the client as
- * first-class fields on the collection row (CONTRACT-011). This module turns
- * one such row into the shape the board renders, and nothing here invents a
- * column: a board with no pinned view documents has no columns, by construction.
+ * Everything a column *is* — its title, its query, its width — lives in that
+ * document's frontmatter and reaches the client as first-class fields on the
+ * collection row (CONTRACT-011). What it is **not** is where the column sits:
+ * `pinned` and a view's `order` were removed rather than deprecated (rider 2,
+ * signed 2026-08-22), and a column's place is now its index in the board
+ * document's `columns`. This module turns one view row into the shape the board
+ * renders, and nothing here invents a column.
  *
  * **What is validated here and what is not.** The wire type says `query` is a
  * flat map of scalars and arrays of scalars, but the file on disk is
@@ -20,22 +22,106 @@ import { readStoredWidth } from "./columnWidth";
  * copies of the query grammar that can disagree is worse than one round trip.
  */
 
-export const COLUMN_KINDS = ["view", "folder"] as const;
+/**
+ * `stage` joined in UI-152: a kanban's columns are its stages, derived from the
+ * board document rather than resolved from a view document (SPEC.md §10,
+ * rider 6). It is a kind and not a flag because it is exactly what the header's
+ * kind label says — the prototype's `kind: "stage"`.
+ */
+export const COLUMN_KINDS = ["view", "folder", "stage"] as const;
 
 export type ColumnKind = (typeof COLUMN_KINDS)[number];
+
+/**
+ * How a chip is painted (`design/navigation.html`'s column head).
+ *
+ * `on` is the stored-filter chip every view column already drew. The rest
+ * arrived with the stage columns: `muted` is "or no stage" and the `→ open` an
+ * unmapped stage writes, `good` is the `→ <status>` a **mapped** stage writes on
+ * entry, and the two `edge` tones are the dashed outgoing transitions —
+ * `edge-end` for a stage nothing leads out of.
+ */
+export type ChipTone = "on" | "muted" | "good" | "edge" | "edge-end";
 
 /** One rendered filter chip: the stored query, shown rather than summarised. */
 export interface ColumnChip {
   /** The `GET /api/docs` parameter name — also the React key. */
   readonly key: string;
   readonly label: string;
+  /** Defaults to `on`, which is what every stored-filter chip has always been. */
+  readonly tone?: ChipTone;
+  /** The chip's `title`, when the chip needs one to be readable. */
+  readonly title?: string;
+}
+
+/** The class list one chip is painted with. */
+export function chipClassName(tone: ChipTone | undefined): string {
+  switch (tone ?? "on") {
+    case "on":
+      return "chip on";
+    case "muted":
+      return "chip";
+    case "good":
+      return "chip good";
+    case "edge":
+      return "chip edge";
+    case "edge-end":
+      return "chip edge end";
+  }
+}
+
+/**
+ * What a **derived stage column** is, beyond being a column (SPEC.md §10,
+ * rider 6). `null` on every column that comes from a view document.
+ *
+ * It is carried on {@link BoardColumn} rather than resolved again by each
+ * surface because four of them ask the same questions of it — the head draws the
+ * chips, the list makes its rows draggable, the drag decides what a drop means,
+ * and the menu reorders `kanban.stages`.
+ */
+export interface StageColumn {
+  /** The board document whose `kanban` block derived this column. */
+  readonly boardId: string;
+  /** `status` or `stage` — the one field this board's columns differ on. */
+  readonly field: string;
+  readonly stage: string;
+  /** Its index in `kanban.stages`, which is its position on the board. */
+  readonly index: number;
+  /** The last index, so "move right" knows where the board ends. */
+  readonly lastIndex: number;
+  /**
+   * This column also holds documents in scope with **no value** for the field
+   * (SPEC.md §10: "a document in scope with no value for the field sits in the
+   * first column"). Only ever true of a kanban over `stage`: every document has
+   * a status.
+   */
+  readonly holdsUnset: boolean;
+  /**
+   * The status this stage has an entry for in the board's `kanban.status` map,
+   * or `null` where the map does not name it.
+   *
+   * **`null` is "no entry", not "writes nothing".** §5 gives every stage of a
+   * kanban a status on entry: a mapped stage writes what the map says, and every
+   * other one writes `open`. So an unmapped column is a column that reopens what
+   * lands in it, which is why its head still draws a `→ open` chip
+   * (`kanban.ts`).
+   */
+  readonly mapped: string | null;
+  /** The stages a **drag** from this column may reach, in board order. */
+  readonly leadsTo: readonly string[];
 }
 
 export interface BoardColumn {
-  /** The view document's id. The column has no identity of its own. */
+  /**
+   * This column's place on the board — the view document's id, or `<id>#<n>`
+   * where the board lists the same view more than once. It is the `data-col`,
+   * the React key and the key its browser-local state is filed under, so two
+   * copies of one view are two columns rather than one column drawn twice.
+   */
   readonly id: string;
+  /** The view document this column renders. Two slots may share one. */
+  readonly viewId: string;
   readonly title: string;
-  readonly order: number | null;
   readonly kind: ColumnKind;
   /**
    * The stored query compiled to wire form — every value a string, arrays
@@ -60,10 +146,26 @@ export interface BoardColumn {
   /**
    * Why this column cannot be rendered from its own document, or `null`. Set
    * only for defects the *client* can see (a `query` that is not a map, a value
-   * a query string cannot carry); a query the server refuses surfaces through
-   * the column's own failed request instead.
+   * a query string cannot carry, an id that resolves to no view document at
+   * all); a query the server refuses surfaces through the column's own failed
+   * request instead.
    */
   readonly error: string | null;
+  /**
+   * The board lists this id and no `type: view` document answers to it.
+   *
+   * Distinct from a *broken* view document, because the acts differ: a broken
+   * one is fixed by editing the file the card names, and a missing one is fixed
+   * by taking it off the board. So the card offers what applies and nothing
+   * else — there is no document behind it to rename, re-query or open.
+   */
+  readonly missing: boolean;
+  /**
+   * Set when this column is a kanban **stage** rather than a view document
+   * (SPEC.md §10, rider 6), and `null` otherwise. `viewId` then names the
+   * *board* document, because that is the file every act on this column edits.
+   */
+  readonly stage: StageColumn | null;
 }
 
 /** Rendered as the `.sort` label; pagination is not a filter the user set. */
@@ -88,6 +190,12 @@ const SORT_LABELS: Readonly<Record<string, string>> = {
 
 /** What `GET /api/docs` sorts by when the stored query names no sort. */
 const DEFAULT_SORT = "-updated";
+
+/** The `.sort` label a compiled filter draws — one map, shared with `kanban.ts`. */
+export function sortLabelOf(filter: Readonly<Record<string, string>>): string {
+  const sort = filter["sort"] ?? DEFAULT_SORT;
+  return SORT_LABELS[sort] ?? sort;
+}
 
 function scalarToWire(value: unknown): string | null {
   if (typeof value === "string") return value;
@@ -140,13 +248,20 @@ function chipLabel(key: string, wire: string): string {
   return `${key}: ${value.split(",").join(", ")}`;
 }
 
-interface CompiledQuery {
+export interface CompiledQuery {
   readonly filter: Record<string, string>;
   readonly chips: ColumnChip[];
   readonly error: string | null;
 }
 
-function compileQuery(stored: Readonly<Record<string, unknown>>): CompiledQuery {
+/**
+ * A stored query in wire form, with one chip per filter it sets.
+ *
+ * Exported for the kanban derivation (`kanban.ts`), whose columns compile the
+ * **board** document's `query` — its scope — through exactly this function. Two
+ * compilers would be two answers to "what does `tag: [a, b]` send".
+ */
+export function compileQuery(stored: Readonly<Record<string, unknown>>): CompiledQuery {
   const filter: Record<string, string> = {};
   const chips: ColumnChip[] = [];
   const rejected: string[] = [];
@@ -180,7 +295,7 @@ function compileQuery(stored: Readonly<Record<string, unknown>>): CompiledQuery 
  * parses as a perfectly good YAML string and would otherwise reach
  * `Object.entries` as a crash.
  */
-function readStoredQuery(query: unknown): {
+export function readStoredQuery(query: unknown): {
   readonly stored: Record<string, unknown>;
   readonly error: string | null;
 } {
@@ -192,56 +307,66 @@ function readStoredQuery(query: unknown): {
 }
 
 /** The first folder a `folder:` query names — a column scopes to one directory. */
-function folderOfFilter(filter: Readonly<Record<string, string>>): string | null {
+export function folderOfFilter(filter: Readonly<Record<string, string>>): string | null {
   const folder = filter["folder"];
   if (folder === undefined || folder === "") return null;
   return (folder.split(",")[0] ?? "").replace(/\/+$/, "") || null;
 }
 
 /**
- * One pinned view document, as a column.
+ * One view document, as a column of the board that lists it.
  *
  * Never throws and never drops the column: a defect becomes `error`, which the
  * board renders in place. A column that vanishes because its own frontmatter is
  * wrong is the failure mode this shape exists to prevent.
  */
-export function toBoardColumn(row: DocRow): BoardColumn {
+export function toBoardColumn(slotId: string, row: DocRow): BoardColumn {
   const { stored, error: queryError } = readStoredQuery(row.query);
   const compiled = compileQuery(stored);
   const folder = folderOfFilter(compiled.filter);
-  const sort = compiled.filter["sort"] ?? DEFAULT_SORT;
 
   return {
-    id: row.id,
+    id: slotId,
+    viewId: row.id,
     title: row.title,
-    order: row.order,
     kind: folder !== null ? "folder" : "view",
     filter: compiled.filter,
     storedQuery: stored,
     chips: compiled.chips,
-    sortLabel: SORT_LABELS[sort] ?? sort,
+    sortLabel: sortLabelOf(compiled.filter),
     folder,
     width: readStoredWidth(row.extra),
     error: queryError ?? compiled.error,
+    missing: false,
+    stage: null,
   };
 }
 
 /**
- * The documented tiebreak (CONTRACT-011): `order` ascending with **nulls last**
- * — a view with no `order` key is placed, never dropped — then `title`, then
- * `id`, so the same column set renders in the same sequence on every load.
+ * A column the board lists and the corpus cannot answer for.
  *
- * The server sorts by exactly this rule under `sort=order`. Re-applying it here
- * is belt and braces, and is what makes the ordering testable without a server.
+ * The id is kept as the title on purpose: it is the only thing known about this
+ * column, and it is exactly what a person needs in order to find the line in the
+ * board document — or to hand it to `corpus doc show`.
  */
-export function compareColumns(left: BoardColumn, right: BoardColumn): number {
-  if (left.order !== right.order) {
-    if (left.order === null) return 1;
-    if (right.order === null) return -1;
-    return left.order - right.order;
-  }
-  if (left.title !== right.title) return left.title < right.title ? -1 : 1;
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+export function missingColumn(slotId: string, viewId: string): BoardColumn {
+  return {
+    id: slotId,
+    viewId,
+    title: viewId,
+    kind: "view",
+    filter: {},
+    storedQuery: {},
+    chips: [],
+    sortLabel: "",
+    folder: null,
+    width: null,
+    error:
+      "this board lists it as a column, and no `type: view` document with that id could be read " +
+      "— it may have been archived or deleted",
+    missing: true,
+    stage: null,
+  };
 }
 
 /**

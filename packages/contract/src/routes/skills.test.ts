@@ -37,9 +37,12 @@ const CREATED_FRONTMATTER = {
   reviewed: null,
   evergreen: false,
   origin: null,
-  pinned: false,
+  stage: null,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
 };
 

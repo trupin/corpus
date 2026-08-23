@@ -1,4 +1,4 @@
-import type { AgentRoster, DocRow, QueueStatus } from "@corpus/contract";
+import type { AgentRoster, DocRow, QueueStatus, ReflectStatus } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -27,22 +27,62 @@ export interface BoardTransport {
 }
 
 export interface BoardTransportOptions {
-  /** Rows returned for the pinned-view query (`pinned=true`). */
+  /** Rows returned for the view query (`type=view`) — the board's columns. */
   readonly views?: readonly DocRow[];
+  /**
+   * Rows returned for the board query (`type=board&sort=order`).
+   *
+   * Omitted, one board is synthesised listing every row in {@link views}, in the
+   * order given — which is what almost every board test wants and what the seed
+   * ships. Give it explicitly to test the bar itself, an empty board, or a board
+   * naming a view that is not there.
+   */
+  readonly boards?: readonly DocRow[];
   /** Rows returned for any other `/api/docs` query, keyed by the search string. */
   readonly rows?: Readonly<Record<string, readonly DocRow[]>>;
   /** Rows returned for a query with no entry in `rows`. */
   readonly defaultRows?: readonly DocRow[];
   readonly tree?: unknown;
+  /**
+   * What `GET /api/workspace/reflect` answers — the clock, the pending
+   * reflection, the corpus count and the quiet window (SPEC.md §7's rider 9).
+   *
+   * Answered rather than left to the catch-all for the reason UI-098 learned
+   * here twice: the board bar always renders the Reflect control, so the first
+   * surface to read a new field turns a silent `{}` into a component that reads
+   * `pending` off nothing and reports *reflecting…* forever.
+   *
+   * The default is {@link QUIET_REFLECT_STATUS} — a corpus the agent looked at
+   * after every fixture row was written — so nothing is marked unless a test
+   * says so. That is the honest default and not merely the convenient one: these
+   * fixtures seed documents dated 2026-07-01 and run no agent, and a clock
+   * *before* them would light every row in every board suite.
+   */
+  readonly reflect?: Partial<ReflectStatus>;
   /** Paths that answer with an error, mapped to the status to answer with. */
   readonly failing?: Readonly<Record<string, number>>;
 }
 
-/** A pinned `type: view` document, as the collection returns one. */
+/**
+ * A corpus reflected on after every fixture document was written — so
+ * `isUnreflected` is false for all of them, and no board suite grows a mark it
+ * did not ask for.
+ */
+export const QUIET_REFLECT_STATUS: ReflectStatus = {
+  reflected: "2026-08-01T09:00:00.000Z",
+  pending: null,
+  changed: 0,
+  lastDigest: null,
+  quiet: 30,
+};
+
+/** The board a fixture synthesises when the test names none. */
+export const DEFAULT_BOARD_ID = "doc_board_default";
+
+/** A `type: view` document, as the collection returns one (no `pinned`, no `order`). */
 export function viewRow(overrides: Partial<DocRow> = {}): DocRow {
   return docRowFixture({
     type: "view",
-    pinned: true,
     evergreen: true,
     origin: null,
     path: "data/docs/views/a.md",
@@ -50,8 +90,26 @@ export function viewRow(overrides: Partial<DocRow> = {}): DocRow {
   });
 }
 
+/** A `type: board` document, as the collection returns one (CONTRACT-074). */
+export function boardRow(overrides: Partial<DocRow> = {}): DocRow {
+  return docRowFixture({
+    id: DEFAULT_BOARD_ID,
+    type: "board",
+    title: "Board",
+    path: `data/docs/boards/${DEFAULT_BOARD_ID}.md`,
+    order: 1,
+    columns: [],
+    ...overrides,
+  });
+}
+
 function collection(items: readonly DocRow[]): unknown {
   return { items, page: { total: items.length, limit: 50, offset: 0 } };
+}
+
+/** One board listing every seeded view, in the order the test gave them. */
+function synthesisedBoard(options: BoardTransportOptions): DocRow {
+  return boardRow({ columns: (options.views ?? []).map((view) => view.id) });
 }
 
 export function boardTransport(options: BoardTransportOptions = {}): BoardTransport {
@@ -78,8 +136,17 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
     }
 
     if (url.pathname === "/api/docs" && request.method === "GET") {
-      const isViews = url.searchParams.get("pinned") === "true";
-      if (isViews) return json(collection(options.views ?? []));
+      const type = url.searchParams.get("type");
+      /*
+       * The two structural queries the board issues (UI-148): the bar's boards,
+       * and every view document the showing board resolves its `columns`
+       * against. Matched ahead of `rows` so a test that seeds a column's
+       * contents cannot accidentally answer the board's own query.
+       */
+      if (type === "board") return json(collection(options.boards ?? [synthesisedBoard(options)]));
+      if (type === "view" && url.searchParams.get("sort") === null) {
+        return json(collection(options.views ?? []));
+      }
       const keyed = options.rows?.[url.search];
       return json(collection(keyed ?? options.defaultRows ?? []));
     }
@@ -129,6 +196,42 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
         ],
       } satisfies AgentRoster);
     }
+    /*
+     * `GET /api/workspace/reflect` — the board bar's Reflect control (UI-153).
+     * `POST` is the ask, and it answers `202` always: §7 says an ask while one
+     * is pending is answered with the pending one, never refused, so a fixture
+     * that raised a `409` here would let a test assert a refusal the server
+     * cannot produce.
+     */
+    if (url.pathname === "/api/workspace/reflect") {
+      const status: ReflectStatus = { ...QUIET_REFLECT_STATUS, ...options.reflect };
+      if (request.method === "POST") {
+        return json(
+          {
+            eventId: "evt_reflect",
+            since: status.reflected,
+            pending: status.pending !== null,
+          },
+          202,
+        );
+      }
+      return json(status);
+    }
+    /*
+     * `POST /api/boards/order` — the bar's order, written as one act and one
+     * commit (SPEC.md §10, rider 2; CONTRACT-080). Answered rather than left to
+     * the `{}` catch-all: the provider reads `boards` off the result to say how
+     * many documents moved, and a `{}` would have it read `filter` off nothing.
+     * It renumbers what it was sent, as the server does, so a spec asserting the
+     * count is asserting the rule rather than a canned number.
+     */
+    if (url.pathname === "/api/boards/order" && request.method === "POST") {
+      const ids = ((call.body as { boards?: string[] } | undefined)?.boards ?? []).map(
+        (id, index) => ({ id, order: index + 1, changed: true }),
+      );
+      return json({ boards: ids, commit: "c0mm1t", warnings: [] });
+    }
+
     if (url.pathname === "/api/docs" && request.method === "POST") {
       return json({ doc: created("doc_created"), warnings: [] }, 201);
     }

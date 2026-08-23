@@ -1,57 +1,54 @@
 import { docRowFixture } from "@corpus/kit/testing";
 import type { DocRow } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { compareColumns, formatQueryString, parseQueryString, toBoardColumn } from "./viewDoc";
+import { formatQueryString, missingColumn, parseQueryString, toBoardColumn } from "./viewDoc";
 
 function view(overrides: Partial<DocRow> = {}): DocRow {
-  return docRowFixture({
-    id: "doc_view",
-    type: "view",
-    title: "A list",
-    pinned: true,
-    order: 10,
-    ...overrides,
-  });
+  return docRowFixture({ id: "doc_view", type: "view", title: "A list", ...overrides });
+}
+
+/** The slot a column occupies on a board; the same as the view id unless repeated. */
+function asColumn(row: DocRow, slot = row.id) {
+  return toBoardColumn(slot, row);
 }
 
 describe("toBoardColumn", () => {
   it("reads the whole column off the view document's own frontmatter", () => {
-    const column = toBoardColumn(
+    const result = asColumn(
       view({
         id: "doc_threads",
         title: "Conversations",
-        order: 30,
         query: { type: "thread", status: "open" },
       }),
     );
 
-    expect(column).toMatchObject({
+    expect(result).toMatchObject({
       id: "doc_threads",
+      viewId: "doc_threads",
       title: "Conversations",
-      order: 30,
       kind: "view",
       filter: { type: "thread", status: "open" },
       folder: null,
       error: null,
     });
-    expect(column.chips.map((chip) => chip.label)).toEqual(["type: thread", "status: open"]);
+    expect(result.chips.map((chip) => chip.label)).toEqual(["type: thread", "status: open"]);
   });
 
   it("joins array values the way the wire's comma-separated form does", () => {
-    const column = toBoardColumn(view({ query: { type: ["note", "view"], tag: ["a", "b"] } }));
+    const column = asColumn(view({ query: { type: ["note", "view"], tag: ["a", "b"] } }));
     expect(column.filter).toEqual({ type: "note,view", tag: "a,b" });
     expect(column.chips.map((chip) => chip.label)).toEqual(["type: note, view", "tag: a, b"]);
   });
 
   it("renders numbers and booleans, which YAML makes easy to write", () => {
-    const column = toBoardColumn(view({ query: { unread: true, limit: 20 } }));
+    const column = asColumn(view({ query: { unread: true, limit: 20 } }));
     expect(column.filter).toEqual({ unread: "true", limit: "20" });
     // `limit` is pagination, not a filter the user chose.
     expect(column.chips.map((chip) => chip.key)).toEqual(["unread"]);
   });
 
   it("calls a folder-scoped view a folder column and remembers where ＋ creates", () => {
-    const column = toBoardColumn(view({ query: { folder: "finance" } }));
+    const column = asColumn(view({ query: { folder: "finance" } }));
     expect(column.kind).toBe("folder");
     expect(column.folder).toBe("finance");
     // The prototype writes folder chips with a trailing slash.
@@ -65,9 +62,7 @@ describe("toBoardColumn", () => {
    * keeps them, and they are still queries the board runs (SHARED-066).
    */
   it("ignores a `column:` reference, which no longer names anything", () => {
-    const column = toBoardColumn(
-      view({ extra: { column: "todos/board" }, query: { type: "todo" } }),
-    );
+    const column = asColumn(view({ extra: { column: "todos/board" }, query: { type: "todo" } }));
     expect(column.kind).toBe("view");
     expect(column.filter).toEqual({ type: "todo" });
     expect(column.error).toBeNull();
@@ -76,19 +71,19 @@ describe("toBoardColumn", () => {
   });
 
   it("labels the sort the prototype's way, and defaults to the server's sort", () => {
-    expect(toBoardColumn(view({ query: {} })).sortLabel).toBe("last activity ↓");
-    expect(toBoardColumn(view({ query: { sort: "created" } })).sortLabel).toBe("created ↑");
+    expect(asColumn(view({ query: {} })).sortLabel).toBe("last activity ↓");
+    expect(asColumn(view({ query: { sort: "created" } })).sortLabel).toBe("created ↑");
     // An unknown sort renders verbatim rather than vanishing.
-    expect(toBoardColumn(view({ query: { sort: "sideways" } })).sortLabel).toBe("sideways");
+    expect(asColumn(view({ query: { sort: "sideways" } })).sortLabel).toBe("sideways");
   });
 
   it("keeps a column whose frontmatter is wrong, and says what is wrong", () => {
     // `query: needs=me` is perfectly good YAML — and not a map.
-    const broken = toBoardColumn(view({ query: "needs=me" as unknown as DocRow["query"] }));
+    const broken = asColumn(view({ query: "needs=me" as unknown as DocRow["query"] }));
     expect(broken.error).toContain("not a map of filters");
     expect(broken.id).toBe("doc_view");
 
-    const badValue = toBoardColumn(
+    const badValue = asColumn(
       view({ query: { folder: { deep: true } } as unknown as DocRow["query"] }),
     );
     expect(badValue.error).toContain("folder");
@@ -102,14 +97,14 @@ describe("toBoardColumn", () => {
    */
   describe("the isParent chip, whose parameter name contradicts its meaning", () => {
     it("says top-level only, never that the document is a parent", () => {
-      const column = toBoardColumn(view({ query: { isParent: true } }));
+      const column = asColumn(view({ query: { isParent: true } }));
       expect(column.filter).toEqual({ isParent: "true" });
       expect(column.chips).toEqual([{ key: "isParent", label: "isParent: top-level only" }]);
       expect(column.chips[0]?.label).not.toContain("true");
     });
 
     it("says children only for the other direction", () => {
-      const column = toBoardColumn(view({ query: { isParent: false } }));
+      const column = asColumn(view({ query: { isParent: false } }));
       expect(column.filter).toEqual({ isParent: "false" });
       expect(column.chips).toEqual([{ key: "isParent", label: "isParent: children only" }]);
     });
@@ -120,13 +115,11 @@ describe("toBoardColumn", () => {
      * a phrase this file invented for it.
      */
     it("shows a value it has no phrase for exactly as the file wrote it", () => {
-      expect(toBoardColumn(view({ query: { isParent: "yes" } })).chips[0]?.label).toBe(
-        "isParent: yes",
-      );
+      expect(asColumn(view({ query: { isParent: "yes" } })).chips[0]?.label).toBe("isParent: yes");
     });
 
     it("stands alongside the filters already on the view rather than replacing them", () => {
-      const column = toBoardColumn(
+      const column = asColumn(
         view({ query: { folder: "finance", type: ["note", "thread"], isParent: true } }),
       );
       // Every filter reaches the request; `isParent` is one more `&`, not a mode.
@@ -154,7 +147,7 @@ describe("toBoardColumn", () => {
      */
     it("leaves a query that never mentions it completely untouched", () => {
       const stored = { type: "thread", status: "open", sort: "-updated" };
-      const column = toBoardColumn(view({ query: stored }));
+      const column = asColumn(view({ query: stored }));
       expect(column.filter).toEqual(stored);
       expect(Object.keys(column.filter)).not.toContain("isParent");
       expect(column.chips.map((chip) => chip.label)).toEqual(["type: thread", "status: open"]);
@@ -163,45 +156,30 @@ describe("toBoardColumn", () => {
   });
 
   it("treats an absent query as no filters rather than an error", () => {
-    const column = toBoardColumn(view({ query: null }));
+    const column = asColumn(view({ query: null }));
     expect(column.error).toBeNull();
     expect(column.filter).toEqual({});
     expect(column.chips).toEqual([]);
   });
 });
 
-describe("compareColumns", () => {
-  const columns = [
-    toBoardColumn(view({ id: "doc_b", title: "Beta", order: 20 })),
-    toBoardColumn(view({ id: "doc_a", title: "Alpha", order: 20 })),
-    toBoardColumn(view({ id: "doc_z", title: "Zulu", order: null })),
-    toBoardColumn(view({ id: "doc_c", title: "Gamma", order: 10 })),
-  ];
-
-  it("sorts by order, nulls last, then title, then id", () => {
-    expect([...columns].sort(compareColumns).map((column) => column.id)).toEqual([
-      "doc_c",
-      "doc_a",
-      "doc_b",
-      "doc_z",
-    ]);
+describe("missingColumn", () => {
+  /**
+   * "An id that resolves to nothing renders an error column card naming the id
+   * (the §10 error card pattern), never a crash" (UI-148).
+   */
+  it("names the id it could not resolve, and carries no query", () => {
+    const gone = missingColumn("doc_gone", "doc_gone");
+    expect(gone.missing).toBe(true);
+    expect(gone.title).toBe("doc_gone");
+    expect(gone.viewId).toBe("doc_gone");
+    expect(gone.filter).toEqual({});
+    expect(gone.chips).toEqual([]);
+    expect(gone.error).toContain("no `type: view` document");
   });
 
-  it("is stable across repeated sorts of a shuffled set", () => {
-    const first = [...columns].sort(compareColumns).map((column) => column.id);
-    const second = [...columns]
-      .reverse()
-      .sort(compareColumns)
-      .map((column) => column.id);
-    expect(second).toEqual(first);
-  });
-
-  it("breaks a full tie on id", () => {
-    const left = toBoardColumn(view({ id: "doc_a", title: "Same", order: 10 }));
-    const right = toBoardColumn(view({ id: "doc_b", title: "Same", order: 10 }));
-    expect(compareColumns(left, right)).toBeLessThan(0);
-    expect(compareColumns(right, left)).toBeGreaterThan(0);
-    expect(compareColumns(left, left)).toBe(0);
+  it("keeps the slot it was listed at, so a repeat is still two columns", () => {
+    expect(missingColumn("doc_gone#1", "doc_gone").id).toBe("doc_gone#1");
   });
 });
 

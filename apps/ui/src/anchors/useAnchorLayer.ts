@@ -26,6 +26,7 @@ import {
   type AnchorPlacement,
 } from "./anchorDecorations";
 import type { PmRange } from "./offsetMap";
+import { POPOVER_ANCHOR_GAP, type PopoverAnchor } from "./popoverDrag";
 import {
   detachedThreads,
   isPlaced,
@@ -193,8 +194,8 @@ export interface CommentDraft {
   readonly selection: AnchorSelection;
   /** The ProseMirror range the provisional highlight was opened on. */
   readonly range: PmRange;
-  readonly top: number;
-  readonly left: number;
+  /** The words' two edges, for a composer that picks its own side (UI-159). */
+  readonly anchor: PopoverAnchor;
   /**
    * Present only on a draft the layer re-opened because the server refused it:
    * what the composer held when it closed, so it comes back holding the same
@@ -757,16 +758,22 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       // The fallbacks hold when the position is momentarily out of the DOM:
       // the popover still opens, at the top of the viewport, rather than not
       // opening at all.
-      let top = 80;
-      let left = 0;
+      let placement: PopoverAnchor = { below: 80, above: 80 - POPOVER_ANCHOR_GAP, left: 0 };
       try {
-        const coords = editor.view.coordsAtPos(to);
-        top = coords.bottom + 6;
-        left = coords.left;
+        // Both ends of the selection, not one: a box put **over** the words has
+        // to clear the whole quote, and the quote's first line is where it
+        // starts (UI-159).
+        const start = editor.view.coordsAtPos(from);
+        const end = editor.view.coordsAtPos(to);
+        placement = {
+          below: end.bottom + POPOVER_ANCHOR_GAP,
+          above: start.top - POPOVER_ANCHOR_GAP,
+          left: end.left,
+        };
       } catch {
         // keep the fallbacks
       }
-      setDraft({ selection: anchor, range: { from, to }, top, left });
+      setDraft({ selection: anchor, range: { from, to }, anchor: placement });
       // Lit **on open**, which is the whole of UI-112's second half: the browser's
       // own selection is gone the moment focus moves into the composer, and
       // without this the words are unmarked for exactly as long as someone is

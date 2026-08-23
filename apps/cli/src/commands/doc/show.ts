@@ -16,7 +16,7 @@ import { documentSections, selectSection, type DocumentSection } from "./section
  * The verb is one request and a rendering. It prints the frontmatter a person
  * reads first, the key a writer presents back, the anchored threads with their
  * resolution state — the context §7's comment skill needs before replying — and
- * then the body. Everything the endpoint returns, including the view keys and
+ * then the body. Everything the endpoint returns, including the board keys and
  * the `extra` block of non-core frontmatter, is in `--json`; the human rendering is a summary and
  * says so.
  *
@@ -186,7 +186,11 @@ export const showCommand: WorkspaceCommandSpec = {
     "move is to leave the document alone and come back, or to park the claimed work with " +
     "`corpus queue defer <event-id> --blocked-on <id>`, which returns to pending on its own when " +
     "the session ends.\n\n" +
-    "The human rendering is a summary: the whole payload — including the §10 view keys and any " +
+    "The §10 **board and workflow keys** print when the document carries them, and only then: " +
+    "`stage`, `order`, `default-open`, `columns`, and a `kanban` block flattened to its field, " +
+    "its stages, its graph and its status map. A board therefore shows its whole configuration " +
+    "here, and an ordinary note is not made five lines longer by the existence of boards.\n\n" +
+    "The human rendering is a summary: the whole payload — including those keys and any " +
     "non-core `extra` frontmatter — is what `--json` emits, unchanged. An id that names no " +
     "document is the " +
     "server's `404`, which is exit 5.",

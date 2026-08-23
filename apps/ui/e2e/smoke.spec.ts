@@ -41,13 +41,16 @@ test.describe("shell", () => {
     await page.goto("/");
 
     await expect(page.locator(".topbar")).toBeVisible();
+    await expect(page.locator(".boardbar")).toBeVisible();
     await expect(page.locator(".board")).toBeVisible();
     await expect(page.locator(".console-strip")).toBeVisible();
 
     const order = await page.evaluate(() =>
       [...(document.querySelector(".app")?.children ?? [])].map((child) => child.className),
     );
-    expect(order).toEqual(["topbar", "board", "console"]);
+    // The board bar joined the shell with UI-148 (SPEC.md §10, rider 2), and
+    // `.main` — the explorer beside the board — with UI-150 (rider 1).
+    expect(order).toEqual(["topbar", "boardbar", "main", "console"]);
     expect(uncaught).toEqual([]);
   });
 
@@ -263,6 +266,7 @@ test.describe("server state", () => {
       timeout: 15_000,
     });
     await expect(page.locator(".topbar")).toBeVisible();
+    await expect(page.locator(".boardbar")).toBeVisible();
     await expect(page.locator(".board")).toBeVisible();
     expect(uncaught).toEqual([]);
   });
@@ -270,6 +274,7 @@ test.describe("server state", () => {
   test("an unknown route renders the shell rather than a blank page", async ({ page }) => {
     await page.goto("/nope");
     await expect(page.locator(".topbar")).toBeVisible();
+    await expect(page.locator(".boardbar")).toBeVisible();
     await expect(page.locator(".board")).toBeVisible();
     await expect(page.locator(".console-strip")).toBeVisible();
   });

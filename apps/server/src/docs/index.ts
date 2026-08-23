@@ -83,6 +83,7 @@ export type {
   MutationResult,
   MutationTail,
   SaveCheck,
+  WriteReflectObserver,
 } from "./write.js";
 export {
   MAX_QUERY_TOKENS,

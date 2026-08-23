@@ -42,7 +42,7 @@ describe("the shared document filters", () => {
     // `/api/search` accepts none of these (CONTRACT-022), so a flag for them
     // would be a convenience that goes nowhere on the wire.
     const searchFlags = searchCommand.flags.map((flag) => flag.name);
-    for (const listOnly of ["pinned", "sort", "offset"]) {
+    for (const listOnly of ["is-parent", "sort", "offset"]) {
       expect(searchFlags, `search declares --${listOnly}`).not.toContain(listOnly);
     }
     // `doc related` takes a cap and the archived flag, and nothing else.
@@ -56,6 +56,7 @@ describe("the shared document filters", () => {
       "tag",
       "folder",
       "status",
+      "stage",
       "include-archived",
       "needs",
       "parent",
@@ -63,7 +64,6 @@ describe("the shared document filters", () => {
       "agent",
       "author",
       "unread",
-      "pinned",
       "is-parent",
       "due",
       "since",
@@ -90,7 +90,7 @@ describe("the shared document filters", () => {
 });
 
 describe("insertFlagAfter", () => {
-  const extra = { name: "pinned", type: "boolean", description: "d." } as const;
+  const extra = { name: "is-parent", type: "boolean", description: "d." } as const;
 
   it("places a verb's own flag after a named shared one", () => {
     expect(insertFlagAfter(DOC_FILTER_FLAGS, "unread", extra).map((flag) => flag.name)).toEqual([
@@ -98,6 +98,7 @@ describe("insertFlagAfter", () => {
       "tag",
       "folder",
       "status",
+      "stage",
       "include-archived",
       "needs",
       "parent",
@@ -105,7 +106,7 @@ describe("insertFlagAfter", () => {
       "agent",
       "author",
       "unread",
-      "pinned",
+      "is-parent",
       "due",
       "since",
       "stale",
@@ -131,6 +132,7 @@ describe("collectDocFilters", () => {
           tag: "finance",
           folder: "finance",
           status: "open",
+          stage: "triage",
           parent: "doc_a1b2c3",
           references: "doc_zz",
           agent: "engaged",
@@ -148,6 +150,7 @@ describe("collectDocFilters", () => {
       tag: "finance",
       folder: "finance",
       status: "open",
+      stage: "triage",
       parent: "doc_a1b2c3",
       references: "doc_zz",
       agent: "engaged",
@@ -165,6 +168,19 @@ describe("collectDocFilters", () => {
     expect(collectDocFilters(contextWith({ "include-archived": false, unread: false }))).toEqual(
       {},
     );
+  });
+
+  /**
+   * `--stage ""` is the one filter whose **empty** value is a question rather
+   * than the absence of one: the empty element is the null sentinel and selects
+   * documents carrying no stage at all (SPEC.md §5, §10). So absence and the
+   * empty string have to reach the wire as two different requests, exactly as
+   * `--is-parent`'s three states do.
+   */
+  it("keeps --stage's empty value, which selects the unstaged", () => {
+    expect(collectDocFilters(contextWith({ stage: "" }))).toEqual({ stage: "" });
+    expect(collectDocFilters(contextWith({}))).toEqual({});
+    expect(collectDocFilters(contextWith({ stage: ",triage" }))).toEqual({ stage: ",triage" });
   });
 
   it("refuses a misspelled enumerated filter before anything is sent", () => {

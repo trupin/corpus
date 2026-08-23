@@ -13,7 +13,7 @@
 
 import type { QueryKey } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
-import { dedupeKeys } from "./keys.js";
+import { dedupeKeys, withReflectKey } from "./keys.js";
 
 export type InvalidationListener = (keys: readonly QueryKey[]) => void;
 
@@ -24,6 +24,11 @@ export interface InvalidationBus {
    * Announces that `keys` went stale. Duplicates within one call are collapsed;
    * an empty set is a no-op, because `InvalidatePayloadSchema` requires at least
    * one key and an empty frame tells a client nothing.
+   *
+   * One key is added rather than merely passed through: a frame naming
+   * `["docs"]` or `["queue"]` leaves here naming `["reflect"]` too, which is the
+   * rule CONTRACT-076 publishes for that key — see {@link withReflectKey} for
+   * why it is applied here and not by the emitters.
    */
   invalidate(keys: readonly QueryKey[]): void;
   /** Returns an unsubscribe function; calling it twice is harmless. */
@@ -43,7 +48,7 @@ export function createInvalidationBus(options: InvalidationBusOptions = {}): Inv
       return listeners.size;
     },
     invalidate(keys) {
-      const unique = dedupeKeys(keys);
+      const unique = dedupeKeys(withReflectKey(keys));
       if (unique.length === 0) return;
       // Snapshot: a listener may unsubscribe (or subscribe) while being
       // notified, and mutating the live set mid-iteration would skip a peer.

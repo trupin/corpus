@@ -17,7 +17,26 @@ describe("Warning", () => {
       "unresolved_ref",
       "carried_skill",
       "carried_reconciliation",
+      "stage_status",
+      "default_open_cleared",
     ]);
+  });
+
+  /**
+   * SERVER-138's two, and the reason they are codes rather than prose under an
+   * existing one: a client acts on `code` and never parses `detail`, so a
+   * console that wanted to show "this board stopped being the default" and a
+   * console that wanted to show "your stage set a status" would have had no way
+   * to tell either from a skill folder move.
+   *
+   * `stage_status` is deliberately **not** a `carried_*` code. Those describe a
+   * document the request never named; this one describes the request's own
+   * subject, changed in a field the request did not name. Same rule (§11: an
+   * effect a person would otherwise learn from `git log`), different shape.
+   */
+  it("gives the two board rules their own codes", () => {
+    expect(WARNING_CODES).toContain("stage_status");
+    expect(WARNING_CODES).toContain("default_open_cleared");
   });
 
   /**

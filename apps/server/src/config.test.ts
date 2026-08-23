@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_REFLECT_QUIET_MINUTES } from "@corpus/contract";
 import { DEFAULT_ATTACHMENT_LIMITS } from "./attachments/index.js";
 import { EDIT_ACK_IDLE_MS } from "./edit/index.js";
 import { ConfigError } from "./errors.js";
@@ -80,6 +81,7 @@ describe("WorkspaceConfigSchema", () => {
       dataDir: DEFAULT_DATA_DIR,
       attachments: DEFAULT_ATTACHMENT_LIMITS,
       editAcknowledgment: { idleMs: EDIT_ACK_IDLE_MS },
+      reflect: { quiet: DEFAULT_REFLECT_QUIET_MINUTES },
     });
   });
 

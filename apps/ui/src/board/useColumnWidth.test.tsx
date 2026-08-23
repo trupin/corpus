@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { docRowFixture } from "@corpus/kit/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { Board } from "../shell/Board";
-import { ToastProvider } from "../shell/Toasts";
 import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { createBoardHarness } from "../testing/boardHarness";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { COLUMN_RESIZE_STEP, MIN_COLUMN_WIDTH } from "./columnWidth";
@@ -29,19 +29,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const NARROW = viewRow({ id: "doc_view", title: "Inbox", order: 10 });
+const NARROW = viewRow({ id: "doc_view", title: "Inbox" });
 
 function renderBoard(views: readonly ReturnType<typeof viewRow>[]): BoardTransport {
   const wire = boardTransport({ views, defaultRows: [docRowFixture({ id: "doc_a" })] });
-  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  const harness = createBoardHarness(wire.fetch);
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>
-          <ContextMenuProvider>
-            <KeyboardHarness>{children}</KeyboardHarness>
-          </ContextMenuProvider>
-        </ToastProvider>
+        <ContextMenuProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ContextMenuProvider>
       </harness.Wrapper>
     );
   }
@@ -146,7 +144,12 @@ describe("resizing a column", () => {
     expect(column().style.width).toBe(`${String(336 + COLUMN_RESIZE_STEP)}px`);
   });
 
-  it("widens relative to the chosen base when a document opens in it", async () => {
+  /**
+   * Rider 3 (SPEC.md §10): "a query column no longer widens when it opens a
+   * reader" — the reader opens in a **path column** with its own width, and
+   * the query column keeps exactly the width its document carries.
+   */
+  it("keeps its chosen width when a row opens — the reader is a path column's", async () => {
     renderBoard([viewRow({ ...NARROW, extra: { width: 300 } })]);
     await handle();
     expect(column().style.width).toBe("300px");
@@ -157,10 +160,10 @@ describe("resizing a column", () => {
     });
 
     await waitFor(() => {
-      expect(document.querySelector(".reader")).not.toBeNull();
+      expect(document.querySelector(".pcol .reader")).not.toBeNull();
     });
-    // 300 × (560/336) = 500 — its own base widened, not a fixed 560.
-    expect(column().style.width).toBe("500px");
+    expect(column().style.width).toBe("300px");
+    expect(document.querySelector<HTMLElement>(".pcol")?.style.width).toBe("440px");
   });
 
   it("announces its bounds to assistive technology", async () => {

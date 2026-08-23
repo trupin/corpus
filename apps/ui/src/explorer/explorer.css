@@ -1,0 +1,232 @@
+/* The explorer — column zero (SPEC.md §10, rider 1), drawn from
+   `design/navigation.html`'s `.explorer`.
+
+   It is a **sibling** of `.board-wrap` inside `.main`, so it takes width from
+   the board exactly as the console takes height from it. Nothing here is
+   `position: fixed`: an overlay would cover the left-most column, which is
+   where the explorer's own preview path lands. */
+
+.explorer {
+  position: relative;
+  flex: none;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  /* Without this the tree's longest name would set the panel's width, and a
+     document with a long title would move the board (§10: "nothing resizes
+     because of what it holds"). The clipping that keeps a long name inside is
+     `.tree`'s and `.tr .name`'s, **not this element's**: `overflow: hidden`
+     here also clips the resize handle, which straddles the border on purpose,
+     and a handle nothing can grab is a panel only the keyboard can resize. */
+  min-width: 0;
+}
+
+.explorer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.explorer-head .n {
+  margin-left: auto;
+  letter-spacing: 0;
+}
+
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 6px 16px;
+  white-space: nowrap;
+}
+
+.tree::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tree::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
+}
+
+/* One row. `--d` is the depth, so indentation is a property of the row's place
+   in the tree rather than of nested boxes — which is what lets the whole tree
+   be one flat list (see `treeRows.ts`). */
+.tr {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px 3px calc(8px + var(--d) * 14px);
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--ink);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.tr:hover {
+  background: var(--surface-2);
+}
+
+.tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tr .caret {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  width: 10px;
+  flex: none;
+  font-size: 10px;
+}
+
+.tr.folder .name {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.tr .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tr .glyph {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex: none;
+}
+
+.tr .n {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  flex: none;
+}
+
+/* Open on the showing board (rider 1's "a document already open on the current
+   board shows a mark in the tree"). */
+.tr .open-dot {
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  opacity: 0.7;
+}
+
+/* The explorer path's origin row — the stronger of the two marks. */
+.tr.origin {
+  background: var(--accent-wash);
+}
+
+.tr.origin .name {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.tr.origin::after {
+  content: "▸";
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.tr.archived .name,
+.tr.archived .glyph {
+  opacity: 0.5;
+}
+
+.tr .tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sepia-ink);
+  background: var(--sepia-wash-2);
+  border-radius: 99px;
+  padding: 0 6px;
+  flex: none;
+}
+
+.tr.current .name {
+  color: var(--accent-ink);
+}
+
+/* The bound line, the loading line and the failure line — text, never rows: a
+   cursor must not land on them, and neither opens anything. */
+.tree-note {
+  margin: 2px 0;
+  padding: 2px 8px 2px calc(8px + var(--d, 0) * 14px);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: normal;
+}
+
+.tree-error {
+  color: var(--signal);
+}
+
+.tree-rename {
+  display: block;
+  width: calc(100% - 8px);
+  margin: 1px 4px;
+  margin-left: calc(4px + var(--d) * 14px);
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+/* The drag handle sits just outside the border, so the cursor changes over the
+   edge itself rather than over the last few pixels of the tree. */
+.explorer-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.explorer-resizer:hover,
+.explorer-resizer.dragging,
+.explorer-resizer:focus-visible {
+  background: var(--accent-wash);
+  outline: none;
+}
+
+/* The board-bar toggle: on when the panel is showing. */
+.explorer-toggle.on {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}

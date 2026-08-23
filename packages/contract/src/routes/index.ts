@@ -1,5 +1,6 @@
 import { getAgentRoster } from "./agents.js";
 import { getAttachment } from "./attachments.js";
+import { reorderBoards } from "./boards.js";
 import { applyBulkAction } from "./bulk.js";
 import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
@@ -19,6 +20,7 @@ import {
   updateDoc,
 } from "./docs.js";
 import { streamEvents } from "./events.js";
+import { archiveFolder, deleteFolder, renameFolder, unarchiveFolder } from "./folders.js";
 import { respondToForm } from "./forms.js";
 import { getHealth } from "./health.js";
 import { getIndexStatus, rebuildIndex } from "./index-maintenance.js";
@@ -35,6 +37,7 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
+import { askReflection, getReflectStatus } from "./reflect.js";
 import { searchCorpus } from "./search.js";
 import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
@@ -55,6 +58,7 @@ import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
 export * from "./agents.js";
 export * from "./attachments.js";
+export * from "./boards.js";
 export * from "./bulk.js";
 export * from "./capture.js";
 export * from "./check.js";
@@ -64,12 +68,14 @@ export * from "./doc-patch.js";
 export * from "./docs.js";
 export * from "./edit-session.js";
 export * from "./events.js";
+export * from "./folders.js";
 export * from "./forms.js";
 export * from "./health.js";
 export * from "./index-maintenance.js";
 export * from "./inventory.js";
 export * from "./jobs.js";
 export * from "./queue.js";
+export * from "./reflect.js";
 export * from "./dual-media.js";
 export * from "./responses.js";
 export * from "./search.js";
@@ -140,6 +146,23 @@ export * from "./upgrade.js";
  * `getAgentRoster` follows the whole group and precedes the queue verbs, which
  * is where it belongs in both directions: the roster is what a designation
  * changes and what a `scope` is chosen from.
+ *
+ * The four **folder acts** sit between `getTree` and `capture`, which is where
+ * §9.2's own bullet order puts them: the folder read, then the four acts on a
+ * folder. Nothing competes with them for a position — `/api/folders/*` is four
+ * fully static paths with no parameter anywhere — so this placement is for the
+ * reader.
+ *
+ * The **board reorder** follows them, and for the same reason in both senses:
+ * `/api/boards/order` is a fully static path competing with no parameter, and
+ * the folder acts are its nearest neighbours in kind — the only other act whose
+ * subject is a set of documents rather than one. It precedes `capture`, which
+ * ends the document half of the surface.
+ *
+ * The two **reflection** routes close the queue group, after `abandonEvent`.
+ * That is where they belong in both directions: an ask enqueues a queue event,
+ * and the clock is the state the automatic path is decided against. They are one
+ * path under two methods and compete with nothing.
  */
 export const contractRoutes = {
   getHealth,
@@ -161,6 +184,11 @@ export const contractRoutes = {
   searchCorpus,
 
   getTree,
+  renameFolder,
+  archiveFolder,
+  unarchiveFolder,
+  deleteFolder,
+  reorderBoards,
   capture,
 
   createThread,
@@ -189,6 +217,9 @@ export const contractRoutes = {
   failEvent,
   deferEvent,
   abandonEvent,
+
+  askReflection,
+  getReflectStatus,
 
   listJobs,
   getJobLog,

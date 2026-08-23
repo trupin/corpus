@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
-import { stubCorpus, type StubRow } from "./stubCorpus";
+import { STUB_BOARD_ID, stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-037's reveal seam, in a real browser.
@@ -28,7 +28,6 @@ const VIEW: StubRow = {
   type: "view",
   title: "Inbox",
   path: "data/docs/views/inbox.md",
-  pinned: true,
   order: 1,
   query: { folder: "inbox" },
 };
@@ -99,21 +98,31 @@ async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> 
    */
   await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
   await page.addInitScript(
-    ([columnId, docId, pending]) => {
+    ([columnId, docId, boardId, pending]) => {
       window.localStorage.setItem(
         "corpus.board",
+        // v4 (UI-149): the board's slice is its strip — query columns and
+        // paths in order. The seeded reader is the column's own ("open here").
         JSON.stringify({
-          version: 2,
-          columns: {
-            [columnId]: {
-              scroll: 0,
-              nav: [{ docId, scrollY: 0, ...(pending === null ? {} : { reveal: pending }) }],
+          version: 4,
+          board: boardId,
+          boards: {
+            [boardId]: {
+              seq: 1,
+              strip: [
+                {
+                  kind: "query",
+                  view: columnId,
+                  scroll: 0,
+                  nav: [{ docId, scrollY: 0, ...(pending === null ? {} : { reveal: pending }) }],
+                },
+              ],
             },
           },
         }),
       );
     },
-    [VIEW.id, CHORES.id, reveal] as const,
+    [VIEW.id, CHORES.id, STUB_BOARD_ID, reveal] as const,
   );
   await page.goto("/");
   await page.locator(".reader .ProseMirror").waitFor();
@@ -172,14 +181,23 @@ interface StoredEntry {
  * actual storage, read the way the next page load will read it.
  */
 async function storedEntry(page: Page, columnId: string = VIEW.id): Promise<StoredEntry | null> {
-  return page.evaluate((column) => {
-    const raw = window.localStorage.getItem("corpus.board");
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as {
-      columns?: Record<string, { nav?: StoredEntry[] } | undefined>;
-    };
-    return parsed.columns?.[column]?.nav?.at(-1) ?? null;
-  }, columnId);
+  return page.evaluate(
+    ([column, boardId]) => {
+      const raw = window.localStorage.getItem("corpus.board");
+      if (raw === null) return null;
+      const parsed = JSON.parse(raw) as {
+        boards?: Record<
+          string,
+          { strip?: { kind: string; view?: string; nav?: StoredEntry[] }[] } | undefined
+        >;
+      };
+      const item = parsed.boards?.[boardId]?.strip?.find(
+        (entry) => entry.kind === "query" && entry.view === column,
+      );
+      return item?.nav?.at(-1) ?? null;
+    },
+    [columnId, STUB_BOARD_ID] as const,
+  );
 }
 
 test.describe("an open that names an item", () => {

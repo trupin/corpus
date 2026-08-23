@@ -22,7 +22,6 @@ const NOTES_VIEW = {
   type: "view",
   title: "Notes",
   path: "data/docs/views/notes.md",
-  pinned: true,
   order: 1,
   query: { folder: "notes" },
 };
@@ -99,14 +98,13 @@ async function stoppedMoving(target: Locator): Promise<void> {
  * Opens the note and waits for the reading surface to stop moving.
  *
  * **Every claim in this file is geometric, and geometry is only a claim once
- * the layout has settled.** Opening a document widens its column (UI-113), and
- * `.col` animates that width over 250ms — so the body starts narrower than the
- * reading measure and crosses it partway through. The sentence this suite draws
- * is 51 characters, which is about 367px of the shipped serif, and the body
- * passes 367px in the middle of that animation: measured mid-flight it is two
- * line boxes, measured after it is one. That is the column doing exactly what it
- * is supposed to do, and asserting across it is asserting about a frame nobody
- * is looking at.
+ * the layout has settled.** Since UI-149 (SPEC.md §10, rider 3) a row click
+ * opens the reader in a **path column** at its own fixed 440px — the query
+ * column no longer widens — so the settling this waits for is the board's
+ * snap-scroll to the new column, not a width animation. The sentence this
+ * suite draws is 51 characters, about 367px of the shipped serif, and a 440px
+ * path column offers ~410px of measure: still one line box, exactly as the
+ * pre-rider 560px reader drew it.
  */
 async function openNote(page: Page): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [NOTES_VIEW, NOTE]);
@@ -114,7 +112,7 @@ async function openNote(page: Page): Promise<StubCorpus> {
   await page.locator(".board").waitFor();
   await page.locator('.row[data-row-doc="doc_wrapped"]').click();
   await expect(page.locator(".reader .doc-editor .ProseMirror p").first()).toBeVisible();
-  await stoppedMoving(page.locator(".col.reading"));
+  await stoppedMoving(page.locator(".pcol"));
   return corpus;
 }
 
@@ -155,8 +153,8 @@ async function openNote(page: Page): Promise<StubCorpus> {
  * change (UI-066).
  *
  * **Aimed at a paragraph that has stopped moving.** A cold open is still laying
- * out after the body appears — the column widens over 250ms and the chips row
- * un-wraps, moving the paragraph by about 50px (`reveal.ts` records the same
+ * out after the body appears — the board snap-scrolls the new path column into
+ * view, moving the paragraph (`reveal.ts` records the same class of
  * measurement). A point measured before that and clicked after it lands under
  * the paragraph rather than in it, and the caret goes to whatever is there
  * instead — observed, as `outside the paragraph`. {@link openNote} settles the

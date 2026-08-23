@@ -6,6 +6,7 @@ import { EMPTY_TREE_OBJECT_ID } from "../schemas/edit.js";
 import { FormSchema, validateFormAnswer } from "../schemas/form.js";
 import { HEADING_PATH_SEPARATOR } from "../schemas/retrieval.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
+import { DEFAULT_REFLECT_QUIET_MINUTES } from "../schemas/reflect.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./inventory.js";
 import {
   isMultipartThreadCreate,
@@ -27,9 +28,12 @@ const frontmatter = {
   reviewed: null,
   evergreen: false,
   origin: null,
-  pinned: false,
+  stage: null,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
 };
 
@@ -51,12 +55,16 @@ const doc = {
 /** Stands in for "the newest commit that touched this document" on the diff route. */
 const DEFAULT_HEAD_SHA = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456";
 
+/** The reflection clock the stub reports, older than the fixture row's `updated`. */
+const REFLECTED_AT = "2026-07-19T09:00:00Z";
+
 const row = {
   id: "doc_a1b2c3",
   type: "note",
   title: "Mortgage options",
   path: "data/docs/mortgage.md",
   status: "open" as const,
+  stage: null,
   tags: ["finance"],
   created: "2026-07-19T10:00:00Z",
   updated: "2026-07-19T10:42:00Z",
@@ -64,10 +72,13 @@ const row = {
   reviewed: null,
   evergreen: false,
   origin: null,
+  lastActor: "user" as const,
   excerpt: "Body.",
-  pinned: false,
   order: null,
   query: null,
+  columns: null,
+  kanban: null,
+  defaultOpen: false,
   extra: {},
   stale: null,
   parent: null,
@@ -520,6 +531,44 @@ function createStubApp() {
       200,
     ),
   );
+  /**
+   * The four folder acts (CONTRACT-075). Each answers with the documents it
+   * changed and the field that changed on each, so the stub is what a caller
+   * type-checks against: three different result shapes, one per act.
+   */
+  app.openapi(contractRoutes.renameFolder, (c) => {
+    const { to } = c.req.valid("json");
+    return c.json(
+      { documents: [{ id: row.id, path: `data/docs/${to}/mortgage.md` }], warnings: [] },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.archiveFolder, (c) =>
+    c.json({ documents: [{ id: row.id, status: "archived" as const }], warnings: [] }, 200),
+  );
+  app.openapi(contractRoutes.unarchiveFolder, (c) =>
+    c.json({ documents: [{ id: row.id, status: "resolved" as const }], warnings: [] }, 200),
+  );
+  app.openapi(contractRoutes.deleteFolder, (c) =>
+    c.json({ documents: [{ id: row.id }], warnings: [] }, 200),
+  );
+
+  // SPEC.md §10, rider 2 (CONTRACT-080). The handler renumbers what it parsed,
+  // exactly as the server does, because the positions are derived from the
+  // list's own order and a canned reply would not exercise that: the second
+  // board stands in for one already at its number, which the act does not write.
+  app.openapi(contractRoutes.reorderBoards, (c) => {
+    const { boards } = c.req.valid("json");
+    return c.json(
+      {
+        boards: boards.map((id, index) => ({ id, order: index + 1, changed: index !== 1 })),
+        commit: "c0mm1t",
+        warnings: [],
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.capture, (c) => {
     const body = c.req.valid("form");
     return c.json(
@@ -789,6 +838,26 @@ function createStubApp() {
     return c.json({ ...queueEvent, payload: { blockedOn, reason: reason ?? null } }, 200);
   });
   app.openapi(contractRoutes.abandonEvent, (c) => c.json(queueEvent, 200));
+
+  /**
+   * Reflection (CONTRACT-076). The ask always answers `202`, and answers with
+   * the pending reflection when one is already there rather than doubling it.
+   */
+  app.openapi(contractRoutes.askReflection, (c) =>
+    c.json({ eventId: "evt_7c1d", since: REFLECTED_AT, pending: false }, 202),
+  );
+  app.openapi(contractRoutes.getReflectStatus, (c) =>
+    c.json(
+      {
+        reflected: REFLECTED_AT,
+        pending: null,
+        changed: 3,
+        lastDigest: "th_x9y8",
+        quiet: DEFAULT_REFLECT_QUIET_MINUTES,
+      },
+      200,
+    ),
+  );
 
   app.openapi(contractRoutes.listJobs, (c) => c.json({ jobs: [job] }, 200));
   app.openapi(contractRoutes.getJobLog, (c) =>

@@ -1,0 +1,195 @@
+/*
+ * The column strip (SPEC.md §10, rider 4; `design/navigation.html`'s
+ * `.colbar`): the board in miniature, above the board and below the board bar.
+ *
+ * **It is chrome** (SPEC.md §10 — "nothing resizes because of what it holds"),
+ * and two rules follow from that.
+ *
+ * 1. **Its height is derived, not chosen.** `--colbar-band-h` is the tallest
+ *    thing the strip can hold — a tab inside a path's group band — assembled
+ *    from that tab's own line box, padding and borders. A board with three
+ *    query columns and a board with four paths are therefore exactly as tall,
+ *    and the board below never moves when a path opens. Nothing here is a pixel
+ *    count picked because it looked right (SHARED-061): change the tab's
+ *    padding and the strip's height follows on its own.
+ * 2. **A tab is bounded by the room, and its title truncates.** `24ch` is a
+ *    count of characters in the strip's own font — the same reasoning as the
+ *    board bar's `8ch` floor — so a long document title gives way rather than
+ *    pushing the tabs after it off the end. The whole title is on the tab's
+ *    tooltip, which is §10's reveal-rather-than-accommodate rule.
+ *
+ * The `✕` also keeps its room whether or not the pointer is over the tab.
+ * `design/navigation.html` toggles `display`, which moves every tab to its
+ * right the moment the cursor lands — exactly the failure §10 rules out for
+ * pointer-driven growth. Only its visibility changes here.
+ */
+
+.colbar {
+  /* The tab's box, part by part — the strip's height is the sum. */
+  --ctab-line: 18px;
+  --ctab-pad-y: 4px;
+  --ctab-border: 1px;
+  --ctab-h: calc(var(--ctab-line) + 2 * (var(--ctab-pad-y) + var(--ctab-border)));
+  --cgroup-pad-y: 3px;
+  --cgroup-border: 1px;
+  --colbar-band-h: calc(var(--ctab-h) + 2 * (var(--cgroup-pad-y) + var(--cgroup-border)));
+  --colbar-pad-top: 10px;
+
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: calc(var(--colbar-band-h) + var(--colbar-pad-top));
+  padding: var(--colbar-pad-top) 18px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  /* The strip scrolls; its scrollbar would double the height it is here to
+     hold still, so it is hidden and the tabs themselves say where you are. */
+  scrollbar-width: none;
+}
+
+.colbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* A board with no columns and no paths: no strip at all, rather than a band of
+   empty chrome (rider 4's edge case). */
+.colbar:empty {
+  display: none;
+}
+
+.ctab {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 24ch;
+  height: var(--ctab-h);
+  border: var(--ctab-border) solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: var(--ctab-line);
+  white-space: nowrap;
+}
+
+.ctab-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ctab .ck {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex: none;
+  opacity: 0.8;
+}
+
+.ctab .ct {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+/* A list reads in the sans face; a document reads in the serif one, the same
+   distinction the columns themselves draw. */
+.ctab.q .ct {
+  font-family: var(--sans);
+}
+
+.ctab.p .ct {
+  font-family: var(--serif);
+  font-size: 12.5px;
+}
+
+/* On screen. The dim state is the default, so a tab nothing has observed yet
+   never claims to be somewhere it is not. */
+.ctab.seen {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.ctab.on {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+
+.ctab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.ctab .cx {
+  visibility: hidden;
+  flex: none;
+  padding: 0 2px;
+  margin-right: 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.ctab:hover .cx,
+.ctab:focus-within .cx {
+  visibility: visible;
+}
+
+.ctab .cx:hover {
+  color: var(--signal);
+  background: var(--signal-wash);
+}
+
+/* A path's tabs sit in the same band its columns sit in on the board: dashed
+   while the path hangs off an origin row, solid once it is loose. */
+.cgroup {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--colbar-band-h);
+  padding: 0 4px 0 8px;
+  border: var(--cgroup-border) dashed var(--line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.cgroup.loose {
+  border-style: solid;
+  border-color: var(--line);
+}
+
+.cgroup .cfrom {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: var(--ctab-line);
+  color: var(--ink-3);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
+.cgroup .cfrom b {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.cgroup.loose .cfrom b {
+  color: var(--ink-2);
+}

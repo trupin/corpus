@@ -387,6 +387,13 @@ export type MutationPlan = {
      * does **not** close a window" list.
      */
     readonly act?: ActCommit | undefined;
+    /**
+     * Paths this plan moved away from that the filesystem can no longer tell
+     * apart from where they went — see `CommitRequest.forget`. Set by the folder
+     * rename when the destination differs from the source only in case, and by
+     * nothing else.
+     */
+    readonly forget?: readonly string[] | undefined;
   } | null;
   readonly keys: readonly QueryKey[];
   /**
@@ -486,6 +493,31 @@ export interface DocsWorkspace {
    * no job.
    */
   readonly jobs?: JobLookup | undefined;
+  /**
+   * SPEC.md §7's reflection, as the write path sees it (SERVER-137).
+   *
+   * The write path knows two things reflection needs and nothing else: a
+   * mutation landed, and who made it. It hands both over and asks no questions —
+   * whether that restarts a quiet window, and whether the window is even switched
+   * on, are the service's to answer.
+   *
+   * Optional, and absent in every test that has no queue: a workspace with no
+   * reflection service simply tells nobody, which costs an automatic reflection
+   * and nothing about the write.
+   */
+  readonly reflect?: WriteReflectObserver | undefined;
+}
+
+/**
+ * The half of `ReflectService` the write path is allowed to see.
+ *
+ * Declared here rather than imported from `reflect/` so the dependency runs one
+ * way: `reflect/` reads the projection and the queue, and `docs/` must not learn
+ * about either through a back door. TypeScript's structural typing is what makes
+ * the real service satisfy this without either module importing the other.
+ */
+export interface WriteReflectObserver {
+  observeWrite(actor: Actor): void;
 }
 
 /** What a resolved job says about where its work belongs. */
@@ -1374,6 +1406,7 @@ export async function finishMutation(
           subject: plan.commit.subject,
           paths: plan.stage,
           ...(plan.commit.anchors === undefined ? {} : { anchors: plan.commit.anchors }),
+          ...(plan.commit.forget === undefined ? {} : { forget: plan.commit.forget }),
           ...(squash === undefined ? {} : { squash }),
           // Tells the committer this commit's subject *names* an act, so the
           // close below leaves it alone rather than relabelling it an editing
@@ -1432,7 +1465,9 @@ export async function finishMutation(
   }
   for (const path of plan.project) {
     if (classifyPath(path) === null) continue;
-    projectDocument(workspace.projection, abs(workspace, path));
+    // SPEC.md §9.1's `last_actor`: the acting party this mutation carried, which
+    // is the same party §4 authors the commit as.
+    projectDocument(workspace.projection, abs(workspace, path), request.actor);
   }
 
   const measured: QueryKey[] = [...plan.keys];
@@ -1441,6 +1476,13 @@ export async function finishMutation(
   }
   if (rosterSignature(workspace.projection) !== rosterBefore) measured.push(AGENTS_KEY);
   workspace.bus.invalidate(dedupeKeys(measured));
+
+  // SPEC.md §7's quiet window (SERVER-137). Every mutation reaches here and
+  // every mutation is told, actor and all — the timer measures *quiet*, and what
+  // is worth reflecting on is re-asked when it fires, so this side has no
+  // judgement to make and no verb list to keep in step. An agent's write is
+  // discarded by the service, not filtered here, for the same reason.
+  workspace.reflect?.observeWrite(request.actor);
 
   return commit;
 }
