@@ -11,6 +11,8 @@ import {
   readAll,
   readFlagFile,
   stdinCarriesABody,
+  stdinKind,
+  stdinSocketRefusal,
   stdinStream,
   warningSuffix,
   type InputDependencies,
@@ -247,6 +249,11 @@ async function resolveSide(
  * quietly dropped would mean performing a different edit from the one asked for
  * — a `replace` ignored is a `new` of `""`, which is a deletion.
  */
+const STDIN_SOCKET_REPAIR =
+  "Send the request on a heredoc — `corpus doc patch <id> --stdin <<'CORPUS_EOF'`, the JSON, then " +
+  "`CORPUS_EOF` — or drop `--stdin` and name the two sides with `--old-file` and `--new-file`, " +
+  "which read from any caller.";
+
 async function readStdinRequest(
   context: WorkspaceCommandContext,
   dependencies: InputDependencies,
@@ -267,7 +274,17 @@ async function readStdinRequest(
   // that is never written to and never closed, and a verb that read it would park
   // the agent forever (CLI-007). `--stdin` with nothing piped is a usage error,
   // not a wait.
-  if (!(dependencies.stdinIsBodySource ?? stdinCarriesABody())) {
+  //
+  // A socket gets its own refusal (CLI-066), and here the case is sharper than
+  // anywhere else: `--stdin` **names stdin as the source**. Telling that caller
+  // "nothing is piped in" is telling it the opposite of what happened — a
+  // `spawnSync({ input })` caller piped the whole request in, over the one
+  // transport this verb will not read.
+  const kind = dependencies.stdinKind ?? stdinKind();
+  if (kind === "socket") {
+    throw stdinSocketRefusal("patch request", STDIN_SOCKET_REPAIR, { mayBeOmitted: false });
+  }
+  if (!stdinCarriesABody(kind)) {
     throw new UsageError("--stdin was given but nothing is piped in.", {
       hint:
         "Send the request as a heredoc: `corpus doc patch <id> --stdin <<'CORPUS_EOF'`, then the JSON, " +
@@ -483,7 +500,12 @@ export const patchCommand: WorkspaceCommandSpec = {
         'Read the whole request from stdin as one JSON object — `{"old": "…", "new": "…"}`, ' +
         'optionally with `"all": true`. It is the request rather than a third spelling of one ' +
         "field, so it takes no other patch flag. Newlines inside the strings are `\\n`; when " +
-        "that escaping is the awkward part, `--old-file` and `--new-file` need none.",
+        "that escaping is the awkward part, `--old-file` and `--new-file` need none. **Stdin is " +
+        "read only when it is a heredoc or a pipe.** A **socket** — what `spawn`, `exec` and " +
+        "`spawnSync({ input })` give a child, and what an agent harness leaves on fd 0 — is never " +
+        "read, because it never ends and the read would hang. A socket here is refused by name " +
+        "(exit 2, nothing sent) rather than reported as an empty stdin, since a caller that " +
+        "piped the request in over one did send it.",
     },
     {
       name: "all",

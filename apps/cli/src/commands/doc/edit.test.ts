@@ -50,7 +50,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { key: KEY }, actor: "agent" });
 
-    await runDocEdit(harness.context, { stdin: pipe("new body\n"), stdinIsBodySource: true });
+    await runDocEdit(harness.context, { stdin: pipe("new body\n"), stdinKind: "fifo" });
 
     const [request] = stub.requests;
     expect(request?.method).toBe("PUT");
@@ -67,7 +67,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { title: "New title" } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({ title: "New title" });
     expect(bodyOf(stub.requests[0]?.body)).not.toHaveProperty("body");
@@ -78,7 +78,7 @@ describe("corpus doc edit", () => {
     const harness = stubContext(stub, { args: ARGS, flags: { reviewed: true } });
 
     await runDocEdit(harness.context, {
-      stdinIsBodySource: false,
+      stdinKind: "other",
       now: () => Date.parse("2026-07-27T10:07:12.999Z"),
     });
 
@@ -95,7 +95,7 @@ describe("corpus doc edit", () => {
       flags: { status: "resolved", due: "2026-09-01", evergreen: "false" },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[1]?.body)).toEqual({
       status: "resolved",
@@ -108,7 +108,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { status: "done" } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -127,7 +127,7 @@ describe("corpus doc edit", () => {
     });
     const harness = stubContext(stub, { args: SKILL_ARGS, flags: { status: "open" } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -145,7 +145,7 @@ describe("corpus doc edit", () => {
     });
     const harness = stubContext(stub, { args: SKILL_ARGS, flags: { status: "resolved" } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -168,7 +168,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("new body"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -190,7 +190,7 @@ describe("corpus doc edit", () => {
       });
       const harness = stubContext(stub, { args: ARGS, flags: { status } });
 
-      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
         (cause: unknown) => cause,
       );
 
@@ -208,7 +208,7 @@ describe("corpus doc edit", () => {
     const forDoc = async (doc: typeof DOC): Promise<string> => {
       const stub = await startStubServer((_request, response) => sendJson(response, 200, doc));
       const harness = stubContext(stub, { args: ARGS, flags: { status: "open" } });
-      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
         (cause: unknown) => cause,
       );
       return `${String(error)} ${errorHint(error)}`;
@@ -230,7 +230,7 @@ describe("corpus doc edit", () => {
     });
     const harness = stubContext(stub, { args: SKILL_ARGS, flags: { status: "open" } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -245,7 +245,7 @@ describe("corpus doc edit", () => {
     });
     const harness = stubContext(stub, { args: SKILL_ARGS, flags: { status: "archived" } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[1]?.body)).toEqual({ status: "archived" });
   });
@@ -258,7 +258,7 @@ describe("corpus doc edit", () => {
       });
       const harness = stubContext(stub, { args: ARGS, flags: { status } });
 
-      await runDocEdit(harness.context, { stdinIsBodySource: false });
+      await runDocEdit(harness.context, { stdinKind: "other" });
 
       // A status flip names its own delta: no key is sent, and none was asked
       // for (SPEC.md §7).
@@ -277,7 +277,7 @@ describe("corpus doc edit", () => {
       flags: { status: "resolved", "add-tag": ["housing"] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     // The `GET` is `--status`'s alone now: it phrases the archived refusal.
     expect(stub.requests.map((request) => request.method)).toEqual(["GET", "PUT"]);
@@ -300,7 +300,7 @@ describe("corpus doc edit", () => {
       flags: { "add-tag": ["housing"], "remove-tag": ["finance"] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests.map((request) => request.method)).toEqual(["PUT"]);
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
@@ -323,7 +323,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("new body"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.staleKey);
@@ -343,7 +343,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("my new body"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     const rendered = renderError(error, { verbose: false });
@@ -372,7 +372,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("body"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     // Distinguishable from a usage error (2) and from a server failure (5),
@@ -393,7 +393,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("a body nobody asked to overwrite"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     // A usage error, not the stale-key code: the invocation is malformed, the
@@ -412,7 +412,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("and a body too"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -429,7 +429,7 @@ describe("corpus doc edit", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: pipe("body"),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -441,7 +441,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { title: "Renamed", key: KEY } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     // Welcome, and still checked: a caller that always sends what it read needs
     // no rule about which fields are keyed.
@@ -452,7 +452,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { key: KEY } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -465,7 +465,7 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -492,13 +492,13 @@ describe("corpus doc edit", () => {
     const stub = await startStubServer(jsonResponder(200, { doc, anchors, warnings: [] }));
 
     const human = stubContext(stub, { args: ARGS, flags: { key: KEY } });
-    await runDocEdit(human.context, { stdin: pipe("rewritten"), stdinIsBodySource: true });
+    await runDocEdit(human.context, { stdin: pipe("rewritten"), stdinKind: "fifo" });
     expect(human.stdout()).toBe(
       `edited doc_a1b2c3 — 2 anchors remapped, 1 orphaned (th_x9y8)\nkey ${doc.key}\n`,
     );
 
     const machine = stubContext(stub, { args: ARGS, flags: { key: KEY }, json: true });
-    await runDocEdit(machine.context, { stdin: pipe("rewritten"), stdinIsBodySource: true });
+    await runDocEdit(machine.context, { stdin: pipe("rewritten"), stdinKind: "fifo" });
     expect(JSON.parse(machine.stdout())).toEqual({ doc, anchors, warnings: [] });
   });
 
@@ -511,7 +511,7 @@ describe("corpus doc edit", () => {
     );
     const harness = stubContext(stub, { args: ARGS, flags: { key: KEY } });
 
-    await runDocEdit(harness.context, { stdin: pipe("x"), stdinIsBodySource: true });
+    await runDocEdit(harness.context, { stdin: pipe("x"), stdinKind: "fifo" });
 
     expect(harness.stdout()).toBe(
       "edited doc_a1b2c3 — warning: commit_failed (pre-commit hook rejected the commit)\n" +
@@ -529,7 +529,7 @@ describe("corpus doc edit --extra", () => {
       actor: "agent",
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests).toHaveLength(1); // one PUT, no read-modify-write
     expect(stub.requests[0]?.method).toBe("PUT");
@@ -543,7 +543,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { extra: ["width=520"] } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     const extra = bodyOf(stub.requests[0]?.body)["extra"] as Record<string, unknown>;
     expect(extra["width"]).toBe(520);
@@ -554,7 +554,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { extra: ["width=null"] } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.body).toBe('{"extra":{"width":null}}');
   });
@@ -566,7 +566,7 @@ describe("corpus doc edit --extra", () => {
       flags: { title: "Finance", extra: ["width=640"], key: KEY },
     });
 
-    await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinIsBodySource: true });
+    await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinKind: "fifo" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       title: "Finance",
@@ -587,7 +587,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { extra: [entry] } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -603,7 +603,7 @@ describe("corpus doc edit --extra", () => {
       const stub = await startStubServer(jsonResponder(200, UPDATED));
       const harness = stubContext(stub, { args: ARGS, flags: { extra: [entry] } });
 
-      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
         (cause: unknown) => cause,
       );
 
@@ -625,7 +625,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     for (const entry of ["width", "=520"]) {
       const harness = stubContext(stub, { args: ARGS, flags: { extra: [entry] } });
-      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
         (cause: unknown) => cause,
       );
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -637,7 +637,7 @@ describe("corpus doc edit --extra", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { extra: ["note="] } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.body).toBe('{"extra":{"note":""}}');
   });
@@ -652,7 +652,7 @@ describe("corpus doc edit --extra", () => {
       flags: { extra: ["ledger.fy26.v=1", "with space=x", "TITLE=not-title", "é=1"] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       extra: { "ledger.fy26.v": 1, "with space": "x", TITLE: "not-title", é: 1 },
@@ -669,7 +669,7 @@ describe("corpus doc edit --extra", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: unreadable(),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -683,7 +683,7 @@ describe("corpus doc edit --extra", () => {
 
     const error: unknown = await runDocEdit(harness.context, {
       stdin: unreadable(),
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -703,7 +703,7 @@ describe("`--extra` and the archived-skill guard together (CLI-016 x CLI-017)", 
       actor: "agent",
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests.map((request) => request.method)).toEqual(["PUT"]); // no GET
     expect(bodyOf(stub.requests[0]?.body)).toEqual({ extra: { width: 520 } });
@@ -720,7 +720,7 @@ describe("`--extra` and the archived-skill guard together (CLI-016 x CLI-017)", 
     });
     const harness = stubContext(stub, { args: SKILL_ARGS, flags: { extra: ["status=open"] } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -742,7 +742,7 @@ describe("`--extra` and the archived-skill guard together (CLI-016 x CLI-017)", 
       flags: { status: "open", extra: ["title=Nope"] },
     });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -761,7 +761,7 @@ describe("`--extra` and the archived-skill guard together (CLI-016 x CLI-017)", 
       flags: { status: "open", extra: ["width=520"] },
     });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -809,7 +809,7 @@ describe("the --extra value grammar", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { extra: ["width=1e400"] } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     // The regression, stated in the only form that can catch it: the serialized
     // body. `{"width":null}` here is the deletion the caller never asked for.
@@ -875,7 +875,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
       actor: "agent",
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.method).toBe("PUT");
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
@@ -891,7 +891,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { "default-open": "false" } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.body).toBe('{"defaultOpen":false}');
   });
@@ -900,7 +900,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { columns: "" } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests[0]?.body).toBe('{"columns":[]}');
   });
@@ -912,7 +912,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
       flags: { unset: ["pinned", "default-open"] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     // File spellings, in the order they were given, and no `--key`: `unset`
     // names its own delta exactly as `removeTags` does.
@@ -924,7 +924,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { unset: ["id"] } });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -940,7 +940,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
       flags: { order: "null", query: ["null"] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({ order: null, query: null });
   });
@@ -951,7 +951,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { query: ["type=view"] } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({ query: { type: "view" } });
   });
@@ -969,7 +969,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
       },
     });
 
-    await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinIsBodySource: true });
+    await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinKind: "fifo" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       title: "Finance",
@@ -991,7 +991,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
       flags: { status: "open", stage: "doing" },
     });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -1015,7 +1015,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags });
 
-    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -1027,7 +1027,7 @@ describe("corpus doc edit — the §10 board keys (CLI-018, CLI-060)", () => {
     const stub = await startStubServer(jsonResponder(200, UPDATED));
     const harness = stubContext(stub, { args: ARGS, flags: { order: "2" } });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(stub.requests).toHaveLength(1);
   });
@@ -1041,7 +1041,7 @@ describe("corpus doc edit --extra-json (SPEC 38)", () => {
       flags: { "extra-json": ['publish={"target":"blog","draft":true}'] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       extra: { publish: { target: "blog", draft: true } },
@@ -1055,7 +1055,7 @@ describe("corpus doc edit --extra-json (SPEC 38)", () => {
       flags: { extra: ["width=520"], "extra-json": ['publish={"target":"blog"}'] },
     });
 
-    await runDocEdit(harness.context, { stdinIsBodySource: false });
+    await runDocEdit(harness.context, { stdinKind: "other" });
 
     expect(bodyOf(stub.requests[0]?.body)).toEqual({
       extra: { width: 520, publish: { target: "blog" } },
@@ -1070,7 +1070,7 @@ describe("corpus doc edit --extra-json (SPEC 38)", () => {
       { "extra-json": ['title={"x":1}'] },
     ]) {
       const harness = stubContext(stub, { args: ARGS, flags });
-      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      const error: unknown = await runDocEdit(harness.context, { stdinKind: "other" }).catch(
         (cause: unknown) => cause,
       );
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
@@ -1107,5 +1107,41 @@ describe("edit helpers", () => {
 
   it("falls back to the anchor id when the response carries no thread for it", () => {
     expect(describeAnchors({ remapped: [], orphaned: ["a_9"] }, DOC)).toBe(" — 1 orphaned (a_9)");
+  });
+});
+
+describe("corpus doc edit — a body on a socket (CLI-066)", () => {
+  /**
+   * CLI-066 — the socket that swallowed five documents.
+   *
+   * The SHARED-070 audit ran this verb through `spawnSync(…, { input })`, which
+   * hands the child a socketpair on fd 0. A socket is never read (CLI-007: an
+   * agent harness leaves one there that never ends), and treating "not read" as
+   * "not offered" wrote the document's body silently left alone at exit 0 with the caller's bytes verifiably
+   * absent. The refusal below is decided by `fstat` alone — `unreadable()` rejects
+   * on the first read, so "nothing was blocked on" is an assertion here rather
+   * than a timeout.
+   */
+  it("refuses rather than performing a frontmatter-only edit the caller never asked for", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { title: "A new title" } });
+
+    const error: unknown = await runDocEdit(harness.context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("still allows a frontmatter-only edit once the caller says it sends no body", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { title: "A new title" } });
+
+    await runDocEdit(harness.context, { stdin: unreadable(), stdinKind: "other" });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ title: "A new title" });
   });
 });

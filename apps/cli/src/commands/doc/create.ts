@@ -1,5 +1,6 @@
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   parseTriStateBoolean,
   requireFlag,
   resolveBody,
@@ -123,7 +124,8 @@ export const createCommand: WorkspaceCommandSpec = {
     "rather than implied by `--type view`, because this verb defaults nothing per type. Prints " +
     "the new id and path, and prints on its own line any second effect the write had — a stage " +
     "that decided a status (§5's coupling), a `default-open` taken off another board. `--json` " +
-    "emits the server's `{doc, warnings}` response unchanged.",
+    "emits the server's `{doc, warnings}` response unchanged.\n\n" +
+    BODY_SOURCES_HELP,
   args: [],
   flags: [
     {

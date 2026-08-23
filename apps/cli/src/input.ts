@@ -244,8 +244,8 @@ export function resolveTurnModel(
 export interface InputDependencies {
   /** Defaults to the process's stdin; injectable so tests need no pipe. */
   readonly stdin?: AsyncIterable<string | Uint8Array>;
-  /** Defaults to {@link stdinCarriesABody}. */
-  readonly stdinIsBodySource?: boolean;
+  /** Defaults to {@link stdinKind}. */
+  readonly stdinKind?: StdinKind;
   /** Defaults to `node:fs/promises` `readFile`. Reading is the only filesystem access the CLI has. */
   readonly readTextFile?: (path: string) => Promise<string>;
 }
@@ -270,30 +270,117 @@ export function stdinIsTTY(): boolean {
 }
 
 /**
- * Whether stdin is a thing a body could arrive on — and the reason this is a
- * `fstat` rather than the obvious `!process.stdin.isTTY`.
+ * What fd 0 **is**, as `fstat` sees it — the one question every stdin-reading
+ * verb asks, answered in one place with one vocabulary.
  *
- * A heredoc (`<<'CORPUS_EOF'`) is a **regular file**; `cmd | corpus` is a **FIFO**.
- * Both are read. A terminal is not read, because a body-optional verb must not
- * sit waiting for a human nobody asked.
+ * The five outcomes are not five shades of one boolean. Three of them are
+ * decisions and two of them are the same decision for opposite reasons:
  *
- * The case that forces the `fstat`: an agent harness — Claude Code's own Bash
- * tool among them — hands its child a **socket** on fd 0 that is never written
- * to and never closed. `isTTY` is false for it, so a naive "not a TTY means
- * piped" test reads it, blocks forever, and parks the agent on its first
- * `corpus doc create` with no body. A socket is therefore not a body source:
- * nothing in this CLI's documented usage passes a body over one.
+ * - `file` — a heredoc (`<<'CORPUS_EOF'`) or `< body.md`. **Read.**
+ * - `fifo` — `cmd | corpus`. **Read.**
+ * - `tty` — a terminal. **Not read**, because a body-optional verb must not sit
+ *   waiting for a human nobody asked.
+ * - `other` — `/dev/null`, a closed fd (`0<&-`), any other character device.
+ *   **Not read**, and nothing was offered: this is how a caller says "no body".
+ * - `socket` — **refused.** See {@link stdinSocketRefusal}.
+ *
+ * This used to be a boolean, and collapsing `socket` into `false` alongside
+ * `other` is exactly what made CLI-066 possible: the CLI could not tell "no body
+ * offered" from "a body offered on a transport I will not read", and it resolved
+ * the ambiguity by writing a document the caller never wrote.
  */
-export function stdinCarriesABody(fd = 0): boolean {
-  if (stdinIsTTY()) return false;
+export type StdinKind = "file" | "fifo" | "tty" | "socket" | "other";
+
+export function stdinKind(fd = 0): StdinKind {
+  if (stdinIsTTY()) return "tty";
+  let stats;
   try {
-    const stats = fstatSync(fd);
-    return stats.isFile() || stats.isFIFO();
+    stats = fstatSync(fd);
   } catch {
     // No fd 0 at all (`0<&-`) is exactly "no body on stdin".
-    return false;
+    return "other";
   }
+  if (stats.isFile()) return "file";
+  if (stats.isFIFO()) return "fifo";
+  if (stats.isSocket()) return "socket";
+  return "other";
 }
+
+/** The two transports a body may arrive on, and the only two that are ever read. */
+export function stdinCarriesABody(kind: StdinKind): boolean {
+  return kind === "file" || kind === "fifo";
+}
+
+/**
+ * The refusal every stdin-reading verb shares when fd 0 is a **socket** — the
+ * one transport this CLI can neither read nor safely ignore.
+ *
+ * **Why it is never read** (CLI-007): `spawn`, `exec` and `spawnSync` hand a
+ * child a socketpair on fd 0, and an agent harness leaves one there that is
+ * never written to and never closed. Reading it blocks forever, so a verb that
+ * read stdin because "it is not a TTY" parked the agent on its first
+ * `corpus job log` with nothing on either stream. That decision stands: the
+ * refusal below is decided by `fstat` alone, with **zero bytes read and nothing
+ * waited on**.
+ *
+ * **Why it is not silently ignored** (CLI-066): the other socket caller is
+ * `spawnSync(…, { input })`, which writes a body and closes. Treating the socket
+ * as "no body offered" made the SHARED-070 audit create five documents whose
+ * bodies were the type template's empty scaffold, at exit 0, with 340 bytes
+ * verifiably written to the pipe and verifiably absent from the document. The
+ * loss surfaced days later as an `orphaned_anchor` on a thread quoting text
+ * nobody had ever written.
+ *
+ * The two cases are **indistinguishable without reading**, and reading is the
+ * hang. So neither is guessed: the command refuses, exits 2, and sends nothing.
+ * A caller that meant to send a body has two transports that work from anywhere
+ * (`-m`, `--file`); a caller that meant to send none says so with `< /dev/null`
+ * or `stdio: ["ignore", …]`, both of which land in `other` and stay silent.
+ *
+ * That last sentence is offered **only where sending none is legal**. On
+ * `thread reply`, on `job log` and on `doc patch --stdin` it is not — the verb
+ * cannot act without the text — and telling that caller to redirect
+ * `< /dev/null` would send it one usage error further from the one command that
+ * works.
+ */
+export function stdinSocketRefusal(
+  what: string,
+  repair: string,
+  options: { readonly mayBeOmitted?: boolean } = {},
+): UsageError {
+  const sayingNone =
+    options.mayBeOmitted === false
+      ? ""
+      : ` If you meant to send no ${what}, say so: redirect \`< /dev/null\`, or spawn with ` +
+        `\`stdio: ["ignore", …]\`.`;
+
+  return new UsageError(`stdin is a socket, and a socket is never read — no ${what} was taken.`, {
+    hint:
+      `A socket on fd 0 is what \`spawn\`, \`exec\` and \`spawnSync({ input })\` give a child, and ` +
+      `it is also what an agent harness leaves behind — one that never ends, so reading it would ` +
+      `hang this command forever. Those two cannot be told apart without reading, so nothing was ` +
+      `sent to the server rather than a ${what} you may have sent being dropped. ${repair}` +
+      sayingNone,
+  });
+}
+
+/** The repair line for the verbs whose stdin carries a document body. */
+const BODY_REPAIR =
+  'Send it with `-m "…"` or with `--file <path>` — both work from any caller — or on a heredoc ' +
+  "or a pipe, which are read.";
+
+/**
+ * The paragraph every body-taking verb ends its `--help` with, written once so
+ * five verbs cannot describe the same three sources five ways.
+ */
+export const BODY_SOURCES_HELP =
+  '**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, ' +
+  "or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — " +
+  "`spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, " +
+  "whose socket never ends and would hang a read forever. So a run whose stdin is a socket and " +
+  "which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the " +
+  "empty body: a document written without the body you sent is worse than one not written. " +
+  "Redirect `< /dev/null` when you mean to send none.";
 
 export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promise<string> {
   const chunks: string[] = [];
@@ -316,10 +403,27 @@ export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promi
  *
  * A stdin that is a TTY is never read — a verb whose body is optional must not
  * hang waiting for a human who was not asked for one.
+ *
+ * A stdin that is a **socket** is neither read nor ignored: it is
+ * {@link stdinSocketRefusal}, and only when the caller named no other source —
+ * a `-m` or a `--file` already answers the question stdin was being asked, so
+ * that caller is never refused and never nagged.
  */
+export interface BodySource {
+  /** The noun the refusal names: `body`, `reply body`, `first turn`. */
+  readonly what?: string;
+  /**
+   * Whether sending nothing at all is a legal call. False on the verbs that
+   * cannot act without the text, so the refusal does not offer `< /dev/null` as
+   * a repair that would only produce a second usage error.
+   */
+  readonly mayBeOmitted?: boolean;
+}
+
 export async function resolveBody(
   context: CommandContext,
   dependencies: InputDependencies = {},
+  source: BodySource = {},
 ): Promise<string | undefined> {
   const message = context.flags.string("message");
   if (message !== undefined) return message;
@@ -327,7 +431,13 @@ export async function resolveBody(
   const file = context.flags.string("file");
   if (file !== undefined) return readBodyFile(context, file, dependencies);
 
-  if (!(dependencies.stdinIsBodySource ?? stdinCarriesABody())) return undefined;
+  const kind = dependencies.stdinKind ?? stdinKind();
+  if (kind === "socket") {
+    throw stdinSocketRefusal(source.what ?? "body", BODY_REPAIR, {
+      mayBeOmitted: source.mayBeOmitted ?? true,
+    });
+  }
+  if (!stdinCarriesABody(kind)) return undefined;
 
   const piped = await readAll(dependencies.stdin ?? stdinStream());
   return piped === "" ? undefined : piped;
@@ -339,7 +449,7 @@ export async function requireBody(
   what: string,
   dependencies: InputDependencies = {},
 ): Promise<string> {
-  const body = await resolveBody(context, dependencies);
+  const body = await resolveBody(context, dependencies, { what, mayBeOmitted: false });
   if (body === undefined || body === "") {
     throw new UsageError(`no ${what} to send.`, {
       hint: `Pass it with -m "…", with --file <path>, or pipe it in: \`… <<'CORPUS_EOF' … CORPUS_EOF\`. Always \`CORPUS_EOF\`, never \`EOF\`: text you are carrying can contain a line reading \`EOF\`, which ends the heredoc early and runs the rest as commands.`,

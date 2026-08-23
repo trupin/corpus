@@ -1,5 +1,12 @@
 import { UsageError } from "../../errors.js";
-import { readAll, stdinCarriesABody, stdinStream, type InputDependencies } from "../../input.js";
+import {
+  readAll,
+  stdinCarriesABody,
+  stdinKind,
+  stdinSocketRefusal,
+  stdinStream,
+  type InputDependencies,
+} from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -18,17 +25,27 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  */
 
 /** The same two knobs every body-taking verb has, so stdin behaves identically across them. */
-export type JobLogDependencies = Pick<InputDependencies, "stdin" | "stdinIsBodySource">;
+export type JobLogDependencies = Pick<InputDependencies, "stdin" | "stdinKind">;
+
+const LINE_REPAIR =
+  'Pass the line as an argument — `corpus job log <event-id> "step 1"` — or on a heredoc or a ' +
+  "pipe, which are read.";
 
 /**
  * The positional, else a stdin that actually carries a body.
  *
- * The `stdinCarriesABody()` probe is the whole point (CLI-007): this verb's
- * caller is the orchestrate skill running inside an agent harness, which hands
- * its child a **socket** on fd 0 that is never written to and never closed.
- * Reading it because "stdin is not a TTY" blocks forever, parking the agent
- * mid-job with no way to see why. A socket is not a body source; a heredoc's
- * regular file and a pipe's FIFO are, and both still read exactly as before.
+ * The `stdinKind()` probe is the whole point (CLI-007): this verb's caller is
+ * the orchestrate skill running inside an agent harness, which hands its child a
+ * **socket** on fd 0 that is never written to and never closed. Reading it
+ * because "stdin is not a TTY" blocks forever, parking the agent mid-job with no
+ * way to see why. A socket is not a body source; a heredoc's regular file and a
+ * pipe's FIFO are, and both still read exactly as before.
+ *
+ * The socket is refused **by name** rather than folded into the generic "no line
+ * to append" (CLI-066): that message told a `spawnSync({ input })` caller to
+ * pipe the line in, which is precisely what it had just done, on the one
+ * transport that is never read. The positional is checked first, so the agent's
+ * normal call under its harness never reaches this at all.
  */
 async function resolveLine(
   context: WorkspaceCommandContext,
@@ -36,7 +53,10 @@ async function resolveLine(
 ): Promise<string> {
   const positional = context.args.optional("line");
   if (positional !== undefined) return positional;
-  if (!(dependencies.stdinIsBodySource ?? stdinCarriesABody())) return "";
+
+  const kind = dependencies.stdinKind ?? stdinKind();
+  if (kind === "socket") throw stdinSocketRefusal("line", LINE_REPAIR, { mayBeOmitted: false });
+  if (!stdinCarriesABody(kind)) return "";
 
   // Only the shell's own trailing newline is stripped: interior newlines are
   // part of the line, and framing the file is the server's job, not the CLI's.
@@ -74,8 +94,10 @@ export const logCommand: WorkspaceCommandSpec = {
     "Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and " +
     "answers nothing in human mode: this is called many times while working one job. Omit the " +
     "line and it is read from stdin instead — but only when stdin is a pipe or a heredoc, never " +
-    "from a terminal or from the socket an agent harness hands down, where waiting for a line " +
-    "nobody is sending would hang the job (that case is a usage error, exit 2). Newlines " +
+    "from a terminal and never from a **socket**, which is what `spawn`, `exec`, " +
+    "`spawnSync({ input })` and an agent harness all hand a child: waiting for a line nobody is " +
+    "sending would hang the job, so a socket with no line argument is refused by name (exit 2, " +
+    "nothing appended) rather than logged as an empty step. Newlines " +
     "inside the line are preserved and sent as one request — the server owns the file's framing. " +
     "Under `--json` the response carries `appended`, which is `false` when the log has hit its " +
     "size cap and the line was dropped. An unknown event id is a server error (exit 5).",

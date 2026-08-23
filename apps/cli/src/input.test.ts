@@ -18,11 +18,12 @@ import {
   resolveTurnModel,
   splitTags,
   stdinCarriesABody,
+  stdinKind,
   warningSuffix,
 } from "./input.js";
 import { ParsedFlags, type FlagValue } from "./parse-args.js";
 import { createTestContext } from "./registry/fixtures.js";
-import { pipe } from "./testing/stdin.js";
+import { connectedSocket, pipe, unreadable } from "./testing/stdin.js";
 
 const flagsOf = (values: Readonly<Record<string, FlagValue>>): ParsedFlags =>
   new ParsedFlags(new Map(Object.entries(values)));
@@ -86,7 +87,7 @@ describe("resolveBody", () => {
   it("prefers --message over --file and stdin", async () => {
     const { context } = createTestContext({ flags: { message: "from -m", file: "/nope" } });
     await expect(
-      resolveBody(context, { stdin: pipe("from stdin"), stdinIsBodySource: true }),
+      resolveBody(context, { stdin: pipe("from stdin"), stdinKind: "fifo" }),
     ).resolves.toBe("from -m");
   });
 
@@ -96,33 +97,33 @@ describe("resolveBody", () => {
     const { context } = createTestContext({ flags: { file: "body.md" }, cwd: dir });
 
     await expect(
-      resolveBody(context, { stdin: pipe("from stdin"), stdinIsBodySource: true }),
+      resolveBody(context, { stdin: pipe("from stdin"), stdinKind: "fifo" }),
     ).resolves.toBe("from the file\n");
   });
 
   it("reads piped stdin when neither flag is given", async () => {
     const { context } = createTestContext({});
     await expect(
-      resolveBody(context, { stdin: pipe("line one\n", "line two\n"), stdinIsBodySource: true }),
+      resolveBody(context, { stdin: pipe("line one\n", "line two\n"), stdinKind: "fifo" }),
     ).resolves.toBe("line one\nline two\n");
   });
 
   it("passes the bytes through verbatim — fences, form blocks and the final newline", async () => {
     const body = "before\n\n```form\nname: x\n```\n\n~~~\nnested\n~~~\n";
     const { context } = createTestContext({});
-    await expect(
-      resolveBody(context, { stdin: pipe(body), stdinIsBodySource: true }),
-    ).resolves.toBe(body);
+    await expect(resolveBody(context, { stdin: pipe(body), stdinKind: "fifo" })).resolves.toBe(
+      body,
+    );
   });
 
   it("never reads a stdin that is not a body source, so a verb cannot hang", async () => {
     const { context } = createTestContext({});
     await expect(
-      resolveBody(context, { stdin: pipe("would hang"), stdinIsBodySource: false }),
+      resolveBody(context, { stdin: pipe("would hang"), stdinKind: "other" }),
     ).resolves.toBeUndefined();
   });
 
-  it("accepts a heredoc's regular file and a FIFO as body sources, and nothing else", async () => {
+  it("classifies every real descriptor a caller can put on fd 0", async () => {
     const dir = await mkdtemp(join(tmpdir(), "corpus-c003-fd-"));
     const file = join(dir, "body.md");
     await writeFile(file, "body", "utf8");
@@ -133,32 +134,117 @@ describe("resolveBody", () => {
     // O_NONBLOCK: opening a FIFO for reading otherwise waits for a writer.
     const pipeEnd = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
     const nullDevice = openSync("/dev/null", "r");
+    const socket = await connectedSocket();
     try {
-      expect(stdinCarriesABody(regular)).toBe(true);
-      expect(stdinCarriesABody(pipeEnd)).toBe(true);
-      // A character device is neither, and neither is the socket an agent
-      // harness hands down — the case that hung a body-optional verb before
-      // this probe existed.
-      expect(stdinCarriesABody(nullDevice)).toBe(false);
-      // A closed descriptor is exactly "no body on stdin", not a crash.
-      expect(stdinCarriesABody(9999)).toBe(false);
+      // The two that are read: a heredoc's regular file and a pipe's FIFO.
+      expect(stdinKind(regular)).toBe("file");
+      expect(stdinKind(pipeEnd)).toBe("fifo");
+      expect(stdinCarriesABody(stdinKind(regular))).toBe(true);
+      expect(stdinCarriesABody(stdinKind(pipeEnd))).toBe(true);
+
+      // A real socket — what `spawn`, `exec` and `spawnSync({ input })` hand a
+      // child, and what an agent harness leaves behind. Classified on its own,
+      // never folded into "no body offered" (CLI-066), and **never read**: this
+      // assertion is a `fstat` and nothing else, so it returns whether or not
+      // the peer ever writes or closes.
+      expect(stdinKind(socket.fd)).toBe("socket");
+      expect(stdinCarriesABody(stdinKind(socket.fd))).toBe(false);
+
+      // `< /dev/null`, a closed descriptor: nothing was offered, and that is a
+      // decision rather than an ambiguity.
+      expect(stdinKind(nullDevice)).toBe("other");
+      expect(stdinKind(9999)).toBe("other");
     } finally {
       closeSync(regular);
       closeSync(pipeEnd);
       closeSync(nullDevice);
+      await socket.close();
+    }
+  });
+
+  it("refuses a socket instead of resolving it to no body — and never reads it", async () => {
+    const { context } = createTestContext({});
+    // `unreadable()` rejects on the first read, so "this never blocked" is an
+    // assertion here rather than a timeout: the refusal is decided by `fstat`
+    // alone, with zero bytes taken off the descriptor.
+    const error: unknown = await resolveBody(context, {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    expect(String(error)).toContain("no body was taken");
+    const hint = isCliError(error) ? (error.hint ?? "") : "";
+    // The transport is named, both repairs are named, and the refusal states
+    // that nothing was sent — the three things the silent version never said.
+    expect(hint).toContain("spawnSync({ input })");
+    expect(hint).toContain("--file <path>");
+    expect(hint).toContain("< /dev/null");
+    expect(hint).toContain("nothing was sent to the server");
+  });
+
+  it("names the caller's own noun in the refusal, so a mandatory body reads right", async () => {
+    const { context } = createTestContext({});
+    const error: unknown = await requireBody(context, "reply body", {
+      stdin: unreadable(),
+      stdinKind: "socket",
+    }).catch((cause: unknown) => cause);
+
+    expect(String(error)).toContain("no reply body was taken");
+    // `thread reply` cannot act without a body, so the refusal does **not**
+    // offer `< /dev/null`: that repair would only produce a second usage error.
+    const hint = isCliError(error) ? (error.hint ?? "") : "";
+    expect(hint).not.toContain("< /dev/null");
+    expect(hint).toContain("--file <path>");
+  });
+
+  it("never refuses a caller that named its own source — -m and --file win over the probe", async () => {
+    const inline = createTestContext({ flags: { message: "from -m" } });
+    await expect(
+      resolveBody(inline.context, { stdin: unreadable(), stdinKind: "socket" }),
+    ).resolves.toBe("from -m");
+
+    const dir = await mkdtemp(join(tmpdir(), "corpus-c066-file-"));
+    await writeFile(join(dir, "body.md"), "from the file\n", "utf8");
+    const fromFile = createTestContext({ flags: { file: "body.md" }, cwd: dir });
+    await expect(
+      resolveBody(fromFile.context, { stdin: unreadable(), stdinKind: "socket" }),
+    ).resolves.toBe("from the file\n");
+  });
+
+  it("still reads a heredoc and a pipe, which is what the refusal must not cost", async () => {
+    const heredoc = createTestContext({});
+    await expect(
+      resolveBody(heredoc.context, { stdin: pipe("from a heredoc\n"), stdinKind: "file" }),
+    ).resolves.toBe("from a heredoc\n");
+
+    const piped = createTestContext({});
+    await expect(
+      resolveBody(piped.context, { stdin: pipe("from a pipe\n"), stdinKind: "fifo" }),
+    ).resolves.toBe("from a pipe\n");
+  });
+
+  it("stays silent for a terminal and for /dev/null — nothing was offered there", async () => {
+    for (const kind of ["tty", "other"] as const) {
+      const { context } = createTestContext({});
+      await expect(
+        resolveBody(context, { stdin: unreadable(), stdinKind: kind }),
+      ).resolves.toBeUndefined();
     }
   });
 
   it("treats an empty pipe as no body at all", async () => {
     const { context } = createTestContext({});
     await expect(
-      resolveBody(context, { stdin: pipe(""), stdinIsBodySource: true }),
+      resolveBody(context, { stdin: pipe(""), stdinKind: "fifo" }),
     ).resolves.toBeUndefined();
   });
 
   it("reports an unreadable --file as a usage error, not a crash", async () => {
     const { context } = createTestContext({ flags: { file: "/definitely/not/here.md" } });
-    const error: unknown = await resolveBody(context, { stdinIsBodySource: false }).catch(
+    const error: unknown = await resolveBody(context, { stdinKind: "other" }).catch(
       (cause: unknown) => cause,
     );
 
@@ -246,7 +332,7 @@ describe("requireBody", () => {
     for (const harness of [empty, absent]) {
       const error: unknown = await requireBody(harness.context, "reply body", {
         stdin: pipe(""),
-        stdinIsBodySource: true,
+        stdinKind: "fifo",
       }).catch((cause: unknown) => cause);
       expect(exitCodeFor(error)).toBe(ExitCode.usageError);
       expect(String(error)).toContain("no reply body to send");
@@ -255,9 +341,7 @@ describe("requireBody", () => {
 
   it("returns a body that is only whitespace — the server owns what is meaningful", async () => {
     const { context } = createTestContext({ flags: { message: " " } });
-    await expect(requireBody(context, "reply body", { stdinIsBodySource: false })).resolves.toBe(
-      " ",
-    );
+    await expect(requireBody(context, "reply body", { stdinKind: "other" })).resolves.toBe(" ");
   });
 });
 

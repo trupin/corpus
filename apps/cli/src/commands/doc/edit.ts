@@ -8,6 +8,7 @@ import {
 import { UsageError } from "../../errors.js";
 import {
   bodyFlags,
+  BODY_SOURCES_HELP,
   parseTriStateBoolean,
   plural,
   resolveBody,
@@ -396,7 +397,8 @@ export const editCommand: WorkspaceCommandSpec = {
     "`--extra-json`, `--unset` and the board keys all merge with whatever else happened rather than " +
     "overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them " +
     "anyway is welcome and is still checked, so a caller that always sends what it read needs no " +
-    "rule about which fields are which.",
+    "rule about which fields are which.\n\n" +
+    BODY_SOURCES_HELP,
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [
     {

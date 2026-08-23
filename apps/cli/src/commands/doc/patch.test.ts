@@ -432,7 +432,7 @@ describe("corpus doc patch — where the text comes from", () => {
     const harness = stubContext(stub, { args: ARGS, flags: { stdin: true } });
 
     await runDocPatch(harness.context, {
-      stdinIsBodySource: true,
+      stdinKind: "fifo",
       stdin: pipe('{"old": "It\'s `here`.\\n", "new": "It is here.\\n", "all": true}\n'),
     });
 
@@ -464,13 +464,50 @@ describe("corpus doc patch — where the text comes from", () => {
     const harness = stubContext(stub, { args: ARGS, flags: { stdin: true } });
 
     const error: unknown = await runDocPatch(harness.context, {
-      stdinIsBodySource: false,
+      stdinKind: "other",
       stdin: unreadable(),
     }).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(String(error)).toContain("nothing is piped in");
     expect(stub.requests).toHaveLength(0);
+  });
+
+  /**
+   * CLI-066, and here the case is sharper than anywhere else: `--stdin` **names
+   * stdin as the source**. Telling that caller "nothing is piped in" states the
+   * opposite of what happened — `spawnSync({ input })` piped the whole request
+   * in, over the one transport this verb will not read.
+   */
+  it("names the socket rather than claiming nothing was piped in", async () => {
+    const stub = await startStubServer(jsonResponder(200, patched()));
+    const harness = stubContext(stub, { args: ARGS, flags: { stdin: true } });
+
+    const error: unknown = await runDocPatch(harness.context, {
+      stdinKind: "socket",
+      stdin: unreadable(),
+    }).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("stdin is a socket");
+    expect(String(error)).not.toContain("nothing is piped in");
+    // `--stdin` named stdin as the source, so "send none" is not a repair here
+    // and the refusal does not offer `< /dev/null`.
+    expect(isCliError(error) ? (error.hint ?? "") : "").not.toContain("< /dev/null");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("leaves --old/--new alone: a socket on fd 0 is not a patch source", async () => {
+    const stub = await startStubServer(jsonResponder(200, patched()));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { old: "6.2%", new: "6.4%" },
+      actor: "agent",
+    });
+
+    await runDocPatch(harness.context, { stdinKind: "socket", stdin: unreadable() });
+
+    expect(stub.requests).toHaveLength(1);
   });
 
   it("names what is wrong with a --stdin document that is not a patch", async () => {
@@ -487,7 +524,7 @@ describe("corpus doc patch — where the text comes from", () => {
     for (const [document, expected] of cases) {
       const harness = stubContext(stub, { args: ARGS, flags: { stdin: true } });
       const error: unknown = await runDocPatch(harness.context, {
-        stdinIsBodySource: true,
+        stdinKind: "fifo",
         stdin: pipe(document),
       }).catch((cause: unknown) => cause);
 
