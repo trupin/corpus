@@ -568,7 +568,7 @@ changes behaviour and nothing below waits on them.
 | SERVER-093 | Nothing reads a history the open window is still holding | done | P1 | SERVER-091 |
 | SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
 | SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
-| SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | todo | P2 | — |
+| SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | done | P2 | — |
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | done | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | done | P1 | — |
 | SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
@@ -1271,7 +1271,7 @@ was written for.
 | AGENT-044 | The unknown event type keeps its rule, without plugins | done | P0 | SHARED-067 |
 | UI-154 | Relocate the reader's open payloads out of the plugin surface, then delete it | done | P0 | SHARED-067 |
 | SERVER-139 | Delete the server's plugin discovery, registry and derived-field seam | done | P0 | SHARED-067 |
-| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | todo | P2 | — |
+| SERVER-140 | `commit-out-of-band` races chokidar against `selfWrites.record` — flaky under full-suite load (SERVER-137 finding) | done | P2 | — |
 | UI-155 | Delete the UI's plugin registry, slot dispatch and plugin columns | done | P0 | UI-154 |
 | CLI-062 | Delete the CLI's plugin discovery, command topics and template install | done | P0 | SHARED-067 |
 | CLI-063 | The agent cannot reorder boards in one commit, and the UI now can (PR #58 review) | todo | P2 | CONTRACT-080, CLI-060 |
@@ -1325,7 +1325,7 @@ that nothing tells you your skills are stale until the agent tries the verb.
 | CLI-057 | `doc show` takes one id, so reading five documents costs five processes | todo | P2 | — |
 | CLI-058 | Every call pays ~210ms of startup, and the agent loop makes hundreds | todo | P1 | — |
 | CLI-059 | A workspace's skills can cite a verb the tool removed, and nothing says so | done | P2 | — |
-| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | todo | P1 | — |
+| SERVER-133 | SPEC calls the staleness thresholds defaults, and nothing can change them | done | P1 | — |
 | PLUGINS-018 | A todo item's due date never reaches its document, so Attention cannot see it | done | P1 | PLUGINS-016 |
 | CONTRACT-070 | The heading scan is written twice, and a parity test is holding them together (CLI-055 finding) | done | P2 | — |
 
@@ -1524,7 +1524,7 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-081 | A folder listing that stops at the folder: `folderScope=self` | done | P0 | opus | — |
-| SERVER-141 | List a folder's own documents | todo | P0 | opus | CONTRACT-081 |
+| SERVER-141 | List a folder's own documents | done | P0 | opus | CONTRACT-081 |
 | UI-161 | The explorer draws a document under every expanded ancestor | todo | P0 | opus | CONTRACT-081, SERVER-141 |
 | SHARED-068 | Frontmatter is edited where it is shown — the SPEC rider, signed 2026-08-23 | done | P0 | fable | — |
 | UI-162 | The chip strip is the frontmatter editor | todo | P0 | fable | SHARED-068 |
@@ -1533,3 +1533,4 @@ Critical path: CONTRACT-081 → SERVER-141 → UI-161.
 | SHARED-070 | What else the agent pays for — a measured audit of token cost | todo | P1 | fable | — |
 | AGENT-045 | The skills never ask for brief help, so CLI-056's saving is not taken | todo | P1 | opus | CLI-056 |
 | UI-164 | A folder act refuses a document and the explorer says nothing (CONTRACT-078 AC4) | todo | P2 | opus | CONTRACT-078 |
+| SERVER-142 | An out-of-band commit stages the tree as it later stands (SERVER-140 escalation) — **not in v0.20.0** | todo | P1 | fable | — |

@@ -17,6 +17,7 @@ import {
   CONTEXT_MAX_SECTION_CHARS,
   ContextPackSchema,
   HEADING_PATH_SEPARATOR,
+  headingSections,
   RelatedQuerySchema,
   SearchQuerySchema,
   type ContextPack,
@@ -25,7 +26,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
-import { headingSections } from "../core/headings.js";
 import { parseDocument } from "../core/index.js";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { relatedDocs } from "../docs/index.js";

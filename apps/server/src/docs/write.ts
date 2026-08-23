@@ -74,6 +74,7 @@ import {
 import type { DocumentRoot, ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
 import { anchorClaimantIds, isIdTaken } from "./read.js";
+import type { StalenessThresholds } from "./staleness.js";
 import { folderTreeSignature } from "./tree.js";
 
 /**
@@ -506,6 +507,19 @@ export interface DocsWorkspace {
    * and nothing about the write.
    */
   readonly reflect?: WriteReflectObserver | undefined;
+  /**
+   * SPEC.md §5's staleness ramp for this workspace (SERVER-133).
+   *
+   * The write path never asks a document's age — but two of its verbs run a
+   * *saved query* while deciding what to write: §5's kanban coupling asks
+   * whether a document is in a board's scope, and a bulk Save's whole-result-set
+   * entry asks what the set is. §9.2 promises a saved query means one thing
+   * wherever it is asked, so a query naming `stale=aging` must mean the same
+   * here as it does on the board that drew it.
+   *
+   * Optional like the other seams: omitted, the shipped 30/90/180.
+   */
+  readonly staleness?: StalenessThresholds | undefined;
 }
 
 /**

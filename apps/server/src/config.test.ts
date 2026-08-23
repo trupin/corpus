@@ -22,7 +22,9 @@ import {
   readWorkspaceConfig,
   resolveUiDistDir,
   resolveWorkspace,
+  stalenessThresholdsOf,
 } from "./config.js";
+import { STALENESS_THRESHOLD_DAYS } from "./docs/staleness.js";
 
 const LONG_TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 
@@ -82,6 +84,81 @@ describe("WorkspaceConfigSchema", () => {
       attachments: DEFAULT_ATTACHMENT_LIMITS,
       editAcknowledgment: { idleMs: EDIT_ACK_IDLE_MS },
       reflect: { quiet: DEFAULT_REFLECT_QUIET_MINUTES },
+      staleness: {
+        aging: STALENESS_THRESHOLD_DAYS.aging,
+        stale: STALENESS_THRESHOLD_DAYS.stale,
+        veryStale: STALENESS_THRESHOLD_DAYS["very-stale"],
+      },
+    });
+  });
+
+  // SPEC.md §5 has called 30/90/180 "defaults" from the start; SERVER-133 made
+  // the word true. Omitting the block must therefore change nothing at all.
+  describe("SPEC.md §5's staleness thresholds (SERVER-133)", () => {
+    it("is exactly 30/90/180 when the block is absent", () => {
+      const parsed = WorkspaceConfigSchema.parse({ version: 1, token: LONG_TOKEN });
+      expect(parsed.staleness).toEqual({ aging: 30, stale: 90, veryStale: 180 });
+      expect(stalenessThresholdsOf(parsed.staleness)).toEqual(STALENESS_THRESHOLD_DAYS);
+    });
+
+    it("takes each threshold from the file, defaulting the ones it does not name", () => {
+      const parsed = WorkspaceConfigSchema.parse({
+        version: 1,
+        token: LONG_TOKEN,
+        staleness: { aging: 7, stale: 14, veryStale: 30 },
+      });
+      expect(stalenessThresholdsOf(parsed.staleness)).toEqual({
+        aging: 7,
+        stale: 14,
+        "very-stale": 30,
+      });
+
+      const partial = WorkspaceConfigSchema.parse({
+        version: 1,
+        token: LONG_TOKEN,
+        staleness: { aging: 7 },
+      });
+      expect(partial.staleness).toEqual({ aging: 7, stale: 90, veryStale: 180 });
+    });
+
+    it.each([
+      ["a misordered pair", { aging: 90, stale: 30, veryStale: 180 }],
+      ["a misordered upper pair", { aging: 30, stale: 200, veryStale: 180 }],
+      ["two tiers on the same day", { aging: 30, stale: 30, veryStale: 180 }],
+      ["a zero", { aging: 0, stale: 90, veryStale: 180 }],
+      ["a negative", { aging: -30, stale: 90, veryStale: 180 }],
+      ["a fraction", { aging: 30.5, stale: 90, veryStale: 180 }],
+      ["a string", { aging: "30", stale: 90, veryStale: 180 }],
+    ])("refuses %s", (_label, staleness) => {
+      expect(
+        WorkspaceConfigSchema.safeParse({ version: 1, token: LONG_TOKEN, staleness }).success,
+      ).toBe(false);
+    });
+
+    it("names the fault rather than silently sorting", () => {
+      const result = WorkspaceConfigSchema.safeParse({
+        version: 1,
+        token: LONG_TOKEN,
+        staleness: { aging: 90, stale: 30, veryStale: 180 },
+      });
+      expect(result.success).toBe(false);
+      const issue = result.success ? undefined : result.error.issues[0];
+      expect(issue?.path.join(".")).toBe("staleness.stale");
+      expect(issue?.message).toContain('"aging" (90 days) is not less than "stale" (30 days)');
+      // The way out is in the sentence, not in a second lookup.
+      expect(issue?.message).toContain("30/90/180");
+    });
+
+    it("says why zero is refused, not only that it is too small", () => {
+      const result = WorkspaceConfigSchema.safeParse({
+        version: 1,
+        token: LONG_TOKEN,
+        staleness: { aging: 0 },
+      });
+      expect(result.success).toBe(false);
+      expect(result.success ? "" : result.error.issues[0]?.message).toContain(
+        "every document written today",
+      );
     });
   });
 
@@ -369,6 +446,36 @@ describe("loadServerConfig", () => {
       logLevel: "info",
       warnings: [],
     });
+  });
+
+  it("resolves the staleness ramp into the tier spelling the ramp uses", () => {
+    const tuned = makeWorkspace("tuned", {
+      version: 1,
+      token: LONG_TOKEN,
+      staleness: { aging: 7, stale: 14, veryStale: 21 },
+    });
+    expect(
+      loadServerConfig({ workspace: tuned, env: {}, cwd: root, packageRoot: root }).staleness,
+    ).toEqual({ aging: 7, stale: 14, "very-stale": 21 });
+
+    const plain = makeWorkspace("plain-ramp", { version: 1, token: LONG_TOKEN });
+    expect(
+      loadServerConfig({ workspace: plain, env: {}, cwd: root, packageRoot: root }).staleness,
+    ).toEqual(STALENESS_THRESHOLD_DAYS);
+  });
+
+  it("refuses a misordered ramp at boot, naming the fault", () => {
+    const bad = makeWorkspace("bad-ramp", {
+      version: 1,
+      token: LONG_TOKEN,
+      staleness: { aging: 90, stale: 30, veryStale: 180 },
+    });
+    expect(() =>
+      loadServerConfig({ workspace: bad, env: {}, cwd: root, packageRoot: root }),
+    ).toThrow(ConfigError);
+    expect(() =>
+      loadServerConfig({ workspace: bad, env: {}, cwd: root, packageRoot: root }),
+    ).toThrow(/must ascend/);
   });
 
   it("loads a portless config with the default port and host (Adjudication 6)", () => {

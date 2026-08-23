@@ -50,7 +50,7 @@ import {
   UNANSWERED_FORM_COUNT_SQL,
   UNREAD_SQL,
 } from "./needs.js";
-import { STALE_TIER_SQL } from "./staleness.js";
+import { STALE_TIER_SQL, type StalenessThresholds } from "./staleness.js";
 
 export { DOCS_ROOT, folderPathPrefix } from "./filters.js";
 
@@ -371,8 +371,13 @@ const sortOf = (sort: DocSort, searching: boolean): DocSort =>
  * Runs the collection query. Exactly two statements execute per call: the page
  * and its total.
  */
-export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): DocList {
-  const compiled = compileFilters(query, nowMs);
+export function queryDocs(
+  db: ProjectionDb,
+  query: DocsQuery,
+  nowMs: number,
+  thresholds?: StalenessThresholds,
+): DocList {
+  const compiled = compileFilters(query, nowMs, thresholds);
   const where = whereClause(compiled);
 
   // `sort=relevance` without `q` is a 400 from the contract's own refinement, so
@@ -433,8 +438,13 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
  * arbitrary but stable — a Save's report order is its own concern, and the
  * query's `sort` decides display order, not membership.
  */
-export function queryDocIds(db: ProjectionDb, query: FilterQuery, nowMs: number): string[] {
-  const compiled = compileFilters(query, nowMs);
+export function queryDocIds(
+  db: ProjectionDb,
+  query: FilterQuery,
+  nowMs: number,
+  thresholds?: StalenessThresholds,
+): string[] {
+  const compiled = compileFilters(query, nowMs, thresholds);
   const searching = compiled.match !== null;
   const sql = `${searching ? `WITH ${COUNT_MATCH_CTE}\n` : ""}SELECT d.id AS id
   ${FROM_SQL}
@@ -470,8 +480,9 @@ export function matchesQuery(
   query: FilterQuery,
   docId: string,
   nowMs: number,
+  thresholds?: StalenessThresholds,
 ): boolean {
-  const compiled = compileFilters(query, nowMs);
+  const compiled = compileFilters(query, nowMs, thresholds);
   // A `q` that carried no indexable token is an empty result set by
   // construction, so no document is in it — including this one.
   if (compiled.emptyByQuery) return false;

@@ -308,7 +308,14 @@ export async function createDocument(
       input.stage === undefined
         ? null
         : withSpeculativeDocumentRow(workspace.projection, path, parsedDoc, () =>
-            decideStageStatus(workspace.projection, id, path, input.stage ?? null, workspace.now()),
+            decideStageStatus(
+              workspace.projection,
+              id,
+              path,
+              input.stage ?? null,
+              workspace.now(),
+              workspace.staleness,
+            ),
           );
     const coupledStatus = coupling?.status ?? null;
     if (coupledStatus !== null && coupledStatus !== fields["status"]) {

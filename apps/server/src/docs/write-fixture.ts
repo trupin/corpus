@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_ATTACHMENT_LIMITS, type AttachmentLimits } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
+import type { StalenessThresholds } from "./staleness.js";
 import { disableAutoMaintenance, sanitizeGitEnv } from "../git/index.js";
 import {
   createProjectionQueueMirror,
@@ -84,6 +85,13 @@ export interface WriteWorkspaceOptions {
    * fixtures never call `start()`.
    */
   readonly reflectQuietMinutes?: number | undefined;
+  /**
+   * SPEC.md §5's staleness ramp (SERVER-133). Passed by the suite that proves
+   * the ramp is read from configuration rather than hard-coded; omitted, the
+   * server resolves the shipped 30/90/180 and no other fixture has to know the
+   * block exists.
+   */
+  readonly staleness?: StalenessThresholds | undefined;
 }
 
 const serverConfig = (
@@ -91,9 +99,11 @@ const serverConfig = (
   attachments: AttachmentLimits,
   editAckIdleMs: number | undefined,
   reflectQuietMinutes: number | undefined,
+  staleness: StalenessThresholds | undefined,
 ): ServerConfig => ({
   ...(editAckIdleMs === undefined ? {} : { editAcknowledgment: { idleMs: editAckIdleMs } }),
   ...(reflectQuietMinutes === undefined ? {} : { reflect: { quiet: reflectQuietMinutes } }),
+  ...(staleness === undefined ? {} : { staleness }),
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
   attachments,
@@ -155,6 +165,7 @@ export function createWriteWorkspace(
     options.attachments ?? DEFAULT_ATTACHMENT_LIMITS,
     options.editAckIdleMs,
     options.reflectQuietMinutes,
+    options.staleness,
   );
   const db = openProjection(config, { populate: false });
 

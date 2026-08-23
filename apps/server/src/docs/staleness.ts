@@ -13,8 +13,24 @@
 import { STALE_TIERS, type StaleTier } from "@corpus/contract";
 import { formatInstant } from "../core/time.js";
 
-/** SPEC.md §5's default thresholds, in days, ascending. */
-export const STALENESS_THRESHOLD_DAYS: Readonly<Record<StaleTier, number>> = {
+/**
+ * How many days without activity each tier begins at. Ascending, positive, and
+ * exactly three — one per tier the contract declares, so a tier cannot be
+ * configured into or out of existence.
+ */
+export type StalenessThresholds = Readonly<Record<StaleTier, number>>;
+
+/**
+ * SPEC.md §5's **default** thresholds, in days, ascending.
+ *
+ * The spec has always called these defaults, and until SERVER-133 nothing could
+ * override them: this was a constant with a comment claiming otherwise, and the
+ * only lever anyone had was marking reference material `evergreen` one document
+ * at a time. A workspace now sets its own in `.corpus/config.json`'s `staleness`
+ * block; these are what it falls back to, and what the word "defaults" in §5
+ * now names.
+ */
+export const STALENESS_THRESHOLD_DAYS: StalenessThresholds = {
   aging: 30,
   stale: 90,
   "very-stale": 180,
@@ -34,11 +50,30 @@ export const ACTIVITY_SQL = "MAX(COALESCE(d.reviewed, ''), COALESCE(d.updated, '
 /** The instant a document must not have been touched since to reach each tier. */
 export type StalenessCutoffs = Readonly<Record<StaleTier, string>>;
 
-export function stalenessCutoffs(nowMs: number): StalenessCutoffs {
+/**
+ * The three cutoffs, from the clock and the workspace's thresholds.
+ *
+ * **This is the only place the numbers enter the system** (SERVER-133). The SQL
+ * — {@link atOrBeyondSql} and {@link STALE_TIER_SQL} — binds `@cutoff_<tier>` by
+ * name and carries no day count of its own, so configuring the ramp changes
+ * what a query *binds* and never what any projected row holds. That is what
+ * makes the answer to "what happens to the projection when they change" be
+ * *nothing*: no row stores a tier, `db rebuild` writes the same bytes it did
+ * before, and `db doctor` cannot notice the edit — which is the point, since a
+ * doctor that failed after a legal config edit would be worse than no config.
+ *
+ * `thresholds` defaults to the shipped ramp for the same reason the write
+ * fixture's `attachments` and `editAckIdleMs` do: a caller with no opinion
+ * states none, and the suites that prove the config is *read* pass their own.
+ */
+export function stalenessCutoffs(
+  nowMs: number,
+  thresholds: StalenessThresholds = STALENESS_THRESHOLD_DAYS,
+): StalenessCutoffs {
   return {
-    aging: formatInstant(nowMs - STALENESS_THRESHOLD_DAYS.aging * MS_PER_DAY),
-    stale: formatInstant(nowMs - STALENESS_THRESHOLD_DAYS.stale * MS_PER_DAY),
-    "very-stale": formatInstant(nowMs - STALENESS_THRESHOLD_DAYS["very-stale"] * MS_PER_DAY),
+    aging: formatInstant(nowMs - thresholds.aging * MS_PER_DAY),
+    stale: formatInstant(nowMs - thresholds.stale * MS_PER_DAY),
+    "very-stale": formatInstant(nowMs - thresholds["very-stale"] * MS_PER_DAY),
   };
 }
 

@@ -919,3 +919,118 @@ describe("a hand-authored profile keeps working after the requirement lands", ()
     expect(payload.issues.map((issue) => issue.path)).toEqual(["body.extra.description"]);
   });
 });
+
+/**
+ * SPEC.md §5 and §9.2, SERVER-096: `updated` is *when the content changed*, not
+ * *when the bytes moved*. The ramp reads it (`max(updated, reviewed)`) and every
+ * default list orders by it, so a write about how a document is drawn must
+ * leave it where it was. See `PRESENTATION_KEYS` in `update.ts` for the class
+ * and the rule for joining it.
+ */
+describe("PUT /api/docs/{id} — `updated` is when the content changed", () => {
+  /** A `type: view` with a stored width, as `useColumnWidth` writes it. */
+  async function withWidth(name: string): Promise<{ id: string; path: string }> {
+    ws = createWriteWorkspace(name);
+    ws.reproject();
+    const created = await createDoc(ws, { type: "view", title: "Open threads" });
+    ws.advance(SQUASH_IDLE_MS);
+    await putDoc(ws, created.id, { extra: { width: 444 } });
+    return created;
+  }
+
+  const updatedOf = (path: string): unknown => parseDocument(ws.read(path)).data["updated"];
+
+  it("leaves `updated` where it was for a width-only save, and still writes and commits it", async () => {
+    const created = await withWidth("update-width-only");
+    const before = updatedOf(created.path);
+    const head = ws.head();
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, { extra: { width: 725 } });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    // The resize is on disk and in the history — the width still syncs to every
+    // browser (§10). Only the timestamp stays put.
+    expect(parsed.data["width"]).toBe(725);
+    expect(parsed.data["updated"]).toBe(before);
+    expect(ws.head()).not.toBe(head);
+    expect(ws.log("%s")[0]).toContain("doc edit: Open threads");
+  });
+
+  it("clears a width without moving `updated` either", async () => {
+    const created = await withWidth("update-width-clear");
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, { extra: { width: null } });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    expect(parsed.data["width"]).toBeUndefined();
+    expect(parsed.data["updated"]).toBe(before);
+  });
+
+  it("moves `updated` when a real edit rides along with the width", async () => {
+    const created = await withWidth("update-width-with-edit");
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, {
+      extra: { width: 725 },
+      title: "Open threads, all folders",
+    });
+
+    expect(response.status).toBe(200);
+    const parsed = parseDocument(ws.read(created.path));
+    expect(parsed.data["width"]).toBe(725);
+    expect(parsed.data["updated"]).not.toBe(before);
+  });
+
+  // Every other field class this route can write is *substance*: it changes an
+  // answer to a question about the document, so it stamps. Asserted as a matrix
+  // rather than one case, so a later exemption cannot be added quietly.
+  it.each([
+    ["title", { title: "Renamed" }],
+    ["body", { body: "a real edit" }],
+    ["tags", { addTags: ["finance"] }],
+    ["status", { status: "resolved" }],
+    ["due", { due: "2026-09-01" }],
+    ["evergreen", { evergreen: true }],
+    ["query", { query: { type: "thread" } }],
+    ["stage", { stage: "doing" }],
+    ["an extra key that is not width", { extra: { colour: "accent" } }],
+  ])("still moves `updated` for %s", async (label, patch) => {
+    const created = await withWidth(`update-stamps-${label.replace(/\W+/g, "-")}`);
+    const before = updatedOf(created.path);
+
+    ws.advance(SQUASH_IDLE_MS);
+    const response = await putDoc(ws, created.id, patch);
+
+    expect(response.status).toBe(200);
+    expect(updatedOf(created.path)).not.toBe(before);
+  });
+
+  it("does not reorder the projection's default list — the ordering §9.2 publishes", async () => {
+    ws = createWriteWorkspace("update-width-ordering");
+    ws.reproject();
+    const view = await createDoc(ws, { type: "view", title: "Open threads" });
+    ws.advance(SQUASH_IDLE_MS);
+    const note = await createDoc(ws, { type: "note", title: "Written in", body: "words" });
+
+    const listed = async (): Promise<string[]> => {
+      const response = await ws.request("/api/docs?limit=10");
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as { items: { id: string }[] };
+      return payload.items.map((item) => item.id);
+    };
+
+    // Newest-updated first, so the note the person wrote leads.
+    expect((await listed()).slice(0, 2)).toEqual([note.id, view.id]);
+
+    ws.advance(SQUASH_IDLE_MS);
+    await putDoc(ws, view.id, { extra: { width: 725 } });
+
+    expect((await listed()).slice(0, 2)).toEqual([note.id, view.id]);
+  });
+});

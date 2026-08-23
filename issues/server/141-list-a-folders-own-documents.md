@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -28,15 +28,15 @@ from a parent. `folderScope=tree` keeps today's SQL byte for byte.
 
 ## Acceptance Criteria
 
-- [ ] `folderScope=self` matches a document whose path is `<folder>/<name>.md`
+- [x] `folderScope=self` matches a document whose path is `<folder>/<name>.md`
       and no document whose path has a further `/` after the prefix.
-- [ ] `folderScope=self` matches no thread by inheritance — the thread's own
+- [x] `folderScope=self` matches no thread by inheritance — the thread's own
       path decides, like every other document's.
-- [ ] The page statement and the COUNT statement share the condition, so
+- [x] The page statement and the COUNT statement share the condition, so
       `page.total` counts the set the page draws from.
-- [ ] `folderScope=tree` produces the same SQL and the same rows as today. A
+- [x] `folderScope=tree` produces the same SQL and the same rows as today. A
       test pins that, not a reading of the diff.
-- [ ] A folder whose name contains `%`, `_` or `\` still matches exactly — the
+- [x] A folder whose name contains `%`, `_` or `\` still matches exactly — the
       existing `likePrefix` escaping is not bypassed by the new condition.
 
 ## Technical Design
@@ -110,18 +110,100 @@ conjunct removed is testing nothing.
 
 ## E2E Verification Log
 
-### Reproduction (bugs only)
-_[Agent fills]_
+**Model: Opus 5 (1M context).** Real workspace `scratchpad/ws096`, real server on
+**127.0.0.1:8791** — never 8765 or 5173.
 
-### Post-Implementation Verification
-_[Agent fills]_
+### Reproduction (2026-08-23)
+
+`todos/a.md`, `todos/unfiled/b.md`, and a thread on `a` filed in `data/threads/`.
+
+```
+GET /api/docs?folder=todos&limit=100
+  → ["data/threads/th_cucxjkav.md","data/docs/todos/unfiled/b.md","data/docs/todos/a.md"]  total=3
+
+GET /api/docs?folder=todos&folderScope=self&limit=100
+  → ["data/threads/th_cucxjkav.md","data/docs/todos/unfiled/b.md","data/docs/todos/a.md"]  total=3
+                                                                          ↑ identical
+
+GET /api/docs?folderScope=self&limit=100
+  → 400 query.folderScope: "`folderScope` narrows what `folder` matches and needs a
+        `folder` to narrow. Pass `folder`, or drop `folderScope`."
+```
+
+The parameter was accepted and read by nothing: `self` answered the subtree plus
+the inherited thread. (The `400` already worked — it is the contract's own
+refinement, not the server's.)
+
+### Post-implementation verification (server restarted, pid 25656)
+
+```
+folder=todos&limit=100                          → [threads/th_cucxjkav, todos/unfiled/b, todos/a]  total=3
+folder=todos&folderScope=tree&limit=100         → [threads/th_cucxjkav, todos/unfiled/b, todos/a]  total=3
+folder=todos&folderScope=self&limit=100         → [todos/a]                                        total=1
+folder=todos&folderScope=self&limit=1           → [todos/a]                                        total=1
+folder=todos/unfiled&folderScope=self&limit=100 → [todos/unfiled/b]                                total=1
+folder=nowhere&folderScope=self&limit=100       → []                                               total=0
+```
+
+- `tree` is unchanged, and equals the no-parameter default.
+- `self` drops the sub-folder's document **and** the inherited thread.
+- `page.total` is 1 at `limit=1` as well as at `limit=100`, so the COUNT carries
+  the same condition the page does.
+
+**The root**, with `data/docs/atroot.md` dropped in out of band:
+
+```
+folder=/&folderScope=self&limit=100          → ["data/docs/atroot.md"]  total=1
+folder=data/docs&folderScope=self&limit=100  → ["data/docs/atroot.md"]  total=1
+folder=/&folderScope=tree&limit=200          → 15 documents, atroot included  total=15
+```
+
+**A folder name holding `%` and `_`** — `data/docs/50%_off/`, with a sub-folder:
+
+```
+folder=50%25_off&folderScope=self&limit=100 → ["data/docs/50%_off/own.md"]                         total=1
+folder=50%25_off&folderScope=tree&limit=100 → ["data/docs/50%_off/sub/deep.md","…/50%_off/own.md"] total=2
+```
+
+### Tests
+
+`./node_modules/.bin/vitest run apps/server/src/docs/query.test.ts` → **138
+passed**, 7 of them the new `folderScope` block.
+
+**Falsification, twice, restoring `filters.ts` byte-for-byte each time:**
+
+1. **The `instr(...) = 0` conjunct deleted** (replaced with a tautology so the
+   binding stays live) → **5 failed | 2 passed**. `doc_deep` and `doc_deeper`
+   reappear in the `self` set, `page.total` reads 4 instead of 2, and the root's
+   `self` returns the whole corpus. The two survivors are correct: *inherits
+   nothing* survives because the same edit keeps the `EXISTS` half dropped, and
+   *a folder naming nothing* is empty either way.
+2. **`@folderLen` bound over the escaped literal** (`likePrefix(path).length`
+   instead of `path.length`) → **1 failed | 6 passed**, and the one that fails is
+   *escapes a folder name holding `%`, `_` and a backslash*: `data/docs/50%_off\deals`
+   escapes to four extra characters, `substr` then starts past the separator,
+   `instr` finds none, and the sub-folder's document is listed as the folder's
+   own. That test is the only thing standing between this fix and that bug.
+
+**A test that could not fail with the fix absent**: *answers an empty page at
+either scope for a folder naming nothing* passes either way — it pins the
+contract's "a `folder` naming nothing answers an empty page at either scope",
+which is a statement about what must **not** change.
+
+### Fixture gotcha, recorded
+
+`corpus-fixture.ts` silently drops a document whose id the contract's
+`DocumentIdSchema` refuses, and `doc_own_a` is refused — an id carries no second
+underscore. The rows simply never appear, with no error, which reads exactly
+like a broken WHERE clause. Ids in these fixtures are `doc_owna`, not
+`doc_own_a`.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)

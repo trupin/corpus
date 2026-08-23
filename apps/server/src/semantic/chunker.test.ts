@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { HEADING_PATH_SEPARATOR } from "@corpus/contract";
+import { enclosingHeadings, HEADING_PATH_SEPARATOR } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { enclosingHeadings } from "../core/headings.js";
 import {
   CHUNK_CHARS_PER_TOKEN,
   CHUNK_CHAR_BUDGET,

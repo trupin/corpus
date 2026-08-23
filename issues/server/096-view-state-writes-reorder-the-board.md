@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -74,16 +74,16 @@ than guessing — this is a visible ordering rule for every list in the product.
 
 ## Acceptance Criteria
 
-- [ ] The `updated` question above is answered explicitly, in this file, with
+- [x] The `updated` question above is answered explicitly, in this file, with
       the reasoning — not settled implicitly by whatever the diff does
-- [ ] Reproduce first: resize a column, then confirm its view document has
+- [x] Reproduce first: resize a column, then confirm its view document has
       jumped to the head of `GET /api/docs` ordered by `updated`
-- [ ] A pure view-state write no longer reorders the board
-- [ ] Whatever rule is chosen is applied **consistently**, not just to `width`:
+- [x] A pure view-state write no longer reorders the board
+- [x] Whatever rule is chosen is applied **consistently**, not just to `width`:
       any other field of the same class gets the same treatment, and the class is
       named rather than enumerated by accident
-- [ ] A real edit still updates `updated`. Assert both directions
-- [ ] Check the projection: `updated` is a column there too, and the ordering is
+- [x] A real edit still updates `updated`. Assert both directions
+- [x] Check the projection: `updated` is a column there too, and the ordering is
       SQL. A fix that only corrects the file leaves the list wrong
 
 ## Technical Design
@@ -116,18 +116,145 @@ whether `updated` moves; plus a projection-level test that ordering matches.
 4. Expected: order unchanged.
 5. Actual: the view document is now first.
 
+## The answer, and the class
+
+**`updated` is when the document's *content* changed, not when its bytes moved.**
+Three things settle it, and none of them is a preference:
+
+1. **The code already says so.** `updateDocumentLocked` has exempted `reviewed`
+   from stamping since SERVER-004, with exactly this reasoning — "staleness runs
+   from `max(updated, reviewed)`, so stamping `updated` here would make review
+   indistinguishable from editing". A byte-movement reading of `updated` was
+   never the shipped one. This issue extends an existing rule rather than
+   inventing one.
+2. **§5 reads it as an age.** The staleness ramp runs off `max(updated,
+   reviewed)` and asks "does this still need attention". A write that changes
+   nothing a reader could read makes a document no less stale, so a bytes
+   reading would let a resize reset the ramp.
+3. **§9.2 reads it as recency of work.** "Newest-updated first" is the default
+   order of every list, which is the visible defect: the resized view document
+   led every list ahead of documents someone had written in.
+
+**The class is presentation state — a key that records how a document is
+*shown*, never what it holds.** The rule for membership is stated in code
+(`PRESENTATION_KEYS` in `apps/server/src/docs/update.ts`): a key joins when
+changing it changes no answer to any question about the document — not what it
+says, not what is being asked of it, not where it sits in the corpus.
+
+**Today the class has exactly one member, `width`,** and that is the honest count
+rather than an accidental enumeration. Every other key this route writes fails
+the test: `status`, `tags`, `due`, `stage`, `evergreen`, a board's `columns`, a
+view's `query` and the title all change such an answer. It is named as a class
+so the second member is a one-line addition instead of a second special case.
+
+**Not SERVER-095's line, deliberately.** That one is `body || title` and decides
+whether the agent is woken to reflect — drawn at what the document *says*,
+because only prose ripples into other documents. This one is drawn at what the
+document *is*, because `updated` is read by the ramp and by every list. They
+differ where they must: moving, tagging or resolving a document moves `updated`
+while none of them reflects. They agree on width, which is neither.
+
+**It did not need SPEC.md changed and it did not need the UI changed.** §10's
+rider signed 2026-08-23 is explicit: "A column's edge stays draggable and stays
+in the view document's frontmatter: it describes the view and travels with it."
+
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model. This is a bug: the pre-fix
-reproduction is mandatory._
+**Model: Opus 5 (1M context).** Real server, real workspace, real git — never
+port 8765 or 5173.
+
+### Phase 41 check, first
+
+The issue was filed before Phase 41 and warned the defect might have moved.
+**It did not move and it did not evaporate.** Phase 41 moved a board's *columns
+list* onto the board document. The **width** still rides the **view** document's
+`extra`: `apps/ui/src/board/useColumnWidth.ts:98` sends
+`{ id: viewDocId, changes: { extra: { width: next } } }`, and §10's rider of
+2026-08-23 re-signs that placement. So the defect is exactly where the issue
+said it was, on the document the issue named.
+
+### Pre-fix reproduction (2026-08-23)
+
+Workspace `scratchpad/ws096`, `corpus init`, server on **127.0.0.1:8791**
+(pid 74017).
+
+```
+BEFORE  GET /api/docs?limit=6
+   doc_skillorchestrate  2026-08-22T00:00:00Z
+   doc_skillconverse     2026-08-21T00:00:00Z
+   doc_skillcomment      2026-08-12T00:00:00Z
+   doc_seedattention     2026-07-26T00:00:00Z
+   doc_seedboardattention 2026-07-26T00:00:00Z
+   doc_seedboardbystatus 2026-07-26T00:00:00Z
+                              (doc_seedopenthreads was 9th)
+
+PUT /api/docs/doc_seedopenthreads  {"extra":{"width":725}}  → 200
+
+AFTER   GET /api/docs?limit=6
+   doc_seedopenthreads   2026-08-23T15:11:32Z     ← first
+   doc_skillorchestrate  2026-08-22T00:00:00Z
+   ...
+```
+
+The commit is the same shape as the `4e8fc3f` quoted in the Summary:
+
+```
+d5cdf59 user  doc edit: Open threads (doc_seedopenthreads) by user
+-updated: 2026-07-26T00:00:00Z
++updated: 2026-08-23T15:11:32Z
++width: 725
+```
+
+Ninth to first, from a drag. Reproduced.
+
+### Post-fix, same workspace, server restarted (pid 84033)
+
+```
+PUT /api/docs/doc_seedopenthreads  {"extra":{"width":900}}  → 200
+order unchanged; doc_seedopenthreads keeps updated 2026-08-23T15:11:32Z
+file:   updated: 2026-08-23T15:11:32Z
+        width: 900
+commit: 9db7c8e  doc edit: Open threads (doc_seedopenthreads) by user
+        data/docs/views/open-threads.md | 1 insertion(+), 1 deletion(-)
+```
+
+One line changed — the width. The resize still writes, still commits and still
+syncs to every browser (§10); only the timestamp stays put.
+
+**The other direction, same server:**
+`PUT {"title":"Open threads, everywhere"}` → `updated: 2026-08-23T15:14:39Z`,
+and the document leads the list again. A real edit still counts.
+
+### Projection
+
+The ordering is SQL over `documents.updated`, which is projected from the file's
+frontmatter, so the file fix *is* the projection fix — but that is asserted
+rather than assumed: `does not reorder the projection's default list` drives
+`GET /api/docs` through the real route and compares the returned ids.
+
+### Tests
+
+`VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run apps/server/src/docs/update.test.ts`
+→ **54 passed**, 13 of them new.
+
+**Falsification.** With `PRESENTATION_KEYS` emptied to `new Set<string>()`
+(the pre-fix behaviour) the same file reports **3 failed | 51 passed**: the
+width-only save, the width clear, and the projection-ordering test all fail. The
+file was then restored and `diff` against the pre-break copy reported identical.
+
+**One test cannot fail with the fix absent, by construction**: `moves updated
+when a real edit rides along with the width` asserts the *other* direction, so
+the pre-fix code passes it. It is there to pin the direction the fix must not
+break, and the nine `still moves updated for <field>` cases are the same kind —
+they pass either way and exist so a later exemption cannot be added quietly.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

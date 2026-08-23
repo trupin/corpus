@@ -18,14 +18,14 @@
 
 import { createHash } from "node:crypto";
 import {
-  HEADING_PATH_SEPARATOR,
   fencedCodeRanges,
+  headingSections,
   overlapsRange,
+  renderHeadingPath,
   splitLines,
   type Line,
   type TextRange,
 } from "@corpus/contract";
-import { headingSections } from "../core/headings.js";
 
 /**
  * The size budget a section is split at, in **characters**.
@@ -115,10 +115,6 @@ export function chunkId(docId: string, headings: readonly string[], text: string
     .digest("hex")
     .slice(0, CHUNK_ID_HEX_LENGTH);
 }
-
-/** The chunk address as a client prints it — a display join, never split by a reader. */
-export const renderHeadingPath = (headings: readonly string[], title: string): string =>
-  headings.length === 0 ? title : headings.join(HEADING_PATH_SEPARATOR);
 
 /**
  * Paragraph-ish units of `[start, end)`: a new unit begins at the first
