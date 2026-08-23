@@ -102,6 +102,12 @@ authority. Read them as binding, and go there when a detail is missing.
    you hand work to a subagent it receives those anchors — ids, heading paths, snippets —
    and never a document body; it retrieves what it needs itself.
 
+One habit rides along with those. **Ask a command for `--help=brief` before you ask it for
+bare `--help`.** Brief is the synopsis and one line per argument and flag, which is what a
+lookup wants, and its last line names the command that prints everything else, so starting
+there loses you nothing. **Which register a reading needs is the orchestrate skill's to
+state, and it is stated there alone.**
+
 ## Gather context
 
 **Start from the briefing.** One command tells you what the conversation is about and what

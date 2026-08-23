@@ -19,6 +19,8 @@ and that list is the only thing that puts a view on a board. A view is a saved q
 nothing more, so the same view may sit on this board and on another.
 
 Change the board by editing this document. Add a column by adding a view's id to `columns`,
-remove one by taking its id out, reorder them by moving the ids — and reorder the boards
-themselves by changing `order` on each board document. Ask the agent for any of it: "pin me a
-view of unresolved finance threads" creates the view and adds its id here.
+remove one by taking its id out, reorder them by moving the ids. The `order` above is this
+board's own place in the bar, and the bar is reordered as a whole rather than a board at a
+time: `corpus board order` takes every board, first tab first, and renumbers them in one
+commit. Ask the agent for any of it: "pin me a view of unresolved finance threads" creates
+the view and adds its id here.

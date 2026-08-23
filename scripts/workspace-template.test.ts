@@ -617,6 +617,33 @@ describe("skills", () => {
     expect(body).not.toContain("/api/x/");
   });
 
+  /**
+   * AGENT-045. `corpus <verb> --help=brief` prints the synopsis and one line per
+   * argument and flag and nothing else — measured at 5,023 words against 25,687
+   * over the twenty-five verbs these skills name, an 80% saving. A register
+   * nothing asks for saves nothing, so every skill that talks to the CLI
+   * conversationally has to name it.
+   *
+   * `profile` deliberately names neither register, and that is a decision rather
+   * than an oversight. It runs seven verbs and spells every one of them out with
+   * the flags it needs, so a line sending its agent to look a command up would
+   * be sending it to read help it is already holding. If a later profile skill
+   * grows a reason to look something up, this is where it says so.
+   */
+  it("asks for the brief help register in every skill that reaches for help", () => {
+    for (const name of ["orchestrate", "comment", "converse"] as const) {
+      const relPath = `claude/skills/${name}/SKILL.md`;
+      expect(
+        documentAt(relPath).body,
+        `${relPath}: reaches for help without naming --help=brief`,
+      ).toContain("--help=brief");
+    }
+    expect(
+      documentAt("claude/skills/profile/SKILL.md").body,
+      "profile now sends its agent to read help it already holds — see the note above",
+    ).not.toContain("--help");
+  });
+
   it.each(coreSkills)("$name carries its required section headings", ({ name, relPath }) => {
     const headings = documentAt(relPath)
       .body.split("\n")
@@ -626,6 +653,7 @@ describe("skills", () => {
       orchestrate: [
         "purpose",
         "invariants",
+        "command's help",
         "the loop",
         "claiming",
         "routing",
@@ -1674,7 +1702,7 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(17);
+    expect(sections.size).toBe(18);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -6275,6 +6303,16 @@ describe("one rule, one skill", () => {
   const SHELL_CONSUMES =
     /\bexpands?\b|\bexpanded\b|\beaten\b|\beats\b|ends the quoting|command substitution|\bjoins?\b|unmatched|is obeyed|\blands? as\b|arrives? (?:as|carrying)|reaches? the (?:document|server) as/i;
 
+  // AGENT-045. The two registers of `corpus <verb> --help`, each named the way a
+  // sentence choosing between them names it. `brief` on its own is deliberately
+  // not enough: both loop skills use the ordinary word, and a pin that fires on
+  // "a brief reply" is a pin somebody baselines away. The whole register has no
+  // flag of its own — it is what bare `--help` prints — so it is matched by the
+  // words a skill actually calls it by.
+  const HELP_BRIEF_REGISTER = /--help=brief|\bbrief (?:help|form|register|text)\b/i;
+  const HELP_WHOLE_REGISTER =
+    /\b(?:whole|full) (?:help|text|register|form|description|prose)\b|\bthe prose\b|\bworked examples?\b/i;
+
   const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
     {
       rule: "how a second listener finds out it is second",
@@ -6415,6 +6453,47 @@ describe("one rule, one skill", () => {
         },
       ],
     },
+    {
+      // AGENT-045. `--help=brief` saves ~80% of a help read, so every skill has
+      // a reason to name the flag — and naming a flag is not the rule. The rule
+      // is **which register a reading needs**, and it has exactly one shape that
+      // can be wrong in a way nobody sees: a skill that teaches *brief is enough*
+      // sends an agent to write a `--columns` list with a board's column missing
+      // out of it, at exit 0. So the outcome — *ask for brief* — is what a
+      // pointer carries, and the three arms of the choice stay in `orchestrate`.
+      //
+      // The detector wants a sentence that names the **brief register** and the
+      // **whole register** together, because that pairing is what a choice
+      // between them is written with. Naming one alone is a fact any skill may
+      // state, which is what keeps both pointers below off the pin: `comment`
+      // says brief is a lookup and never mentions the prose, and `converse` says
+      // the same and defers the rest.
+      //
+      // Net, not proof, in the same sense as the rules above: a restatement that
+      // names the registers by nothing but their flags — *"read `--help=brief`
+      // unless a bad value would write something silently"* — states the rule
+      // and matches nothing here, and the test below says so out loud.
+      rule: "which register of a command's help a reading needs",
+      owner: "orchestrate",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => HELP_BRIEF_REGISTER.test(sentence) && HELP_WHOLE_REGISTER.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**Which register a reading needs is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+        {
+          skill: "converse",
+          carries: wrapped(
+            "**When the whole text is the right call is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -6543,6 +6622,45 @@ describe("one rule, one skill", () => {
       shell?.restatements("The shell gets to your text first and quietly changes it.") ?? [
         "unchecked",
       ],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches a second account of the help registers, and says which paraphrase it misses", () => {
+    // AGENT-045. Every skill has a reason to name `--help=brief`, so the shape
+    // this guards is not a mention — it is a second skill acquiring its own
+    // account of **when the whole text is worth reading**, which is the half
+    // that can be wrong in a way nothing reports.
+    const help = SINGLE_OWNER_RULES.find(({ rule }) => rule.startsWith("which register"));
+    expect(help, "the help-register rule is no longer registered").toBeDefined();
+    const caught = [
+      "Read `--help=brief` for a name and the whole text when a wrong value writes silently.",
+      "The brief form is a lookup and the full description is a lesson, so take the lookup.",
+      "Reach for `--help=brief` unless you need the worked examples.",
+    ];
+    for (const sentence of caught) {
+      expect(
+        help?.restatements(sentence) ?? [],
+        `a second account of the help registers now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    // Naming one register is a fact any skill may state, and both pointers do.
+    expect(
+      help?.restatements(
+        "Ask a command for `--help=brief` before you ask it for bare `--help`.",
+      ) ?? ["unchecked"],
+      "the pin now catches the outcome a pointer is allowed to carry",
+    ).toEqual([]);
+    expect(
+      help?.restatements("A brief reply is worth more than a full one nobody reads.") ?? [
+        "unchecked",
+      ],
+      "the pin now fires on the ordinary word `brief`, which is what would get it baselined",
+    ).toEqual([]);
+    expect(
+      help?.restatements(
+        "Read `--help=brief` unless a bad value would write something silently.",
+      ) ?? ["unchecked"],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
     ).toEqual([]);
   });

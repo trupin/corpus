@@ -86,6 +86,44 @@ everything after depends on them.
    wedged. *Writing a document* below has the loop, the two refusals, and what to do when a
    person is editing.
 
+## Reading a command's help
+
+**Ask for `--help=brief` first.** Every command answers bare `--help` with its whole text —
+prose about what the verb is for, the full description of every flag, worked examples — and
+answers `--help=brief` with the synopsis, one line per argument and flag, and a last line
+naming the command that prints the rest. Brief is a lookup. The whole text is a lesson. Most
+of the times you reach for help you want the lookup, and the two are not close in what they
+cost you: measured on this workspace's build, `corpus doc edit --help` ran to 3,126 words
+against 468 for `--help=brief`, and over the twenty-five verbs these skills name it was
+25,687 words against 5,023.
+
+**A brief line names a flag; the whole text says what a wrong value costs.** The brief line
+for a flag is the first sentence of its full description, so the two registers cannot
+disagree about anything — but the sentences brief leaves out are the ones about consequence,
+and that is what decides which register a reading needs:
+
+- **Brief, when you know the act and are checking a name, a spelling, or which flag carries a
+  value you already hold.** This is most of it, and it is the default.
+- **The whole text, when a wrong value would write something you cannot see is wrong.** Three
+  of this workspace's own flags say it. Brief calls `corpus doc edit --stage` where a
+  document sits in a workflow, and stops before the sentence saying that a stage inside a
+  kanban writes a status in the same commit — so you ask for one field and change two. Brief
+  calls `corpus doc create --folder` a folder under `data/docs/`, and stops before the
+  sentence saying that a folder passed with `--type thread` is validated and then has no
+  effect — so the flag is accepted and does nothing. Brief calls
+  `corpus doc edit --columns` the ids of a board's views in display order, and stops before
+  the sentence separating `--columns ""`, an empty list, from `--unset columns`, no key at
+  all. When the flag you are about to pass is one whose damage would be silent, read the
+  prose.
+- **Neither, when this skill already spells the command.** The worked blocks below carry the
+  flags they need and say what the risky ones do. Looking a command up because it is about to
+  appear in your own is a read you are paying for twice.
+
+Escalating is cheap and deciding in advance is not, because the last line of a brief help
+names the command that prints the whole text. So **start brief, and go on when the brief line
+does not answer you** — never the other way round, and never on the theory that a verb you
+have not used today owes you the tutorial.
+
 ## The loop
 
 **This is a procedure, not a script**, and the difference is the difference between the loop
@@ -1195,10 +1233,39 @@ drops a column takes that column off the board, silently and successfully. Remov
 is the same write with one id left out, and reordering is the same ids in another order. The
 view document itself is untouched by all three: taking a view off a board deletes nothing.
 
-The board's own place among boards is `--order`, a number on the board document, ascending.
-Any finite number works, so `--order 1.5` lands a board between two neighbours without
-renumbering them. `--default-open true` marks the board that a browser opens onto and that
-receives every open naming no board. **At most one board carries it**: setting it clears the
+**The order of the board bar is one act, and `corpus board order` is that act.** Name every
+board in the bar, first tab first: the verb gives them `1 … n` in the order given and lands
+the whole renumbering as a single commit. Positions come from the list, so there is no number
+to compute, no gap and no tie that could need resolving. A board already sitting where the
+list puts it is not written, so a bar handed back the way it already stood writes nothing at
+all. Boards the list does not name keep the `order` they carry, which is what lets you state
+the order of the boards a person can see without inventing positions for archived ones.
+
+```bash
+corpus board order doc_seedboardfiles doc_seedboardattention doc_seedboardbystatus --from agent
+doc_seedboardfiles      1  moved
+doc_seedboardattention  2  moved
+doc_seedboardbystatus   3  moved
+ordered 3 boards — 3 boards moved, in one commit 53629b8b6141d4508a5fdc8a3b79414d84c580fb
+```
+
+Count the `moved` rows rather than the ids you sent when you report how many boards moved. An
+id naming no document, an id naming something that is not a board, and an id named twice are
+each refused before anything is written — a board has one position, so a repeat is not an
+order anybody could carry out. Nothing lands by halves.
+
+**Do not reorder a bar with `corpus doc edit <id> --order N` per board.** `--order` is still
+the key and still right on **one** board — a board you are creating, or one you are moving on
+its own. Across a bar it is a single act spelled as several writes, and what you get back
+then depends on timing you do not control. Run consecutively, the writes fold into one commit
+named after whichever board happened to be last, so an act over three boards is recorded as
+an edit to one. Let more than the commit window pass between two of them and the same reorder
+lands as two commits, or three, none of which names the act at all. `corpus board order`
+makes one commit every time, because that is a property of the verb rather than of how fast
+you typed.
+
+`--default-open true` marks the board that a browser opens onto and that receives every open
+naming no board. **At most one board carries it**: setting it clears the
 flag from whichever board held it, in the same commit, and the write names that board on a
 line of its own. Archiving a board is `corpus doc archive` like any document. **One board is
 always showing, and the CLI does not enforce that for you** — the board bar refuses to archive
