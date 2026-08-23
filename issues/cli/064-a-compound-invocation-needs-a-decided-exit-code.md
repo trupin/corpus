@@ -62,6 +62,35 @@ with a missing id exiting 5 and naming `details.missing` and `details.found`.
 That is a good precedent for one verb over many ids. **It is not obviously right
 for many verbs**, because five different commands do not share a payload shape.
 
+## Decided by the user, 2026-08-23 — run everything, report per command
+
+**Chosen: every command runs.** Exit is non-zero if any failed. `--json` carries
+one entry per command, in the order they were sent, saying whether it ran and
+what it returned.
+
+**"Did not run" must be distinguishable from "ran and returned nothing".** That
+is the criterion the shape exists to satisfy — absence from the array is not an
+answer.
+
+**A batch is explicitly not transactional, and the verb's help says so.** §4's
+commit window may fold a batch of writes into one commit anyway, and a reader
+who sees that will assume atomicity nobody promised. Say it in the help rather
+than leaving it to be inferred from a commit log.
+
+**Rejected: stop at the first failure.** Simplest to build, and it makes a batch
+a worse `&&` chain — the agent must then work out what did and did not run,
+which is the reasoning the batch exists to remove.
+
+**Rejected: exit with the first failure's code.** It sounds more precise than a
+generic non-zero and lies when two commands fail differently: one code for two
+causes, and the second invisible without parsing `--json` anyway — which the
+chosen shape makes the caller do once, honestly.
+
+**Build the semantics first.** The measurement is settled and is not the risk
+here. Read CLI-057's decisions before starting: it solved the same problem for
+one verb over many arguments, and its answers are a starting position rather
+than a template.
+
 ## Acceptance Criteria
 
 - [ ] The exit-code rule is decided and written down, with the two rejected

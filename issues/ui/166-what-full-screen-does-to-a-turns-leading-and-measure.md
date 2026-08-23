@@ -68,6 +68,34 @@ is shared.
 Either answer is a re-theme of a surface people read. It wants a look before a
 change.
 
+## Decided by the user, 2026-08-23 — a turn is a conversation, on every surface
+
+**Chosen: stop the document-prose rules reaching a turn.** A conversation reads
+the same in a column and in full screen, differing only in the room it has.
+
+**Why it won.** `design/index.html` already has this opinion: its turn body is
+sans and carries no document-prose class at all. So the product's current
+behaviour is not a design decision — it is a shared class, and the focus-mode
+rules written for **documents** landing on a **conversation**.
+
+**Rejected: treat a turn as document prose and change the column to match.** It
+would make full screen's larger, looser turn the intended reading, and the
+column the surface that is wrong. That is the more visible change, to the
+surface people use constantly, in service of a styling nobody chose.
+
+**Rejected: leave it.** The difference would stay decided by a shared class
+rather than by a rule, so the next stylesheet change could move it again with
+nobody noticing — which is how it arrived.
+
+**The fix is a rule that names turns.** Not a specificity war with
+`.focus .doc-body`, and not removing `doc-body` from `Turn.tsx` without checking
+what else it carries. UI-156's browser sweep is re-runnable — use it to see what
+any change moves, rather than reasoning about the cascade.
+
+**`max-width` may still not bind** — a turn measures 488px inside a ~520px card.
+If it does not, say so and leave it alone. A value with no effect is worse than
+none, because it looks fixed.
+
 ## Acceptance Criteria
 
 - [ ] The intent is decided and written down, with the rejected reading and why.

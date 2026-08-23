@@ -64,6 +64,32 @@ because it only ever needs running when `packages/contract` changed.
 **2 looks right and 1 looks wrong**, but the call belongs with whoever owns the
 hook policy, since INFRA-025 was a user decision.
 
+## Decided by the user, 2026-08-23 — a unit test that reads the file
+
+**Chosen: option 2.** `packages/contract`'s suite gains one case comparing the
+**committed** `openapi.json` and `schema.generated.ts` against
+`buildOpenApiDocument()` and the generator's output.
+
+**INFRA-025 stands untouched.** No build returns to the commit hook, and no
+whole-codebase work moves out of CI. This is a file read inside a suite that
+already runs.
+
+**Rejected: a pre-commit check conditioned on the path.** It catches the case at
+the earliest possible point, and it puts a build back into the commit hook —
+which is exactly what INFRA-025 removed, by a decision of the user's that this
+issue is not permitted to reopen.
+
+**Rejected: document the gap and change nothing.** It costs no runtime and
+relies on every future reader having read it. Three agents in one release read a
+green local run as proof the artifact matched, so the record is that reading the
+guidance is not what happens.
+
+**One trap the test must avoid.** A contributor who has not run `npm run build`
+has a stale `dist/`, and the in-memory document can differ for that reason
+instead. The failure message must say which of the two it is, or the check will
+be read as flaky and disabled. Four agents this release hit a phantom typecheck
+error from exactly that cause.
+
 ## Acceptance Criteria
 
 - [ ] The choice is made and written down with the rejected options and why.
