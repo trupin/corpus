@@ -1,6 +1,8 @@
 import {
+  DEFAULT_PAGE_LIMIT,
   DEFAULT_RECENT_JOBS,
   DEFAULT_REFLECT_QUIET_MINUTES,
+  MAX_PAGE_LIMIT,
   ORCHESTRATOR_LANE,
   extractFormSource,
   formAnswerRecord,
@@ -18,12 +20,15 @@ import {
   type ConflictError,
   type CreateThreadResponse,
   type DeleteDocResult,
+  type DeleteFolderResult,
   type DeleteTurnResult,
   type Doc,
   type DocList,
   type DocMutationResponse,
   type DocRow,
   type DocStatus,
+  type FolderNode,
+  type FolderStatusResult,
   type FolderTree,
   type Health,
   type Form,
@@ -43,6 +48,7 @@ import {
   type QueueEventStatus,
   type QueueStatus,
   type ReattachConflictError,
+  type RenameFolderResult,
   type ReattachThreadResponse,
   type ReflectAskResult,
   type ReflectStatus,
@@ -63,6 +69,7 @@ import {
   type UpdateDocResponse,
   type ValidationError,
   type ViewQuery,
+  type Warning,
 } from "@corpus/contract";
 import type { Page, Request, Route } from "@playwright/test";
 import { Buffer } from "node:buffer";
@@ -129,6 +136,9 @@ type StubPayload =
   | AppendTurnResponse
   | CaptureResult
   | ConflictError
+  | DeleteFolderResult
+  | FolderStatusResult
+  | RenameFolderResult
   | CreateThreadResponse
   | DeleteDocResult
   | DeleteTurnResult
@@ -947,6 +957,9 @@ function stampUpdated(doc: StoredDoc, actor: Actor = "user"): void {
  */
 export const STUB_BOARD_ID = "doc_board_stub";
 
+/** Where every seeded document lives, and what a folder path is relative to. */
+const DOCS_ROOT = "data/docs";
+
 function seedWithBoard(rows: readonly StubRow[]): readonly StubRow[] {
   if (rows.some((row) => row.type === "board")) return rows;
   const views = rows.filter((row) => row.type === "view").map((row) => row.id);
@@ -1010,6 +1023,71 @@ export async function stubCorpus(
    * every badge and every recipient picker reading the state before it.
    */
   const laneOf = (id: string): AgentLane | undefined => lanes.find((row) => row.lane === id);
+
+  /**
+   * Every seeded document filed under a folder, **compared byte for byte** —
+   * `data/docs/<path>/…`, prefix-matched so a folder act reaches its
+   * descendants (SPEC.md §9.2, rider 7). `FINANCE` finds nothing in a workspace
+   * holding `finance`, which is the `404` SERVER-136 documents.
+   */
+  const docsUnder = (path: string): readonly StoredDoc[] => {
+    if (path === "") return [];
+    const prefix = `${DOCS_ROOT}/${path}/`;
+    return [...store.values()].filter((doc) => doc.path.startsWith(prefix));
+  };
+
+  /**
+   * The folder hierarchy the seeded paths describe, in the shape `GET /api/tree`
+   * answers with: `count` is the documents filed **directly** in a folder and
+   * `totalCount` adds its descendants'.
+   */
+  const folderTree = (): FolderTree => {
+    interface Node {
+      readonly name: string;
+      readonly path: string;
+      count: number;
+      readonly children: Map<string, Node>;
+    }
+    const roots = new Map<string, Node>();
+    for (const doc of store.values()) {
+      if (!doc.path.startsWith(`${DOCS_ROOT}/`)) continue;
+      const segments = doc.path
+        .slice(DOCS_ROOT.length + 1)
+        .split("/")
+        .slice(0, -1);
+      if (segments.length === 0) continue;
+      let level = roots;
+      let node: Node | undefined;
+      let path = "";
+      for (const name of segments) {
+        path = path === "" ? name : `${path}/${name}`;
+        node = level.get(name);
+        if (node === undefined) {
+          node = { name, path, count: 0, children: new Map() };
+          level.set(name, node);
+        }
+        level = node.children;
+      }
+      if (node !== undefined) node.count += 1;
+    }
+    const toFolder = (node: Node): FolderNode => {
+      const children = [...node.children.values()]
+        .map(toFolder)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      return {
+        path: node.path,
+        name: node.name,
+        count: node.count,
+        totalCount: node.count + children.reduce((sum, child) => sum + child.totalCount, 0),
+        children,
+      };
+    };
+    return {
+      folders: [...roots.values()]
+        .map(toFolder)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    };
+  };
 
   const dropLane = (id: string): void => {
     const index = lanes.findIndex((row) => row.lane === id);
@@ -1342,9 +1420,80 @@ export async function stubCorpus(
         return false;
       }
     }
+    /*
+     * There is deliberately **no `tag=` branch**: `StoredDoc` carries no tags at
+     * all (they are fixed `[]` on every row), so this stub can neither match nor
+     * exclude on one. A spec that needs a scoped kanban scopes it by `folder` or
+     * `type`, both of which the stub really answers. A branch here would filter
+     * every document out and read as a board that shows nothing.
+     */
     const status = params.get("status");
     if (status !== null) return status.split(",").includes(doc.status);
+    /*
+     * `includeArchived=true` widens the default set into the union (SPEC.md
+     * §9.2), which is what a kanban's scope is asked with: a document in a stage
+     * mapped to `archived` is still in the kanban (§5).
+     */
+    if (params.get("includeArchived") === "true") return true;
     return doc.status !== "archived";
+  };
+
+  /**
+   * SPEC.md §5's coupling, as SERVER-138 implements it: **while a document is in
+   * a kanban, its stage decides its status**.
+   *
+   * Reproduced here rather than left out, for the reason UI-102 and UI-116 both
+   * name: a stub that answered a stage write without the status the server
+   * writes beside it would let a drag look correct on the wire while the board
+   * it produces disagrees with every other surface. It is also the only way a
+   * spec can watch "both fields changed", which is what the rider asks the toast
+   * to say.
+   *
+   * The deciding order is `GET /api/docs?sort=order`'s — `order` nulls last,
+   * then title, then id — because §5 says "the one with the lowest `order`
+   * decides", and that has to mean the same thing here and on the bar.
+   */
+  const decideStageStatus = (
+    doc: StoredDoc,
+  ): { board: StoredDoc; status: DocStatus | null } | null => {
+    const boards = [...store.values()]
+      .filter(
+        (row) =>
+          row.type === "board" &&
+          row.status !== "archived" &&
+          row.kanban !== null &&
+          row.kanban.field === "stage",
+      )
+      .sort((left, right) => {
+        const leftOrder = left.order ?? Number.POSITIVE_INFINITY;
+        const rightOrder = right.order ?? Number.POSITIVE_INFINITY;
+        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        const byTitle = left.title
+          .toLocaleLowerCase()
+          .localeCompare(right.title.toLocaleLowerCase());
+        return byTitle !== 0 ? byTitle : left.id.localeCompare(right.id);
+      });
+
+    for (const board of boards) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(board.query ?? {})) {
+        params.set(key, Array.isArray(value) ? value.map(String).join(",") : String(value));
+      }
+      params.set("includeArchived", "true");
+      if (!matches(doc, params)) continue;
+      const kanban = board.kanban;
+      if (kanban === null) continue;
+      // A stage the deciding board does not draw writes no status and says
+      // nothing — "not in this board's vocabulary", not an error (§5).
+      const status =
+        doc.stage === null
+          ? "open"
+          : kanban.stages.includes(doc.stage)
+            ? (kanban.status?.[doc.stage] ?? "open")
+            : null;
+      return { board, status };
+    }
+    return null;
   };
 
   await page.route("**/api/**", async (route) => {
@@ -1485,7 +1634,75 @@ export async function stubCorpus(
       return json(route, asJob(moved));
     }
 
-    if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
+    /*
+     * `GET /api/tree` — the folder hierarchy, **derived from the seeded paths**
+     * rather than answered empty (UI-150).
+     *
+     * It was `{ folders: [] }`, which was survivable for as long as the only
+     * reader was the new-list picker's folder option: an empty offer looked like
+     * a workspace with no folders. The explorer draws the tree *from* this, so
+     * an empty answer is an empty explorer, and no spec could reach a single one
+     * of rider 1's rules.
+     */
+    if (url.pathname === "/api/tree") return json(route, folderTree() satisfies FolderTree);
+
+    /*
+     * SPEC.md §9.2's folder acts (rider 7). Each takes a path in the **body**,
+     * compares it **byte for byte** — `FINANCE` is a `404` in a workspace holding
+     * `finance` (SERVER-136) — and answers with every document under the folder
+     * *after* the act rather than with what changed.
+     */
+    const folderAct = /^\/api\/folders\/(rename|archive|unarchive|delete)$/.exec(url.pathname);
+    if (folderAct !== null && method === "POST") {
+      const input = inputOf();
+      const act = folderAct[1];
+      const path = typeof input["path"] === "string" ? input["path"] : "";
+      const from = typeof input["from"] === "string" ? input["from"] : "";
+      const subject = act === "rename" ? from : path;
+      const under = docsUnder(subject);
+      if (under.length === 0) {
+        return json(
+          route,
+          { code: "not_found", message: `no folder ${subject}` } satisfies NotFoundError,
+          404,
+        );
+      }
+      if (act === "rename") {
+        const to = typeof input["to"] === "string" ? input["to"] : "";
+        if (to === "" || docsUnder(to).length > 0) {
+          return json(
+            route,
+            { code: "conflict", message: `${to} already exists` } satisfies ConflictError,
+            409,
+          );
+        }
+        const moved = under.map((doc) => {
+          // Ids never change: the path is presentation and the id is identity.
+          const next = doc.path.replace(`/${from}/`, `/${to}/`);
+          store.set(doc.id, { ...doc, path: next });
+          return { id: doc.id, path: next };
+        });
+        return json(route, { documents: moved, warnings: [] } satisfies RenameFolderResult);
+      }
+      if (act === "delete") {
+        // Threads survive as orphaned records and are **not** named in the
+        // response (SERVER-136), so neither are they here.
+        const removed = under
+          .filter((doc) => doc.type !== "thread")
+          .map((doc) => {
+            store.delete(doc.id);
+            return { id: doc.id };
+          });
+        return json(route, { documents: removed, warnings: [] } satisfies DeleteFolderResult);
+      }
+      const status: DocStatus = act === "archive" ? "archived" : "resolved";
+      const changed = under.map((doc) => {
+        // It moves nothing: a folder act on status leaves every path alone.
+        store.set(doc.id, { ...doc, status });
+        return { id: doc.id, status };
+      });
+      return json(route, { documents: changed, warnings: [] } satisfies FolderStatusResult);
+    }
     /*
      * `GET /api/index/status` — the strip's index pill (SPEC.md §10's
      * index-pill rider).
@@ -1711,13 +1928,25 @@ export async function stubCorpus(
     }
 
     if (url.pathname === "/api/docs" && method === "GET") {
-      const items = [...store.values()]
+      const matching = [...store.values()]
         .filter((doc) => matches(doc, url.searchParams))
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
         .map(asRow);
+      /*
+       * **`limit` is honoured, and `page.total` is not.** The server pages with
+       * `LIMIT`/`OFFSET` and reports the whole match count regardless
+       * (`PageMeta`), which is what lets a caller say "this listing reached its
+       * bound" (SPEC.md §10). A stub that returned everything under a `limit: 50`
+       * it never applied made that state unreachable: the explorer's bound line
+       * could not be seen in any spec, because `items.length < page.total` was
+       * false by construction.
+       */
+      const asked = Number(url.searchParams.get("limit") ?? String(DEFAULT_PAGE_LIMIT));
+      const limit =
+        Number.isFinite(asked) && asked > 0 ? Math.min(asked, MAX_PAGE_LIMIT) : DEFAULT_PAGE_LIMIT;
       return json(route, {
-        items,
-        page: { total: items.length, limit: 50, offset: 0 },
+        items: matching.slice(0, limit),
+        page: { total: matching.length, limit, offset: 0 },
       } satisfies DocList);
     }
 
@@ -2632,8 +2861,37 @@ export async function stubCorpus(
         if (typeof changes["order"] === "number" || changes["order"] === null) {
           doc.order = changes["order"];
         }
+        /*
+         * `stage`, and the status SPEC.md §5 couples to it. The coupling is
+         * decided **after** the stage is written, against the document as this
+         * save leaves it, exactly as `SERVER-138` does — asking before would
+         * decide membership from the stage the document is leaving.
+         */
+        let coupled: Warning | null = null;
         if (typeof changes["stage"] === "string" || changes["stage"] === null) {
+          const before = doc.status;
           doc.stage = changes["stage"];
+          const coupling = decideStageStatus(doc);
+          if (coupling !== null && coupling.status !== null && coupling.status !== before) {
+            doc.status = coupling.status;
+            coupled = {
+              code: "stage_status",
+              detail:
+                `stage ${doc.stage === null ? "cleared" : `\`${doc.stage}\``} set status to ` +
+                `\`${coupling.status}\`: this document is in the kanban ${coupling.board.title} ` +
+                `(${coupling.board.id}), whose \`kanban.status\` map decides a status on entry ` +
+                "(SPEC.md §5).",
+            };
+          }
+        }
+        /*
+         * The `kanban` block (UI-152). It was dropped on the floor exactly as
+         * `columns` and `order` were before UI-148: the response echoed the
+         * stored board, so reordering a stage or editing the graph looked
+         * correct on the wire and left the board exactly as it was.
+         */
+        if (changes["kanban"] !== undefined) {
+          doc.kanban = changes["kanban"] as StoredDoc["kanban"];
         }
         if (Array.isArray(changes["columns"]) || changes["columns"] === null) {
           doc.columns = changes["columns"] === null ? null : [...(changes["columns"] as string[])];
@@ -2667,6 +2925,7 @@ export async function stubCorpus(
             if (key === "order") doc.order = null;
             if (key === "stage") doc.stage = null;
             if (key === "columns") doc.columns = null;
+            if (key === "kanban") doc.kanban = null;
             if (key === "query") doc.query = null;
             if (key === "default-open") doc.defaultOpen = false;
             if (key in doc.extra) delete doc.extra[key];
@@ -2677,7 +2936,7 @@ export async function stubCorpus(
         return json(route, {
           doc: asDoc(doc),
           anchors: { remapped: [], orphaned: [] },
-          warnings: [],
+          warnings: coupled === null ? [] : [coupled],
         } satisfies UpdateDocResponse);
       }
       return json(route, asDoc(doc));

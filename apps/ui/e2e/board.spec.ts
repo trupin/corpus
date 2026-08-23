@@ -1,3 +1,4 @@
+import { MENU_MARGIN } from "../src/menu/menuModel";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
@@ -98,12 +99,16 @@ test.describe("the board", () => {
 
     const menu = page.locator(".ac-menu.open");
     await expect(menu).toBeVisible();
-    // Presets are the library; folders come from `GET /api/tree`, which has no
-    // server to answer it here, so the menu correctly offers none.
+    // Presets are the library; folders come from `GET /api/tree`, which the
+    // stub now derives from the seeded paths (UI-150) — so this seed's one
+    // folder, `boards/`, is offered beside the five presets. It answered
+    // `{ folders: [] }` until then, and every folder branch of this menu was
+    // therefore unreachable from any spec.
     await expect(menu.getByRole("menuitem", { name: /Due this week/ })).toBeVisible();
+    await expect(menu.locator("[data-newlist='folder:boards']")).toHaveCount(1);
     // Folders, presets and the search — three sources and no fourth. Nothing
     // in this menu is discovered at runtime.
-    await expect(menu.locator("[data-newlist]")).toHaveCount(5);
+    await expect(menu.locator("[data-newlist]")).toHaveCount(6);
     // "From current search" needs a search query, and UI-009 owns that.
     await expect(menu.locator("[data-newlist='search:current']")).toHaveCount(0);
 
@@ -159,20 +164,39 @@ test.describe("the board", () => {
 
       const room = await menu.evaluate((node) => ({
         client: node.clientHeight,
+        // The **border box**, which is what `max-height` bounds under
+        // `box-sizing: border-box` — so this is the number to compare against
+        // the room, and `clientHeight` is it minus the border and any scrollbar.
+        outer: node.getBoundingClientRect().height,
         scroll: node.scrollHeight,
         below: window.innerHeight - node.getBoundingClientRect().top,
         bottom: node.getBoundingClientRect().bottom,
         viewport: window.innerHeight,
       }));
 
-      // Ordinary content, read rather than scrolled: the whole menu fits, and
-      // it fits because it was given the room it had, not because the list
-      // happens to be short today.
+      /*
+       * **The menu is as tall as the room below it.** That is the invariant
+       * UI-142 restored, and it is stated as the invariant rather than as "the
+       * whole list fits": once `GET /api/tree` really answers (UI-150 made the
+       * stub derive it), a workspace of folders produces more items than any
+       * window has room for, and §10 is explicit that scrolling is right for
+       * content that cannot fit and wrong for content that was not given room.
+       * Asserting "it fits" measured the seed; this measures the box.
+       *
+       * The defect it guards is unchanged and would still fail here by 141px: a
+       * `200px` ceiling in a room of 353 leaves the box far below both terms.
+       *
+       * The slack is `2 * MENU_MARGIN`, measured: `--newlist-room-h` is set to
+       * `innerHeight - top - MENU_MARGIN` and the painted border box came out
+       * 4px under it — 337px of box in 345px of room. One margin is the
+       * component's own; the second is the tolerance for that measured gap,
+       * and it is small enough that a 200px ceiling still fails by 137px.
+       */
       expect(
-        room.scroll,
-        `${String(room.scroll)}px of items in a ${String(room.client)}px menu, ` +
-          `with ${String(Math.round(room.below))}px of room below it`,
-      ).toBeLessThanOrEqual(room.client + 1);
+        Math.round(room.outer),
+        `a ${String(Math.round(room.outer))}px menu with ${String(Math.round(room.below))}px of ` +
+          `room below it, holding ${String(room.scroll)}px of items`,
+      ).toBeGreaterThanOrEqual(Math.min(room.scroll, Math.floor(room.below) - 2 * MENU_MARGIN));
 
       // …and the bound really is the room: the menu never leaves the window,
       // which is what makes taking the whole of it safe (UI-136's direction).

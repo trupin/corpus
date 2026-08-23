@@ -56,7 +56,14 @@ describe("useShortcuts", () => {
     const openCompose = vi.fn();
     const openSearch = vi.fn();
     const toggleCheatSheet = vi.fn();
-    mount({ openCompose, openSearch, toggleCheatSheet, showNthBoard: vi.fn(), board });
+    mount({
+      openCompose,
+      openSearch,
+      toggleCheatSheet,
+      showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
+      board,
+    });
 
     fireEvent.keyDown(document, { key: "j" });
     fireEvent.keyDown(document, { key: "ArrowUp" });
@@ -102,6 +109,7 @@ describe("useShortcuts", () => {
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
         showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       },
       <Layered />,
@@ -140,7 +148,14 @@ describe("useShortcuts", () => {
       const board = boardSpy();
       const openCompose = vi.fn();
       const openSearch = vi.fn();
-      mount({ openCompose, openSearch, toggleCheatSheet: vi.fn(), showNthBoard: vi.fn(), board });
+      mount({
+        openCompose,
+        openSearch,
+        toggleCheatSheet: vi.fn(),
+        showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
+        board,
+      });
 
       const field = document.createElement("input");
       document.body.append(field);
@@ -180,6 +195,7 @@ describe("useShortcuts", () => {
       openSearch: vi.fn(),
       toggleCheatSheet: vi.fn(),
       showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
       board,
     });
 
@@ -258,6 +274,7 @@ describe("useShortcuts", () => {
           openSearch: vi.fn(),
           toggleCheatSheet: vi.fn(),
           showNthBoard: vi.fn(),
+          toggleExplorer: vi.fn(),
           board,
         });
         const open = menu();
@@ -284,6 +301,7 @@ describe("useShortcuts", () => {
           openSearch: vi.fn(),
           toggleCheatSheet: vi.fn(),
           showNthBoard: vi.fn(),
+          toggleExplorer: vi.fn(),
           board,
         });
         menu();
@@ -400,6 +418,7 @@ describe("useShortcuts", () => {
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
         showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       const trigger = document.createElement("button");
@@ -421,6 +440,7 @@ describe("useShortcuts", () => {
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
         showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       focus('<div class="row" data-row-doc="doc_a" role="button">x</div>');
@@ -437,6 +457,7 @@ describe("useShortcuts", () => {
         openSearch: vi.fn(),
         toggleCheatSheet: vi.fn(),
         showNthBoard: vi.fn(),
+        toggleExplorer: vi.fn(),
         board,
       });
       fireEvent.keyDown(document, { key: "Enter" });
@@ -451,6 +472,7 @@ describe("useShortcuts", () => {
       openSearch: vi.fn(),
       toggleCheatSheet: vi.fn(),
       showNthBoard: vi.fn(),
+      toggleExplorer: vi.fn(),
       board,
     });
     fireEvent.keyDown(document, { key: "q" });

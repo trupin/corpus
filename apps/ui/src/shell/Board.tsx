@@ -10,8 +10,12 @@ import {
 } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useBoardSurface } from "../board/BoardsProvider";
-import { Column } from "../board/Column";
+import { Column, type ColumnKanban } from "../board/Column";
+import { ColumnStrip } from "../board/ColumnStrip";
 import { measureColumns, previewOrder } from "../board/columnDrag";
+import { moveStage } from "../board/kanban";
+import { useKanbanDrag } from "../board/kanbanDrag";
+import { KanbanDialog, type KanbanDialogMode } from "../board/KanbanDialog";
 import { reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
@@ -40,8 +44,10 @@ import {
   closeWholePath,
   detachPath,
   docAtKey,
+  EXPLORER_ORIGIN,
   newPathRight,
   openDocsOn,
+  openFromExplorer,
   openFromPath,
   openFromView,
   openLoose,
@@ -66,6 +72,7 @@ import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { useToast } from "./Toasts";
 import "./Board.css";
 import "../board/Column.css";
+import "../board/Kanban.css";
 import "../board/Path.css";
 
 /**
@@ -92,10 +99,17 @@ import "../board/Path.css";
 export const ALREADY_IN_PATH_MESSAGE =
   "Already in this path — re-centred on its column. Nothing was closed.";
 
+/**
+ * What "keep" says (rider 3). One sentence for both the path column's own
+ * Keep and the explorer's double click, because it is one act: the path stops
+ * hanging off whatever opened it, and the next pick from there opens a new one.
+ */
+export const PATH_KEPT_MESSAGE = "Path kept — the next pick from its origin row opens a new one.";
+
 export function Board(): ReactElement {
   const surface = useBoardSurface();
   const board = surface.current;
-  const { columns, isPending, error } = useColumns(board?.columnIds ?? null);
+  const { columns, isPending, error } = useColumns(board);
   const local = surface.local;
   const createDoc = useCreateDoc();
   const createInColumn = useCreateInColumn();
@@ -114,6 +128,8 @@ export function Board(): ReactElement {
   const [selectTitleFor, setSelectTitleFor] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [flashing, setFlashing] = useState<string | null>(null);
+  /** Which of the kanban form's two edit modes is open, or `null`. */
+  const [kanbanEdit, setKanbanEdit] = useState<Exclude<KanbanDialogMode, "create"> | null>(null);
   /**
    * Focus mode is board-level and **not** persisted: the column readers behind
    * it are the sticky state (SPEC.md §10's "open readers"), and restoring a
@@ -284,6 +300,32 @@ export function Board(): ReactElement {
   }, [active, commitStrip, toast]);
 
   /**
+   * The column strip's two acts (SPEC.md §10, rider 4).
+   *
+   * A tab click **pins** rather than activates: scrolling the board slides
+   * columns under a stationary cursor, and `activate` would then hand the
+   * active column to whatever landed beneath it — the same reason `⇧→` pins
+   * (`useActiveColumn`). Nothing flashes: the tab's own outline is the
+   * acknowledgement, and clicking the tab of a column already in view should
+   * move nothing at all.
+   */
+  const goToColumn = useCallback(
+    (key: string) => {
+      active.pin(key);
+      setScrollTo(key);
+    },
+    [active],
+  );
+
+  /** A path tab's `✕`: this column and everything after it (UI-149's act). */
+  const closeFromStrip = useCallback(
+    (pathId: number, index: number) => {
+      applyStrip(closeCol(stripRef.current, pathId, index), { flash: false });
+    },
+    [applyStrip],
+  );
+
+  /**
    * `esc` and `⇧esc` on the board (SPEC.md §10's keyboard scheme): after the
    * overlays and focus mode — their layers outrank this one — `⇧esc` closes
    * every path, plain `esc` closes the **active path column**, and only then
@@ -329,6 +371,24 @@ export function Board(): ReactElement {
     () => ({
       open: (target) => {
         const named = target.origin?.view ?? target.columnId;
+        /*
+         * The explorer's origin is not a column and never resolves to one: its
+         * path is a **preview**, replaced by the next explorer pick rather than
+         * added beside it, and `openFromExplorer` is the act that says so
+         * (rider 3). Branching here rather than inside the act keeps every other
+         * caller on the two rules they already had.
+         */
+        if (named === EXPLORER_ORIGIN) {
+          const keep = target.keep === true;
+          const result = openFromExplorer(stripRef.current, target.docId, {
+            keep,
+            reveal: target.reveal,
+          });
+          applyStrip(result);
+          setSelectTitleFor(target.selectTitle === true ? target.docId : null);
+          if (keep) toast({ tone: "info", message: PATH_KEPT_MESSAGE });
+          return;
+        }
         const view =
           target.placement !== "left" &&
           named != null &&
@@ -346,8 +406,11 @@ export function Board(): ReactElement {
         setScrollTo(columnId);
         setFlashing(columnId);
       },
+      openFullScreen: (docId, from) => {
+        setFocusDoc({ columnTitle: from, docId });
+      },
     }),
-    [applyStrip],
+    [applyStrip, toast],
   );
 
   useRegisterBoardNavigation(navigation);
@@ -708,6 +771,63 @@ export function Board(): ReactElement {
     [board, createDoc, surface, toast],
   );
 
+  /**
+   * The kanban drag (SPEC.md §10, rider 6), live only on a kanban board — the
+   * hook answers `null` for every column that is not a stage, so an ordinary
+   * board pays one `useState` and nothing else.
+   */
+  const kanbanDrag = useKanbanDrag({ board, notify });
+
+  /** One `⋯` act bundle per stage column, or `null` on a view column. */
+  const kanbanFor = useCallback(
+    (column: BoardColumn): ColumnKanban | null => {
+      const stage = column.stage;
+      if (stage === null || board === null || board.kanban === null) return null;
+      const kanban = board.kanban;
+      return {
+        dropState: kanbanDrag.dropStateOf(column),
+        rowsDraggable: true,
+        acts: {
+          stage: stage.stage,
+          field: stage.field,
+          canMoveLeft: stage.index > 0,
+          canMoveRight: stage.index < stage.lastIndex,
+          onEditStages: () => {
+            setKanbanEdit("stages");
+          },
+          onEditTransitions: () => {
+            setKanbanEdit("transitions");
+          },
+          onMove: (delta) => {
+            const next = moveStage(kanban.stages, stage.index, stage.index + delta);
+            if (next === kanban.stages) return;
+            void surface.setKanban(
+              board,
+              { ...kanban, stages: [...next] },
+              `Stage moved — “${stage.stage}” is now ${
+                delta < 0 ? "earlier" : "later"
+              } in “${board.title}”. The board document was updated and committed.`,
+            );
+          },
+          onOpenBoard: () => {
+            navigation.open({ docId: board.id, columnId: column.id });
+          },
+        },
+        onRowDragStart: (row) => {
+          kanbanDrag.onRowDragStart(column, row);
+        },
+        onRowDragEnd: kanbanDrag.onRowDragEnd,
+        onDragOver: (event) => {
+          kanbanDrag.onColumnDragOver(column, event);
+        },
+        onDrop: (event) => {
+          kanbanDrag.onColumnDrop(column, event);
+        },
+      };
+    },
+    [board, kanbanDrag, navigation, surface],
+  );
+
   /** Rider 3's marks, derived from the strip at render — never stored on rows. */
   const openSet = useMemo(() => openDocsOn(strip), [strip]);
   const byId = useMemo(() => new Map(ordered.map((column) => [column.id, column])), [ordered]);
@@ -742,10 +862,7 @@ export function Board(): ReactElement {
       },
       detach: () => {
         commitStrip(detachPath(stripRef.current, path.id));
-        toast({
-          tone: "info",
-          message: "Path kept — the next pick from its origin row opens a new one.",
-        });
+        toast({ tone: "info", message: PATH_KEPT_MESSAGE });
       },
       focusMode: (docId) => {
         const originTitle =
@@ -757,211 +874,252 @@ export function Board(): ReactElement {
   );
 
   return (
-    <main
-      ref={boardEl}
-      className="board"
-      aria-label="Document lists"
-      onDragOver={(event) => {
-        if (dragId === null || boardEl.current === null) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        const next = previewOrder(
-          ordered.map((column) => column.id),
-          dragId,
-          measureColumns(boardEl.current),
-          event.clientX,
-        );
-        setPreview((current) =>
-          current !== null && current.join(",") === next.join(",") ? current : next,
-        );
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        dropped.current = true;
-      }}
-    >
-      {error === null ? null : (
-        <div className="col col-card-error board-error" role="alert">
-          <p className="col-card-title">The column set could not be loaded</p>
-          <p className="col-card-body">{error.message}</p>
-        </div>
-      )}
+    /*
+     * `design/navigation.html`'s `.board-wrap`: the strip and the board are one
+     * region, stacked, because the strip is a map of *this* scroller and has to
+     * sit against it. The explorer becomes its sibling (UI-150), which is why
+     * the wrapper is here rather than a second child of `.app`.
+     */
+    <div className="board-wrap">
+      <ColumnStrip
+        strip={strip}
+        columns={ordered}
+        boardRef={boardEl}
+        activeKey={activeColumnId}
+        onGo={goToColumn}
+        onClose={closeFromStrip}
+      />
+      <main
+        ref={boardEl}
+        className="board"
+        aria-label="Document lists"
+        onDragOver={(event) => {
+          if (dragId === null || boardEl.current === null) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          const next = previewOrder(
+            ordered.map((column) => column.id),
+            dragId,
+            measureColumns(boardEl.current),
+            event.clientX,
+          );
+          setPreview((current) =>
+            current !== null && current.join(",") === next.join(",") ? current : next,
+          );
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropped.current = true;
+        }}
+      >
+        {error === null ? null : (
+          <div className="col col-card-error board-error" role="alert">
+            <p className="col-card-title">The column set could not be loaded</p>
+            <p className="col-card-body">{error.message}</p>
+          </div>
+        )}
 
-      {/*
-       * The empty states (`design/navigation.html`'s `.board-empty`), and there
-       * are two of them because the answers differ.
-       *
-       * A board with no columns is a document with an empty `columns` list: the
-       * fix is to add one, from the ghost column beside it or by asking the
-       * agent. A workspace with **no board at all** has nothing to add a column
-       * to, so the ghost is absent and the sentence names the migration — the
-       * same one the bar's disabled tab names.
-       */}
-      {board === null && !surface.isPending && surface.error === null ? (
-        <div className="board-empty">
-          <b>No board is showing</b>
-          This workspace holds no <code>type: board</code> document. Run <code>corpus upgrade</code>
-          , which reports the migration that creates them as commands to run.
-        </div>
-      ) : null}
+        {/*
+         * The empty states (`design/navigation.html`'s `.board-empty`), and there
+         * are two of them because the answers differ.
+         *
+         * A board with no columns is a document with an empty `columns` list: the
+         * fix is to add one, from the ghost column beside it or by asking the
+         * agent. A workspace with **no board at all** has nothing to add a column
+         * to, so the ghost is absent and the sentence names the migration — the
+         * same one the bar's disabled tab names.
+         */}
+        {board === null && !surface.isPending && surface.error === null ? (
+          <div className="board-empty">
+            <b>No board is showing</b>
+            This workspace holds no <code>type: board</code> document. Run{" "}
+            <code>corpus upgrade</code>, which reports the migration that creates them as commands
+            to run.
+          </div>
+        ) : null}
 
-      {board !== null && !isPending && columns.length === 0 && pathCount === 0 ? (
-        <div className="board-empty">
-          <b>{board.title} is empty</b>
-          Add columns to <code>boards/{board.id}.md</code> — with the ＋ beside this, or by asking
-          the agent to.
-        </div>
-      ) : null}
+        {board !== null && !isPending && columns.length === 0 && pathCount === 0 ? (
+          <div className="board-empty">
+            <b>{board.title} is empty</b>
+            Add columns to <code>boards/{board.id}.md</code> — with the ＋ beside this, or by asking
+            the agent to.
+          </div>
+        ) : null}
 
-      {strip.strip.map((item) => {
-        if (item.kind === "path") {
-          const originTitle =
-            item.origin === null ? null : (byId.get(item.origin.view)?.title ?? null);
+        {strip.strip.map((item) => {
+          if (item.kind === "path") {
+            const originTitle =
+              item.origin === null ? null : (byId.get(item.origin.view)?.title ?? null);
+            return (
+              <PathBand
+                key={`path-${String(item.id)}`}
+                path={item}
+                originTitle={originTitle}
+                activeKey={activeColumnId}
+                flashingKey={flashing}
+                selectTitleFor={selectTitleFor}
+                acts={actsFor(item)}
+                onActivate={(key) => {
+                  active.activate(key);
+                }}
+                onNotify={notify}
+              />
+            );
+          }
+          const column = byId.get(item.view);
+          if (column === undefined) return null;
+          const columnLocal = { scroll: item.scroll, nav: item.nav };
           return (
-            <PathBand
-              key={`path-${String(item.id)}`}
-              path={item}
-              originTitle={originTitle}
-              activeKey={activeColumnId}
-              flashingKey={flashing}
-              selectTitleFor={selectTitleFor}
-              acts={actsFor(item)}
-              onActivate={(key) => {
-                active.activate(key);
+            <Column
+              key={column.id}
+              column={column}
+              kanban={kanbanFor(column)}
+              isActive={column.id === activeColumnId}
+              isDragging={column.id === dragId}
+              isFlashing={column.id === flashing}
+              local={columnLocal}
+              selectTitle={openDocId(columnLocal) === selectTitleFor}
+              cursorDocId={column.id === activeColumnId ? cursor.docId : null}
+              originDocId={originDocOf(strip, column.id)}
+              openDocIds={openSet}
+              onActivate={() => {
+                active.activate(column.id);
               }}
+              onScroll={(scrollTop) => {
+                setScroll(column.id, scrollTop);
+              }}
+              onOpenRow={(docId) => {
+                applyStrip(openFromView(stripRef.current, column.id, docId));
+              }}
+              onOpen={(target: OpenPayload) => {
+                const request = openRequest(target);
+                openInColumn(column.id, request.docId, request.reveal);
+              }}
+              onNav={(nav) => {
+                setNav(column.id, nav);
+                if (nav.length === 0) setSelectTitleFor(null);
+              }}
+              onFocusMode={(target: OpenPayload) => {
+                const request = openRequest(target);
+                setFocusDoc({
+                  columnTitle: column.title,
+                  docId: request.docId,
+                  reveal: request.reveal,
+                });
+              }}
+              onAdd={() => {
+                void addToColumn(column);
+              }}
+              onRename={(title) => {
+                void editColumn(
+                  column,
+                  { title },
+                  `Renamed — the view document’s title is now “${title}”.`,
+                  "Rename",
+                );
+              }}
+              onEditQuery={(query) => {
+                void editColumn(
+                  column,
+                  { query: Object.keys(query).length === 0 ? null : query },
+                  `Query updated — “${column.title}” now filters on the corpus, not on this browser.`,
+                  "Edit query",
+                );
+              }}
+              onRemove={() => {
+                // The **board** document, by index: the view is left exactly where
+                // it was, and a board listing the same view twice loses the copy the
+                // user is looking at rather than both (SPEC.md §10, rider 2).
+                //
+                // The index is read from the *fetched* set rather than from the
+                // rendered one, because the rendered one may be a drag preview and
+                // the write goes to the array the server is holding.
+                const at = columns.findIndex((entry) => entry.id === column.id);
+                if (at >= 0) void surface.removeColumn(at, column.title);
+              }}
+              onDragStart={() => {
+                dragSource.current = ordered;
+                dropped.current = false;
+                setDragId(column.id);
+                setPreview(ordered.map((entry) => entry.id));
+              }}
+              onDragEnd={finishDrag}
               onNotify={notify}
             />
           );
-        }
-        const column = byId.get(item.view);
-        if (column === undefined) return null;
-        const columnLocal = { scroll: item.scroll, nav: item.nav };
-        return (
-          <Column
-            key={column.id}
-            column={column}
-            isActive={column.id === activeColumnId}
-            isDragging={column.id === dragId}
-            isFlashing={column.id === flashing}
-            local={columnLocal}
-            selectTitle={openDocId(columnLocal) === selectTitleFor}
-            cursorDocId={column.id === activeColumnId ? cursor.docId : null}
-            originDocId={originDocOf(strip, column.id)}
-            openDocIds={openSet}
-            onActivate={() => {
-              active.activate(column.id);
-            }}
-            onScroll={(scrollTop) => {
-              setScroll(column.id, scrollTop);
-            }}
-            onOpenRow={(docId) => {
-              applyStrip(openFromView(stripRef.current, column.id, docId));
-            }}
-            onOpen={(target: OpenPayload) => {
-              const request = openRequest(target);
-              openInColumn(column.id, request.docId, request.reveal);
-            }}
-            onNav={(nav) => {
-              setNav(column.id, nav);
-              if (nav.length === 0) setSelectTitleFor(null);
-            }}
-            onFocusMode={(target: OpenPayload) => {
-              const request = openRequest(target);
-              setFocusDoc({
-                columnTitle: column.title,
-                docId: request.docId,
-                reveal: request.reveal,
-              });
-            }}
-            onAdd={() => {
-              void addToColumn(column);
-            }}
-            onRename={(title) => {
-              void editColumn(
-                column,
-                { title },
-                `Renamed — the view document’s title is now “${title}”.`,
-                "Rename",
+        })}
+
+        {/* No board is no place to put a column, so the ghost is absent rather
+          than offering a creation that has nowhere to land. A **kanban** is the
+          other such place: its columns are its stages (rider 6), so a view
+          document added to it would be listed by a `columns` array the board
+          does not draw — the stages are edited from a column's ⋯ instead. */}
+        {board === null ? null : (
+          <NewListGhost
+            onOpen={(clientX, clientY) => {
+              setPicker(
+                clampMenuPosition(clientX, clientY, {
+                  width: globalThis.innerWidth,
+                  height: globalThis.innerHeight,
+                }),
               );
             }}
-            onEditQuery={(query) => {
-              void editColumn(
-                column,
-                { query: Object.keys(query).length === 0 ? null : query },
-                `Query updated — “${column.title}” now filters on the corpus, not on this browser.`,
-                "Edit query",
-              );
+          />
+        )}
+
+        {focusDoc === null ? null : (
+          <FocusMode
+            docId={focusDoc.docId}
+            listTitle={focusDoc.columnTitle}
+            reveal={focusDoc.reveal}
+            onFollow={(docId, reveal) => {
+              // Rider 3: a link inside full screen closes it and lands as a
+              // loose path at the left edge of the showing board.
+              closeFocus();
+              applyStrip(openLoose(stripRef.current, docId, reveal));
             }}
-            onRemove={() => {
-              // The **board** document, by index: the view is left exactly where
-              // it was, and a board listing the same view twice loses the copy the
-              // user is looking at rather than both (SPEC.md §10, rider 2).
-              //
-              // The index is read from the *fetched* set rather than from the
-              // rendered one, because the rendered one may be a drag preview and
-              // the write goes to the array the server is holding.
-              const at = columns.findIndex((entry) => entry.id === column.id);
-              if (at >= 0) void surface.removeColumn(at, column.title);
-            }}
-            onDragStart={() => {
-              dragSource.current = ordered;
-              dropped.current = false;
-              setDragId(column.id);
-              setPreview(ordered.map((entry) => entry.id));
-            }}
-            onDragEnd={finishDrag}
+            onClose={closeFocus}
             onNotify={notify}
           />
-        );
-      })}
+        )}
 
-      {/* No board is no place to put a column, so the ghost is absent rather
-          than offering a creation that has nowhere to land. */}
-      {board === null ? null : (
-        <NewListGhost
-          onOpen={(clientX, clientY) => {
-            setPicker(
-              clampMenuPosition(clientX, clientY, {
-                width: globalThis.innerWidth,
-                height: globalThis.innerHeight,
-              }),
-            );
-          }}
-        />
-      )}
+        {kanbanEdit === null || board === null || board.kanban === null ? null : (
+          <KanbanDialog
+            mode={kanbanEdit}
+            kanban={board.kanban}
+            onSubmit={(result) => {
+              setKanbanEdit(null);
+              void surface.setKanban(
+                board,
+                result.kanban,
+                `“${board.title}” updated — the board document now carries ${String(
+                  result.kanban.stages.length,
+                )} stages${result.kanban.transitions === undefined ? " and the linear funnel" : " and its own transitions"}.`,
+              );
+            }}
+            onClose={() => {
+              setKanbanEdit(null);
+            }}
+          />
+        )}
 
-      {focusDoc === null ? null : (
-        <FocusMode
-          docId={focusDoc.docId}
-          listTitle={focusDoc.columnTitle}
-          reveal={focusDoc.reveal}
-          onFollow={(docId, reveal) => {
-            // Rider 3: a link inside full screen closes it and lands as a
-            // loose path at the left edge of the showing board.
-            closeFocus();
-            applyStrip(openLoose(stripRef.current, docId, reveal));
-          }}
-          onClose={closeFocus}
-          onNotify={notify}
-        />
-      )}
-
-      {picker === null ? null : (
-        <NewListPicker
-          position={picker}
-          // The overlay owns its query and does not outlive itself: "save as
-          // view" and `⇧↵` pin a search from inside the overlay, where the query
-          // is live. Handing the board a copy of a search the user has already
-          // closed would offer to pin a query nothing is showing.
-          searchQuery=""
-          onChoose={(choice) => {
-            void chooseNewList(choice);
-          }}
-          onClose={() => {
-            setPicker(null);
-          }}
-        />
-      )}
-    </main>
+        {picker === null ? null : (
+          <NewListPicker
+            position={picker}
+            // The overlay owns its query and does not outlive itself: "save as
+            // view" and `⇧↵` pin a search from inside the overlay, where the query
+            // is live. Handing the board a copy of a search the user has already
+            // closed would offer to pin a query nothing is showing.
+            searchQuery=""
+            onChoose={(choice) => {
+              void chooseNewList(choice);
+            }}
+            onClose={() => {
+              setPicker(null);
+            }}
+          />
+        )}
+      </main>
+    </div>
   );
 }

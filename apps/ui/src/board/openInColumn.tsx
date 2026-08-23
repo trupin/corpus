@@ -38,12 +38,23 @@ export interface OpenTarget {
    */
   readonly columnId?: string | null;
   /**
-   * The origin the path should record, when it is not simply "this row"
-   * — UI-150's explorer passes `{ view: "explorer", doc }`. A view that is not
-   * a live column slot lands the path loose at the left edge, which is where
-   * the explorer's preview path lives anyway.
+   * The origin the path should record, when it is not simply "this row".
+   *
+   * The explorer passes `{ view: EXPLORER_ORIGIN, doc }` (UI-150), which the
+   * board recognises: that open is a **preview**, replaced by the next one
+   * rather than added beside it (rider 3). Any other view that is not a live
+   * column slot lands the path loose at the left edge.
    */
   readonly origin?: { readonly view: string; readonly doc: string } | null;
+  /**
+   * The explorer's "open and keep" — the double click, and the menu item.
+   *
+   * Meaningful only alongside an explorer origin: it detaches the path the
+   * moment it lands, so the next explorer click opens a new preview beside it
+   * instead of replacing this one. Ignored elsewhere, because no other origin
+   * opens a path something later replaces.
+   */
+  readonly keep?: boolean;
   /**
    * Forces the landing: `"left"` opens a loose path at the left edge even when
    * a column is named. Omitted, the placement is derived — `"origin"` when a
@@ -77,11 +88,23 @@ export interface BoardNavigation {
   readonly open: (target: OpenTarget) => void;
   /** Scrolls a column into view and flashes it — save-as-view's new column. */
   readonly revealColumn: (columnId: string) => void;
+  /**
+   * Opens the document straight into the full-screen overlay (SPEC.md §10's
+   * focus mode), from a surface that is not a column.
+   *
+   * The overlay is board state — it is drawn over the board and `esc` closes it
+   * through the board's layer — but "open in full screen" is offered by the
+   * explorer's tree too, which owns no column and therefore cannot reach
+   * `BoardCommands.toggleFocusMode`. `from` is what the overlay says it came
+   * from, so the caller names its own surface rather than the board guessing.
+   */
+  readonly openFullScreen: (docId: string, from: string) => void;
 }
 
 const NO_BOARD: BoardNavigation = {
   open: () => undefined,
   revealColumn: () => undefined,
+  openFullScreen: () => undefined,
 };
 
 interface NavigationContext {
@@ -115,6 +138,7 @@ export function BoardNavigationProvider({
     () => ({
       open: (target) => handlers.current?.open(target),
       revealColumn: (columnId) => handlers.current?.revealColumn(columnId),
+      openFullScreen: (docId, from) => handlers.current?.openFullScreen(docId, from),
     }),
     [],
   );

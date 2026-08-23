@@ -68,6 +68,8 @@ export interface ShortcutContext {
    * on how many there are.
    */
   readonly showNthBoard: (index: number) => void;
+  /** `⌘B`: retracts or shows the explorer (SPEC.md §10, rider 1). */
+  readonly toggleExplorer: () => void;
   /** The board's imperative surface, published through `BoardCommandsProvider`. */
   readonly board: BoardCommands;
 }
@@ -304,6 +306,24 @@ export const SHORTCUTS: readonly Shortcut[] = [
     description: "move column",
     run: (context, event) => {
       context.board.moveActiveColumn(chordDirection(event));
+    },
+  },
+  {
+    id: "explorer.toggle",
+    chords: [{ keys: ["b", "B"], mod: true, label: "⌘B" }],
+    /**
+     * Global, and live inside a writing surface, for ⌘K's reason: it is chrome
+     * rather than a document key, and a person editing a document is exactly
+     * who wants the tree out of the way. It is also what lets `⌘B` still close
+     * the explorer while the keyboard is inside the tree, which declares
+     * `data-shortcuts="off"` and would otherwise suppress every binding.
+     */
+    scope: "global",
+    allowInInput: true,
+    group: "columns",
+    description: "toggle the explorer",
+    run: (context) => {
+      context.toggleExplorer();
     },
   },
   {

@@ -120,6 +120,30 @@ describe("the operations map onto the contract's routes", () => {
     expect(urlOf(recorder).pathname).toBe("/api/tree");
   });
 
+  /**
+   * SPEC.md §9.2's folder acts (rider 7). The path goes in the **body** because
+   * it carries slashes, and it goes **unchanged**: the server compares byte for
+   * byte, so a client that normalised the spelling would turn a `404` into a
+   * rename of the wrong folder (SERVER-136).
+   */
+  it.each([
+    ["archiveFolder", "/api/folders/archive"],
+    ["unarchiveFolder", "/api/folders/unarchive"],
+    ["deleteFolder", "/api/folders/delete"],
+  ] as const)("posts a folder path in the body: %s", async (method, path) => {
+    const recorder = recording({ documents: [], warnings: [] });
+    await client(recorder)[method]("Finance/Mortgage");
+    expect(urlOf(recorder).pathname).toBe(path);
+    expect(await recorder.requests[0]?.json()).toEqual({ path: "Finance/Mortgage" });
+  });
+
+  it("posts both paths to POST /api/folders/rename", async () => {
+    const recorder = recording({ documents: [], warnings: [] });
+    await client(recorder).renameFolder("inbox", "triage");
+    expect(urlOf(recorder).pathname).toBe("/api/folders/rename");
+    expect(await recorder.requests[0]?.json()).toEqual({ from: "inbox", to: "triage" });
+  });
+
   it("reads job rows from GET /api/jobs", async () => {
     const recorder = recording({ jobs: [] });
     await client(recorder).listJobs({ recent: 25 });

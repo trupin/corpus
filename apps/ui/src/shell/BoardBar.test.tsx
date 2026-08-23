@@ -141,7 +141,10 @@ describe("the board bar", () => {
     const { container } = renderBar(wire);
     await settle(container, 3);
 
+    // `＋` offers the two kinds of board there are (UI-152): an empty one, and a
+    // kanban whose columns are its stages.
     fireEvent.click(screen.getByRole("button", { name: "New board" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Empty board/ }));
 
     await waitFor(() => {
       expect(wire.writes("POST")).toHaveLength(1);

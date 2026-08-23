@@ -135,6 +135,7 @@ describe("the shortcut registry", () => {
       "paths.closeAll",
       "columns.switch",
       "columns.move",
+      "explorer.toggle",
       "boards.switch",
       "doc.focusMode",
       "doc.archive",
@@ -153,6 +154,7 @@ describe("the shortcut registry", () => {
       "close every path on this board",
       "switch column (also [ / ])",
       "move column",
+      "toggle the explorer",
       "show the nth board",
       "focus mode",
       "archive open / highlighted doc",
@@ -198,9 +200,19 @@ describe("the shortcut registry", () => {
     expect(claimed.map((shortcut) => shortcut.id)).toEqual([]);
   });
 
-  it("only ⌘K survives a writing surface", () => {
+  /**
+   * Two entries, and both are **chrome rather than text**: ⌘K opens the search
+   * overlay and ⌘B retracts the explorer. Neither types anything, and a person
+   * writing a document is exactly who wants the tree out of the way. ⌘B is also
+   * what closes the explorer while the keyboard is *inside* the tree, which
+   * declares `data-shortcuts="off"` and would otherwise suppress every binding.
+   *
+   * Anything else added here takes a key away from every writing surface in the
+   * app, so the list is pinned rather than described.
+   */
+  it("lets only the two chrome toggles survive a writing surface", () => {
     const permitted = SHORTCUTS.filter((shortcut) => shortcut.allowInInput === true);
-    expect(permitted.map((shortcut) => shortcut.id)).toEqual(["search.open"]);
+    expect(permitted.map((shortcut) => shortcut.id)).toEqual(["explorer.toggle", "search.open"]);
   });
 });
 

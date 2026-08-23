@@ -434,7 +434,7 @@ test.describe("the cheat sheet is generated from the registry", () => {
    * the legend the registry generates. It is listed with the row bindings
    * because that is what it acts on.
    */
-  test("`?` toggles it, and it lists SPEC.md §10's sixteen bindings in the prototype's order", async ({
+  test("`?` toggles it, and it lists SPEC.md §10's seventeen bindings in the prototype's order", async ({
     page,
   }) => {
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });
@@ -457,6 +457,7 @@ test.describe("the cheat sheet is generated from the registry", () => {
       "paths.closeAll",
       "columns.switch",
       "columns.move",
+      "explorer.toggle",
       "boards.switch",
       "doc.focusMode",
       "doc.archive",

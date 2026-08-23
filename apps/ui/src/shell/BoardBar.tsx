@@ -2,7 +2,12 @@ import { ChangedMark } from "@corpus/kit";
 import { useEffect, useRef, useState, type DragEvent, type ReactElement } from "react";
 import { useBoardSurface } from "../board/BoardsProvider";
 import type { Board } from "../board/boardDoc";
+import { FUNNEL_HINT, GRAPH_HINT } from "../board/kanban";
+import { KanbanDialog } from "../board/KanbanDialog";
+import { useStrayStages } from "../board/useStrayStages";
+import { MenuItems } from "../menu/MenuItems";
 import { pathColumnCount, pathsOf } from "../board/strip";
+import { useExplorer } from "../explorer/ExplorerProvider";
 import { useBoardCommands } from "../keyboard/boardCommands";
 import { BoardTabMenuItems } from "../menu/BoardTabMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
@@ -33,11 +38,18 @@ import "./BoardBar.css";
  *
  * **The showing board's paths** (UI-149, rider 3) sit left of the spacer: the
  * count pill and "close paths", reading the same browser-local strip the board
- * renders. **What is deliberately not here yet**: the explorer toggle (`⌘B`,
- * UI-150). The prototype draws it in this bar and it arrives with its own
- * issue; a button that did nothing would be a promise the product does not
- * keep.
+ * renders.
+ *
+ * **The explorer toggle** (`⌘B`, UI-150) sits left of the tabs, where
+ * `design/navigation.html` draws it: the panel it opens is column zero, a
+ * sibling of the board, so its switch belongs on the board's own bar rather
+ * than in the top bar with the corpus-wide controls.
  */
+
+/** The full sentence behind the hint, including the way out of the graph. */
+const KANBAN_HINT_TITLE = (field: string): string =>
+  `This board's columns are its stages. A drag follows a transition and nothing else; ` +
+  `anything else is done by setting ${field} in the document, from the reader or the CLI.`;
 
 /** What the bar says when a workspace holds no board documents at all. */
 export const NO_BOARDS_LABEL = "No boards — run `corpus upgrade`";
@@ -223,6 +235,8 @@ export function BoardBar(): ReactElement {
    * because the menu that starts a rename closes before the field appears.
    */
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** The kanban creation form, open only after `＋ → Kanban…` was chosen. */
+  const [newKanban, setNewKanban] = useState(false);
   const { boards, current } = surface;
   /*
    * The pill reads the same strip the board renders, through the bound slice;
@@ -230,9 +244,12 @@ export function BoardBar(): ReactElement {
    * `⇧esc` are one implementation (rider 3's "one act").
    */
   const commands = useBoardCommands();
+  const explorer = useExplorer();
   const pathCount = pathsOf(surface.local.strip).length;
   const colCount = pathColumnCount(surface.local.strip);
   const changed = useChangedBoards(boards);
+  /** Documents in the showing kanban's scope that none of its columns show. */
+  const strays = useStrayStages(current);
 
   const openTabMenu = (
     board: Board,
@@ -272,6 +289,47 @@ export function BoardBar(): ReactElement {
     });
   };
 
+  /**
+   * `＋` (SPEC.md §10, rider 6): the two kinds of board there are.
+   *
+   * An **empty board** is created straight away and named in place, exactly as
+   * it was before this menu — it has one decision (its title) and the tab is
+   * where a title is typed. A **kanban** has four, and none of them has a
+   * sensible default that a person could discover afterwards from the bar, so it
+   * asks in a form before the document exists.
+   */
+  const openAddMenu = (clientX: number, clientY: number, autoFocus: boolean): void => {
+    menu.open({
+      label: "New board",
+      clientX,
+      clientY,
+      autoFocus,
+      items: (close) => (
+        <MenuItems
+          actions={[
+            {
+              id: "empty-board",
+              label: "Empty board",
+              meta: "a document you add view columns to",
+              run: () => {
+                void surface.createBoard();
+              },
+            },
+            {
+              id: "kanban-board",
+              label: "Kanban…",
+              meta: "columns are stages; a drag follows the board’s graph",
+              run: () => {
+                setNewKanban(true);
+              },
+            },
+          ]}
+          onDone={close}
+        />
+      ),
+    });
+  };
+
   const finishDrag = (): void => {
     const moved = dragId;
     const target = dropAt;
@@ -294,6 +352,34 @@ export function BoardBar(): ReactElement {
 
   return (
     <nav className="boardbar" aria-label="Boards">
+      {/*
+       * Column zero's switch (SPEC.md §10, rider 1), left of the tabs exactly
+       * as `design/navigation.html` draws it. The panel it opens is a sibling
+       * of the board, so this is a layout control rather than an overlay
+       * trigger — which is why it reports its state with `aria-pressed` rather
+       * than `aria-expanded`.
+       */}
+      <button
+        type="button"
+        className={`icon-btn explorer-toggle${explorer.open ? " on" : ""}`}
+        aria-label="Toggle explorer"
+        aria-pressed={explorer.open}
+        title="Explorer (⌘B)"
+        onClick={explorer.toggle}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="16" rx="2.5" />
+          <path d="M9 4v16" />
+        </svg>
+      </button>
       <div
         className="board-tabs"
         onDragOver={(event: DragEvent<HTMLDivElement>) => {
@@ -364,13 +450,34 @@ export function BoardBar(): ReactElement {
         type="button"
         className="board-add"
         aria-label="New board"
+        aria-haspopup="menu"
         title="New board — a document the agent can write too"
-        onClick={() => {
-          void surface.createBoard();
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          openAddMenu(rect.left, rect.bottom + 4, false);
         }}
       >
         ＋
       </button>
+      {/*
+       * What a drag on this board does (SPEC.md §10, rider 6). It is the
+       * prototype's status line, moved here rather than given a strip of its
+       * own: it is one clause about the showing board, and the only board that
+       * has anything to say is a kanban.
+       */}
+      {current?.kanban == null ? null : (
+        <span className="board-hint" title={KANBAN_HINT_TITLE(current.kanban.field)}>
+          {`kanban over ${current.kanban.field} · ${
+            current.kanban.transitions === undefined ? FUNNEL_HINT : GRAPH_HINT
+          }${
+            strays === null || strays === 0
+              ? ""
+              : ` · ${String(strays)} document${strays === 1 ? "" : "s"} in scope with a ${
+                  current.kanban.field
+                } this board does not list`
+          }`}
+        </span>
+      )}
       {/*
        * The showing board's paths (SPEC.md §10, rider 3): the count pill and
        * "close paths", left of the spacer. Browser-local state, so the pill is
@@ -402,6 +509,20 @@ export function BoardBar(): ReactElement {
       <span className="boardbar-spacer" />
       {/* The right of the bar is the corpus, not this board (SPEC.md §7). */}
       <ReflectControl />
+
+      {!newKanban ? null : (
+        <KanbanDialog
+          mode="create"
+          kanban={null}
+          onSubmit={(result) => {
+            setNewKanban(false);
+            void surface.createKanban(result);
+          }}
+          onClose={() => {
+            setNewKanban(false);
+          }}
+        />
+      )}
     </nav>
   );
 }

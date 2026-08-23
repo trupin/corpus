@@ -53,6 +53,14 @@ export interface ColumnListProps {
    * a workspace whose agent has never run.
    */
   readonly reflected: string | null | undefined;
+  /**
+   * Every row here may be picked up and dragged to another column
+   * (SPEC.md §10, rider 6). True only on a kanban board, where a drop writes the
+   * one field its columns differ on.
+   */
+  readonly rowsDraggable?: boolean;
+  readonly onRowDragStart?: ((row: DocRow) => void) | undefined;
+  readonly onRowDragEnd?: (() => void) | undefined;
   readonly onScroll: (scrollTop: number) => void;
   /** A row was picked: a path opens off it (SPEC.md §10, rider 3). */
   readonly onOpen: (row: DocRow) => void;
@@ -72,6 +80,9 @@ export function ColumnList({
   originDocId,
   openDocIds,
   reflected,
+  rowsDraggable = false,
+  onRowDragStart,
+  onRowDragEnd,
   onScroll,
   onOpen,
   onOpenHere,
@@ -176,6 +187,11 @@ export function ColumnList({
              * disagree with the number on the board bar.
              */
             unreflected={reflected === undefined ? false : isUnreflected(row, reflected)}
+            draggable={rowsDraggable}
+            onDragStart={(dragged: DocRow) => {
+              onRowDragStart?.(dragged);
+            }}
+            onDragEnd={onRowDragEnd}
             onOpen={onOpen}
             onNotify={onNotify}
           />

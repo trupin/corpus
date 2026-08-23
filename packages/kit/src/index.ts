@@ -103,6 +103,14 @@ export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCapture } from "./query/useCapture.js";
 export { useCreateThread, type CreateThreadVariables } from "./query/useCreateThread.js";
 export { useDeleteDoc } from "./query/useDeleteDoc.js";
+// SPEC.md §9.2's folder acts (rider 7), behind the explorer's folder menu.
+export {
+  useDeleteFolder,
+  useRenameFolder,
+  useSetFolderArchived,
+  type FolderArchiveVariables,
+  type RenameFolderVariables,
+} from "./query/useFolderActs.js";
 export {
   useMarkThreadSeen,
   useSetThreadStatus,

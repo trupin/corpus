@@ -15,8 +15,8 @@ import {
   type ReactNode,
 } from "react";
 import { useToast } from "../shell/Toasts";
-import { BOARD_DOCUMENT_FOLDER, resolveBoard, type Board } from "./boardDoc";
-import { openLoose } from "./strip";
+import { BOARD_DOCUMENT_FOLDER, resolveBoard, type Board, type KanbanSpec } from "./boardDoc";
+import { openFromExplorer as openFromExplorerAct, openLoose } from "./strip";
 import { nextBoardOrder, planBoardReorder } from "./boardOrder";
 import {
   bindBoardLocalState,
@@ -59,12 +59,43 @@ export interface BoardSurface {
    */
   readonly openOnBoard: (boardId: string, docId: string) => void;
   /**
+   * The explorer's open onto a board that is **not** the one showing (UI-150).
+   *
+   * Written here rather than through `useOpenInColumn`, and the reason is a
+   * race: that seam acts on the strip the board is holding *now*, so switching
+   * the board and opening in one handler would commit the path into the board
+   * being left. This writes the target board's stored strip directly — exactly
+   * as {@link openOnBoard} does — and then shows it.
+   *
+   * When the target *is* the showing board the explorer uses the seam instead,
+   * because only the board can scroll to the column and flash it. Both call the
+   * same act (`openFromExplorer` in `strip.ts`), so the preview and replacement
+   * rules have one implementation.
+   */
+  readonly openFromExplorer: (
+    boardId: string,
+    docId: string,
+    options?: { readonly keep?: boolean },
+  ) => void;
+  /**
    * **The explorer's act** (SPEC.md §10, rider 1: "a `type: board` document in
    * the tree *is* the board: clicking it shows that board, restoring it first if
    * it was archived"). Exported for UI-150.
    */
   readonly openBoard: (boardId: string) => Promise<void>;
   readonly createBoard: () => Promise<void>;
+  /**
+   * Creates a **kanban** board (SPEC.md §10, rider 6): one document carrying the
+   * `kanban` block and the scope query, which is the whole of a kanban — its
+   * columns are derived and no view document is written.
+   */
+  readonly createKanban: (request: NewKanban) => Promise<void>;
+  /**
+   * Rewrites one board's `kanban` block — the stages, their order, the
+   * transitions. Every act on a stage column lands here, because a stage is not
+   * a column somebody added to a board but one of the values it is drawn over.
+   */
+  readonly setKanban: (board: Board, kanban: KanbanSpec, message: string) => Promise<void>;
   readonly renameBoard: (board: Board, title: string) => Promise<void>;
   readonly archiveBoard: (board: Board) => Promise<void>;
   readonly deleteBoard: (board: Board) => Promise<void>;
@@ -83,6 +114,14 @@ const BoardsContext = createContext<BoardSurface | null>(null);
 
 /** The title a board is born with — the same "type over it" shape a document has. */
 export const UNTITLED_BOARD_TITLE = "New board";
+
+/** What the kanban dialog collects, already parsed (`board/kanban.ts`). */
+export interface NewKanban {
+  readonly title: string;
+  readonly kanban: KanbanSpec;
+  /** The scope query — `{}` for a kanban over the whole corpus. */
+  readonly query: Readonly<Record<string, string>>;
+}
 
 /**
  * What the bar says when the last board would go (SPEC.md §10, rider 2: "one
@@ -151,6 +190,23 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
     [chooseBoard, store],
   );
 
+  const openFromExplorerOnBoard = useCallback(
+    (boardId: string, docId: string, options: { readonly keep?: boolean } = {}) => {
+      /*
+       * The preview act, applied to a board this browser is not looking at.
+       * Same rules — replace the preview, keep on `keep`, re-centre on a loop —
+       * because it is the same pure function; only the flash is missing, which
+       * cannot ride a board switch anyway (the target board mounts fresh).
+       */
+      const result = openFromExplorerAct(store.stripOf(boardId), docId, {
+        ...(options.keep === undefined ? {} : { keep: options.keep }),
+      });
+      store.commitStrip(boardId, result.board);
+      chooseBoard(boardId);
+    },
+    [chooseBoard, store],
+  );
+
   const openBoard = useCallback(
     async (boardId: string) => {
       /*
@@ -192,6 +248,44 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       fail("New board", cause);
     }
   }, [boards, chooseBoard, createDoc, fail, toast]);
+
+  const createKanban = useCallback(
+    async (request: NewKanban) => {
+      try {
+        const response = await createDoc.mutateAsync({
+          type: "board",
+          title: request.title,
+          folder: BOARD_DOCUMENT_FOLDER,
+          kanban: request.kanban,
+          ...(Object.keys(request.query).length === 0 ? {} : { query: request.query }),
+          order: nextBoardOrder(boards),
+        });
+        chooseBoard(response.doc.frontmatter.id);
+        toast({
+          tone: "info",
+          message:
+            `New kanban — ${BOARD_DOCUMENT_FOLDER}/ holds a document over ` +
+            `${request.kanban.field} with ${String(request.kanban.stages.length)} stages. ` +
+            "The agent can write the same file.",
+        });
+      } catch (cause) {
+        fail("New kanban", cause);
+      }
+    },
+    [boards, chooseBoard, createDoc, fail, toast],
+  );
+
+  const setKanban = useCallback(
+    async (board: Board, kanban: KanbanSpec, message: string) => {
+      try {
+        await updateDoc.mutateAsync({ id: board.id, changes: { kanban } });
+        toast({ tone: "info", message });
+      } catch (cause) {
+        fail("Edit the board", cause);
+      }
+    },
+    [fail, toast, updateDoc],
+  );
 
   const renameBoard = useCallback(
     async (board: Board, title: string) => {
@@ -333,8 +427,11 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       local,
       showBoard,
       openOnBoard,
+      openFromExplorer: openFromExplorerOnBoard,
       openBoard,
       createBoard,
+      createKanban,
+      setKanban,
       renameBoard,
       archiveBoard,
       deleteBoard,
@@ -349,6 +446,7 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       archiveBoard,
       boards,
       createBoard,
+      createKanban,
       current,
       deleteBoard,
       error,
@@ -357,10 +455,12 @@ export function BoardsProvider({ children }: { readonly children: ReactNode }): 
       moveBoard,
       moveColumn,
       openBoard,
+      openFromExplorerOnBoard,
       openOnBoard,
       removeColumn,
       renameBoard,
       setDefaultBoard,
+      setKanban,
       showBoard,
     ],
   );

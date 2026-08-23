@@ -6,8 +6,12 @@ import {
   detachPath,
   docAtKey,
   EMPTY_BOARD_STRIP,
+  EXPLORER_ORIGIN,
+  explorerOriginDoc,
+  explorerPath,
   newPathRight,
   openDocsOn,
+  openFromExplorer,
   openFromPath,
   openFromView,
   openHereInPath,
@@ -17,6 +21,7 @@ import {
   pathColumnCount,
   pathColumnKey,
   pathsOf,
+  pathTops,
   readBoardStrip,
   reconcileStrip,
   restartPathHere,
@@ -175,6 +180,75 @@ describe("openLoose — an open with no origin lands at the left edge", () => {
     const result = openLoose(withReader, "doc_x");
     expect(result.recentred).toBe(false);
     expect(pathsOf(result.board)).toHaveLength(1);
+  });
+});
+
+describe("openFromExplorer — the preview path (riders 1 and 3)", () => {
+  it("opens a preview at the left edge, marked with the explorer's origin", () => {
+    const result = openFromExplorer(board([q("view_a"), q("view_b")]), "doc_x");
+    expect(views(result.board)).toEqual(["p100", "q:view_a", "q:view_b"]);
+    expect(pathsOf(result.board)[0]?.origin).toEqual({ view: EXPLORER_ORIGIN, doc: "doc_x" });
+    expect(explorerOriginDoc(result.board)).toBe("doc_x");
+    expect(result.focus).toBe("path:100:0");
+  });
+
+  it("replaces the preview in place on the next pick, keeping its column", () => {
+    const first = openFromExplorer(board([q("view_a")]), "doc_x");
+    const second = openFromExplorer(first.board, "doc_y");
+    // One path, not two: the next explorer click replaces it (rider 3).
+    expect(pathsOf(second.board)).toHaveLength(1);
+    expect(explorerOriginDoc(second.board)).toBe("doc_y");
+    expect(pathTops(pathsOf(second.board)[0] as PathItem)).toEqual(["doc_y"]);
+    // The same path id, so the board scrolls to the column already on screen.
+    expect(second.focus).toBe("path:100:0");
+  });
+
+  it("replaces the whole preview, not only its first column", () => {
+    const first = openFromExplorer(board([q("view_a")]), "doc_x");
+    const deeper = openFromPath(first.board, 100, 0, "doc_y");
+    const second = openFromExplorer(deeper.board, "doc_z");
+    expect(pathsOf(second.board)[0]?.cols).toHaveLength(1);
+    expect(pathTops(pathsOf(second.board)[0] as PathItem)).toEqual(["doc_z"]);
+  });
+
+  it("keeps the path on `keep`, so the next pick opens a second one beside it", () => {
+    const kept = openFromExplorer(board([q("view_a")]), "doc_x", { keep: true });
+    expect(pathsOf(kept.board)[0]?.origin).toBeNull();
+    expect(explorerPath(kept.board)).toBeNull();
+
+    const next = openFromExplorer(kept.board, "doc_y");
+    expect(pathsOf(next.board)).toHaveLength(2);
+    expect(explorerOriginDoc(next.board)).toBe("doc_y");
+  });
+
+  it("detaches on a second event for the same document — a real double click", () => {
+    // Chrome fires `click` before `dblclick`, so the preview already exists by
+    // the time the keeping event arrives, and the loop rule is what it meets.
+    const clicked = openFromExplorer(board([q("view_a")]), "doc_x");
+    const doubled = openFromExplorer(clicked.board, "doc_x", { keep: true });
+    expect(pathsOf(doubled.board)[0]?.origin).toBeNull();
+    expect(doubled.focus).toBe("path:100:0");
+    // No "already in this path" toast on a double click: nothing was refused.
+    expect(doubled.recentred).toBe(false);
+  });
+
+  it("re-centres on a document any path already shows, and closes nothing", () => {
+    const row = openFromView(board([q("view_a")]), "view_a", "doc_x");
+    const loop = openFromExplorer(row.board, "doc_x");
+    expect(loop.recentred).toBe(true);
+    expect(loop.focus).toBe("path:100:0");
+    expect(loop.board).toBe(row.board);
+    // The row's own path keeps its origin: the explorer did not adopt it.
+    expect(explorerPath(loop.board)).toBeNull();
+  });
+
+  it("leaves a kept path alone once it is loose", () => {
+    const kept = openFromExplorer(board([q("view_a")]), "doc_x", { keep: true });
+    const again = openFromExplorer(kept.board, "doc_y");
+    // The kept path is untouched; the new preview is a different item.
+    expect(pathTops(pathsOf(again.board).find((p) => p.origin === null) as PathItem)).toEqual([
+      "doc_x",
+    ]);
   });
 });
 

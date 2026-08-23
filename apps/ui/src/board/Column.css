@@ -496,3 +496,66 @@
   font-size: 11px;
   color: var(--ink-3);
 }
+
+/*
+ * Kanban (SPEC.md §10, rider 6), ported from `design/navigation.html`.
+ *
+ * The four drag classes are the whole of the "lit and dim" the rider asks for:
+ * while a row is in flight every column that cannot take it dims, every column
+ * that can outlines, and the one under the pointer says which of the two it is.
+ * They sit on `.col` beside `.kactive` and `.flash`, so a column can be active,
+ * flashing and a drop target at once — which is exactly what happens when a
+ * person drags across the column the keyboard is on.
+ */
+
+.col.can-drop {
+  border-color: var(--accent);
+}
+
+.col.no-drop {
+  opacity: 0.4;
+}
+
+.col.drop-over {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.col.drop-bad {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 2px var(--signal-wash);
+}
+
+/* The grab cursor is the only cue a row gives before it is picked up. It keys
+   off the attribute rather than a class, so a row that is not draggable cannot
+   accidentally advertise that it is. */
+.row[draggable="true"] {
+  cursor: grab;
+}
+
+.row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/*
+ * The outgoing-transition chips: dashed, because they are not a filter. Every
+ * other chip in this row narrows what the column shows; these say where a card
+ * may be dragged, which is a different kind of fact and reads wrongly in the
+ * same paint.
+ */
+.chip.edge {
+  border-style: dashed;
+  background: none;
+  color: var(--ink-2);
+}
+
+.chip.edge.end {
+  color: var(--ink-3);
+}
+
+/* The status a mapped stage writes on entry (SPEC.md §5's coupling). */
+.chip.good {
+  background: var(--good-wash);
+  border-color: transparent;
+  color: var(--good);
+}

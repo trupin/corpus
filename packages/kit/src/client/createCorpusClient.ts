@@ -6,10 +6,12 @@ import type {
   CreateThreadRequest,
   CreateThreadResponse,
   DeleteDocResult,
+  DeleteFolderResult,
   DeleteTurnResult,
   Doc,
   DocList,
   DocMutationResponse,
+  FolderStatusResult,
   FolderTree,
   FormAnswerResponse,
   FormFieldAnswer,
@@ -26,6 +28,7 @@ import type {
   ReflectAskResult,
   ReflectStatus,
   RelatedDocs,
+  RenameFolderResult,
   SearchResults,
   Thread,
   ThreadMutationResponse,
@@ -226,6 +229,37 @@ export interface CorpusClient {
    */
   getThreadScope(threadId: string, options?: RequestOptions): Promise<ThreadScope>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
+  /**
+   * The four **folder acts** (SPEC.md §9.2, rider 7 signed 2026-08-22), behind
+   * the explorer's folder menu (§10, rider 1).
+   *
+   * Four methods rather than one with a verb, because the contract declares four
+   * routes answering three different result shapes — and because only `delete`
+   * is user-only and only `rename` can conflict.
+   *
+   * **The path is sent byte for byte.** It is relative to `data/docs/`, carries
+   * no `data/docs/` prefix and no leading or trailing slash, and is compared
+   * exactly by the server: `FINANCE` is a `404` in a workspace holding
+   * `finance` (SERVER-136). Nothing here normalises a caller's spelling, because
+   * a rename that resolved a guess wrongly moves files.
+   *
+   * **Each result names every document the act changed**, and `documents` is the
+   * state *after* the act rather than what changed: archive lists documents that
+   * were already archived, because the act applied to them.
+   */
+  renameFolder(from: string, to: string): Promise<RenameFolderResult>;
+  archiveFolder(path: string): Promise<FolderStatusResult>;
+  unarchiveFolder(path: string): Promise<FolderStatusResult>;
+  /**
+   * `POST /api/folders/delete` — user-only, like deleting a document.
+   *
+   * **It does not remove the folder's threads**, which survive as orphaned
+   * records naming a deleted parent, and the response does not name them
+   * (SERVER-136). A caller must not present a count from this result as a count
+   * of everything the act touched. It also leaves the folder itself behind when
+   * something that is not a document is still in it.
+   */
+  deleteFolder(path: string): Promise<DeleteFolderResult>;
   /**
    * `GET /api/search` — ranked retrieval (SPEC.md §9.2).
    *
@@ -897,6 +931,34 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
 
     async getTree(options) {
       return unwrap("GET /api/tree", await api.GET("/api/tree", { ...signalOf(options) }));
+    },
+
+    async renameFolder(from, to) {
+      return unwrap(
+        "POST /api/folders/rename",
+        await api.POST("/api/folders/rename", { body: { from, to } }),
+      );
+    },
+
+    async archiveFolder(path) {
+      return unwrap(
+        "POST /api/folders/archive",
+        await api.POST("/api/folders/archive", { body: { path } }),
+      );
+    },
+
+    async unarchiveFolder(path) {
+      return unwrap(
+        "POST /api/folders/unarchive",
+        await api.POST("/api/folders/unarchive", { body: { path } }),
+      );
+    },
+
+    async deleteFolder(path) {
+      return unwrap(
+        "POST /api/folders/delete",
+        await api.POST("/api/folders/delete", { body: { path } }),
+      );
     },
 
     async searchCorpus(params, options) {

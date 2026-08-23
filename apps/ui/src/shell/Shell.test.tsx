@@ -42,7 +42,51 @@ describe("Shell", () => {
     expect(app).not.toBeNull();
 
     const regions = [...(app?.children ?? [])].map((child) => child.className);
-    expect(regions).toEqual(["topbar", "boardbar", "board", "console"]);
+    expect(regions).toEqual(["topbar", "boardbar", "main", "console"]);
+
+    // Inside the board's own region: the column strip above the scroller it
+    // maps (UI-151; `design/navigation.html`'s `.board-wrap`).
+    const wrap = [...(app?.querySelector(".board-wrap")?.children ?? [])].map(
+      (child) => child.className,
+    );
+    expect(wrap).toEqual(["colbar", "board"]);
+  });
+
+  /**
+   * Rider 1's drawer rule, in the DOM: the explorer is a **sibling** of the
+   * board inside `.main`, never a layer over it. A test on the document order
+   * is what stops the panel quietly becoming an overlay — the failure would be
+   * invisible in a screenshot and fatal for the left-most column, which is
+   * exactly where the explorer's own preview path lands.
+   */
+  it("mounts the explorer beside the board, before it, once it is opened", async () => {
+    const { container } = renderShell();
+    const user = userEvent.setup();
+
+    // Closed by default (rider 1), so it costs the layout nothing until asked.
+    expect(container.querySelector(".explorer")).toBeNull();
+    const main = [...(container.querySelector(".main")?.children ?? [])].map(
+      (child) => child.className,
+    );
+    expect(main).toEqual(["board-wrap"]);
+
+    await user.click(screen.getByRole("button", { name: "Toggle explorer" }));
+
+    expect(
+      [...(container.querySelector(".main")?.children ?? [])].map((child) => child.className),
+    ).toEqual(["explorer", "board-wrap"]);
+  });
+
+  it("remembers the explorer's open state under its own storage key", async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    renderShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Toggle explorer" }));
+    // Its own key, not the board blob's: a board-state migration must never
+    // take the explorer with it (`useExplorerLayout`).
+    expect(JSON.parse(storage.getItem("corpus.explorer") ?? "{}")).toMatchObject({ open: true });
   });
 
   /**

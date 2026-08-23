@@ -32,11 +32,16 @@ const HITS = [
 interface Handlers {
   readonly open: ReturnType<typeof vi.fn>;
   readonly revealColumn: ReturnType<typeof vi.fn>;
+  readonly openFullScreen: ReturnType<typeof vi.fn>;
 }
 
 function FakeBoard({ handlers }: { readonly handlers: Handlers }): ReactElement {
   const navigation = useMemo<BoardNavigation>(
-    () => ({ open: handlers.open, revealColumn: handlers.revealColumn }),
+    () => ({
+      open: handlers.open,
+      revealColumn: handlers.revealColumn,
+      openFullScreen: handlers.openFullScreen,
+    }),
     [handlers],
   );
   useRegisterBoardNavigation(navigation);
@@ -52,7 +57,7 @@ function renderOverlay(options: SearchTransportOptions = {}) {
   });
   const harness = createBoardHarness(wire.fetch);
   const onClose = vi.fn();
-  const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn() };
+  const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn(), openFullScreen: vi.fn() };
 
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (

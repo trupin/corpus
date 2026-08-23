@@ -51,9 +51,10 @@ describe("the navigation seam", () => {
   it("routes a caller's open through whatever the board registered", () => {
     const open = vi.fn();
     const revealColumn = vi.fn();
+    const openFullScreen = vi.fn();
 
     function FakeBoard(): ReactElement {
-      const handlers = useMemo<BoardNavigation>(() => ({ open, revealColumn }), []);
+      const handlers = useMemo<BoardNavigation>(() => ({ open, revealColumn, openFullScreen }), []);
       useRegisterBoardNavigation(handlers);
       return <div />;
     }

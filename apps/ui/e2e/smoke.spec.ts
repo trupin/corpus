@@ -48,8 +48,9 @@ test.describe("shell", () => {
     const order = await page.evaluate(() =>
       [...(document.querySelector(".app")?.children ?? [])].map((child) => child.className),
     );
-    // The board bar joined the shell with UI-148 (SPEC.md §10, rider 2).
-    expect(order).toEqual(["topbar", "boardbar", "board", "console"]);
+    // The board bar joined the shell with UI-148 (SPEC.md §10, rider 2), and
+    // `.main` — the explorer beside the board — with UI-150 (rider 1).
+    expect(order).toEqual(["topbar", "boardbar", "main", "console"]);
     expect(uncaught).toEqual([]);
   });
 

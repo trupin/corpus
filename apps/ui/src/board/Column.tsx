@@ -1,6 +1,7 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type OpenPayload, type RowNotice } from "@corpus/kit";
 import { useState, type DragEvent, type ReactElement } from "react";
+import type { StageColumnActs } from "../menu/ColumnMenuItems";
 import { Reader } from "../reader/Reader";
 import { unreflectedCount } from "../reflect/unreflected";
 import { useReflectStatus } from "../reflect/useReflectStatus";
@@ -8,6 +9,7 @@ import { ColumnHead } from "./ColumnHead";
 import { ColumnList } from "./ColumnList";
 import { openDocId, type ColumnLocalState, type NavEntry } from "./useBoardLocalState";
 import { useColumnWidth } from "./useColumnWidth";
+import type { DropState } from "./kanbanDrag";
 import type { BoardColumn } from "./viewDoc";
 
 /**
@@ -28,8 +30,32 @@ import type { BoardColumn } from "./viewDoc";
  * drag and the edge stops the press from reaching it.
  */
 
+/**
+ * What a **stage** column is handed beyond being a column (SPEC.md §10,
+ * rider 6): how it is painted while a row is in flight, whether its rows may be
+ * picked up, the acts its `⋯` offers, and the four drag events.
+ *
+ * One bundle rather than seven props, because they are one feature and a view
+ * column takes none of them.
+ */
+/** Handed to a header that must not arm the reorder drag. */
+const noop = (): void => undefined;
+
+export interface ColumnKanban {
+  /** `can-drop` / `no-drop` / `drop-over` / `drop-bad`, or `null` when nothing drags. */
+  readonly dropState: DropState | null;
+  readonly rowsDraggable: boolean;
+  readonly acts: StageColumnActs;
+  readonly onRowDragStart: (row: DocRow) => void;
+  readonly onRowDragEnd: () => void;
+  readonly onDragOver: (event: DragEvent<HTMLElement>) => void;
+  readonly onDrop: (event: DragEvent<HTMLElement>) => void;
+}
+
 export interface ColumnProps {
   readonly column: BoardColumn;
+  /** Set when this column is a kanban stage rather than a view document. */
+  readonly kanban?: ColumnKanban | null;
   readonly isActive: boolean;
   readonly isDragging: boolean;
   /** Lit for 1.5 s after the board scrolled this column into view (SPEC.md §10). */
@@ -74,6 +100,7 @@ export interface ColumnProps {
 
 interface ColumnBodyProps {
   readonly column: BoardColumn;
+  readonly kanban: ColumnKanban | null;
   readonly local: ColumnLocalState;
   readonly cursorDocId: string | null;
   readonly originDocId: string | null;
@@ -99,6 +126,7 @@ interface ColumnBodyProps {
  */
 function ColumnBody({
   column,
+  kanban,
   local,
   cursorDocId,
   originDocId,
@@ -133,6 +161,8 @@ function ColumnBody({
         column={column}
         count={docs.data?.page.total ?? null}
         changed={reflected === undefined ? 0 : unreflectedCount(docs.data?.items ?? [], reflected)}
+        stageActs={kanban?.acts ?? null}
+        canAdd={column.stage === null || column.stage.index === 0}
         onAdd={onAdd}
         onRename={onRename}
         onEditQuery={onEditQuery}
@@ -146,6 +176,9 @@ function ColumnBody({
         error={docs.error}
         scrollTop={local.scroll}
         reflected={reflected}
+        rowsDraggable={kanban?.rowsDraggable ?? false}
+        {...(kanban === null ? {} : { onRowDragStart: kanban.onRowDragStart })}
+        {...(kanban === null ? {} : { onRowDragEnd: kanban.onRowDragEnd })}
         cursorDocId={cursorDocId}
         originDocId={originDocId}
         openDocIds={openDocIds}
@@ -167,8 +200,17 @@ function ColumnBody({
 
 export function Column(props: ColumnProps): ReactElement {
   const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
+  const kanban = props.kanban ?? null;
   const [draggable, setDraggable] = useState(false);
   const open = openDocId(local);
+  /*
+   * A stage column is not an entry in a board's `columns` array, so there is
+   * nothing for a column drag to reorder: its position is its stage's index in
+   * `kanban.stages`, which the ⋯ menu's Move left/right rewrites. Arming
+   * `draggable` here would start a gesture whose drop would write `columns` on
+   * a board that has none.
+   */
+  const reorderable = column.stage === null;
 
   const size = useColumnWidth({
     // The **view** document, not the slot: width rides the view's `extra`
@@ -188,6 +230,7 @@ export function Column(props: ColumnProps): ReactElement {
     isFlashing ? "flash" : "",
     open === null ? "" : "reading",
     size.resizing ? "resizing" : "",
+    kanban?.dropState ?? "",
   ]
     .filter((part) => part !== "")
     .join(" ");
@@ -200,7 +243,9 @@ export function Column(props: ColumnProps): ReactElement {
       // Rider 3: "a query column no longer widens when it opens a reader" — the
       // rendered width is the chosen width, reading or not.
       style={{ width: `${String(size.width)}px` }}
-      draggable={draggable}
+      draggable={draggable && reorderable}
+      onDragOver={kanban === null ? undefined : kanban.onDragOver}
+      onDrop={kanban === null ? undefined : kanban.onDrop}
       onMouseOver={onActivate}
       onFocus={onActivate}
       onDragStart={(event: DragEvent<HTMLElement>) => {
@@ -217,11 +262,12 @@ export function Column(props: ColumnProps): ReactElement {
       {column.error === null ? (
         <ColumnBody
           column={column}
+          kanban={kanban}
           local={local}
           cursorDocId={props.cursorDocId}
           originDocId={props.originDocId}
           openDocIds={props.openDocIds}
-          onHandle={setDraggable}
+          onHandle={reorderable ? setDraggable : noop}
           onScroll={props.onScroll}
           onOpenRow={props.onOpenRow}
           onOpenHere={onOpen}
@@ -239,11 +285,12 @@ export function Column(props: ColumnProps): ReactElement {
           <ColumnHead
             column={column}
             count={null}
+            stageActs={kanban?.acts ?? null}
             onAdd={props.onAdd}
             onRename={props.onRename}
             onEditQuery={props.onEditQuery}
             onRemove={props.onRemove}
-            onHandle={setDraggable}
+            onHandle={reorderable ? setDraggable : noop}
           />
           <div className="col-list">
             <div className="col-card col-card-error" role="alert">

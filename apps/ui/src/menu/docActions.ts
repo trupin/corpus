@@ -103,6 +103,25 @@ export interface DocActionOptions {
   readonly onGone?: (() => void) | undefined;
   /** Open — a path off this row (SPEC.md §10, rider 3; the `↵` act). */
   readonly onOpen?: (() => void) | undefined;
+  /**
+   * What the Open item says, when the caller's surface opens somewhere the
+   * default sentence does not describe.
+   *
+   * The board's row opens "a new column to the right"; the explorer's tree opens
+   * a **preview path on the default-open board** (rider 1), which is a different
+   * promise about a different place. Overriding the sentence rather than adding
+   * a second Open item is what keeps the archive, resolve and delete items below
+   * one declaration for both surfaces.
+   */
+  readonly openLabel?: { readonly label: string; readonly meta: string } | undefined;
+  /**
+   * "Open and keep" — the explorer's double click (rider 3: "the explorer's path
+   * is a preview: the next explorer click replaces it unless it was kept").
+   *
+   * Absent on every other surface, because no other surface opens a path that
+   * something later replaces.
+   */
+  readonly onOpenAndKeep?: (() => void) | undefined;
   /** Open here — the column's own in-place reader (the `⌥↵` act). */
   readonly onOpenHere?: (() => void) | undefined;
   readonly onOpenFocus?: (() => void) | undefined;
@@ -218,9 +237,17 @@ export function useDocActions(
   if (surface === "row" && onOpen !== undefined) {
     list.push({
       id: "open",
-      label: "Open",
-      meta: "a new column to the right (↵)",
+      label: options.openLabel?.label ?? "Open",
+      meta: options.openLabel?.meta ?? "a new column to the right (↵)",
       run: onOpen,
+    });
+  }
+  if (surface === "row" && options.onOpenAndKeep !== undefined) {
+    list.push({
+      id: "open-keep",
+      label: "Open and keep",
+      meta: "the next pick opens a new path beside it (double click)",
+      run: options.onOpenAndKeep,
     });
   }
   if (surface === "row" && onOpenHere !== undefined) {

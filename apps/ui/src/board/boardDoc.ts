@@ -1,4 +1,5 @@
 import type { DocRow } from "@corpus/contract";
+import { readStoredWidth } from "./columnWidth";
 
 /**
  * The board-document contract, read (SPEC.md §10, rider 2 — "a board is a
@@ -39,6 +40,17 @@ export interface Board {
   readonly defaultOpen: boolean;
   /** A kanban board's scope query. `null` on an ordinary board. */
   readonly query: Readonly<Record<string, unknown>> | null;
+  /**
+   * The width this board's **derived** columns render at (SPEC.md §10), or
+   * `null` for the default.
+   *
+   * A view column's width is its own view document's, because a view is a
+   * document and may sit on two boards at two widths. A kanban's stages are not
+   * documents, so the one file that can hold their width is the board — and one
+   * width for every stage is also what a kanban wants: columns a person compares
+   * side by side should be the same size.
+   */
+  readonly width: number | null;
 }
 
 /** Where board documents are filed, matching the workspace the seed ships. */
@@ -53,6 +65,7 @@ export function toBoard(row: DocRow): Board {
     kanban: row.kanban,
     defaultOpen: row.defaultOpen,
     query: row.query,
+    width: readStoredWidth(row.extra),
   };
 }
 
@@ -94,4 +107,20 @@ export function resolveBoard(boards: readonly Board[], remembered: string | null
     if (chosen !== undefined) return chosen;
   }
   return boards.find((board) => board.defaultOpen) ?? boards[0] ?? null;
+}
+
+/**
+ * The board that receives an open naming no board — the explorer's target
+ * (SPEC.md §10, rider 2 as amended 2026-08-22: "`default-open` receives every
+ * open that names no board, falling back to the first in `order`").
+ *
+ * The same two steps {@link resolveBoard} takes once it has no remembered id,
+ * named separately because they answer a different question: which board is
+ * *showing* is this browser's, and which board *receives* is the corpus's. The
+ * seed makes the difference visible — `default-open` sits on Files, which is
+ * third in `order`, so a fallback that assumed "the first tab" picks the wrong
+ * board on the shipped workspace (UI-148).
+ */
+export function defaultOpenBoard(boards: readonly Board[]): Board | null {
+  return resolveBoard(boards, null);
 }

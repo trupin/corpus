@@ -22,6 +22,7 @@ function OpenSpy({ open }: { readonly open: (docId: string) => void }): ReactEle
       open(target.docId);
     },
     revealColumn: () => undefined,
+    openFullScreen: () => undefined,
   });
   return <span />;
 }

@@ -26,6 +26,7 @@ function Bind({ children, overrides }: KeyboardHarnessProps): ReactElement {
     openSearch: () => undefined,
     toggleCheatSheet: () => undefined,
     showNthBoard: () => undefined,
+    toggleExplorer: () => undefined,
     ...overrides,
     board,
   });

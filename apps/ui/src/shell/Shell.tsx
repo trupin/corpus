@@ -3,6 +3,8 @@ import { useCallback, useMemo, useRef, useState, type ReactElement } from "react
 import { BoardsProvider, useBoardSurface } from "../board/BoardsProvider";
 import { BoardNavigationProvider } from "../board/openInColumn";
 import { ComposeOverlay } from "../compose/ComposeOverlay";
+import { Explorer } from "../explorer/Explorer";
+import { ExplorerProvider, useExplorer } from "../explorer/ExplorerProvider";
 import { Console } from "../console/Console";
 import { useEditSessionFlusher } from "../editor/editSessionFlush";
 import { BoardCommandsProvider, useBoardCommands } from "../keyboard/boardCommands";
@@ -52,12 +54,16 @@ export function Shell(): ReactElement {
         <BoardNavigationProvider>
           <BoardCommandsProvider>
             <ContextMenuProvider>
-              {/* Outermost of the surface hosts: an image can be clicked in the
+              {/* One explorer layout, read by the panel, the bar's toggle and
+                  `⌘B` alike — see `ExplorerProvider`. */}
+              <ExplorerProvider>
+                {/* Outermost of the surface hosts: an image can be clicked in the
                   board, in a thread and in focus mode, and the viewer opens over
                   all of them. */}
-              <ImageViewerHost>
-                <ShellSurfaces />
-              </ImageViewerHost>
+                <ImageViewerHost>
+                  <ShellSurfaces />
+                </ImageViewerHost>
+              </ExplorerProvider>
             </ContextMenuProvider>
           </BoardCommandsProvider>
         </BoardNavigationProvider>
@@ -77,6 +83,7 @@ function ShellSurfaces(): ReactElement {
   const opener = useRef<HTMLElement | null>(null);
   const board = useBoardCommands();
   const boards = useBoardSurface();
+  const explorer = useExplorer();
   const toast = useToast();
 
   const open = useCallback((next: Layer) => {
@@ -126,9 +133,11 @@ function ShellSurfaces(): ReactElement {
     [boards],
   );
 
+  const toggleExplorer = explorer.toggle;
+
   const context = useMemo<ShortcutContext>(
-    () => ({ openCompose, openSearch, toggleCheatSheet, showNthBoard, board }),
-    [board, openCompose, openSearch, showNthBoard, toggleCheatSheet],
+    () => ({ openCompose, openSearch, toggleCheatSheet, showNthBoard, toggleExplorer, board }),
+    [board, openCompose, openSearch, showNthBoard, toggleCheatSheet, toggleExplorer],
   );
 
   useShortcuts(context);
@@ -157,7 +166,16 @@ function ShellSurfaces(): ReactElement {
       <div className="app">
         <Topbar onOpenSearch={openSearch} onOpenCompose={openCompose} />
         <BoardBar />
-        <Board />
+        {/*
+         * Column zero and the board, side by side (SPEC.md §10, rider 1). The
+         * explorer is a **sibling** of the board rather than an overlay: it
+         * takes width from it the way the console below takes height, so
+         * nothing it shows ever covers the left-most column.
+         */}
+        <div className="main">
+          <Explorer />
+          <Board />
+        </div>
         <Console />
       </div>
       {layer === "search" ? <SearchOverlay onClose={close} /> : null}

@@ -243,6 +243,7 @@ describe("the context menu frame", () => {
           openSearch: () => undefined,
           toggleCheatSheet: () => undefined,
           showNthBoard: () => undefined,
+          toggleExplorer: () => undefined,
           board,
         });
         return (

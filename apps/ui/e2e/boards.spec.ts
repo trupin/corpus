@@ -113,7 +113,13 @@ test.describe("the board bar", () => {
     await page.goto("/");
     await expect(page.locator(tabTitles)).toHaveCount(2);
 
+    /*
+     * `＋` offers the two kinds of board there are (UI-152, SPEC.md §10 rider 6):
+     * an empty one you add view columns to, and a kanban whose columns are its
+     * stages. An empty board is still one click away from the choice.
+     */
     await page.getByRole("button", { name: "New board" }).click();
+    await page.getByRole("menuitem", { name: /Empty board/ }).click();
 
     await expect(page.locator(tabTitles)).toHaveCount(3);
     await expect(page.locator(tabTitles).nth(2)).toHaveText("New board");

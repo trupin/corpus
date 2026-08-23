@@ -27,6 +27,30 @@
   height: 38px;
 }
 
+/* The explorer toggle, left of the tabs (`design/navigation.html`'s
+   `.icon-btn`). `flex: none` so it never shrinks when the tabs run out of room:
+   the switch for column zero has to stay pressable on a full bar. */
+.explorer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: none;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.explorer-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
 .board-tabs {
   display: flex;
   align-items: stretch;
@@ -242,4 +266,24 @@
 .btn-ghost[disabled]:hover {
   border-color: var(--line);
   color: var(--ink-2);
+}
+
+/*
+ * What a drag on the showing board does (SPEC.md §10, rider 6) — the
+ * prototype's status line, in the bar.
+ *
+ * It sits left of `.boardbar-spacer`, so a hint that grows a clause eats slack
+ * instead of moving a tab (§10: "nothing resizes because of what it holds"), and
+ * it truncates rather than wrapping: the bar is one fixed-height row and the
+ * whole sentence is in the tooltip.
+ */
+.board-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

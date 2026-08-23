@@ -1029,11 +1029,12 @@ describe("the master-detail body", () => {
     const user = userEvent.setup();
     const open = vi.fn();
     const revealColumn = vi.fn();
+    const openFullScreen = vi.fn();
     harness = createCorpusTestHarness({ fetch: transport({ jobs: [job()] }).fetch });
     const { Wrapper } = harness;
 
     function FakeBoard(): ReactElement {
-      const handlers = useMemo<BoardNavigation>(() => ({ open, revealColumn }), []);
+      const handlers = useMemo<BoardNavigation>(() => ({ open, revealColumn, openFullScreen }), []);
       useRegisterBoardNavigation(handlers);
       return <div />;
     }

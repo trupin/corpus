@@ -13,6 +13,7 @@ const board = (overrides: Partial<Board> = {}): Board => ({
   kanban: null,
   defaultOpen: false,
   query: null,
+  width: null,
   ...overrides,
 });
 
@@ -36,7 +37,14 @@ describe("toBoard", () => {
       kanban: null,
       defaultOpen: true,
       query: null,
+      width: null,
     });
+  });
+
+  /** A board's `extra.width` is what its **derived** columns render at (UI-152). */
+  it("reads the width its stage columns share", () => {
+    expect(toBoard(row({ extra: { width: 420 } })).width).toBe(420);
+    expect(toBoard(row({ extra: { width: "wide" } })).width).toBeNull();
   });
 
   /** A kanban board's columns are its stages; `columns` is null on the file. */

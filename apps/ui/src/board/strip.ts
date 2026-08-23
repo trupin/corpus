@@ -54,13 +54,25 @@ export interface PathCol {
 }
 
 /**
- * What a path hangs off. `view` is a board slot id today; UI-150 will also pass
- * `"explorer"`, which no slot id can collide with (slots are document ids).
+ * What a path hangs off. `view` is a board slot id, or {@link EXPLORER_ORIGIN}
+ * — a word no slot id can collide with, because slots are document ids.
  */
 export interface PathOrigin {
   readonly view: string;
   readonly doc: string;
 }
+
+/**
+ * The `view` an explorer-opened path records (SPEC.md §10, rider 3: "the
+ * explorer's path is a preview: the next explorer click replaces it unless it
+ * was kept").
+ *
+ * A word rather than an id, and safe as one: every other origin `view` is a
+ * board slot — a document id, or `<docId>#<n>` — and no document id is the
+ * seven letters below. It is what makes {@link explorerPath} a lookup rather
+ * than a flag stored beside the strip.
+ */
+export const EXPLORER_ORIGIN = "explorer";
 
 /** A chain of reader columns hanging off an origin row — or off nothing. */
 export interface PathItem {
@@ -154,6 +166,23 @@ export function pathOffView(board: BoardStrip, view: string): PathItem | null {
 /** The document whose row carries `.origin` in this column, or `null`. */
 export function originDocOf(board: BoardStrip, view: string): string | null {
   return pathOffView(board, view)?.origin?.doc ?? null;
+}
+
+/**
+ * The board's **preview path** — the one the explorer opened and has not been
+ * asked to keep — or `null`.
+ *
+ * There is at most one, and that is the rule rather than an accident of use: a
+ * second explorer click replaces this path instead of adding one, so "the
+ * explorer's path" is a singular thing the tree can mark an origin row for.
+ */
+export function explorerPath(board: BoardStrip): PathItem | null {
+  return pathsOf(board).find((path) => path.origin?.view === EXPLORER_ORIGIN) ?? null;
+}
+
+/** The document the tree draws as the explorer path's origin, or `null`. */
+export function explorerOriginDoc(board: BoardStrip): string | null {
+  return explorerPath(board)?.origin?.doc ?? null;
 }
 
 /**
@@ -392,6 +421,69 @@ export function openLoose(board: BoardStrip, docId: string, reveal?: RevealTarge
     origin: null,
     cols: [{ stack: [rootEntry(docId, reveal)] }],
   };
+  return {
+    board: { seq: board.seq + 1, strip: [path, ...board.strip] },
+    focus: pathColumnKey(path.id, 0),
+    recentred: false,
+  };
+}
+
+/**
+ * Open from the explorer's tree (SPEC.md §10, riders 1 and 3).
+ *
+ * Three rules, in this order, and the order is the contract:
+ *
+ * 1. **The loop rule wins.** A document already showing in *any* path on this
+ *    board re-centres on its column and closes nothing — the same rule a row
+ *    click and a link follow obey. `keep` still applies to the path it landed
+ *    in, which is what makes a real double click work: the browser fires the
+ *    click first, so the preview already exists by the time the second event
+ *    arrives, and the second event's only job is to detach it.
+ * 2. **Otherwise the preview is replaced.** There is at most one explorer path
+ *    ({@link explorerPath}), and a new pick rewrites it in place rather than
+ *    adding a second — rider 3: "the next explorer click replaces it unless it
+ *    was kept". Replacing in place also keeps the path's id, so the column the
+ *    board scrolls to is the column that was already there.
+ * 3. **Otherwise a new path opens at the left edge**, which is where every
+ *    origin-less open lands (rider 3) and where the explorer's own path lives.
+ *
+ * `keep` (the double click, and the menu's "Open and keep") detaches the path
+ * from its origin the moment it lands, so the *next* explorer click opens a new
+ * preview beside it rather than replacing it. A kept path is an ordinary loose
+ * path afterwards and this function will never touch it again.
+ *
+ * `recentred` is reported only when the act re-centred **and** kept nothing: a
+ * double click re-centres by construction, and a toast saying so on every
+ * double click would narrate the mechanism rather than the act.
+ */
+export function openFromExplorer(
+  board: BoardStrip,
+  docId: string,
+  options: { readonly keep?: boolean; readonly reveal?: RevealTarget | undefined } = {},
+): StripResult {
+  const keep = options.keep === true;
+  for (const path of pathsOf(board)) {
+    const already = recentreKey(path, docId);
+    if (already === null) continue;
+    return {
+      board: keep ? detachPath(board, path.id) : board,
+      focus: already,
+      recentred: !keep,
+    };
+  }
+
+  const origin: PathOrigin | null = keep ? null : { view: EXPLORER_ORIGIN, doc: docId };
+  const cols = [{ stack: [rootEntry(docId, options.reveal)] }];
+  const existing = explorerPath(board);
+  if (existing !== null) {
+    return {
+      board: replaceItem(board, existing, { ...existing, origin, cols }),
+      focus: pathColumnKey(existing.id, 0),
+      recentred: false,
+    };
+  }
+
+  const path: PathItem = { kind: "path", id: board.seq, origin, cols };
   return {
     board: { seq: board.seq + 1, strip: [path, ...board.strip] },
     focus: pathColumnKey(path.id, 0),

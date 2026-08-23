@@ -3,8 +3,9 @@ import { docsListKey, useCorpusClient, useDocs } from "@corpus/kit";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Board } from "../board/boardDoc";
+import { deriveStageColumns } from "../board/kanban";
 import { VIEWS_FILTER } from "../board/useColumns";
-import { toBoardColumn } from "../board/viewDoc";
+import { toBoardColumn, type BoardColumn } from "../board/viewDoc";
 import { useReflectStatus } from "./useReflectStatus";
 
 /**
@@ -66,12 +67,22 @@ export function useChangedBoards(boards: readonly Board[]): ReadonlySet<string> 
     const slotsOf = new Map<string, number[]>();
     for (const board of boards) {
       const slots: number[] = [];
-      for (const viewId of board.columnIds) {
-        const row = byId.get(viewId);
-        // A column whose view document is missing or unreadable queries nothing,
-        // so there is nothing cached for it and nothing to say about it.
-        if (row === undefined) continue;
-        const column = toBoardColumn(viewId, row);
+      /*
+       * A kanban's columns are its stages, derived from the board document
+       * itself (SPEC.md §10, rider 6) — no view document is resolved, and its
+       * `columns` is empty. Reading `columnIds` alone would leave every kanban
+       * tab permanently undotted, which reads as "nothing changed here".
+       */
+      const columns: BoardColumn[] =
+        board.kanban === null
+          ? board.columnIds.flatMap((viewId) => {
+              const row = byId.get(viewId);
+              // A column whose view document is missing or unreadable queries
+              // nothing, so there is nothing cached for it to say anything about.
+              return row === undefined ? [] : [toBoardColumn(viewId, row)];
+            })
+          : [...deriveStageColumns(board)];
+      for (const column of columns) {
         if (column.error !== null) continue;
         const cacheKey = JSON.stringify(docsListKey(column.filter));
         let at = seen.get(cacheKey);
