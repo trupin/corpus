@@ -1,10 +1,66 @@
 # [SERVER-144] Retrieval ranks the product's own skills into every pack
 
+## Withdrawn from v0.21.0 — 2026-08-23
+
+**This issue was implemented, reviewed, and then withdrawn. The code is out of
+the release. The diagnosis is not withdrawn, and neither is a single
+measurement below.**
+
+The implementation shipped in commit `3f5d7b47` and was removed by a surgical
+revert on the same branch, `phase-44-reach-and-size`. Every file it touched is
+byte-identical to its state before that commit. The `git revert` route was not
+available: `3f5d7b47` carries six issues.
+
+**Why it was withdrawn.** PR #60's reviewer found that the exclusion contradicts
+SPEC.md §7 in three places, and the user confirmed each by reading the text:
+
+- **§7 line 393** — `corpus search` is *"ranked retrieval over the whole corpus
+  (documents, threads, **skills alike**)"*.
+- **§7 line 402** — the context pack carries *"the most-related excerpts from
+  **across the corpus**"*.
+- **§7 line 406** — skills *"surface like any documents — **via search**,
+  `type: skill` / `type: agent-def` filters, and a pinnable seed view"*.
+
+Two further costs the reviewer named, both real:
+
+- The board's ⌘K calls `GET /api/search` with no `type`. A person searching for
+  words that live in their own skill got silence, and nothing on that surface
+  said a default had filtered the answer.
+- A `template` document is the **user's own**, not the tool's. The issue's own
+  Edge Cases section called that an accepted cost. Nobody accepted it.
+
+**The withdrawal is procedural, not technical.** SERVER-144 changed a rule
+SPEC.md §7 states, and this repo's standing rule is that SPEC.md does not move
+without the user's signature. The issue file carries no user decision. All
+three surfaces are covered by a §7 sentence, so the exclusion was removed from
+all three rather than narrowed — choosing which contradiction to tolerate is
+exactly the judgment that needs the signature.
+
+**What the next attempt should start from.** The numbers below, not a repeat of
+the audit. The measurements stand: 52% of output tokens across seven retrieval
+calls, the top hit for `corpus search "rate assumption 6.1%"` being the comment
+skill's worked example, `doc_skillorchestrate` as the #1 neighbour of a mortgage
+note, and 4 of 5 pack excerpt rows naming the agent's own instructions. The
+implementation notes stand too, including the views-and-boards split and its
+second argument (§9.2's filter-parity table), so a signed rider can be
+implemented against a known design rather than rediscovered.
+
+**The next attempt needs a signed §7 rider first.** The rider has to say what §7
+now promises about the product's own machinery in ranked retrieval, on each of
+the three surfaces, and what the board's ⌘K tells a person when a default has
+narrowed their answer.
+
+**One consequence for another domain.** `apps/cli`'s help text for `search`,
+`doc related` and `thread context` describes the exclusion as shipped behaviour.
+That prose is false as of this withdrawal. It is listed in the E2E Verification
+Log, under *"CLI help text left false by the withdrawal"*, and is a cli-dev
+change.
+
 ## Domain
 server
 
 ## Status
-done
+todo
 
 ## Priority
 P1 (important)
@@ -45,19 +101,26 @@ needed — which forces a second search. The effect is worst on small corpora,
 which is every new workspace's first week.
 
 ## Acceptance Criteria
-- [x] Documents of type `skill`, `agent-def` and `template` are excluded from
+
+*Every box below was met by `3f5d7b47` and then unmet by the withdrawal.
+They are unchecked because the code is out of the release, not because the
+implementation failed them. A signed §7 rider may also change what they ask
+for — the third one, on views and boards, is the decision the rider has to
+make.*
+
+- [ ] Documents of type `skill`, `agent-def` and `template` are excluded from
       default ranking in `corpus search`, `corpus doc related`, and the context
       pack's related-excerpts section.
-- [x] They remain fully retrievable when asked for: `corpus search --type skill`
+- [ ] They remain fully retrievable when asked for: `corpus search --type skill`
       (already the skill-genesis path in the comment skill) still finds them,
       and `doc show`/`doc related` on a skill id still works.
-- [x] A thread whose **parent** is a skill document still gets that skill as
+- [ ] A thread whose **parent** is a skill document still gets that skill as
       its parent block in the pack — the exclusion is about ranking neighbours,
       never about the document the conversation is on.
-- [x] Whether seed views/boards (`type: view`, `type: board`) join the
+- [ ] Whether seed views/boards (`type: view`, `type: board`) join the
       exclusion is decided and stated — **they join it on the two neighbour
       surfaces and not on `corpus search`.** See below.
-- [x] Re-run the audit's probe in a fresh workspace: the three calls above
+- [ ] Re-run the audit's probe in a fresh workspace: the three calls above
       return user documents only, and the pack for an anchored comment on a
       mortgage note carries no `doc_skill*` row.
 
@@ -276,12 +339,107 @@ beyond the one about questions: it keeps §9.2's parity promise intact.
 retrieval's default ranking omits the workspace's own machinery. That is a
 cli-dev change and is not made here.
 
+### The withdrawal — 2026-08-23, same branch, same model (Opus 5, 1M context)
+
+Everything above this heading is the record of the implementation. Everything
+below is the record of taking it out.
+
+**What was removed.** Eight files, back to their pre-`3f5d7b47` bytes:
+
+| file | what came out |
+| --- | --- |
+| `apps/server/src/docs/filters.ts` | `UNRANKED_DOC_TYPES`, `UNRANKED_NEIGHBOUR_DOC_TYPES`, `excludesTypes`, `rankableSql`, `rankableNeighbourSql` (-63 lines) |
+| `apps/server/src/docs/index.ts` | the four re-exports of those symbols |
+| `apps/server/src/docs/related.ts` | the `rankable` fragment, both call sites back to `notArchivedSql` alone, and the import |
+| `apps/server/src/search/search.ts` | the `query.type === undefined` condition push, its comment block, and the import |
+| `apps/server/src/threads/context.ts` | `rankableNeighbourSql` from the semantic scope and from `LINKED_SQL`, its doc paragraph, and the import |
+| `apps/server/src/search/search.test.ts` | the 4-test describe (-81 lines) |
+| `apps/server/src/docs/related.test.ts` | the 2-test describe (-58 lines) |
+| `apps/server/src/threads/context.test.ts` | the 2-test describe, and `afterAll`/`beforeAll` back out of the vitest import (-75 lines) |
+
+No test was weakened to keep it alive. The eight tests were deleted whole,
+because each asserted the exclusion and would have asserted nothing without it.
+No dead code and no orphaned export remain: `git diff 3f5d7b47^` over all eight
+files is empty, and `grep` for `UNRANKED`, `rankable` and `excludesTypes` across
+`apps/`, `packages/` returns nothing.
+
+**Nothing needed restoring.** The §9.2 filter-parity table was *not* adjusted
+around the exclusion. Its 13 tests went red against the first attempt, which
+excluded `view` and `board` on all three surfaces, and the shipped split made
+them green again without editing them — the commit's numstat shows
+`search.test.ts` at `81 insertions, 0 deletions`. The single deletion anywhere
+in the three test files was `context.test.ts`'s vitest import line, restored
+above.
+
+**Verification.**
+
+```
+npm run build                                      exit 0
+npm run typecheck                                  exit 0   (5 workspaces)
+npm run lint                                       exit 0   (no rule disabled)
+prettier --check <the 8 files>                     all match
+
+VITEST_MAX_THREADS=4 vitest run apps/server
+  before   Test Files 204 passed (204)   Tests 4611 passed (4611)   exit 0
+  after    Test Files 204 passed (204)   Tests 4603 passed (4603)   exit 0
+```
+
+4611 - 4603 = 8, exactly the eight tests SERVER-144 added. No file count moved,
+so nothing was orphaned into an empty suite, and no other test changed verdict.
+
+**E2E, real server, real workspace.** Fresh `corpus init` at `scratchpad/ws144`
+on port 8793 (never 8765), the installed template plus the audit's own note.
+All three surfaces are back to the behaviour §7 describes:
+
+```
+$ corpus search "rate assumption 6.1%" --limit 5
+doc_skillorchestrate  Reflecting on a user edit  …6.1% for the whole term corpus search "rate assumption 6.1…
+doc_rtpqdhz5          Refinance                  The working rate assumption is 6.1% for the refinance. We should…
+doc_skillcomment      Reply                      …edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"], ["thread","reply…
+doc_skillconverse     Worked example             …doc_5c8b2f]] with the 6.4% rate assumption CORPUS_EOF corpus queue…
+
+$ corpus search "rate assumption" --type skill --limit 5
+doc_skillorchestrate · doc_skillcomment · doc_skillconverse      (unchanged)
+
+$ corpus doc related doc_rtpqdhz5 --limit 5
+doc_skillorchestrate · doc_skillcomment · doc_skillb8a2308c · doc_skillconverse
+
+$ corpus thread context th_gaguzdtn
+# related excerpts
+doc_skillorchestrate · doc_skillcomment · doc_skillconverse
+```
+
+This is the *pre-fix* reproduction reproducing again, which is the correct
+outcome of a withdrawal and not a regression: it is the state v0.20.0 shipped,
+and it is what §7 lines 393, 402 and 406 currently promise. The server was
+stopped and port 8793 confirmed free afterwards.
+
+### CLI help text left false by the withdrawal
+
+A cli-dev agent documented the exclusion as shipped behaviour in three help
+strings. Every line below is now false and belongs to cli-dev. This server
+change touched none of them.
+
+| file | lines | what is false |
+| --- | --- | --- |
+| `apps/cli/src/commands/search.ts` | 74-84 | *"The ranking hides the tool's own machinery by default"*, the three type names, the `3 of 5 hits` measurement, and *"Naming any `--type` turns that default off entirely"* |
+| `apps/cli/src/commands/search.ts` | 85-89 | *"Views and boards are kept, deliberately"* — the whole paragraph, including its claim that the neighbour surfaces drop `view` and `board` |
+| `apps/cli/src/commands/search.ts` | 135 | example description: *"Naming `--type` at all also lifts the default that hides `skill`, `agent-def` and `template` documents"* |
+| `apps/cli/src/commands/search.ts` | 140 | example description: *"How to reach the installed skills, which the default ranking hides"* — the `--type skill` example itself stays valid, only the reason given for it is false |
+| `apps/cli/src/commands/doc/related.ts` | 76-86 | *"Five document types are never neighbours"* — the whole paragraph |
+| `apps/cli/src/commands/thread/context.ts` | 244-250 | *"The excerpts leave out five document types"* — the whole paragraph |
+
+`docs/cli.md` carries the same three paragraphs at lines 360, 1254 and 2362. It
+is generated (`npm run docs:cli -w apps/cli`), so it corrects itself once the
+help strings are edited. Nothing in `assets/workspace/` describes the exclusion,
+so the product agent's skills need no change.
+
 ## Completion Checklist (domain agent)
-- [x] Tests written and passing
-- [x] `/lint` passes
-- [x] E2E verification log filled in with concrete evidence
-- [x] Self-review: spec compliance, code quality
-- [x] Acceptance criteria verified
+- [ ] Tests written and passing
+- [ ] `/lint` passes
+- [ ] E2E verification log filled in with concrete evidence
+- [ ] Self-review: spec compliance, code quality
+- [ ] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying)

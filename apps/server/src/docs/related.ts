@@ -52,7 +52,7 @@ import { notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { fuseRankings, overFetchLimit } from "../search/fusion.js";
 import type { SemanticOutcome, SemanticRetrieval } from "../semantic/index.js";
-import { notArchivedSql, rankableNeighbourSql } from "./filters.js";
+import { notArchivedSql } from "./filters.js";
 import { findDocumentRow } from "./read.js";
 
 /**
@@ -140,26 +140,17 @@ export async function relatedDocs(
   // from a live document usually wants first. The semantic half is scoped by
   // the same fragment, so one flag governs both graphs.
   const archived = query.includeArchived === true;
-  // SERVER-144. Corpus's own machinery is never a *neighbour*: measured on a
-  // fresh workspace, the #1 related document for a user's mortgage note was
-  // `doc_skillorchestrate`. Unconditional here, unlike on `/api/search`, because
-  // this route declares no `type` parameter to defer to — the subject document
-  // is looked up by id and is unaffected, so `doc related` on a skill still
-  // works, it simply answers with the corpus rather than with the machinery.
-  // Both halves take the same fragment, which is what keeps the graph and the
-  // vector scan describing one set.
-  const rankable = `${rankableNeighbourSql("d")}${archived ? "" : ` AND ${notArchivedSql("d")}`}`;
   const semantic =
     deps.semantic === undefined
       ? DISABLED
       : await deps.semantic.forDocument(
           id,
-          { where: rankable, params: {} },
+          { where: archived ? "1" : notArchivedSql("d"), params: {} },
           overFetchLimit(query.limit),
         );
 
   const fetchLimit = semantic.docs.length === 0 ? query.limit : overFetchLimit(query.limit);
-  const sql = RELATED_SQL(`WHERE ${rankable}`);
+  const sql = RELATED_SQL(archived ? "" : `WHERE ${notArchivedSql("d")}`);
   const linked = db.prepare(sql).all({ id, limit: fetchLimit }) as RawRelated[];
   const byId = new Map(linked.map((row) => [row.id, row]));
 

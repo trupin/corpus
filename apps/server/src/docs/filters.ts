@@ -122,69 +122,6 @@ const calendarDate = (nowMs: number, days = 0): string =>
 export const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
 
 /**
- * The document types Corpus's own **machinery** is made of, dropped from
- * retrieval's default ranking (SERVER-144).
- *
- * Measured in the SHARED-070 audit on a fresh workspace with five user notes:
- * across seven retrieval calls, rows pointing at these documents were **52% of
- * the output tokens** (1,746 of 3,355). The top hit for
- * `corpus search "rate assumption 6.1%"` was the comment skill's worked example,
- * which contains that exact sentence; the #1 related document for a mortgage
- * note was `doc_skillorchestrate`. The skills' examples are written in realistic
- * domain prose — mortgages, rates, insurance, filing — which makes them
- * honeypots for exactly the questions a real corpus asks, and they displace the
- * row the agent needed.
- *
- * **Ranking only, never the index.** These documents stay indexed and stay
- * addressable: `corpus search --type skill` is the comment skill's own genesis
- * path and bypasses this entirely, `doc show` and `doc list` are untouched, and
- * a thread whose *parent* is a skill still gets that skill as its parent block —
- * the pack reads a parent by id, not through the candidate query.
- *
- * **The cost, stated.** The exclusion is by type, so a *user* who writes their
- * own `type: template` document loses it from default ranking. That is accepted:
- * the type says what the document is for, and this is what that type is for.
- */
-export const UNRANKED_DOC_TYPES = ["skill", "agent-def", "template"] as const;
-
-/**
- * The same list plus the documents that **configure the board** — a view is a
- * stored query and a board is a column list.
- *
- * The difference between the two lists is the difference between the two kinds
- * of question, and it is the decision SERVER-144 asked for (the audit saw
- * `doc_seedattention` and `doc_seedinbox` rank into packs).
- *
- * - `corpus search` asks **"where is this said?"**. A board or a view the user
- *   named and can open is a real answer to that, so search keeps them.
- * - `corpus doc related` and the context pack ask **"what else bears on this?"**.
- *   A stored query bears on nothing: it has no prose, so a hit on one is a
- *   title collision dressed as a neighbour. They are dropped there.
- *
- * They stay first-class everywhere they are the subject — the board bar,
- * `doc list`, `doc show`, `doc related` **on** a board, an explicit `--type`.
- */
-export const UNRANKED_NEIGHBOUR_DOC_TYPES = [...UNRANKED_DOC_TYPES, "view", "board"] as const;
-
-const excludesTypes = (alias: string, types: readonly string[]): string =>
-  `${alias}.type NOT IN (${types.map((type) => `'${type}'`).join(", ")})`;
-
-/**
- * {@link UNRANKED_DOC_TYPES} as a fragment, parameterized by the row it judges —
- * written beside {@link notArchivedSql} because the surfaces that apply it reach
- * `documents` three different ways and must exclude the same rows.
- *
- * The values are a module constant rather than bound parameters on purpose: the
- * fragment is embedded in statements that are built once and cached, and there
- * is no caller-supplied string anywhere in it.
- */
-export const rankableSql = (alias: string): string => excludesTypes(alias, UNRANKED_DOC_TYPES);
-
-/** {@link UNRANKED_NEIGHBOUR_DOC_TYPES} as the same kind of fragment. */
-export const rankableNeighbourSql = (alias: string): string =>
-  excludesTypes(alias, UNRANKED_NEIGHBOUR_DOC_TYPES);
-
-/**
  * The two optional rows every filter fragment may name beside `d`, as joins a
  * statement can append to a `documents` alias it reached its own way.
  *

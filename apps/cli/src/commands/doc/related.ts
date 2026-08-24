@@ -73,17 +73,6 @@ export const relatedCommand: WorkspaceCommandSpec = {
     "references to documents nobody has created yet are real in the corpus but are not offered " +
     "here. Archived neighbours are excluded by default, like every list — `--include-archived` " +
     "widens the set.\n\n" +
-    "**Five document types are never neighbours** (SERVER-144): `skill`, `agent-def`, " +
-    "`template`, `view` and `board`. The first three are the tool's own machinery, whose worked " +
-    "examples are realistic domain prose and therefore honeypots — the #1 neighbour of a user's " +
-    "mortgage note was measured to be the orchestrate skill. The last two are stored queries " +
-    "and column lists: this verb asks _what else bears on this?_, and a query with no prose " +
-    "bears on nothing, so a hit on one is a title collision dressed as a neighbour. **There is " +
-    "no flag to widen it** — the route takes no type, so the exclusion is unconditional here in " +
-    "a way it is not on `corpus search`, which keeps views and boards and lifts the rest for " +
-    "any `--type`. The documents stay indexed and stay readable: `corpus doc show` on a skill, " +
-    "and `corpus doc related` **on** a skill as the subject, both work unchanged. It is the " +
-    "neighbour list they are kept out of, never the corpus.\n\n" +
     "An id that names no document is the server's `404`, which is exit 5, and " +
     "a document nothing relates to is a single honest line and exit 0.",
   args: [{ name: "id", required: true, description: "The document to expand from." }],
