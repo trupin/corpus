@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } f
 import { useContextMenu } from "../menu/ContextMenuHost";
 import type { MenuAction } from "../menu/menuModel";
 import { CollapsedThread, type ThreadSummary } from "./CollapsedThread";
+import { panelMenuTitle } from "./panelMenuLabel";
 import { designatedNotice, RELEASED_NOTICE } from "./residentActions";
 import { threadStatusNotice } from "./resolveNotice";
 import { ThreadCard, type ThreadHost } from "./ThreadCard";
 import { ThreadMenuItems } from "./ThreadMenuItems";
+import { ThreadMenuTrigger } from "./ThreadMenuTrigger";
 import { useThreadCollapse } from "./ThreadCollapseContext";
 import { RESOLVED_STATUS, type ThreadCollapseSubject } from "./threadCollapse";
 import { MAX_DRAWN_DEPTH } from "./threadDepth";
@@ -41,11 +43,12 @@ export interface ThreadPanelProps {
   readonly onNotify: (notice: RowNotice) => void;
 }
 
-/** `“lender spreads”` / `this whole-document thread`, for the menu's label. */
-export function panelMenuLabel(summary: ThreadSummary): string {
-  if (summary.quote !== "") return `“${summary.quote}”`;
-  return summary.parent === null ? "this standalone thread" : "this whole-document thread";
-}
+/**
+ * The gap between a `⋯` and the menu it opens, in px — `ColumnHead` and
+ * `PathColumn`'s own number, so every anchored menu in the app sits the same
+ * distance under its trigger.
+ */
+const TRIGGER_GAP = 4;
 
 export function ThreadPanel({
   summary,
@@ -152,7 +155,8 @@ export function ThreadPanel({
   }, [collapse, collapsed, subject]);
 
   /**
-   * The conversation's own right-click menu (SPEC.md §10).
+   * The conversation's own menu (SPEC.md §10), **at a point** rather than at an
+   * event.
    *
    * The fold **claims no new key**: it is an ordinary focusable control, and it
    * joins this conversation's existing actions in the menu §10 already binds to
@@ -161,11 +165,26 @@ export function ThreadPanel({
    * and a nested conversation's "open in its own reader" is what the
    * navigate-away chip used to be, now offered as the choice §10 requires rather
    * than as the only way in.
+   *
+   * ## One function, two triggers — which is the whole of UI-167
+   *
+   * It took a `MouseEvent` and had exactly two callers, both right-click, so
+   * every action this list carries — the designation among them — was reachable
+   * by no other gesture than a right-click, on the one object in the product
+   * that exposed nothing to a left one. Taking a **point** is what lets the
+   * `⋯` in the card's head call the same function with its own box:
+   * `menuModel.ts` exists so the two presentations cannot come to offer
+   * different items, and a second list built for the button would have been
+   * precisely that drift.
+   *
+   * Placement is the host's and not this caller's. `ContextMenuProvider.open`
+   * clamps the point with `clampToViewport`, and `ContextMenu` then re-derives
+   * the vertical half from the menu's measured height with `menuRoom` — which is
+   * what a trigger inside a scrolling reader, or inside a 300px margin card,
+   * needs and what UI-159 cost a blocking review finding for lacking.
    */
   const openMenu = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
+    (clientX: number, clientY: number, autoFocus: boolean) => {
       const resolved = summary.status === RESOLVED_STATUS;
       const actions: MenuAction[] = [
         {
@@ -197,20 +216,27 @@ export function ThreadPanel({
         });
       }
       menu.open({
-        label: `Actions for ${panelMenuLabel(summary)}`,
-        clientX: event.clientX,
-        clientY: event.clientY,
+        label: panelMenuTitle(summary),
+        clientX,
+        clientY,
+        autoFocus,
         items: (close) => (
           <ThreadMenuItems
             threadId={summary.id}
             hasParent={summary.parent !== null}
             actions={actions}
             pending={setResident.isPending}
-            onDesignateGeneral={() => {
-              setResident.mutate({ id: summary.id, designate: null });
+            /*
+             * `weight` travels straight through, `undefined` included: the hook
+             * is where absence becomes an absent key, so no surface has to
+             * remember which of `null`, `""` and *missing* the route means
+             * (`useResident.ts`).
+             */
+            onDesignateGeneral={(weight) => {
+              setResident.mutate({ id: summary.id, designate: null, weight });
             }}
-            onDesignate={(name) => {
-              setResident.mutate({ id: summary.id, designate: name });
+            onDesignate={(name, weight) => {
+              setResident.mutate({ id: summary.id, designate: name, weight });
             }}
             onRelease={() => {
               setResident.mutate({ id: summary.id, release: true });
@@ -223,6 +249,42 @@ export function ThreadPanel({
     [collapsed, host, menu, onOpenDoc, setResident, setStatus, summary, toggle],
   );
 
+  /** A right-click, wherever a placement hosts one: the pointer is the anchor. */
+  const onContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu(event.clientX, event.clientY, false);
+    },
+    [openMenu],
+  );
+
+  /**
+   * The visible trigger, wherever one is drawn: the button's own box is the
+   * anchor, in the idiom the column head, the path column and the reader's ⋯ all
+   * use — under the control, aligned to its left edge.
+   *
+   * `autoFocus` is true because a `⋯` is activated by `↵` or Space as readily as
+   * by a click, and a menu opened from the keyboard that put focus nowhere would
+   * be UI-030's defect again.
+   */
+  const onTriggerMenu = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (menu.isOpen) {
+        menu.close();
+        return;
+      }
+      const rect = event.currentTarget.getBoundingClientRect();
+      openMenu(rect.left, rect.bottom + TRIGGER_GAP, true);
+    },
+    [menu, openMenu],
+  );
+
+  /** One name for the menu and for the `⋯` that opens it. */
+  const menuLabel = panelMenuTitle(summary);
+
   const classes = [
     "thread-slot",
     `slot-${host}`,
@@ -233,7 +295,17 @@ export function ThreadPanel({
   return (
     <div className={classes} data-slot-thread={summary.id} data-thread-panel={summary.id}>
       {collapsed ? (
-        <CollapsedThread summary={summary} onExpand={toggle} onContextMenu={openMenu} />
+        <>
+          <CollapsedThread summary={summary} onExpand={toggle} onContextMenu={onContextMenu} />
+          {/*
+           * A folded conversation is still a conversation, and its actions are
+           * still its actions (§10's "collapsed is never hidden"). The trigger
+           * is a **sibling** of the line rather than a control inside it: the
+           * line is one `<button>`, and a button inside a button is not markup a
+           * browser will keep.
+           */}
+          <ThreadMenuTrigger threadId={summary.id} label={menuLabel} onOpen={onTriggerMenu} />
+        </>
       ) : (
         <ThreadCard
           threadId={summary.id}
@@ -242,7 +314,9 @@ export function ThreadPanel({
           summary={summary}
           flashing={flashing}
           onCollapse={toggle}
-          onCardContextMenu={openMenu}
+          onContextMenu={onContextMenu}
+          onOpenMenu={onTriggerMenu}
+          menuLabel={menuLabel}
           onOpenDoc={onOpenDoc}
           onNotify={onNotify}
         />

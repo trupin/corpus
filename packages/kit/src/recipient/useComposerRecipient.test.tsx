@@ -22,7 +22,7 @@ const JUST_NOW = new Date().toISOString();
 
 const RESIDENT_LANE: AgentLane = {
   lane: "th_root",
-  resident: { name: "claims-review", docId: "doc_agent", weight: "heavy" },
+  resident: { name: "claims-review", docId: "doc_agent", weight: "heavy", designationId: null },
   live: true,
   since: JUST_NOW,
   summary: "reviewing the draft",
@@ -563,7 +563,7 @@ describe("the address line's recipient rows", () => {
   it("reports a lane whose profile has gone, rather than drawing it as a healthy one", async () => {
     const gone: AgentLane = {
       ...RESIDENT_LANE,
-      resident: { name: "claims-review", docId: null, weight: "heavy" },
+      resident: { name: "claims-review", docId: null, weight: "heavy", designationId: null },
     };
     pickerFor("th_root", { lanes: [gone], graph: { th_root: {} } });
     await waitFor(openAddress);

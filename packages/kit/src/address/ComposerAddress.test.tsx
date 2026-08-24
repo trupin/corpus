@@ -40,7 +40,7 @@ const ORCHESTRATOR: AgentLane = {
 
 const RESIDENT: AgentLane = {
   lane: "th_a",
-  resident: { name: "Ana", docId: "doc_ana", weight: "heavy" },
+  resident: { name: "Ana", docId: "doc_ana", weight: "heavy", designationId: null },
   live: true,
   since: NOW,
   summary: "reviewing the draft",
@@ -255,7 +255,7 @@ describe("the resident rule (SPEC.md §7 and §10, rider signed 2026-08-19)", ()
   it("says the launcher chose when the designation named no level", () => {
     const launched: AgentLane = {
       ...RESIDENT,
-      resident: { name: "Ana", docId: "doc_ana", weight: null },
+      resident: { name: "Ana", docId: "doc_ana", weight: null, designationId: null },
     };
     render(<Host lanes={[ORCHESTRATOR, launched]} computed="th_a" />);
     fireEvent.click(line());

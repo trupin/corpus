@@ -105,7 +105,11 @@
  * and nothing else, which is why the column reader's `.reader-scroll.with-margin`
  * has never needed a rule of its own.
  */
-.focus-inner.with-margin .doc-main .anchor-slot .t-chip {
+.focus-inner.with-margin .doc-main .anchor-slot .t-chip,
+/* …and the `⋯` beside it (UI-167), which is a sibling of the line and not a
+   part of it, so the rule above would have left it drawing alone in the body
+   with the conversation it acts on rendered over in the margin. */
+.focus-inner.with-margin .doc-main .anchor-slot .thread-slot.collapsed > .t-menu {
   display: none;
 }
 

@@ -40,7 +40,15 @@ export function MenuItems({ actions, variant = "context", onDone }: MenuItemsPro
             ]
               .filter((part) => part !== "")
               .join(" ")}
-            role="menuitem"
+            /*
+             * An act is a `menuitem`; an item that states a choice is a
+             * `menuitemradio` and says which way it stands. Keyed on the field
+             * being present rather than on its value, so an act never carries
+             * `aria-checked="false"` — which would announce a state it does not
+             * have.
+             */
+            role={action.checked === undefined ? "menuitem" : "menuitemradio"}
+            {...(action.checked === undefined ? {} : { "aria-checked": action.checked })}
             data-act={action.id}
             disabled={action.disabled === true}
             onClick={() => {

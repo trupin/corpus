@@ -56,7 +56,12 @@ test.describe("the console's residents tab", () => {
       lanes: [
         {
           lane: "th_solo",
-          resident: { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+          resident: {
+            name: "researcher",
+            docId: "doc_researcher",
+            weight: "heavy",
+            designationId: null,
+          },
           live: true,
           // Presence is a park held **now** (SPEC.md §7), so the stamp has to be
           // fresh against the wall clock rather than a fixed date that lapses.

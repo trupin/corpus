@@ -47,7 +47,7 @@ const ORCHESTRATOR: AgentLane = {
 function residentLane(overrides: Partial<NonNullable<AgentLane["resident"]>> = {}): AgentLane {
   return {
     lane: "th_a",
-    resident: { name: "Ana", docId: "doc_ana", weight: "heavy", ...overrides },
+    resident: { name: "Ana", docId: "doc_ana", weight: "heavy", designationId: null, ...overrides },
     live: true,
     since: NOW,
     summary: "reviewing the draft",

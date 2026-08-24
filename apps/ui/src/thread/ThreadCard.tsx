@@ -24,6 +24,7 @@ import { PendingIndicator } from "./PendingIndicator";
 import { ResidentBadge } from "./ResidentBadge";
 import { threadStatusNotice } from "./resolveNotice";
 import { MAX_NESTED_DEPTH } from "./threadDepth";
+import { ThreadMenuTrigger } from "./ThreadMenuTrigger";
 import { ThreadPanel } from "./ThreadPanel";
 import { ThreadComposer } from "./ThreadComposer";
 import { Turn } from "./Turn";
@@ -66,7 +67,18 @@ export interface ThreadCardProps {
   /** Present renders the `–` collapse control. */
   readonly onCollapse?: (() => void) | undefined;
   /** The conversation's own right-click menu, when a placement hosts one. */
-  readonly onCardContextMenu?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
+  readonly onContextMenu?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
+  /**
+   * The same menu from the head's `⋯`, when a placement hosts one (UI-167).
+   *
+   * Separate from the right-click only in *what supplies the anchor* — the two
+   * reach one `openMenu` and render one declared list, which is the property
+   * §10 binds and `menuModel.ts` protects. A placement that hosts neither draws
+   * no trigger, rather than a button that opens onto nothing.
+   */
+  readonly onOpenMenu?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
+  /** What the `⋯` announces — the menu's own name, so the two agree. */
+  readonly menuLabel?: string | undefined;
   /**
    * Follows a `[[ref]]`, the context link, or a nested thread's own link.
    *
@@ -87,7 +99,9 @@ export function ThreadCard({
   summary,
   flashing = false,
   onCollapse,
-  onCardContextMenu,
+  onContextMenu,
+  onOpenMenu,
+  menuLabel = "Thread actions",
   onOpenDoc,
   onNotify,
 }: ThreadCardProps): ReactElement {
@@ -272,8 +286,8 @@ export function ThreadCard({
        */
       onContextMenu={(event) => {
         turnComments.onContextMenu(event);
-        if (event.defaultPrevented || onCardContextMenu === undefined) return;
-        onCardContextMenu(event);
+        if (event.defaultPrevented || onContextMenu === undefined) return;
+        onContextMenu(event);
       }}
     >
       <div className="t-head">
@@ -291,6 +305,18 @@ export function ThreadCard({
         >
           {resolved ? "reopen" : "✓ resolve"}
         </button>
+        {/*
+         * The way into this conversation's menu that does not require a
+         * right-click (UI-167). It sits between the two acts the head already
+         * carries and the fold, which is where `ColumnHead` puts its own `⋯`:
+         * after what the surface offers directly and before what closes it.
+         *
+         * The head's two buttons are **unchanged**. This adds the door to the
+         * menu, not a rearrangement of what a card shows.
+         */}
+        {onOpenMenu === undefined ? null : (
+          <ThreadMenuTrigger threadId={threadId} label={menuLabel} onOpen={onOpenMenu} />
+        )}
         {onCollapse === undefined ? null : (
           <button
             type="button"

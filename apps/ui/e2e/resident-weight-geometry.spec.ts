@@ -183,7 +183,12 @@ function lanes(): NonNullable<StubOptions["lanes"]> {
   return [
     {
       lane: "th_solo",
-      resident: { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+      resident: {
+        name: "researcher",
+        docId: "doc_researcher",
+        weight: "heavy",
+        designationId: null,
+      },
       live: true,
       since,
       summary: null,
@@ -191,7 +196,7 @@ function lanes(): NonNullable<StubOptions["lanes"]> {
     },
     {
       lane: "th_gone",
-      resident: { name: "researcher", docId: null, weight: "heavy" },
+      resident: { name: "researcher", docId: null, weight: "heavy", designationId: null },
       live: true,
       since,
       summary: null,

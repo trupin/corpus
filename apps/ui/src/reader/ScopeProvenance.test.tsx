@@ -12,7 +12,7 @@ afterEach(cleanup);
 
 const LANE: AgentLane = {
   lane: "th_root",
-  resident: { name: "researcher", docId: "doc_agentdef", weight: null },
+  resident: { name: "researcher", docId: "doc_agentdef", weight: null, designationId: null },
   live: false,
   since: null,
   summary: null,

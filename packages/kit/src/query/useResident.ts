@@ -1,4 +1,4 @@
-import type { ThreadMutationResponse } from "@corpus/contract";
+import type { DesignateResidentRequest, ThreadMutationResponse } from "@corpus/contract";
 import {
   useMutation,
   useQueryClient,
@@ -38,6 +38,16 @@ import type { SettledCallbacks } from "./settledCallbacks.js";
  * painted either. It is one round trip on a thread the person is looking at, and
  * a hook with two write paths, one optimistic, would be two behaviours to keep
  * honest for a saving nobody can perceive.
+ *
+ * ## The weight rides the same write, because it is the same act
+ *
+ * SPEC.md §7's rider signed 2026-08-19 makes the designation the **only** place
+ * a resident's level is chosen — a running agent cannot change what it is
+ * without discarding the conversation it holds — so `weight` is a field of
+ * {@link ResidentVariables} and not a second mutation. Until UI-168 this hook
+ * had no such field, and the consequence was total: the contract carried it, the
+ * server honoured it and `corpus resident` set it, while **every designation the
+ * app ever made sent no weight at all**.
  */
 
 function invalidateResident(queryClient: QueryClient, threadId: string): void {
@@ -68,8 +78,47 @@ export type ResidentVariables =
        * profile at all.
        */
       readonly designate: string | null;
+      /**
+       * The level the resident runs at — a key from the workspace's own tier
+       * table (`weightLevels.ts`), never a model name (CONTRACT-067; SPEC.md
+       * §7's rider signed 2026-08-19, which makes the designation the only place
+       * the choice exists).
+       *
+       * **Omitted is the ordinary case and the only spelling of it.** Absence
+       * means what it meant before the field existed — the launcher decides, and
+       * `Resident.weight` reads null — so this hook drops the key from the body
+       * rather than sending `null`, which the route refuses, or `""`, which is a
+       * `400`. It is `string | undefined` rather than plainly optional so a
+       * caller holding "nothing chosen" in a variable can pass it straight
+       * through under `exactOptionalPropertyTypes`; the omission happens once,
+       * below, and not at every call site.
+       *
+       * Independent of `designate`: a general resident may run at a stated
+       * level, and a profiled one at none.
+       */
+      readonly weight?: string | undefined;
     }
   | { readonly id: string; readonly release: true };
+
+/**
+ * The request body a designation sends — **the key absent, never null**.
+ *
+ * The one seam between this hook's spelling of "no profile" (`designate: null`)
+ * and the route's (the key is not there), and between "no level chosen"
+ * (`weight: undefined`) and the same. Both are built by omission rather than by
+ * assignment, because `exactOptionalPropertyTypes` is what makes
+ * `{ weight: undefined }` a different object from `{}` here and only one of them
+ * survives `JSON.stringify` as nothing at all.
+ */
+function designationBody(variables: {
+  readonly designate: string | null;
+  readonly weight?: string | undefined;
+}): DesignateResidentRequest {
+  return {
+    ...(variables.designate === null ? {} : { name: variables.designate }),
+    ...(variables.weight === undefined ? {} : { weight: variables.weight }),
+  };
+}
 
 /**
  * `callbacks` are teardown-safe ({@link SettledCallbacks}), for the reason
@@ -88,9 +137,7 @@ export function useSetResident(
     mutationFn: (variables) =>
       "release" in variables
         ? client.releaseResident(variables.id)
-        : // `?? undefined` is the seam between two spellings of "no profile":
-          // this hook says `null`, and the route's body says the key is absent.
-          client.designateResident(variables.id, variables.designate ?? undefined),
+        : client.designateResident(variables.id, designationBody(variables)),
     onSuccess(result, variables) {
       invalidateResident(queryClient, variables.id);
       onSuccess?.(result, variables);

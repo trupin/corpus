@@ -111,7 +111,12 @@ const ago = (ms: number): string => new Date(NOW.getTime() - ms).toISOString();
 const LANES: readonly AgentLane[] = [
   {
     lane: "th_host",
-    resident: { name: "release-researcher", docId: "doc_release_agent", weight: null },
+    resident: {
+      name: "release-researcher",
+      docId: "doc_release_agent",
+      weight: null,
+      designationId: null,
+    },
     live: false,
     since: ago(17 * 60_000),
     summary: null,
@@ -119,7 +124,7 @@ const LANES: readonly AgentLane[] = [
   },
   {
     lane: "th_gone",
-    resident: { name: "claims-review", docId: null, weight: null },
+    resident: { name: "claims-review", docId: null, weight: null, designationId: null },
     live: false,
     since: ago(17 * 60_000),
     summary: null,
@@ -469,7 +474,12 @@ test.describe("the address popover holds still while you read it", () => {
 const manyLanes = (count: number): readonly AgentLane[] =>
   Array.from({ length: count }, (_unused, index) => ({
     lane: `th_lane_${String(index)}`,
-    resident: { name: `researcher-${String(index).padStart(2, "0")}`, docId: null, weight: null },
+    resident: {
+      name: `researcher-${String(index).padStart(2, "0")}`,
+      docId: null,
+      weight: null,
+      designationId: null,
+    },
     live: false,
     since: ago(17 * 60_000),
     summary: null,
@@ -486,7 +496,12 @@ const FIVE_LANES: readonly AgentLane[] = [
   ...LANES,
   {
     lane: "th_lapsed",
-    resident: { name: "release-researcher", docId: "doc_release_agent", weight: null },
+    resident: {
+      name: "release-researcher",
+      docId: "doc_release_agent",
+      weight: null,
+      designationId: null,
+    },
     live: false,
     since: ago(17 * 60_000),
     summary: null,
@@ -494,7 +509,7 @@ const FIVE_LANES: readonly AgentLane[] = [
   },
   {
     lane: "th_wait",
-    resident: { name: null, docId: null, weight: null },
+    resident: { name: null, docId: null, weight: null, designationId: null },
     live: false,
     since: null,
     summary: null,
@@ -894,7 +909,12 @@ const LONG_NAME = "release-researcher-for-the-quarterly-forecast";
 const NAMED_LANES: readonly AgentLane[] = [
   {
     lane: "th_host",
-    resident: { name: SHORT_NAME, docId: "doc_short_agent", weight: HEAVY_KEY },
+    resident: {
+      name: SHORT_NAME,
+      docId: "doc_short_agent",
+      weight: HEAVY_KEY,
+      designationId: null,
+    },
     live: true,
     since: NOW.toISOString(),
     summary: null,
@@ -902,7 +922,7 @@ const NAMED_LANES: readonly AgentLane[] = [
   },
   {
     lane: "th_gone",
-    resident: { name: LONG_NAME, docId: "doc_long_agent", weight: HEAVY_KEY },
+    resident: { name: LONG_NAME, docId: "doc_long_agent", weight: HEAVY_KEY, designationId: null },
     live: true,
     since: NOW.toISOString(),
     summary: null,

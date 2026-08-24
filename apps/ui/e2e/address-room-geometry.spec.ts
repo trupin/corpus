@@ -102,7 +102,12 @@ const ago = (ms: number): string => new Date(NOW.getTime() - ms).toISOString();
 const laneRoster = (count: number): readonly AgentLane[] =>
   Array.from({ length: count }, (_unused, index) => ({
     lane: `th_lane_${String(index)}`,
-    resident: { name: `designated-${String(index)}`, docId: `doc_${String(index)}`, weight: null },
+    resident: {
+      name: `designated-${String(index)}`,
+      docId: `doc_${String(index)}`,
+      weight: null,
+      designationId: null,
+    },
     live: false,
     since: ago(17 * 60_000),
     summary: null,

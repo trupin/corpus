@@ -169,4 +169,30 @@ describe("useRovingMenu", () => {
     expect(prevented).toBe(false);
     expect(act()).toBe("one");
   });
+
+  /**
+   * An item that **states a choice** is still an item (UI-168's designation
+   * weight, `MenuAction.checked`). A selector matching only `menuitem` would
+   * leave a whole radio set reachable by pointer alone — the same
+   * one-affordance-short defect UI-167 is about, one role attribute deeper.
+   */
+  it("walks a menuitemradio like any other item, and skips a disabled one", () => {
+    render(
+      <div role="menu" aria-label="Radios">
+        <button type="button" role="menuitem" data-act="act">
+          act
+        </button>
+        <button type="button" role="menuitemradio" aria-checked="true" data-act="on">
+          on
+        </button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-act="off" disabled>
+          off
+        </button>
+      </div>,
+    );
+    expect(menuItems(screen.getByRole("menu")).map((item) => item.dataset["act"])).toEqual([
+      "act",
+      "on",
+    ]);
+  });
 });

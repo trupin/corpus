@@ -21,7 +21,7 @@ const JUST_NOW = new Date().toISOString();
 
 const RESIDENT_LANE: AgentLane = {
   lane: "th_root",
-  resident: { name: "Ana", docId: "doc_ana", weight: null },
+  resident: { name: "Ana", docId: "doc_ana", weight: null, designationId: null },
   live: true,
   since: JUST_NOW,
   summary: null,

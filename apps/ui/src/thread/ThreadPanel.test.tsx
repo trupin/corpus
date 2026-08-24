@@ -1,6 +1,11 @@
 /** @vitest-environment jsdom */
 import type { AgentLane, DocRow } from "@corpus/contract";
-import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE, resetSeenMarks } from "@corpus/kit";
+import {
+  GENERAL_RESIDENT_LABEL,
+  LAUNCH_WEIGHT_CLAUSE,
+  MISSING_PROFILE_NOTE,
+  resetSeenMarks,
+} from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -16,6 +21,7 @@ import {
   threadRowFixture,
   type ReaderTransport,
 } from "../testing/readerFixture.js";
+import { THREE_LEVELS, weightWiring } from "../testing/weightFixture.js";
 import { summaryFromRow } from "./CollapsedThread.js";
 import { clearCollapseState, columnSurface } from "./threadCollapse.js";
 import { ThreadCollapseProvider } from "./ThreadCollapseContext.js";
@@ -552,7 +558,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: null, docId: null, weight: null },
+        resident: { name: null, docId: null, weight: null, designationId: null },
         live: false,
         since: null,
         summary: null,
@@ -598,7 +604,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: "researcher", docId: null, weight: null },
+        resident: { name: "researcher", docId: null, weight: null, designationId: null },
         live: false,
         since: null,
         summary: null,
@@ -662,7 +668,7 @@ describe("designating a resident", () => {
     const transport = standaloneWire([
       {
         lane: "th_solo",
-        resident: { name: "researcher", docId: "doc_agentdef", weight: null },
+        resident: { name: "researcher", docId: "doc_agentdef", weight: null, designationId: null },
         live: false,
         since: null,
         summary: null,
@@ -710,6 +716,499 @@ describe("designating a resident", () => {
     });
     await waitFor(() => {
       expect(acts()).toEqual(["collapse", "resolve"]);
+    });
+  });
+});
+
+/**
+ * **UI-167: a conversation exposes its actions to a left click.**
+ *
+ * The act worked and had no visible affordance: `openMenu` had exactly two
+ * callers and both were right-click, while the card's only `<button>` elements
+ * were resolve and the fold. Every other object in the product — the reader's
+ * head, a column head, a path column, an explorer row — offers a `⋯`.
+ *
+ * The feature behind that menu has now been undiscoverable **twice**, for
+ * unrelated reasons (UI-122 was the first), so these tests assert the control's
+ * **presence** and not merely that a menu opens. A test that only right-clicked
+ * passed throughout this defect, which is what every test above this one did.
+ */
+describe("the conversation's ⋯", () => {
+  const standalone = (): DocRow =>
+    threadRowFixture({
+      id: "th_solo",
+      parent: null,
+      anchorQuote: null,
+      turnCount: 1,
+      lastAuthor: "user",
+      status: "open",
+    });
+
+  function soloWire(): ReaderTransport {
+    return readerTransport({
+      lanes: [],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      rows: { "?limit=50&type=agent-def": [] },
+    });
+  }
+
+  const trigger = (id: string): HTMLButtonElement | null =>
+    panel(id)?.querySelector<HTMLButtonElement>("[data-thread-menu]") ?? null;
+
+  const menuIds = (): readonly (string | null)[] =>
+    [...document.querySelectorAll<HTMLElement>("[data-act]")].map((item) =>
+      item.getAttribute("data-act"),
+    );
+
+  /** The presence assertion. It is the whole issue. */
+  it("draws a real button on a standalone thread's card", async () => {
+    render(<Slots transport={soloWire()} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    const button = trigger("th_solo");
+    expect(button).not.toBeNull();
+    expect(button?.tagName).toBe("BUTTON");
+    // A glyph is not a name, so the control announces the conversation it acts
+    // on — the same words the menu itself is labelled with.
+    expect(button?.getAttribute("aria-label")).toBe("Actions for this standalone thread");
+    expect(button?.getAttribute("aria-haspopup")).toBe("menu");
+    // The head's two existing acts are untouched: this adds the way into the
+    // menu, not a rearrangement of what a card shows.
+    expect(panel("th_solo")?.querySelector(".t-resolve")).not.toBeNull();
+  });
+
+  /**
+   * The property `menuModel.ts` exists to keep, asserted rather than assumed:
+   * §10 binds the ⋯ sheet and the context menu to one set. A trigger that built
+   * its own list would pass every other test here.
+   */
+  it("opens the same items the right-click opens", async () => {
+    render(<Slots transport={soloWire()} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    fireEvent.contextMenu(panel("th_solo")?.querySelector(".thread-card") as HTMLElement, {
+      clientX: 20,
+      clientY: 20,
+    });
+    // The last item to arrive is the directory's, so waiting on it is what makes
+    // the snapshot the settled set rather than a half-answered one.
+    await waitFor(() => {
+      expect(menuIds()).toContain("resident-no-profiles");
+    });
+    const byPointer = menuIds();
+    expect(byPointer).toContain("resident-designate-general");
+    fireEvent.keyDown(document.querySelector("[data-ctx-menu]") as HTMLElement, { key: "Tab" });
+
+    fireEvent.click(trigger("th_solo") as HTMLElement);
+    await waitFor(() => {
+      expect(menuIds()).toContain("resident-no-profiles");
+    });
+    expect(menuIds()).toEqual(byPointer);
+  });
+
+  /**
+   * The anchor is the button's **box**, not the pointer's coordinates — which
+   * for a `click` fired by a keyboard are `0, 0`. Placement itself is the host's
+   * (`clampToViewport`, then `menuRoom`); what is asserted here is that the
+   * trigger hands over a box at all, since jsdom measures everything as zero and
+   * only the deliberate `bottom + 4` offset distinguishes the two.
+   */
+  it("anchors the menu under its own box rather than at the pointer", async () => {
+    render(<Slots transport={soloWire()} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+    const button = trigger("th_solo") as HTMLButtonElement;
+    button.getBoundingClientRect = () =>
+      ({ left: 120, bottom: 300, top: 274, right: 146, width: 26, height: 26 }) as DOMRect;
+
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(document.querySelector("[data-ctx-menu]")).not.toBeNull();
+    });
+    const frame = document.querySelector<HTMLElement>("[data-ctx-menu]");
+    expect(frame?.style.left).toBe("120px");
+  });
+
+  /**
+   * §10 adds no exclusive-pointer capability. The trigger is an ordinary
+   * `<button>`, so `↵` and Space activate it, and a menu opened that way focuses
+   * its first item — UI-030's rule, which the reader's own ⋯ was missing.
+   */
+  it("opens from the keyboard, with focus landing inside the menu", async () => {
+    render(<Slots transport={soloWire()} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    trigger("th_solo")?.focus();
+    expect(document.activeElement).toBe(trigger("th_solo"));
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-ctx-menu]")).not.toBeNull();
+    });
+    expect(document.activeElement?.getAttribute("data-act")).toBe("collapse");
+  });
+
+  /**
+   * §10: *"collapsed is never hidden"*. A folded conversation is still a
+   * conversation and still has its actions — the line is one `<button>`, so the
+   * trigger is its **sibling** rather than a control nested inside it, which no
+   * browser would keep.
+   */
+  it("is there on a collapsed line too, outside the line's own button", async () => {
+    render(<Slots transport={wire()} rows={[resolvedRow()]} />);
+    await waitFor(() => {
+      expect(isFolded("th_done")).toBe(true);
+    });
+
+    const button = trigger("th_done");
+    expect(button).not.toBeNull();
+    expect(button?.closest("[data-thread-expand]")).toBeNull();
+
+    fireEvent.click(button as HTMLElement);
+    await waitFor(() => {
+      expect(menuIds()).toContain("collapse");
+    });
+    expect(document.querySelector('[data-act="collapse"]')?.textContent).toContain("Expand");
+  });
+
+  /**
+   * **Present, and opening onto something.** §7 forbids a resident on a thread
+   * with a parent, so the designation items are absent there — but the
+   * conversation still has resolve and the fold to offer, so the trigger stays
+   * rather than vanishing. What must not happen is a control that opens onto
+   * nothing, and this asserts the menu is non-empty in both presentations while
+   * carrying no `resident-*` item in either.
+   */
+  it("stays on a thread that may not have a resident, offering what that thread has", async () => {
+    render(<Slots transport={wire()} rows={[openRow()]} />);
+    await waitFor(() => {
+      expect(panel("th_open")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    expect(trigger("th_open")).not.toBeNull();
+    fireEvent.click(trigger("th_open") as HTMLElement);
+    await waitFor(() => {
+      expect(menuIds()).toEqual(["collapse", "resolve"]);
+    });
+    fireEvent.keyDown(document.querySelector("[data-ctx-menu]") as HTMLElement, { key: "Tab" });
+
+    fireEvent.contextMenu(panel("th_open")?.querySelector(".thread-card") as HTMLElement, {
+      clientX: 20,
+      clientY: 20,
+    });
+    await waitFor(() => {
+      expect(menuIds()).toEqual(["collapse", "resolve"]);
+    });
+  });
+});
+
+/**
+ * **UI-168: the level a resident runs at, chosen where it is designated.**
+ *
+ * SPEC.md §7's rider signed 2026-08-19 makes the designation the only place the
+ * choice exists. `useResident` had no field for it, so every designation the app
+ * ever made sent no weight — and the tests above, which assert only that a
+ * designation was sent, passed throughout.
+ */
+describe("choosing what the resident runs at", () => {
+  const standalone = (): DocRow =>
+    threadRowFixture({
+      id: "th_solo",
+      parent: null,
+      anchorQuote: null,
+      turnCount: 1,
+      lastAuthor: "user",
+      status: "open",
+    });
+
+  /** A workspace that declares three levels, in its own orchestrate skill. */
+  function declaringWire(): ReaderTransport {
+    const wiring = weightWiring(THREE_LEVELS);
+    return readerTransport({
+      lanes: [],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      docs: wiring.docs,
+      rows: { ...wiring.rows, "?limit=50&type=agent-def": [] },
+    });
+  }
+
+  const openMenu = (): void => {
+    fireEvent.contextMenu(panel("th_solo")?.querySelector(".thread-card") as HTMLElement, {
+      clientX: 20,
+      clientY: 20,
+    });
+  };
+
+  const posted = (transport: ReaderTransport): unknown =>
+    transport.calls.find(
+      (call) => call.method === "POST" && call.path === "/api/threads/th_solo/resident",
+    )?.body;
+
+  it("offers the workspace's own levels, and sends the one chosen with the designation", async () => {
+    const transport = declaringWire();
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-weight-heavy"]')).not.toBeNull();
+    });
+    const heavy = document.querySelector<HTMLElement>('[data-act="resident-weight-heavy"]');
+    // The workspace's own label, never the key and never a model name.
+    expect(heavy?.textContent).toContain("Heavy or judgment-laden");
+    expect(heavy?.getAttribute("role")).toBe("menuitemradio");
+    expect(heavy?.getAttribute("aria-checked")).toBe("false");
+    // "The launcher decides" is where the set stands until somebody moves it.
+    expect(
+      document.querySelector('[data-act="resident-weight-launch"]')?.getAttribute("aria-checked"),
+    ).toBe("true");
+
+    // Pressing a level does not close the menu — the act is still to come.
+    fireEvent.click(heavy as HTMLElement);
+    expect(document.querySelector("[data-ctx-menu]")).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-act="resident-weight-heavy"]')?.getAttribute("aria-checked"),
+      ).toBe("true");
+    });
+    // The act names what it will send.
+    expect(
+      document.querySelector('[data-act="resident-designate-general"]')?.textContent,
+    ).toContain("at Heavy or judgment-laden");
+
+    fireEvent.click(
+      document.querySelector('[data-act="resident-designate-general"]') as HTMLElement,
+    );
+    await waitFor(() => {
+      expect(posted(transport)).not.toBeUndefined();
+    });
+    // The whole issue, in one assertion: the level is on the wire.
+    expect(posted(transport)).toEqual({ weight: "heavy" });
+  });
+
+  /**
+   * The ordinary case, which must stay ordinary: the contract makes the field
+   * optional so absence means what it meant before the field existed. The key is
+   * asserted **absent** rather than merely falsy, since `{weight: undefined}`
+   * would satisfy `toEqual({})` while being a second spelling of nothing.
+   */
+  it("sends no weight key at all when nobody touched the rows", async () => {
+    const transport = declaringWire();
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-designate-general"]')).not.toBeNull();
+    });
+    fireEvent.click(
+      document.querySelector('[data-act="resident-designate-general"]') as HTMLElement,
+    );
+
+    await waitFor(() => {
+      expect(posted(transport)).not.toBeUndefined();
+    });
+    expect(Object.keys(posted(transport) as object)).toEqual([]);
+  });
+
+  /**
+   * A workspace whose guidance declares nothing — an older template, or a table
+   * `weightLevels.ts` could not read — offers no rows and still designates.
+   * `weightLevels.ts` fails clean, so this is a shipping state and not an edge.
+   */
+  it("offers no rows where the workspace declares no levels, and designates anyway", async () => {
+    const transport = readerTransport({
+      lanes: [],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      rows: { "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-designate-general"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[role="menuitemradio"]')).toBeNull();
+
+    fireEvent.click(
+      document.querySelector('[data-act="resident-designate-general"]') as HTMLElement,
+    );
+    await waitFor(() => {
+      expect(posted(transport)).toEqual({});
+    });
+  });
+
+  /**
+   * A choice belongs to the act about to be performed, not to the conversation:
+   * a level pressed and then abandoned must not arm the next designation. The
+   * menu unmounts on close, and the state goes with it.
+   */
+  it("forgets the level when the menu closes", async () => {
+    const transport = declaringWire();
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-weight-light"]')).not.toBeNull();
+    });
+    fireEvent.click(document.querySelector('[data-act="resident-weight-light"]') as HTMLElement);
+    fireEvent.keyDown(document.querySelector("[data-ctx-menu]") as HTMLElement, { key: "Tab" });
+
+    openMenu();
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-weight-light"]')).not.toBeNull();
+    });
+    expect(
+      document.querySelector('[data-act="resident-weight-launch"]')?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      document.querySelector('[data-act="resident-weight-light"]')?.getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+
+  /**
+   * An untouched menu shows **what the resident runs at now** — the current
+   * state of the thing it is acting on, exactly as the release item names the
+   * resident and the badge shows it.
+   *
+   * It is also what keeps the no-op skip behaving as it did: coming back to the
+   * launcher's choice genuinely clears the level, so a menu that opened at
+   * *nothing* would offer to re-designate the same profile every time somebody
+   * merely looked at it.
+   */
+  it("opens showing the level the resident already runs at", async () => {
+    const wiring = weightWiring(THREE_LEVELS);
+    const transport = readerTransport({
+      lanes: [
+        {
+          lane: "th_solo",
+          // A general resident at a stated level — the state in which "would
+          // designating again change anything?" turns on the weight alone.
+          resident: { name: null, docId: null, weight: "standard", designationId: null },
+          live: false,
+          since: null,
+          summary: null,
+          origin: { id: "th_solo", title: "Q3 planning" },
+        },
+      ],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      docs: wiring.docs,
+      rows: { ...wiring.rows, "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+    });
+
+    openMenu();
+    await waitFor(() => {
+      expect(
+        document
+          .querySelector('[data-act="resident-weight-standard"]')
+          ?.getAttribute("aria-checked"),
+      ).toBe("true");
+    });
+    expect(
+      document.querySelector('[data-act="resident-weight-launch"]')?.getAttribute("aria-checked"),
+    ).toBe("false");
+    // Nothing would change, so nothing is offered — the skip, intact.
+    expect(document.querySelector('[data-act="resident-designate-general"]')).toBeNull();
+
+    // …and pressing the launcher's row makes it an act again, because clearing
+    // the level is a write the server performs.
+    fireEvent.click(document.querySelector('[data-act="resident-weight-launch"]') as HTMLElement);
+    await waitFor(() => {
+      expect(document.querySelector('[data-act="resident-designate-general"]')).not.toBeNull();
+    });
+  });
+
+  /**
+   * The badge is the surface UI-168's acceptance names: *"a surface that shows
+   * who is resident must show what it runs at, or the choice is invisible once
+   * made."* It shows the declared **label**, from the workspace's own table.
+   */
+  it("reports on the badge what the resident was designated at", async () => {
+    const wiring = weightWiring(THREE_LEVELS);
+    const transport = readerTransport({
+      lanes: [
+        {
+          lane: "th_solo",
+          resident: {
+            name: "researcher",
+            docId: "doc_agentdef",
+            weight: "heavy",
+            designationId: null,
+          },
+          live: false,
+          since: null,
+          summary: null,
+          origin: { id: "th_solo", title: "Q3 planning" },
+        },
+      ],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      docs: wiring.docs,
+      rows: { ...wiring.rows, "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident-weight")?.textContent).toBe(
+        "Heavy or judgment-laden",
+      );
+    });
+    expect(
+      panel("th_solo")?.querySelector<HTMLElement>(".t-resident")?.dataset["residentWeightKey"],
+    ).toBe("heavy");
+  });
+
+  /**
+   * A resident designated before this shipped reads `weight: null`, which is the
+   * launcher's choice and not a missing value — so the badge says so in the
+   * composer's own words rather than leaving a blank.
+   */
+  it("says the launcher chose, for a resident designated at no level", async () => {
+    const transport = readerTransport({
+      lanes: [
+        {
+          lane: "th_solo",
+          resident: {
+            name: "researcher",
+            docId: "doc_agentdef",
+            weight: null,
+            designationId: null,
+          },
+          live: false,
+          since: null,
+          summary: null,
+          origin: { id: "th_solo", title: "Q3 planning" },
+        },
+      ],
+      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
+      rows: { "?limit=50&type=agent-def": [] },
+    });
+    render(<Slots transport={transport} rows={[standalone()]} />);
+
+    await waitFor(() => {
+      expect(panel("th_solo")?.querySelector(".t-resident-weight")?.textContent).toBe(
+        LAUNCH_WEIGHT_CLAUSE,
+      );
     });
   });
 });

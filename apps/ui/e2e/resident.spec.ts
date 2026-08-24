@@ -118,8 +118,39 @@ const PADDED_PROFILE: StubRow = {
   path: ".claude/agents/padded.md",
 };
 
+/**
+ * The workspace's own tier table, in the shape the shipped orchestrate skill
+ * states it (AGENT-015) — the vocabulary a designation's weight is drawn from
+ * (UI-168). It is the workspace's, so it is seeded per test rather than assumed:
+ * a workspace that declares nothing is a real shipping state and gets no picker.
+ */
+function declaring(rows: readonly (readonly [string, string])[]): string {
+  return [
+    "## Delegation",
+    "",
+    "| Weight | Key | Model | What falls here |",
+    "| ---------------------- | -------- | ---------- | ---------------- |",
+    ...rows.map(([label, key]) => `| ${label} | ${key} | **A model** | Guidance. |`),
+    "",
+    "Nothing outside this table declares a level.",
+  ].join("\n");
+}
+
+const ORCHESTRATE: StubRow = {
+  id: "doc_orchestrate",
+  type: "skill",
+  title: "orchestrate",
+  path: ".claude/skills/orchestrate/SKILL.md",
+  body: declaring([
+    ["Small and mechanical", "light"],
+    ["Standard", "standard"],
+    ["Heavy or judgment-laden", "heavy"],
+  ]),
+};
+
 const CARD = '.thread-card[data-thread="th_solo"]';
 const BADGE = '[data-thread-panel="th_solo"] .t-resident';
+const TRIGGER = '[data-thread-panel="th_solo"] [data-thread-menu]';
 
 async function board(page: Page, rows: readonly StubRow[]): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [THREADS_VIEW, SOLO, ...rows]);
@@ -133,6 +164,20 @@ async function board(page: Page, rows: readonly StubRow[]): Promise<StubCorpus> 
 async function openMenu(page: Page): Promise<void> {
   await page.locator(CARD).click({ button: "right" });
   await expect(page.getByRole("menu")).toBeVisible();
+}
+
+/** The same menu, through the affordance a left click can find (UI-167). */
+async function openFromTrigger(page: Page): Promise<void> {
+  await page.locator(TRIGGER).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+}
+
+/** Every item the open menu offers, in order — acts and weight rows alike. */
+async function menuActs(page: Page): Promise<readonly (string | null)[]> {
+  return page
+    .getByRole("menu")
+    .locator("[data-act]")
+    .evaluateAll((items) => items.map((item) => item.getAttribute("data-act")));
 }
 
 const posted = async (corpus: StubCorpus): Promise<readonly unknown[]> =>
@@ -380,7 +425,7 @@ test.describe("designating a resident", () => {
       lanes: [
         {
           lane: "th_solo",
-          resident: { name: "researcher", docId: null, weight: null },
+          resident: { name: "researcher", docId: null, weight: null, designationId: null },
           live: false,
           since: null,
           summary: null,
@@ -535,5 +580,252 @@ test.describe("designating a resident", () => {
     await expect(menu.locator('[data-act="resolve"]')).toBeVisible();
     await expect(menu.locator('[data-act="resident-designate-general"]')).toHaveCount(0);
     await expect(menu.locator('[data-act="resident-no-profiles"]')).toHaveCount(0);
+  });
+});
+
+/**
+ * **UI-167 in a real browser: the conversation's `⋯`.**
+ *
+ * The user's words were *"there's no longer a way to attach a resident to a
+ * thread (at least not that I could find)"*. The act worked; the affordance did
+ * not exist. `ThreadPanel`'s `openMenu` had two callers and both were
+ * right-click, while the card's only buttons were resolve and the fold — so the
+ * whole menu, the designation included, was reachable by one gesture that no
+ * other object in the product requires.
+ *
+ * These assert the control's **presence** and its equality with the right-click
+ * menu. The suite above passed throughout the defect, because every test in it
+ * right-clicks.
+ */
+test.describe("reaching a conversation's actions with a left click", () => {
+  test("draws a ⋯ on the card and designates a resident from it, pointer only", async ({
+    page,
+  }) => {
+    const corpus = await board(page, []);
+
+    const trigger = page.locator(TRIGGER);
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    await expect(trigger).toHaveAttribute("aria-label", "Actions for this standalone thread");
+
+    await openFromTrigger(page);
+    const offer = page.getByRole("menu").locator('[data-act="resident-designate-general"]');
+    await expect(offer).toBeVisible();
+    await offer.click();
+
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
+    await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "general");
+  });
+
+  /**
+   * §10 binds the ⋯ sheet and the context menu to one set, and `menuModel.ts`
+   * exists so they cannot drift. Asserted as an equality between two real
+   * openings rather than as a claim about the code.
+   */
+  test("offers exactly the items the right-click offers", async ({ page }) => {
+    await board(page, [PROFILE, ORCHESTRATE]);
+
+    await openMenu(page);
+    // The last items to arrive are the directory's and the declaration's, so
+    // waiting on one of each is what makes this the settled set.
+    await expect(
+      page.getByRole("menu").locator('[data-act="resident-weight-heavy"]'),
+    ).toBeVisible();
+    const byPointer = await menuActs(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+
+    await openFromTrigger(page);
+    await expect(
+      page.getByRole("menu").locator('[data-act="resident-weight-heavy"]'),
+    ).toBeVisible();
+    expect(await menuActs(page)).toEqual(byPointer);
+    expect(byPointer).toContain("resident-designate-doc_researcher");
+  });
+
+  /**
+   * §10 adds no exclusive-pointer capability. Tab to the ⋯, `↵` to open — and a
+   * key-opened menu focuses its first item, so the arrows and `↵` do the rest.
+   * Only a real browser performs a focused button's default (UI-028 found this
+   * on this very menu).
+   */
+  test("designates from the keyboard alone, reaching the ⋯ by Tab", async ({ page }) => {
+    const corpus = await board(page, []);
+
+    await page.locator(TRIGGER).focus();
+    await expect(page.locator(TRIGGER)).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-act="collapse"]')).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(menu).toBeHidden();
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
+    await expect(page.locator(BADGE)).toBeVisible();
+  });
+
+  /**
+   * A folded conversation is still a conversation (§10: *"collapsed is never
+   * hidden"*). The line is one `<button>`, so the trigger is its sibling — a
+   * button inside a button is markup no browser keeps, and this is the one place
+   * that could be got wrong invisibly.
+   */
+  test("keeps the ⋯ beside a collapsed line, outside the line's own button", async ({ page }) => {
+    await board(page, []);
+    await openFromTrigger(page);
+    await page.getByRole("menu").locator('[data-act="collapse"]').click();
+
+    const chip = page.locator('[data-thread-panel="th_solo"] [data-thread-expand]');
+    await expect(chip).toBeVisible();
+    const trigger = page.locator(TRIGGER);
+    await expect(trigger).toBeVisible();
+    // Sibling, not descendant — measured in the DOM the browser actually built.
+    expect(await trigger.evaluate((node) => node.closest("[data-thread-expand]") !== null)).toBe(
+      false,
+    );
+
+    await trigger.click();
+    await expect(page.getByRole("menu").locator('[data-act="collapse"]')).toContainText("Expand");
+  });
+});
+
+/**
+ * **UI-168 in a real browser: the level a resident runs at.**
+ *
+ * The user's words were *"I'm still not confident I can pick the model when
+ * attaching a resident"*. They were right: `useResident`'s mutation took
+ * `{id, designate}` and nothing else, so every designation the app ever made
+ * sent no `weight`. The contract carried it, the server honoured it, and
+ * `corpus resident` set it.
+ *
+ * A weight is a **level's key from the workspace's own tier table**, never a
+ * model name — which is how §10's signed non-goal holds while the user's real
+ * question is answered.
+ */
+test.describe("choosing what the resident runs at", () => {
+  test("offers the workspace's levels and sends the chosen key with the designation", async ({
+    page,
+  }) => {
+    const corpus = await board(page, [ORCHESTRATE]);
+    await openFromTrigger(page);
+    const menu = page.getByRole("menu");
+
+    const heavy = menu.locator('[data-act="resident-weight-heavy"]');
+    await expect(heavy).toBeVisible();
+    // The declared label, never the key — and never a model name.
+    await expect(heavy).toContainText("Heavy or judgment-laden");
+    await expect(menu).not.toContainText(/haiku|sonnet|opus/i);
+    // The set stands on "the launcher decides" until somebody moves it.
+    await expect(menu.locator('[data-act="resident-weight-launch"]')).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    await heavy.click();
+    // Still open: a level states what the act below will send.
+    await expect(menu).toBeVisible();
+    await expect(heavy).toHaveAttribute("aria-checked", "true");
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toContainText(
+      "at Heavy or judgment-laden",
+    );
+
+    await menu.locator('[data-act="resident-designate-general"]').click();
+
+    // The whole issue, on the wire.
+    await expect.poll(async () => posted(corpus)).toEqual([{ weight: "heavy" }]);
+    // …and reported back, so the choice is not invisible once made.
+    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Heavy or judgment-laden");
+  });
+
+  /**
+   * The ordinary case has to stay ordinary: the contract makes the field
+   * optional so absence means what it meant before the field existed — the
+   * launcher decides. The key must be **absent**, not null and not empty.
+   */
+  test("omits the key entirely when nobody touched the rows", async ({ page }) => {
+    const corpus = await board(page, [ORCHESTRATE]);
+    await openFromTrigger(page);
+    await expect(
+      page.getByRole("menu").locator('[data-act="resident-weight-launch"]'),
+    ).toBeVisible();
+    await page.getByRole("menu").locator('[data-act="resident-designate-general"]').click();
+
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
+    await expect.poll(async () => Object.keys((await posted(corpus))[0] as object)).toEqual([]);
+    // …and the badge says who chose, rather than leaving a blank.
+    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("weight set at launch");
+  });
+
+  /**
+   * *"Same profile, new level"* is a write the server performs and reports
+   * (`threads/resident.ts:251` — a different weight is a different state) — so
+   * the menu must not treat it as the no-op its skip suppresses. The reverse
+   * direction is here too: coming back to the launcher's choice **clears** the
+   * level server-side, so that act has to stay offered as well.
+   */
+  test("re-designates the same profile at a different level, and back again", async ({ page }) => {
+    const corpus = await board(page, [PROFILE, ORCHESTRATE]);
+
+    await openFromTrigger(page);
+    await page.getByRole("menu").locator('[data-act="resident-weight-light"]').click();
+    await page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]').click();
+    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Small and mechanical");
+
+    // Reopening shows what the resident runs at now — the menu is the third
+    // surface that reports the choice, beside the badge and the composer.
+    await openFromTrigger(page);
+    await expect(
+      page.getByRole("menu").locator('[data-act="resident-weight-light"]'),
+    ).toHaveAttribute("aria-checked", "true");
+    // Same profile, same level: not offered, because it would write nothing.
+    await expect(
+      page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]'),
+    ).toHaveCount(0);
+
+    // Same profile, new level: offered, and named as a re-designation rather
+    // than as a swap that displaces somebody.
+    await page.getByRole("menu").locator('[data-act="resident-weight-heavy"]').click();
+    const again = page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]');
+    await expect(again).toContainText("Re-designate researcher");
+    await again.click();
+
+    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Heavy or judgment-laden");
+    await expect
+      .poll(async () => posted(corpus))
+      .toEqual([
+        { name: "researcher", weight: "light" },
+        { name: "researcher", weight: "heavy" },
+      ]);
+
+    // Back to the launcher's choice, which is a real write: it clears the level.
+    await openFromTrigger(page);
+    await page.getByRole("menu").locator('[data-act="resident-weight-launch"]').click();
+    await page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]').click();
+    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("weight set at launch");
+    await expect.poll(async () => (await posted(corpus)).at(-1)).toEqual({ name: "researcher" });
+  });
+
+  /**
+   * A workspace whose guidance declares no levels offers no rows and still
+   * designates. `weightLevels.ts` fails **clean**, so "declares nothing" and
+   * "declares something unreadable" are one answer — and a workspace on a
+   * template older than AGENT-015 is in that state today.
+   */
+  test("offers no rows where the workspace declares none, and designates anyway", async ({
+    page,
+  }) => {
+    const corpus = await board(page, []);
+    await openFromTrigger(page);
+    const menu = page.getByRole("menu");
+    await expect(menu.locator('[data-act="resident-designate-general"]')).toBeVisible();
+    await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+
+    await menu.locator('[data-act="resident-designate-general"]').click();
+    await expect.poll(async () => posted(corpus)).toEqual([{}]);
   });
 });
