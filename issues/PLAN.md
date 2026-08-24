@@ -1643,3 +1643,5 @@ user, not work).
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | todo | P2 | opus | — |
+| CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | todo | P1 | opus | SERVER-144 |
+| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
