@@ -60,7 +60,7 @@ change.
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P1 (important)
@@ -135,21 +135,23 @@ implementation failed them. A signed §7 rider may also change what they ask
 for — the third one, on views and boards, is the decision the rider has to
 make.*
 
-- [ ] Documents of type `skill`, `agent-def` and `template` are excluded from
-      default ranking in `corpus search`, `corpus doc related`, and the context
-      pack's related-excerpts section.
-- [ ] They remain fully retrievable when asked for: `corpus search --type skill`
+- [x] Documents of type `skill` and `agent-def` are excluded from default
+      ranking in `corpus search`, `corpus doc related`, and the context pack's
+      related-excerpts section. **`template` is not**, per the signed rider —
+      the box is reworded rather than ticked as filed, because the rider changed
+      what it asks for.
+- [x] They remain fully retrievable when asked for: `corpus search --type skill`
       (already the skill-genesis path in the comment skill) still finds them,
       and `doc show`/`doc related` on a skill id still works.
-- [ ] A thread whose **parent** is a skill document still gets that skill as
+- [x] A thread whose **parent** is a skill document still gets that skill as
       its parent block in the pack — the exclusion is about ranking neighbours,
       never about the document the conversation is on.
-- [ ] Whether seed views/boards (`type: view`, `type: board`) join the
+- [x] Whether seed views/boards (`type: view`, `type: board`) join the
       exclusion is decided and stated — **they join it on the two neighbour
-      surfaces and not on `corpus search`.** See below.
-- [ ] Re-run the audit's probe in a fresh workspace: the three calls above
-      return user documents only, and the pack for an anchored comment on a
-      mortgage note carries no `doc_skill*` row.
+      surfaces and not on `corpus search`.** The signed rider keeps that split.
+- [x] Re-run the audit's probe in a fresh workspace: the three calls above
+      return user documents and the user's own template only, and the pack for
+      an anchored comment carries no `doc_skill*` row.
 
 ## Technical Design
 
@@ -462,13 +464,132 @@ help strings are edited. Nothing in `assets/workspace/` describes the exclusion,
 so the product agent's skills need no change.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+---
+
+## The re-implementation — 2026-08-24, on the signed rider
+
+**Model: Opus 5 (1M context).** Branch `phase-45-not-so`, base `dbf663f7`.
+
+### What changed against the withdrawn diff
+
+Exactly one thing, which is what the rider asked for:
+
+```ts
+// 3f5d7b47, withdrawn:
+export const UNRANKED_DOC_TYPES = ["skill", "agent-def", "template"] as const;
+// now:
+export const UNRANKED_DOC_TYPES = ["skill", "agent-def"] as const;
+```
+
+`UNRANKED_NEIGHBOUR_DOC_TYPES` is still `[...UNRANKED_DOC_TYPES, "view",
+"board"]`, so dropping `template` from the first list drops it from both
+surfaces at once — a user's template ranks in search, in `doc related`, and in
+the pack. The three call sites, the `query.type === undefined` gate, the
+views-and-boards split and the parent-block guard are the withdrawn diff's,
+restored unchanged. The `UNRANKED_DOC_TYPES` docblock's *"The cost, stated"*
+paragraph — which accepted the `template` loss — is replaced by the rider's own
+reasoning, so the next reader meets the decision rather than the cost that was
+never accepted.
+
+### Tests, and every one of them falsified
+
+Ten tests across the three surfaces (the withdrawn diff's eight, plus one
+`template` guard per neighbour surface). Four mutations, each run and watched:
+
+| mutation | red |
+| --- | --- |
+| `UNRANKED_DOC_TYPES` emptied — skill and agent-def back in the rankable set | 3 failed, one per surface: `ranks the note and drops the skill and the agent-def`, `answers with the corpus and not with the machinery`, `carries no excerpt naming an excluded type` |
+| **`template` re-added** — the exclusion the user did not sign | **6 failed**, the three above plus the three `keeps a template…` guards |
+| the `query.type === undefined` gate dropped from search | 2 failed: `returns them all when a type is named`, `defers to any explicit type` |
+| search switched to the **neighbour** list | 15 failed: `keeps a view…`, plus §9.2's filter-parity table and the Phase A byte-stability snapshots |
+
+The second row is the one this attempt exists for. Reverting `template` into the
+list is the withdrawn behaviour exactly, and it now costs six red tests.
+
+### E2E — real server, real workspace, port 8791
+
+Fresh `corpus init` at `scratchpad/ws45` (never 8765). Two user documents beside
+the installed template: a note and **a `type: template` document of the user's
+own**, both carrying the audit's sentence, so the rider's carve-out is
+observable rather than asserted.
+
+```
+$ corpus search "rate assumption 6.1%" --limit 8
+doc_svs5icrt  Rate template  The working rate assumption is 6.1% goes here, in the user…
+doc_bcze6pm4  Refinance      The working rate assumption is 6.1% for the refinance. We should…
+
+$ corpus search "rate assumption" --type skill --limit 5
+doc_skillorchestrate  Reflecting on a user edit  …the whole cost of finding out where the rate assumption…
+doc_skillcomment      Reply                      …↳ updated the rate assumption in…
+doc_skillconverse     Worked example             …the rate assumption to be written down where…
+
+$ corpus search "rate assumption" --type template --limit 5
+doc_svs5icrt  Rate template  The working rate assumption is 6.1% goes here, in the user…
+
+$ corpus doc related doc_bcze6pm4 --limit 8
+doc_svs5icrt  similar  The working rate assumption is 6.1% goes here, in the user's own template.
+
+$ corpus doc list --type skill
+doc_skillcomment · doc_skillconverse · doc_skillorchestrate · doc_skillprofile · doc_skillb8a2308c
+showing 1–5 of 5 documents
+
+$ corpus thread context th_pfn2yl7i
+parent doc_bcze6pm4 · Refinance · Refinance
+> rate assumption is 6.1%
+# related excerpts
+doc_svs5icrt  Rate template  similar  The working rate assumption is 6.1% goes here, in the user's own template.
+```
+
+**No `doc_skill*` row on any unfiltered surface. The user's template is on every
+one of them.** `--type skill` is unchanged, `--type template` reaches the
+template, and the five skills are still listed and addressable.
+
+The parent-block guard, on the real server:
+
+```
+$ corpus thread create --parent doc_skillcomment -m "This rule keeps biting."
+created th_qlc3cnht
+$ corpus thread context th_qlc3cnht
+parent doc_skillcomment · Comment
+## When this runs
+The orchestrate skill invokes you for two event types…
+```
+
+A thread anchored on a skill still gets that skill above the conversation: a
+parent is read by id through `readableParent`, never through the candidate set
+the exclusion sits in.
+
+### Scoped and workspace runs
+
+```
+vitest run apps/server/src/search/search.test.ts \
+           apps/server/src/docs/related.test.ts \
+           apps/server/src/threads/context.test.ts
+  Test Files 3 passed (3)   Tests 136 passed (136)   exit 0
+
+VITEST_MAX_THREADS=4 vitest run apps/server
+  Test Files 204 passed (204)   Tests 4662 passed (4662)   exit 0
+```
+
+`npm run typecheck -w apps/server` exit 0. `eslint apps/server/src` exit 0, no
+rule disabled. Prettier clean.
+
+### Still for another domain
+
+The **CLI help text** table under *"CLI help text left false by the withdrawal"*
+above is still cli-dev's, and its content changes with the rider: six blocks
+were deleted in `05a2de9d` and must come back describing **two** excluded types
+on search and **four** on the neighbour surfaces — `template` must not appear in
+any of them, and the `3 of 5 hits` measurement should not either, since this
+release's own probe returns two user rows where four were machinery.

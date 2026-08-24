@@ -107,6 +107,10 @@ export {
   RELEVANCE_ORDER_BY,
   compileFilters,
   notArchivedSql,
+  rankableNeighbourSql,
+  rankableSql,
+  UNRANKED_DOC_TYPES,
+  UNRANKED_NEIGHBOUR_DOC_TYPES,
   paramsFor,
   whereClause,
 } from "./filters.js";

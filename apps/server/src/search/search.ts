@@ -47,6 +47,7 @@ import {
   FROM_SQL,
   FTS_HITS_CTE,
   paramsFor,
+  rankableSql,
   RELEVANCE_ORDER_BY,
   whereClause,
   type Compiled,
@@ -191,6 +192,24 @@ export async function searchCorpus(
 ): Promise<SearchResults> {
   const loadAddresses = deps.loadAddresses ?? loadChunkAddresses;
   const compiled = compileFilters(query, nowMs, deps.staleness);
+
+  // SERVER-144. Corpus's own machinery is dropped from the default ranking, and
+  // **here** rather than in `compileFilters`, because that builder also serves
+  // `GET /api/docs` — where a board that stopped listing its own views would be
+  // a different and much worse bug.
+  //
+  // The gate is "did the caller name a type at all", not "did they name an
+  // excluded one": an explicit `--type` is the caller saying what they are
+  // looking for, and a second predicate underneath it could only ever subtract
+  // from what they asked for. `--type note` already excludes skills by itself,
+  // and `--type skill` is the comment skill's genesis path, which must keep
+  // working unchanged.
+  //
+  // Pushed onto `compiled.conditions` before `whereClause` and `scopeOf` are
+  // read, so it reaches both halves of the hybrid — the lexical statement and
+  // the vector scan — from one line. §9.2's "the same set, with the same
+  // semantics" holds across them by construction.
+  if (query.type === undefined) compiled.conditions.push(rankableSql("d"));
 
   // `q` is required and non-empty by the schema, so the only way here is a
   // query that carried no indexable token (`***`). There is nothing to rank and
