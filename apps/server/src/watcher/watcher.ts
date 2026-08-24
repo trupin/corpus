@@ -377,6 +377,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     identity: DocumentIdentity | undefined,
     removed: boolean,
     anchors: AnchorChange | undefined,
+    snapshot: ReadonlyMap<string, Buffer | null>,
   ): void => {
     if (commitOutOfBand === undefined) return;
     if (identity === undefined) {
@@ -391,8 +392,28 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       title: identity.title,
       type: identity.type,
       removed,
+      snapshot,
       ...(anchors === undefined ? {} : { anchors }),
     });
+  };
+
+  /**
+   * What this document's paths held at the instant the flush read them
+   * (SERVER-142) — the commit's content, since the commit runs later and the
+   * working tree may have moved by then.
+   *
+   * `bytes` is the document's own path: post-reconciliation where reconciliation
+   * rewrote the file, and `null` where the file is gone. `retired` is the old
+   * spelling of a rename, which is always a removal — see `retireStaleHolder`.
+   */
+  const observedBytes = (
+    relativePath: string,
+    bytes: Buffer | null,
+    retired: string | null,
+  ): ReadonlyMap<string, Buffer | null> => {
+    const snapshot = new Map<string, Buffer | null>([[relativePath, bytes]]);
+    if (retired !== null) snapshot.set(retired, null);
+    return snapshot;
   };
 
   // No `["tree"]` here, deliberately: whether the folder tree moved is measured
@@ -451,7 +472,14 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       // No row means nothing was projected from that path — an unparseable file,
       // or one deleted before it was ever indexed.
       if (row !== undefined) keys.push(...documentKeys(row.id, row.type));
-      recordOutOfBand(context, [relativePath], row, true, undefined);
+      recordOutOfBand(
+        context,
+        [relativePath],
+        row,
+        true,
+        undefined,
+        observedBytes(relativePath, null, null),
+      );
       return;
     }
 
@@ -459,11 +487,14 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     // committed body, so remap them first and let the projection index the
     // reconciled file.
     //
-    // It runs before the commit as well as before the projection, and that is
-    // load-bearing rather than incidental: the commit takes the working tree as
-    // it stands, so the remapped `anchors` block and the person's own edit land
-    // in one commit as the single change to the file they are (SERVER-090).
+    // It runs before the snapshot as well as before the projection, and that is
+    // load-bearing rather than incidental: `bytes` is what the commit records,
+    // so the remapped `anchors` block and the person's own edit land in one
+    // commit as the single change to the file they are (SERVER-090). Taken from
+    // what reconciliation *wrote* rather than by re-reading the file, which
+    // would race the next edit (SERVER-142).
     let anchors: AnchorChange | undefined;
+    let bytes = content;
     try {
       const reconciled = reconcileOutOfBandEdit({
         workspaceRoot,
@@ -476,6 +507,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       });
       if (reconciled.kind === "reconciled") {
         anchors = { remapped: reconciled.report.remapped, orphaned: reconciled.report.orphaned };
+        bytes = Buffer.from(reconciled.text, "utf8");
       }
     } catch (error) {
       // Reconciliation is a repair, not a precondition: an unwritable file or a
@@ -501,10 +533,11 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     // The old name goes into the same commit as the new one when a rename's
     // halves reached us in the order that hides the removal (SERVER-090).
     const paths = retired === null ? [relativePath] : [relativePath, retired];
+    const snapshot = observedBytes(relativePath, bytes, retired);
     if (outcome.kind === "projected") {
       const projected = documentAt(relativePath);
       keys.push(...documentKeys(outcome.id, projected?.type ?? "note"));
-      recordOutOfBand(context, paths, projected, false, anchors);
+      recordOutOfBand(context, paths, projected, false, anchors, snapshot);
       return;
     }
     // The file is still on disk in both branches below — the projection declined
@@ -513,12 +546,12 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     // and it is still committed, under whatever document that path last was.
     if (outcome.kind === "removed" && existing !== undefined) {
       keys.push(...documentKeys(existing.id, existing.type));
-      recordOutOfBand(context, paths, existing, false, anchors);
+      recordOutOfBand(context, paths, existing, false, anchors, snapshot);
       return;
     }
     if (outcome.kind === "skipped") {
       logger.info("watcher skipped a document", { path: relativePath, reason: outcome.reason });
-      recordOutOfBand(context, paths, existing, false, anchors);
+      recordOutOfBand(context, paths, existing, false, anchors, snapshot);
     }
   };
 

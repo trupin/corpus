@@ -75,12 +75,14 @@ import {
   ResidentDesignatedPayloadSchema,
   ResidentReleasedPayloadSchema,
   type Actor,
+  type DesignatedResident,
   type DesignateResidentRequest,
   type Resident,
   type ResidentReleaseReason,
   type ThreadSummary,
 } from "@corpus/contract";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
+import { ID_PREFIXES, newId } from "../core/ids.js";
 import { residentOrNull, residentToStored } from "../core/resident.js";
 import {
   runMutation,
@@ -246,15 +248,24 @@ const fileResident = (thread: LoadedThread): Resident | null =>
  * Is this the designation the thread already has? — the one comparison that
  * decides both whether a designation writes and whether it displaced anybody.
  *
- * **Every field of a `Resident`, and it is one function because both callers
- * must agree.** The comparison used to be written inline and named `name` and
- * `docId` only; when `weight` arrived (SERVER-129) a re-designation at a new
- * level would have read as unchanged, leaving the file saying one thing and the
- * running listener doing another with nothing to see. A field added to
- * `Resident` later has to be added here — nothing will fail to compile — so this
- * docblock is the reminder, and `resident.test.ts` pins one case per field.
+ * **Every field of a `DesignatedResident`, and it is one function because both
+ * callers must agree.** The comparison used to be written inline and named
+ * `name` and `docId` only; when `weight` arrived (SERVER-129) a re-designation
+ * at a new level would have read as unchanged, leaving the file saying one thing
+ * and the running listener doing another with nothing to see. A field added to
+ * what a designation *asks for* has to be added here, and `resident.test.ts`
+ * pins one case per field.
+ *
+ * **`designationId` is not one of them, and the type says so** (SERVER-147). It
+ * is the identity of the act rather than something the act asked for, and a
+ * fresh mint differs from everything — so comparing it would make **every**
+ * re-designation a write, a `resident.released` with reason `replaced`, and a
+ * displaced listener, for a request that asked for the state already in force.
+ * The contract publishes `DesignatedResident = Omit<Resident, "designationId">`
+ * for exactly this, and taking it here makes the mistake a compile error instead
+ * of a behaviour change nobody notices.
  */
-const sameResident = (a: Resident, b: Resident): boolean =>
+const sameResident = (a: DesignatedResident, b: DesignatedResident): boolean =>
   a.name === b.name && a.docId === b.docId && a.weight === b.weight;
 
 /**
@@ -319,7 +330,7 @@ function residentFor(
   projection: ProjectionDb,
   name: string | undefined,
   weight: string | undefined,
-): Resident {
+): DesignatedResident {
   const chosen = weight ?? null;
   if (name === undefined) return { name: null, docId: null, weight: chosen };
   const target = resolveMentionTarget(projection, MENTION_TYPE, name);
@@ -396,10 +407,21 @@ export async function designateResident(
     const current = fileResident(thread);
     const unchanged = current !== null && sameResident(current, resident);
 
-    const named = resident.name ?? GENERAL_RESIDENT_SUBJECT;
+    // **The id changes exactly when the designation changes** (SERVER-147). It
+    // is minted here, on the branch that writes, and nowhere else: a
+    // re-designation asking for the state already in force carries the id it
+    // found, which is what lets a person ask for a stopped listener to be
+    // relaunched without the relaunch reading as a replacement. `residentFor`
+    // deliberately does not mint one — it is also what `sameResident` compares.
+    const designated: Resident = {
+      ...resident,
+      designationId: unchanged ? current.designationId : newId(ID_PREFIXES.designation),
+    };
+
+    const named = designated.name ?? GENERAL_RESIDENT_SUBJECT;
     const result = unchanged
       ? null
-      : await writeResident(workspace, thread, actor, resident, {
+      : await writeResident(workspace, thread, actor, designated, {
           subject: `resident designate: ${named} on ${thread.title} (${id}) by ${actor}`,
         });
 
@@ -429,7 +451,7 @@ export async function designateResident(
     const event = await workspace.enqueue({
       type: RESIDENT_DESIGNATED,
       source: EVENT_SOURCE.thread,
-      payload: residentDesignatedPayload(id, resident),
+      payload: residentDesignatedPayload(id, designated),
     });
 
     return {

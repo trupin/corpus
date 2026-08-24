@@ -188,8 +188,19 @@
  * the only path a DDL change has, so the version is what carries it. The
  * repopulation reads `last_actor` from git (`./last-actor.ts`), which is where
  * §4 recorded the same fact all along.
+ *
+ * 21 → 22 (SERVER-147): `threads.resident_designation_id` — CONTRACT-071's
+ * `Resident.designationId`, the identity of the **act** that put a resident on a
+ * lane. `GET /api/agents` builds every roster row from these columns and must
+ * not open a file per lane to answer what a designation is, so the fourth
+ * independent fact about a designation is projected exactly as the first three
+ * are. A v21 database has no such column; the value is read straight off the
+ * thread file's `resident` frontmatter, and every designation written before
+ * CONTRACT-071 has no key there — so the rebuild this bump triggers is the whole
+ * migration and every carried-over row correctly reads NULL, which the contract
+ * defines as "no id to compare".
  */
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -441,7 +452,16 @@ CREATE TABLE threads (
   -- is: GET /api/agents builds a row per lane from these columns and must not
   -- open a file per lane to answer what a designation says. Never interpreted
   -- here -- the tier table is the workspace's own skill text.
-  resident_weight TEXT
+  resident_weight TEXT,
+  -- Which designation this is (SERVER-147, CONTRACT-071), verbatim from the
+  -- file -- NULL for every designation written before the field existed, which
+  -- the contract defines as "no id to compare". A fourth independent question,
+  -- and the only one that is about the *act* rather than about what the act
+  -- asked for: it changes exactly when the designation changes, so it is what a
+  -- listener launched by one designation compares against the lane's row to
+  -- learn it has been replaced. Projected for the reason the three above are:
+  -- the roster answers from these columns and opens no file per lane.
+  resident_designation_id TEXT
 );
 
 CREATE TABLE anchors (

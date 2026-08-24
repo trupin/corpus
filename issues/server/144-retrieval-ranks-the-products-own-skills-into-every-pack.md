@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P1 (important)
@@ -45,19 +45,19 @@ needed — which forces a second search. The effect is worst on small corpora,
 which is every new workspace's first week.
 
 ## Acceptance Criteria
-- [ ] Documents of type `skill`, `agent-def` and `template` are excluded from
+- [x] Documents of type `skill`, `agent-def` and `template` are excluded from
       default ranking in `corpus search`, `corpus doc related`, and the context
       pack's related-excerpts section.
-- [ ] They remain fully retrievable when asked for: `corpus search --type skill`
+- [x] They remain fully retrievable when asked for: `corpus search --type skill`
       (already the skill-genesis path in the comment skill) still finds them,
       and `doc show`/`doc related` on a skill id still works.
-- [ ] A thread whose **parent** is a skill document still gets that skill as
+- [x] A thread whose **parent** is a skill document still gets that skill as
       its parent block in the pack — the exclusion is about ranking neighbours,
       never about the document the conversation is on.
-- [ ] Whether seed views/boards (`type: view`, `type: board`) join the
-      exclusion is decided and stated — the audit saw `doc_seedattention` and
-      `doc_seedinbox` rank into packs too.
-- [ ] Re-run the audit's probe in a fresh workspace: the three calls above
+- [x] Whether seed views/boards (`type: view`, `type: board`) join the
+      exclusion is decided and stated — **they join it on the two neighbour
+      surfaces and not on `corpus search`.** See below.
+- [x] Re-run the audit's probe in a fresh workspace: the three calls above
       return user documents only, and the pack for an anchored comment on a
       mortgage note carries no `doc_skill*` row.
 
@@ -106,20 +106,182 @@ first.
    returns the skills
 
 ## E2E Verification Log
-_Filled in by the implementing agent._
+
+**Model: Opus 5 (1M context).**
 
 ### Reproduction (bugs only)
-_[Agent fills]_
 
-### Post-Implementation Verification
-_[Agent fills]_
+Real server, fresh `corpus init` workspace at `scratchpad/ws142` on port 8791,
+the installed template plus a note reading *"The working rate assumption is 6.1%
+for the refinance."* — the audit's own sentence.
+
+```
+$ corpus search "rate assumption 6.1%" --limit 5
+doc_skillcomment      Worked examples            …Rates > 6.1% ## Rates The working rate assumption is 6.1% as…
+doc_vtqkgiud          Refinance                  The working rate assumption is 6.1% for the refinance. We should…
+doc_skillorchestrate  Reflecting on a user edit  …6.1% for the whole term corpus search "rate assumption 6.1…
+doc_skillconverse     Worked example             …doc_5c8b2f]] with the 6.4% rate assumption CORPUS_EOF corpus queue…
+
+$ corpus doc related doc_vtqkgiud --limit 5
+doc_skillorchestrate  similar  ## Purpose and when to run You are this workspace's **general** agent…
+doc_skillcomment      similar  ## When this runs The orchestrate skill invokes you for two event types…
+doc_ccogoxhj          similar  Base. Plain out-of-band edit, twice.
+doc_skillb8a2308c     similar  # Simplified Technical English (ASD-STE100)…
+```
+
+The top hit is the comment skill's worked example, 3 of 4 search rows are
+machinery, and the #1 related document for a mortgage note is
+`doc_skillorchestrate`. Exactly as filed.
+
+**And the pack**, on an anchored comment on that note, captured from the running
+server with the fix's SQL fragment temporarily neutered:
+
+```
+# related excerpts
+doc_skillcomment      Worked examples          similar  ## Worked examples **1 — Anchored comment that edits the parent.** …
+doc_skillorchestrate  Reflecting on a user edit similar  ```bash corpus doc show doc_a1b2c3 …
+doc_skillb8a2308c     Simplified Technical English (ASD-STE100) similar  ## When to Use This Skill …
+doc_skillconverse     Worked example           similar  Nothing is held, so there is nothing to reconcile …
+doc_ccogoxhj          Mortgage                 similar  Base. Plain out-of-band edit, twice.
+```
+
+**4 of 5 excerpt rows are the agent's own instructions, quoted back to it at
+length.** The audit measured 4 of 11 on a bigger corpus.
+
+### The change — one fragment, three surfaces
+
+`apps/server/src/docs/filters.ts` gains `UNRANKED_DOC_TYPES`,
+`UNRANKED_NEIGHBOUR_DOC_TYPES` and the two fragments `rankableSql` /
+`rankableNeighbourSql`, written beside `notArchivedSql` for the reason that file
+already argues: the three surfaces reach `documents` three different ways and
+must exclude the same rows.
+
+- **`GET /api/search`** — one line in `searchCorpus`, pushed onto
+  `compiled.conditions` **after** `compileFilters` returns. Not inside
+  `compileFilters`, because that builder also serves `GET /api/docs`, where a
+  board that stopped listing its own views would be a worse bug. Pushing it
+  before `whereClause` and `scopeOf` are read means it reaches the lexical
+  statement and the vector scan from one line, so §9.2's "the same set, with the
+  same semantics" still holds across the hybrid.
+- **`GET /api/docs/{id}/related`** — folded into the fragment that already
+  carried the archived default, so both halves stay one set.
+- **The context pack** — the same, in `relatedExcerpts`'s two coordinated sites.
+
+The gate on search is **"did the caller name a type at all"**, not "did they name
+an excluded one": naming a type is the caller saying what they are after, and a
+default underneath it could only subtract from the answer. `--type skill` — the
+comment skill's genesis path — is untouched.
+
+### The decision the issue asked for: views and boards
+
+**They join the exclusion on `doc related` and the context pack. They do not on
+`corpus search`.** The difference is the difference between the two questions:
+
+- `corpus search` asks **"where is this said?"** A board or a view the user named
+  and can open is a real answer to a lookup, so search keeps them.
+- `doc related` and the pack ask **"what else bears on this?"** A stored query
+  bears on nothing — it has no prose — so a hit on one is a title collision
+  dressed as a neighbour. The audit's `doc_seedattention` / `doc_seedinbox`
+  complaint was specifically about them ranking *into packs*.
+
+`skill`, `agent-def` and `template` are excluded on all three, which is the set
+the issue required.
+
+Two things this deliberately does **not** do. The documents stay **indexed** —
+this is a ranking default, not an index change, so `--type skill` costs nothing
+extra. And nothing was added to the contract: `doc related` and the pack take no
+`type` parameter, so their exclusion is unconditional. Giving `related` an
+override would be a contract change and is not asked for here.
+
+### Post-Implementation Verification — same server, restarted
+
+```
+$ corpus search "rate assumption 6.1%" --limit 5
+doc_vtqkgiud  Refinance  The working rate assumption is 6.1% for the refinance. We should…
+
+$ corpus search "rate assumption" --type skill --limit 5
+doc_skillcomment      Worked examples            …"Mortgage rates?" becomes "Mortgage rate assumptions…
+doc_skillorchestrate  Reflecting on a user edit  …where the rate assumption…
+doc_skillconverse     Worked example             …the rate assumption to be written down where…
+
+$ corpus doc related doc_vtqkgiud --limit 5
+doc_ccogoxhj  similar  Base. Plain out-of-band edit, twice.
+
+$ corpus doc show doc_skillcomment
+Comment
+doc_skillcomment · skill · open
+
+$ corpus thread context th_tpqpwqgo
+parent doc_vtqkgiud · Refinance · Refinance
+> rate assumption is 6.1%
+…
+# related excerpts
+doc_ccogoxhj  Mortgage  similar  Base. Plain out-of-band edit, twice.
+```
+
+One user row where there were five, four of them machinery. `--type skill` and
+`doc show` on a skill are unchanged.
+
+### Tests, and every one of them falsified
+
+Eight new tests across the three surfaces. Each was broken on purpose and watched
+to fail, restoring the source afterwards:
+
+| mutation | red |
+| --- | --- |
+| `excludesTypes` returns `1 = 1` | the three exclusion assertions, one per surface |
+| the `query.type === undefined` gate dropped from search | `returns them all when a type is named`, `defers to any explicit type` |
+| search switched to the **neighbour** list | `ranks the note and drops the skill…`, `keeps a view…` |
+
+Two are guard tests — `doc related` on a skill as the **subject**, and a thread
+whose **parent** is a skill still getting its parent block — and they pass under
+every mutation above by design: they assert what must not regress, and both are
+reached by id rather than through the candidate query.
+
+### Scoped runs
+
+```
+VITEST_MAX_THREADS=4 vitest run \
+  apps/server/src/search apps/server/src/docs/related.test.ts \
+  apps/server/src/docs/query.test.ts apps/server/src/docs/write-fixture.test.ts \
+  apps/server/src/threads/context.test.ts apps/server/src/git \
+  apps/server/src/watcher/commit-out-of-band.test.ts \
+  apps/server/src/queue/routes.test.ts apps/server/src/json-body.test.ts \
+  apps/server/src/semantic
+  Test Files  46 passed (46)
+       Tests  921 passed (921)     exit 0
+```
+
+**The full `apps/server` run is red for a reason that is not this issue**, and it
+must not be read as one: `packages/contract` gained `Resident.designationId`
+(CONTRACT-071) from another agent mid-session, and `apps/server` has no matching
+change yet. 110 failures across nine files, every one of them resident- or
+roster-shaped, and `tsc` reports it directly — `designationId is missing in type`
+in `core/resident.test.ts`. Escalated to the orchestrator.
+
+### An intermediate decision worth recording
+
+The first attempt excluded `view` and `board` on **all three** surfaces. That
+turned 13 tests red in `search.test.ts` — the §9.2 filter-parity table
+(TEST-674), which asserts `/api/search` and `GET /api/docs` select the same
+documents for a filter, and the Phase A byte-stability snapshots. Every failure
+named `doc_view`. Splitting the lists made those tests correct again without
+weakening anything the issue required, which is a second argument for the split
+beyond the one about questions: it keeps §9.2's parity promise intact.
+
+### For another domain
+
+`apps/cli/src/commands/search.ts`'s help text discusses ranking at length
+(lines 72, 81–84, 118) and now under-describes it: it does not say that
+retrieval's default ranking omits the workspace's own machinery. That is a
+cli-dev change and is not made here.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying)

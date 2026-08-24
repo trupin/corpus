@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   AnchorIdSchema,
+  DesignationIdSchema,
   DocIdSchema,
   DocumentIdSchema,
   EventIdSchema,
@@ -19,6 +20,7 @@ export const ID_PREFIXES = {
   thread: "th",
   anchor: "anc",
   event: "evt",
+  designation: "des",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
@@ -51,6 +53,12 @@ export const ID_SUFFIX_LENGTHS: Readonly<Record<IdPrefix, number>> = {
   [ID_PREFIXES.thread]: 8,
   [ID_PREFIXES.anchor]: 8,
   [ID_PREFIXES.event]: 12,
+  // A designation, like a queue event, is minted per *act* rather than per
+  // thing: every re-designation gets a fresh one, and UI-168's weight picker
+  // makes re-designating an ordinary gesture rather than a rare one. It is also
+  // the one id nothing indexes — there is no table to check it against, so the
+  // entropy is the whole of the collision argument (SERVER-147).
+  [ID_PREFIXES.designation]: 12,
 };
 
 /**
@@ -65,6 +73,7 @@ export const ID_ALPHABETS: Readonly<Record<IdPrefix, string>> = {
   [ID_PREFIXES.thread]: BASE32_ALPHABET,
   [ID_PREFIXES.anchor]: HEX_ALPHABET,
   [ID_PREFIXES.event]: BASE32_ALPHABET,
+  [ID_PREFIXES.designation]: BASE32_ALPHABET,
 };
 
 /** Bounded so a saturated namespace fails loudly instead of spinning forever. */
@@ -112,6 +121,8 @@ export const isThreadId = (value: string): boolean => ThreadIdSchema.safeParse(v
 export const isDocumentId = (value: string): boolean => DocumentIdSchema.safeParse(value).success;
 export const isAnchorId = (value: string): boolean => AnchorIdSchema.safeParse(value).success;
 export const isEventId = (value: string): boolean => EventIdSchema.safeParse(value).success;
+export const isDesignationId = (value: string): boolean =>
+  DesignationIdSchema.safeParse(value).success;
 
 /** The id prefix a document of this `type` must carry (SPEC.md §5): threads are `th_*`. */
 export const idPrefixForDocType = (type: string): IdPrefix =>

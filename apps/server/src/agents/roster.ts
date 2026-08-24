@@ -57,7 +57,8 @@ const DESIGNATED_LANES_SQL = `
          documents.title AS title,
          threads.resident_name AS residentName,
          threads.resident_doc_id AS residentDocId,
-         threads.resident_weight AS residentWeight
+         threads.resident_weight AS residentWeight,
+  threads.resident_designation_id AS residentDesignationId
   FROM threads
   JOIN documents ON documents.id = threads.id
   WHERE threads.parent_id IS NULL AND threads.resident_designated = 1
@@ -71,6 +72,8 @@ interface DesignatedRow {
   readonly residentDocId: string | null;
   /** The level the designation chose (SERVER-129); `null` when it chose none. */
   readonly residentWeight: string | null;
+  /** Which designation this is (SERVER-147); null for one written before the field. */
+  readonly residentDesignationId: string | null;
 }
 
 /**
@@ -218,6 +221,7 @@ function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | 
     // the person chose, and the workspace holds nothing to re-resolve it
     // against — the tier table is the orchestrate skill's own text.
     weight: entry.residentWeight,
+    designationId: entry.residentDesignationId,
   });
   return currentResident(projection, stored);
 }

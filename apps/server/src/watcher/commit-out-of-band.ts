@@ -77,11 +77,21 @@
 // removal standing alone, one `mv` became `doc delete: Mortgage` followed by
 // `doc edit: Mortgage` — a subject asserting a deletion that never happened.
 //
-// **Nothing here writes a file.** A commit takes the working tree as it stands,
-// which is what makes the anchor reconciliation's rewrite and the person's own
-// edit land together, as one change — and what keeps the document's key (§7)
-// where the reconciliation left it, since the key is a digest of the file's bytes
-// and this touches none.
+// **Nothing here writes a file**, so the document's key (§7) stays where the
+// reconciliation left it — the key is a digest of the file's bytes, and this
+// touches none.
+//
+// **And nothing here reads one either (SERVER-142).** A commit used to take the
+// working tree as it stands, which is what made the anchor reconciliation's
+// rewrite and the person's own edit land together as one change. It also meant
+// the tree was read at the moment the commit *ran*, and a commit runs later than
+// the flush that found it: `flush()` is synchronous and a commit is not, so the
+// batch is handed to a promise chain. A server write landing in that gap put its
+// own bytes into the person's commit under the `user` author — and where the
+// server had already committed them, left the person's edit in no commit at all.
+// Both were measured on a real server. So the flush hands over the **bytes it
+// observed**, `CommitRequest.snapshot` carries them, and the two changes still
+// land together because the snapshot is taken after reconciliation has written.
 
 import type { Actor } from "@corpus/contract";
 import type { AnchorChange, AutoCommitter } from "../git/index.js";
@@ -115,6 +125,15 @@ export interface OutOfBandChange {
   readonly type: string;
   /** The file is gone: someone deleted or moved it away outside the server. */
   readonly removed: boolean;
+  /**
+   * What each of {@link OutOfBandChange.paths} held **when the flush observed
+   * it** — post-reconciliation, which is what makes the remapped `anchors` block
+   * and the person's own edit one change. `null` for a path observed as gone.
+   *
+   * Required rather than optional, so no path through this module can hand git
+   * a change without the bytes it is a change *to* (SERVER-142).
+   */
+  readonly snapshot: ReadonlyMap<string, Buffer | null>;
   /** What reconciliation moved, when it ran — the `Corpus-Anchors` trailer (§6). */
   readonly anchors?: AnchorChange | undefined;
 }
@@ -171,6 +190,7 @@ export function createOutOfBandCommitter(
         actor: OUT_OF_BAND_ACTOR,
         subject: outOfBandSubject(change),
         paths: change.paths,
+        snapshot: change.snapshot,
         ...(change.anchors === undefined ? {} : { anchors: change.anchors }),
       });
       if (outcome.kind === "committed" || outcome.kind === "amended") {

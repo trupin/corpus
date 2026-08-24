@@ -57,7 +57,7 @@ import { existsSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { Actor } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
-import { gitOutput, type Git, type GitCommandResult } from "./git.js";
+import { gitOutput, type Git, type GitCommandResult, type GitExecOptions } from "./git.js";
 
 /**
  * How long after an auto-commit a further save by the same party still counts
@@ -204,6 +204,36 @@ export interface CommitRequest {
   readonly subject: string;
   /** Workspace-relative paths (files or directories) this mutation touched. */
   readonly paths: readonly string[];
+  /**
+   * What each of {@link CommitRequest.paths} held **when the caller observed
+   * it** — the commit's content, in place of the working tree (SERVER-142).
+   * `null` records a path the caller observed as gone.
+   *
+   * Present only where observing and committing are separated in time. Every
+   * *mutation* commits in the same breath as its write, inside the document's
+   * lane, so for those the working tree is still the caller's own bytes and the
+   * ordinary staging path is both correct and cheaper. The watcher is the
+   * exception the field exists for: `flush()` is synchronous and a commit is
+   * not, so a person's commit is handed to a promise chain and runs later, and
+   * `git add` would stage the tree as it stands **then**. A server write landing
+   * in that gap used to put its own bytes into the person's commit under the
+   * `user` author, or — where the server had already committed them — leave the
+   * person's edit in no commit at all. Both were measured on a real server.
+   *
+   * Keys are matched against `paths`: a path the map does not describe is not
+   * staged at all, which keeps a caller's mistake visible rather than letting it
+   * commit a guess.
+   *
+   * Two consequences worth stating, because they are the price of the
+   * guarantee. A snapshot commit is built from a **scratch index** rather than
+   * with `--only`, since `--only` rebuilds its tree from the working tree — the
+   * one input this is refusing to use. And where the working tree has moved on
+   * by the time the commit runs, the commit records the observation and the
+   * newer bytes stay uncommitted until whoever wrote them commits them: §4 asks
+   * the history to say what happened, and §11 already rules that a write stands
+   * when its commit does not.
+   */
+  readonly snapshot?: ReadonlyMap<string, Buffer | null> | undefined;
   readonly anchors?: AnchorChange | undefined;
   /**
    * `false` opts out of window folding **in both directions** — an audit entry
@@ -684,7 +714,10 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
    * carries is ours, the amend empties it exactly when our staged content is
    * what the parent already holds.
    */
-  const amendWouldEmptyHead = async (paths: readonly string[]): Promise<boolean> => {
+  const amendWouldEmptyHead = async (
+    paths: readonly string[],
+    options: GitExecOptions | undefined,
+  ): Promise<boolean> => {
     if (paths.length === 0) return false;
 
     const parentResult = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
@@ -700,18 +733,21 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (parent === null) {
       // A root commit is empty exactly when its tree is, and by the check above
       // its tree holds nothing but our paths.
-      const listed = await git.exec(["ls-files", "--", ...paths]);
+      const listed = await git.exec(["ls-files", "--", ...paths], options);
       return listed.ok && listed.stdout.trim() === "";
     }
     // `--quiet` exits 0 only when there is no difference at all — i.e. the
-    // amended commit would restate its own parent.
-    return (await git.exec(["diff", "--cached", "--quiet", parent, "--", ...paths])).ok;
+    // amended commit would restate its own parent. Asked of whichever index the
+    // commit will be made from, which is a scratch one for a snapshot commit.
+    return (await git.exec(["diff", "--cached", "--quiet", parent, "--", ...paths], options)).ok;
   };
 
   /**
    * Restore the index to `HEAD` for the paths an attempt staged, leaving the
    * working tree alone. Called on every outcome that is not a landed commit, so
-   * a refused auto-commit can never escape into someone else's.
+   * a refused auto-commit can never escape into someone else's — and on the one
+   * outcome that *is*, a snapshot commit, whose scratch index left the real one
+   * describing the content `HEAD` held before it.
    */
   const unstage = async (paths: readonly string[], head: string | null): Promise<void> => {
     if (paths.length === 0) return;
@@ -801,6 +837,98 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
         ...missing.filter((path) => trackedPaths.some((entry) => entry.startsWith(`${path}/`))),
       ],
     };
+  };
+
+  /**
+   * {@link stageablePaths}'s answer for a commit that brought its own bytes
+   * (see {@link CommitRequest.snapshot}) — read off the snapshot rather than off
+   * the filesystem, which is the whole of what SERVER-142 changes.
+   *
+   * Nothing is filtered out for being absent: `update-index` names its paths
+   * explicitly and never asks the working tree about them, so the "a pathspec
+   * matching nothing fails the whole `add`" problem the other one solves does
+   * not arise here. `directories` is empty by construction — a snapshot maps
+   * files to bytes, and nothing can hand one for a tree.
+   */
+  const snapshotStaging = (
+    paths: readonly string[],
+    snapshot: ReadonlyMap<string, Buffer | null>,
+  ): { paths: string[]; removed: string[]; directories: string[] } => {
+    const described = [...new Set(paths)].filter((path) => snapshot.has(path));
+    return {
+      paths: described,
+      removed: described.filter((path) => snapshot.get(path) === null),
+      directories: [],
+    };
+  };
+
+  /**
+   * Puts a snapshot into the scratch index, so the commit's tree is what the
+   * caller **observed** rather than what the working tree holds by now.
+   *
+   * The index is seeded from `HEAD`, so every path the request does not name
+   * keeps `HEAD`'s content and the operator's real index is not the one being
+   * committed — the two promises `--only` makes on the ordinary path, kept by
+   * different means.
+   *
+   * Modes are read back from that seeded index rather than assumed, because the
+   * one caller observes **bytes** and cannot see a `chmod`: writing `100644` for
+   * every path would record mode changes nobody made. A path `HEAD` does not
+   * carry is new, and a new file is `100644`.
+   *
+   * Returns the failing command, or `null` when the whole snapshot is staged.
+   */
+  const applySnapshot = async (
+    paths: readonly string[],
+    snapshot: ReadonlyMap<string, Buffer | null>,
+    options: GitExecOptions,
+  ): Promise<GitCommandResult | null> => {
+    const modes = new Map<string, string>();
+    const staged = await git.exec(["ls-files", "--stage", "--", ...paths], options);
+    if (!staged.ok) return staged;
+    for (const line of staged.stdout.split("\n")) {
+      const [entry, path] = line.split("\t");
+      const mode = entry?.split(" ")[0];
+      if (path !== undefined && mode !== undefined && mode !== "") modes.set(path, mode);
+    }
+
+    // Only a path the index actually carries: `--force-remove` on one it does
+    // not is a refusal, and "the caller observed this path as gone, and so did
+    // git" is not an error.
+    const dropping = paths.filter((path) => snapshot.get(path) === null && modes.has(path));
+    if (dropping.length > 0) {
+      const dropped = await git.exec(
+        ["update-index", "--force-remove", "--", ...dropping],
+        options,
+      );
+      if (!dropped.ok) return dropped;
+    }
+
+    for (const path of paths) {
+      const content = snapshot.get(path);
+      if (content === null || content === undefined) continue;
+      // `--path` so the filters `git add` would have applied at this path are
+      // applied here too: the blob has to be the one staging these bytes would
+      // have produced, or a workspace with `core.autocrlf` or a `.gitattributes`
+      // filter would see the out-of-band path commit different content than
+      // every other path does.
+      const blob = await git.exec(["hash-object", "-w", "--path", path, "--stdin"], {
+        ...options,
+        stdin: content,
+      });
+      if (!blob.ok) return blob;
+      const written = await git.exec(
+        [
+          "update-index",
+          "--add",
+          "--cacheinfo",
+          `${modes.get(path) ?? "100644"},${blob.stdout.trim()},${path}`,
+        ],
+        options,
+      );
+      if (!written.ok) return written;
+    }
+    return null;
   };
 
   /**
@@ -937,16 +1065,26 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // git refuses a whole `add` when *any* pathspec matches nothing, and a move
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
-    // path from failing the commit for the paths that are real.
-    const { paths, removed, directories } = await stageablePaths(request.paths);
+    // path from failing the commit for the paths that are real. A request that
+    // brought its own bytes asks neither question of the filesystem — that is
+    // the whole point of it (see `CommitRequest.snapshot`).
+    const snapshot = request.snapshot;
+    const { paths, removed, directories } =
+      snapshot === undefined
+        ? await stageablePaths(request.paths)
+        : snapshotStaging(request.paths, snapshot);
     const head = await headSha();
     if (paths.length === 0) return { kind: "skipped", reason: "nothing to commit" };
 
-    // A move the working tree cannot spell — see `CommitRequest.forget`. Every
-    // git call below then runs against a scratch index instead of the
-    // operator's, and the commit is made from it rather than with `--only`.
+    // Two callers cannot be committed with `--only`, which rebuilds its tree
+    // from the working tree: a move the working tree cannot spell
+    // (`CommitRequest.forget`) and a commit whose content is an observation
+    // rather than the tree (`CommitRequest.snapshot`). Both run every git call
+    // below against a scratch index instead of the operator's, and commit from
+    // it.
     const forget = request.forget ?? [];
-    const scratch = forget.length === 0 ? null : scratchIndexPath(repository.stdout);
+    const scratch =
+      forget.length === 0 && snapshot === undefined ? null : scratchIndexPath(repository.stdout);
     const options = scratch === null ? undefined : { env: { GIT_INDEX_FILE: scratch } };
     const discardScratch = (): void => {
       if (scratch !== null) rmSync(scratch, { force: true });
@@ -961,26 +1099,36 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
         discardScratch();
         return failure("staging failed", seeded);
       }
-      // The half `--only` cannot reach: the old spelling leaves the tree because
-      // it is dropped from the index, not because the filesystem was asked
-      // whether it is still there.
-      const forgotten = await git.exec(
-        ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", ...forget],
-        options,
-      );
-      if (!forgotten.ok) {
-        discardScratch();
-        return failure("staging failed", forgotten);
+      if (forget.length > 0) {
+        // The half `--only` cannot reach: the old spelling leaves the tree
+        // because it is dropped from the index, not because the filesystem was
+        // asked whether it is still there.
+        const forgotten = await git.exec(
+          ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", ...forget],
+          options,
+        );
+        if (!forgotten.ok) {
+          discardScratch();
+          return failure("staging failed", forgotten);
+        }
       }
     }
 
-    // `-A` so a removal (a delete, or a move's old path) stages as a removal
-    // rather than being silently left behind in the tree.
-    const staged = await git.exec(["add", "-A", "--", ...paths], options);
-    if (!staged.ok) {
-      if (scratch === null) await unstage(paths, head);
-      else discardScratch();
-      return failure("staging failed", staged);
+    if (snapshot !== undefined && options !== undefined) {
+      const refused = await applySnapshot(paths, snapshot, options);
+      if (refused !== null) {
+        discardScratch();
+        return failure("staging failed", refused);
+      }
+    } else {
+      // `-A` so a removal (a delete, or a move's old path) stages as a removal
+      // rather than being silently left behind in the tree.
+      const staged = await git.exec(["add", "-A", "--", ...paths], options);
+      if (!staged.ok) {
+        if (scratch === null) await unstage(paths, head);
+        else discardScratch();
+        return failure("staging failed", staged);
+      }
     }
 
     // "Is there anything to commit?", asked of whichever index this commit will
@@ -999,9 +1147,16 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       return { kind: "skipped", reason: "nothing to commit" };
     }
 
-    // A scratch commit never folds: its index is seeded from `HEAD`, so an amend
-    // would restate `HEAD`'s own tree. See `CommitRequest.forget`.
-    const candidate = head === null || scratch !== null ? null : await amendTarget(request, head);
+    // A **forget** commit never folds: its scratch index is seeded from `HEAD`
+    // with a spelling dropped that only the index can express, and the one
+    // caller is a bulk act, which commits alone anyway (see
+    // `CommitRequest.forget`). A **snapshot** commit does fold, and must: §4
+    // makes an out-of-band edit an ordinary save, and an external editor saving
+    // three files in a row is one editing session. Its scratch index is seeded
+    // from `HEAD` too, so an amend from it reaches the same tree
+    // `--amend --only -- <paths>` would — `HEAD`'s tree with these paths
+    // replaced — and nothing about the fold changes.
+    const candidate = head === null || forget.length > 0 ? null : await amendTarget(request, head);
     // Three reasons a fold that git would accept must not happen anyway: an
     // amend that would *empty* the commit git refuses outright, one that would
     // take the open window's only copy of what this save removes, and — the
@@ -1014,7 +1169,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // autosave, so neither spawns anything on the hot path.
     const unfoldable =
       candidate !== null &&
-      ((await amendWouldEmptyHead(paths)) ||
+      ((await amendWouldEmptyHead(paths, options)) ||
         (await amendWouldOrphanContent(removed)) ||
         (await amendWouldOrphanUnderDirectory(directories)));
     const target = unfoldable ? null : candidate;
@@ -1070,8 +1225,8 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
         committed,
       );
     }
-    if (scratch !== null) {
-      discardScratch();
+    if (scratch !== null) discardScratch();
+    if (forget.length > 0) {
       // The operator's index still spells these paths the way `HEAD` did a
       // moment ago, and comparing it against the commit just made shows the
       // rename staged **in reverse**. Put it back in step over this act's paths
@@ -1093,6 +1248,15 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     }
 
     const sha = await headSha();
+    if (snapshot !== undefined && sha !== null) {
+      // The commit was made from a scratch index, so the operator's real one
+      // still holds what `HEAD` said a moment ago — which now reads as these
+      // paths being staged *back* to their old content. Reset it to the commit
+      // just made and leave the working tree alone: where the tree has moved on
+      // since the observation, `git status` then says so honestly, and whoever
+      // wrote those bytes commits them.
+      await unstage(paths, sha);
+    }
     if (sha === null) {
       openWindow = null;
       await unstage(paths, head);

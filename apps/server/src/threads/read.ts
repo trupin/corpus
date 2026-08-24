@@ -97,8 +97,8 @@ export interface LoadedThread {
  * name to resolve, and `ResidentSchema`'s refinement already guarantees a null
  * name comes with a null id.
  *
- * **`weight` is carried through unchanged, and is the one field here that is
- * *not* re-resolved** (SERVER-129). `docId` is re-read because it answers "what
+ * **`weight` and `designationId` are carried through unchanged, and are the
+ * fields here that are *not* re-resolved** (SERVER-129, SERVER-147). `docId` is re-read because it answers "what
  * does this name point at now", a question about the workspace. A weight answers
  * "what did the person choose", a question about the designation, and the
  * workspace holds nothing to check it against — the tier table is the
@@ -111,9 +111,26 @@ export function currentResident(
   stored: Resident | null,
 ): Resident | null {
   if (stored === null) return null;
-  if (stored.name === null) return { name: null, docId: null, weight: stored.weight };
+  // `designationId` is carried through for the reason `weight` is (SERVER-147):
+  // it answers "which designation is this", a fact about the act, and the
+  // workspace holds nothing to re-resolve it against. A file written before the
+  // field existed reports `null`, which the contract defines as no id to
+  // compare — the pre-CONTRACT-071 behaviour, and safe.
+  if (stored.name === null) {
+    return {
+      name: null,
+      docId: null,
+      weight: stored.weight,
+      designationId: stored.designationId,
+    };
+  }
   const target = resolveMentionTarget(projection, MENTION_TYPE, stored.name);
-  return { name: stored.name, docId: target?.docId ?? null, weight: stored.weight };
+  return {
+    name: stored.name,
+    docId: target?.docId ?? null,
+    weight: stored.weight,
+    designationId: stored.designationId,
+  };
 }
 
 const asString = (value: unknown): string | null =>

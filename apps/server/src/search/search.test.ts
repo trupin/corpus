@@ -600,3 +600,84 @@ describe("loadChunkAddresses", () => {
     expect(loadChunkAddresses(ws.db, ["doc_flat"], "zzzznothingmatchesthis").size).toBe(0);
   });
 });
+
+/**
+ * SERVER-144. Measured in the SHARED-070 audit on a fresh workspace with five
+ * user notes: rows pointing at the product's own skill documents were 52% of
+ * seven retrieval calls' output tokens, and the top hit for
+ * `corpus search "rate assumption 6.1%"` was the comment skill's worked example,
+ * which contains that sentence verbatim.
+ *
+ * The skills' examples are written in realistic domain prose, which is what
+ * makes them honeypots for exactly the questions a real corpus asks.
+ */
+describe("the product's own machinery is not ranked by default (SERVER-144)", () => {
+  let machinery: Workspace;
+
+  beforeAll(() => {
+    machinery = createWorkspace("s144-search");
+    // The audit's own sentence, in the note that should win and in the skill
+    // that used to.
+    machinery.doc({
+      id: "doc_note01",
+      title: "Refinance",
+      body: "The working rate assumption is 6.1% for the refinance.",
+    });
+    machinery.doc({
+      id: "doc_skill01",
+      path: ".claude/skills/comment/SKILL.md",
+      title: "Comment",
+      body: "Worked example: the working rate assumption is 6.1% as of March.",
+    });
+    machinery.doc({
+      id: "doc_agent01",
+      path: ".claude/agents/resident.md",
+      title: "Resident",
+      body: "The working rate assumption is 6.1%, quoted in an agent definition.",
+    });
+    machinery.doc({
+      id: "doc_tpl01",
+      type: "template",
+      title: "Note template",
+      body: "The working rate assumption is 6.1% goes here.",
+    });
+    machinery.doc({
+      id: "doc_view01",
+      type: "view",
+      title: "Rate view",
+      body: "The working rate assumption is 6.1% is what this view is about.",
+    });
+    machinery.reproject();
+  });
+
+  afterAll(() => {
+    machinery.close();
+  });
+
+  const found = async (params: Record<string, string>): Promise<string[]> =>
+    ids(await search(machinery, { q: "rate assumption", ...params }));
+
+  it("ranks the note and drops the skill, agent-def and template", async () => {
+    expect((await found({})).sort()).toEqual(["doc_note01", "doc_view01"]);
+  });
+
+  it("keeps a view, because search answers `where is this said?`", async () => {
+    // The decision SERVER-144 asked for, pinned: a board or a view the user
+    // named is a real answer to a lookup. The neighbour surfaces drop them —
+    // see `related.test.ts` and `context.test.ts` — because a stored query
+    // bears on nothing.
+    expect(await found({})).toContain("doc_view01");
+  });
+
+  it("returns them all when a type is named, which is the skill-genesis path", async () => {
+    expect(await found({ type: "skill" })).toEqual(["doc_skill01"]);
+    expect(await found({ type: "agent-def" })).toEqual(["doc_agent01"]);
+    expect(await found({ type: "template" })).toEqual(["doc_tpl01"]);
+  });
+
+  it("defers to any explicit type rather than subtracting from it", async () => {
+    // Naming a type is the caller saying what they are after; a default
+    // underneath it could only ever take something away from the answer.
+    expect((await found({ type: "note,skill" })).sort()).toEqual(["doc_note01", "doc_skill01"]);
+  });
+});

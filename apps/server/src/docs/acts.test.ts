@@ -323,20 +323,40 @@ describe("what does not close a window (§4)", () => {
     return before;
   }
 
-  it("an ordinary save of a document body, whichever document it is to", async () => {
-    const before = await windowAround(async () => {
-      // Five more saves across two more documents, all by the same party.
-      for (let index = 0; index < 5; index += 1) {
-        const doc = await createDoc(
-          ws,
-          { type: "note", title: `Extra ${String(index)}`, body: "x" },
-          "user",
-        );
-        expect((await putDoc(ws, doc.id, { body: `x${String(index)}` }, asUser)).status).toBe(200);
-      }
-    });
-    expect(commitCount()).toBe(before + 1);
-  });
+  /**
+   * **The most expensive test in this file, and it needs its own budget**
+   * (SERVER-146, INFRA-020). Fourteen real HTTP mutations, each with a real git
+   * commit: two creates, then five create/save pairs, then two more saves.
+   * Measured on this machine at **2.8–3.1 s** — 62% of vitest's 5 s default at
+   * rest, which INFRA-020's own proposed rule ("a test that needs >20% of its
+   * timeout idle will flake under the gate") calls out exactly. Under a full
+   * suite competing with another agent's it was **1 in 3**, timing out at 5000 ms
+   * rather than failing an assertion.
+   *
+   * The budget is sized to the measurement and not raised across the board: the
+   * work here is genuine, and every other test in this file keeps the default.
+   * Making the work *cheaper* is the real fix and belongs to INFRA-020.
+   */
+  it(
+    "an ordinary save of a document body, whichever document it is to",
+    { timeout: 20_000 },
+    async () => {
+      const before = await windowAround(async () => {
+        // Five more saves across two more documents, all by the same party.
+        for (let index = 0; index < 5; index += 1) {
+          const doc = await createDoc(
+            ws,
+            { type: "note", title: `Extra ${String(index)}`, body: "x" },
+            "user",
+          );
+          expect((await putDoc(ws, doc.id, { body: `x${String(index)}` }, asUser)).status).toBe(
+            200,
+          );
+        }
+      });
+      expect(commitCount()).toBe(before + 1);
+    },
+  );
 
   it("opening or closing a reader", async () => {
     const before = await windowAround(async () => {

@@ -84,8 +84,10 @@ import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
 import { createReflectService, mountReflectRoutes, type ReflectService } from "./reflect/index.js";
 import { mountSearchRoutes } from "./search/index.js";
 import {
+  createIndexAnnouncer,
   createIndexMaintenance,
   createSemanticRetrieval,
+  type IndexAnnouncer,
   mountIndexRoutes,
   type IndexMaintenance,
   type SemanticRetrieval,
@@ -188,6 +190,14 @@ export interface CorpusServer {
    * re-queues, there is simply nothing to drain it.
    */
   readonly indexMaintenance: IndexMaintenance | undefined;
+  /**
+   * Where every `["index"]` frame goes (SERVER-116). Exposed because the embed
+   * worker is attached after this function returns (`worker-attach.ts`) and has
+   * to publish through the **same** announcer `indexMaintenance` does: the memo
+   * of "what state word did we last announce" belongs to the server, not to
+   * either emitter. `undefined` alongside {@link semantic}.
+   */
+  readonly indexAnnouncer: IndexAnnouncer | undefined;
   /**
    * SPEC.md §4's edit acknowledgment (SERVER-052): what decides a *user* edit
    * session has ended and enqueues the one `doc.edited` for it. `undefined`
@@ -435,6 +445,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   let commitOutOfBand: CommitOutOfBandChanges | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
+  let indexAnnouncer: IndexAnnouncer | undefined;
   /** SPEC.md §7's reflection (SERVER-137); built with the projection below. */
   let reflect: ReflectService | undefined;
   /**
@@ -662,17 +673,34 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // by `lifecycle.ts` after this function returns, and `useEngine` is how it
     // arrives. A server that never gets one resolves `engine-not-installed` and
     // answers `disabled`, which is the complete, honest lexical-only product.
-    semantic = createSemanticRetrieval({
+    const retrieval = createSemanticRetrieval({
       db: deps.projection,
       settings: config.embedding,
       logger,
       now,
     });
+    semantic = retrieval;
 
     // The index's maintenance verbs share the retrieval half's rebuild flag and
     // its provider resolution — one bit and one cached answer, so `indexing`
     // cannot outrank `stale` on one endpoint and not on another.
-    indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger, bus });
+    // SERVER-116. One announcer, shared by the two emitters, so a single memo
+    // decides whether the state word moved — two would each announce the same
+    // transition. `readState` is the retrieval half's own `state()`, which is
+    // the word `/api/search` and `/api/docs/{id}/related` publish: the fact is
+    // read, never re-derived.
+    const announcer = createIndexAnnouncer({
+      bus,
+      logger,
+      readState: () => retrieval.state(),
+    });
+    indexAnnouncer = announcer;
+    indexMaintenance = createIndexMaintenance({
+      db: deps.projection,
+      semantic: retrieval,
+      logger,
+      announcer,
+    });
     mountIndexRoutes(app, indexMaintenance);
 
     mountDocsRoutes(app, deps.projection, {
@@ -918,6 +946,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     selfWrites,
     semantic,
     indexMaintenance,
+    indexAnnouncer,
     editSessions,
     commitOutOfBand,
     reflect,

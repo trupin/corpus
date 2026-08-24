@@ -80,10 +80,15 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     // who is designated and has none. Since the weight rider (SERVER-129) it is
     // four columns and three questions, the third being *at what weight*: null
     // for a designation that chose no level, and independent of the other two.
+    // Since CONTRACT-071 (SERVER-147) it is five columns and four questions,
+    // the fourth being *which designation this is*: the identity of the act
+    // rather than of anything the act asked for, and null for every designation
+    // written before the field existed.
     "resident_designated",
     "resident_name",
     "resident_doc_id",
     "resident_weight",
+    "resident_designation_id",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from

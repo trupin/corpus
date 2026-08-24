@@ -49,7 +49,17 @@ export type OutOfBandOutcome =
   /** Reconciliation ran and every selector still described the body. */
   | { readonly kind: "unchanged"; readonly report: ReconcileReport }
   /** The `anchors` map was rewritten on disk. */
-  | { readonly kind: "reconciled"; readonly report: ReconcileReport };
+  | {
+      readonly kind: "reconciled";
+      readonly report: ReconcileReport;
+      /**
+       * Exactly what was written. The caller commits this rather than re-reading
+       * the file (SERVER-142): re-reading would race the next edit, and the
+       * commit has to hold the remapped `anchors` block and the person's own
+       * edit together as the one change they are.
+       */
+      readonly text: string;
+    };
 
 export interface ReconcileOutOfBandOptions {
   readonly workspaceRoot: string;
@@ -133,7 +143,8 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
   // object identity is the honest test for "the file needs rewriting".
   if (next === parsed) return { kind: "unchanged", report: result.report };
 
-  writeAtomically(options.absPath, serializeDocument(next), options.selfWrites);
+  const text = serializeDocument(next);
+  writeAtomically(options.absPath, text, options.selfWrites);
   logger.info("reconciled anchors after an out-of-band edit", {
     path: options.relativePath,
     remapped: result.report.remapped.length,
@@ -146,5 +157,5 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
     // has just finished rewriting, authored `user`, so the remapped `anchors`
     // block and the person's own edit land together as the one change they are.
   });
-  return { kind: "reconciled", report: result.report };
+  return { kind: "reconciled", report: result.report, text };
 }

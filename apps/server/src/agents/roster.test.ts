@@ -28,6 +28,15 @@ import { capSummary, relativeAge } from "./roster.js";
  */
 const LOOPBACK = { incoming: { socket: { remoteAddress: "127.0.0.1" } } };
 
+/**
+ * The shape `newId(ID_PREFIXES.designation)` mints (SERVER-147): twelve base32
+ * characters. Pinned as a *shape* rather than a value, because the value is
+ * opaque and freshly minted — what a roster assertion is entitled to say is that
+ * the row carries one, and `resident.test.ts` is where the id's *behaviour*
+ * across designations is pinned.
+ */
+const A_DESIGNATION: unknown = expect.stringMatching(/^des_[a-z2-7]{12}$/);
+
 let ws: WriteWorkspace;
 
 beforeEach(() => {
@@ -174,7 +183,12 @@ describe("the shape of the roster", () => {
     // has gone reports null rather than an id pointing at nothing (SHARED-048's
     // "the missing profile is reported rather than silently substituted"). The
     // case below is the one this must stay distinguishable from.
-    expect((await laneRow(id)).resident).toEqual({ name: "researcher", docId: null, weight: null });
+    expect((await laneRow(id)).resident).toEqual({
+      name: "researcher",
+      docId: null,
+      weight: null,
+      designationId: A_DESIGNATION,
+    });
   });
 
   // SPEC.md §7's SHARED-048 rider: naming no profile is the **ordinary** case,
@@ -191,7 +205,12 @@ describe("the shape of the roster", () => {
     // `resident: null` on a roster row would mean the lane belongs to no
     // conversation, which is true only of the orchestrator's — so a general
     // resident is an **object** whose halves are both null.
-    expect(row.resident).toEqual({ name: null, docId: null, weight: null });
+    expect(row.resident).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+      designationId: A_DESIGNATION,
+    });
     expect(row.origin).toEqual({ id: created.id, title: expect.any(String) as string });
     expect(row.live).toBe(false);
     expect(row.since).toBeNull();
@@ -208,11 +227,17 @@ describe("the shape of the roster", () => {
     rmSync(join(ws.root, ".claude/agents/researcher.md"));
     ws.reproject();
 
-    expect((await laneRow(general.id)).resident).toEqual({ name: null, docId: null, weight: null });
+    expect((await laneRow(general.id)).resident).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+      designationId: A_DESIGNATION,
+    });
     expect((await laneRow(profiled)).resident).toEqual({
       name: "researcher",
       docId: null,
       weight: null,
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -231,6 +256,7 @@ describe("the shape of the roster", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
     expect((await laneRow(unweighted)).resident?.weight).toBeNull();
   });
@@ -248,6 +274,7 @@ describe("the shape of the roster", () => {
       name: null,
       docId: null,
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
   });
 

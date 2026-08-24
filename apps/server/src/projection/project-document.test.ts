@@ -246,6 +246,7 @@ describe("projectDocument — threads and turns", () => {
       resident_name: null,
       resident_doc_id: null,
       resident_weight: null,
+      resident_designation_id: null,
     });
 
     expect(db.prepare("SELECT idx, author, ts, body_md FROM turns ORDER BY idx").all()).toEqual([
@@ -291,6 +292,7 @@ describe("projectDocument — threads and turns", () => {
         // No `weight:` key on disk is "no level was chosen" — which is how every
         // designation written before §7's weight rider spells it (SERVER-129).
         resident_weight: null,
+        resident_designation_id: null,
       });
     });
 
@@ -356,6 +358,7 @@ describe("projectDocument — threads and turns", () => {
           resident_designated: 0,
           resident_name: null,
           resident_weight: null,
+          resident_designation_id: null,
         });
       });
     });
