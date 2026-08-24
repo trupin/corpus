@@ -46,8 +46,18 @@ export const moveCommand: WorkspaceCommandSpec = {
     "Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor " +
     "or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is " +
     "already in is a reported no-op that writes and commits nothing — the agent's loop never has " +
-    "to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, " +
-    "so neither can be moved; the server says so. A move **names its own delta** and needs no " +
+    "to branch on it.\n\n" +
+    "**Only a document under `data/docs/` can be moved**, and that is the whole rule — stated " +
+    "rather than enumerated, because the list is what went stale twice (CLI-052). Anything " +
+    "filed anywhere else has a fixed location: a thread under `data/threads/`, a skill under " +
+    "`.claude/skills/`, a persona under `.claude/agents/`. The server refuses all of them with " +
+    "`this document's location is fixed`, in **two** wordings that differ by type — a thread is " +
+    "`threads are flat under data/threads/ and cannot be moved`, and everything else off the " +
+    "docs root is `<path> is not under data/docs/ and cannot be moved`, which names the path so " +
+    "the reason is legible. Repair such a document where it is (`corpus doc check`) rather than " +
+    "moving it by hand: off the docs root a file often carries no `id:` of its own, so relocating " +
+    "it re-mints the id and breaks every `[[ref]]`, anchor and thread pointing at it.\n\n" +
+    "A move **names its own delta** and needs no " +
     "key (SPEC.md §7) — and because a key names the document's content rather than its path, a " +
     "key read before a move is still good after it.",
   args: [{ name: "id", required: true, description: "The document's id." }],
