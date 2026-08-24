@@ -1,3 +1,30 @@
+## Unblocked 2026-08-24 — Rider A signed, with one change
+
+The user signed the §7 rider this issue was withdrawn for. **It is ready to be
+re-implemented, and the implementation must change in one place.**
+
+**`template` documents always rank.** The withdrawn implementation excluded
+`skill`, `agent-def` **and** `template`. The signed rider excludes the first two
+only, and says why: excluding what a person wrote from their own search is a
+different thing from excluding what the tool installed. This issue's own text
+called that loss "the accepted cost" — the user did not accept it.
+
+So the exclusion set is:
+
+- **`corpus search`** — `skill`, `agent-def`. Naming any `type` lifts it
+  entirely. `template` is not in the set.
+- **`corpus doc related`** and **the context pack** — the same two, plus `view`
+  and `board`, which the signed rider keeps.
+
+Everything else stands: the measurements, the design, the falsifications, the
+`--type` gate, and the parent-block guard for a thread whose parent is a skill.
+Start from the withdrawn diff (`3f5d7b47`, reverted in `05a2de9d`) rather than
+from scratch, and remove `template` from `UNRANKED_DOC_TYPES`.
+
+**The CLI help has to come back too**, and it must describe the signed rule
+rather than the withdrawn one — six blocks were deleted in `05a2de9d`, and
+`template` must not reappear in any of them.
+
 # [SERVER-144] Retrieval ranks the product's own skills into every pack
 
 ## Withdrawn from v0.21.0 — 2026-08-23

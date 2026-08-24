@@ -1597,7 +1597,7 @@ suite cannot confirm. Both halves stand without it.
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
 | AGENT-048 | The standing style rule is paid twice per context | done | P2 | opus | SHARED-070 |
 | AGENT-049 | `queue idle` prints a shape the skill does not promise | done | P2 | opus | SHARED-070 |
-| SERVER-144 | Retrieval ranks the product's own skills into every pack — **withdrawn from v0.21.0, needs a signed §7 rider** | todo | P1 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack — **rider signed 2026-08-24; re-implement without the `template` exclusion** | todo | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row | done | P1 | opus | SHARED-070 |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | done | P1 | opus | — |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | done | P1 | opus | — |
