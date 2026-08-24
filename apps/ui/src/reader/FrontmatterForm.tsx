@@ -4,6 +4,7 @@ import {
   docKey as docQueryKey,
   folderOf,
   useUpdateDoc,
+  warningNotice,
   type RowNotice,
 } from "@corpus/kit";
 import { useQueryClient } from "@tanstack/react-query";
@@ -504,7 +505,10 @@ export function FrontmatterForm({
        */
       for (const warning of response.warnings) {
         if (warning.code !== "stage_status") continue;
-        notify.current({ tone: "info", message: warning.detail });
+        // The tone and the wording come from the kit's per-code map, not from a
+        // literal here: one place decides how §11's channel is shown, so this
+        // site and the composers cannot come to word one code two ways (UI-106).
+        notify.current(warningNotice(warning));
       }
       setSave({
         kind: "saved",

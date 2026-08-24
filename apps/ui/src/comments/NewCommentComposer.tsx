@@ -15,6 +15,7 @@ import {
   useCreateThread,
   type PendingAttachment,
   type RowNotice,
+  warningNotices,
 } from "@corpus/kit";
 import {
   useCallback,
@@ -136,9 +137,7 @@ export function NewCommentComposer({ docId, onNotify }: NewCommentComposerProps)
           // §7: an override "never persists past the message it was set on".
           recipient.clear();
           intake.release(attachments);
-          for (const warning of result.warnings) {
-            onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-          }
+          for (const notice of warningNotices(result.warnings)) onNotify(notice);
         },
         onError: (error) => {
           // Nothing was written, so the composer goes back to exactly what it

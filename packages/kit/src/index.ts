@@ -242,6 +242,11 @@ export {
   type AgentActivityState,
 } from "./row/useRowSignals.js";
 
+// SPEC.md §11's warning channel, as something a surface can show. One tone per
+// code, exhaustive over `WarningCode`, so a code added to the contract is a
+// compile error here rather than a silent red toast (UI-106).
+export { WARNING_PRESENTATION, warningNotice, warningNotices } from "./warnings/warningNotice.js";
+
 // Rendered markdown (SPEC.md §10 names `MarkdownView` in the kit contract), and
 // the `[[ref]]` grammar of SPEC.md §5 that only it knows how to render. The
 // stylesheet is a subpath, like the tokens: `import "@corpus/kit/markdown.css"`.

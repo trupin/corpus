@@ -1,4 +1,4 @@
-import { useCapture, useCreateThread, type RowNotice } from "@corpus/kit";
+import { useCapture, useCreateThread, warningNotices, type RowNotice } from "@corpus/kit";
 import { useCallback } from "react";
 
 /**
@@ -109,9 +109,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             ...input.recipient,
             ...(files.length === 0 ? {} : { files }),
           });
-          for (const warning of result.warnings) {
-            notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-          }
+          for (const notice of warningNotices(result.warnings)) notify(notice);
           notify({ tone: "info", message: askMessage(result.eventId !== null) });
           return { ok: true };
         }
@@ -122,9 +120,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
           ...input.weight,
           ...(files.length === 0 ? {} : { files }),
         });
-        for (const warning of result.warnings) {
-          notify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-        }
+        for (const notice of warningNotices(result.warnings)) notify(notice);
         notify({ tone: "info", message: captureMessage(result.eventId !== null) });
         return { ok: true };
       } catch (cause) {

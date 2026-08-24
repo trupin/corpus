@@ -5,6 +5,7 @@ import {
   useCreateThread,
   type PendingAttachment,
   type RowNotice,
+  warningNotices,
 } from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -433,9 +434,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    */
   const createThread = useCreateThread({
     onSuccess: (result) => {
-      for (const warning of result.warnings) {
-        onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-      }
+      for (const notice of warningNotices(result.warnings)) onNotify(notice);
     },
     onError: (error) => {
       onNotify({ tone: "error", message: commentFailureNotice(error) });
