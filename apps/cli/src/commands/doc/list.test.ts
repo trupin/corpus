@@ -453,3 +453,119 @@ describe("the doc list command spec", () => {
     expect(machine?.description).toContain('"page"');
   });
 });
+
+describe("corpus doc list --fields (CLI-065)", () => {
+  it("cuts each item to the named fields, in the order asked, keeping page whole", async () => {
+    const body = page([DOC_ROW, row({ id: "doc_zz", title: "Second" })], { total: 137 });
+    const stub = await startStubServer(jsonResponder(200, body));
+    const harness = stubContext(stub, {
+      json: true,
+      flags: { json: true, fields: "lastActor,id,updated" },
+    });
+
+    await runDocList(harness.context);
+
+    const value = JSON.parse(harness.stdout()) as {
+      items: Record<string, unknown>[];
+      page: unknown;
+    };
+    // The projection selects exactly the named fields, in the requested order.
+    expect(value.items.map((item) => Object.keys(item))).toEqual([
+      ["lastActor", "id", "updated"],
+      ["lastActor", "id", "updated"],
+    ]);
+    expect(value.items[0]).toEqual({
+      lastActor: DOC_ROW.lastActor,
+      id: DOC_ROW.id,
+      updated: DOC_ROW.updated,
+    });
+    // The truncation stays visible: `page` is untouched by the projection.
+    expect(value.page).toEqual(body.page);
+  });
+
+  it("refuses a field no row carries, naming the known ones, before any request", async () => {
+    const stub = await startStubServer(jsonResponder(200, EMPTY));
+    const harness = stubContext(stub, {
+      json: true,
+      flags: { json: true, fields: "id,excerpts" },
+    });
+
+    const failure = await runDocList(harness.context).catch((error: unknown) => error);
+
+    expect(exitCodeFor(failure)).toBe(ExitCode.usageError);
+    expect((failure as Error).message).toContain("excerpts");
+    expect((failure as Error).message).toContain("1 field no row carries");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("refuses --fields without --json, before any request", async () => {
+    const stub = await startStubServer(jsonResponder(200, EMPTY));
+    const harness = stubContext(stub, { flags: { fields: "id" } });
+
+    const failure = await runDocList(harness.context).catch((error: unknown) => error);
+
+    expect(exitCodeFor(failure)).toBe(ExitCode.usageError);
+    expect((failure as Error).message).toContain("--json");
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("refuses a --fields that names nothing", async () => {
+    const stub = await startStubServer(jsonResponder(200, EMPTY));
+    const harness = stubContext(stub, { json: true, flags: { json: true, fields: " , ," } });
+
+    const failure = await runDocList(harness.context).catch((error: unknown) => error);
+
+    expect(exitCodeFor(failure)).toBe(ExitCode.usageError);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("reads a repeated field once, at the position it was first named", async () => {
+    const stub = await startStubServer(jsonResponder(200, page([DOC_ROW])));
+    const harness = stubContext(stub, {
+      json: true,
+      flags: { json: true, fields: "id,title,id" },
+    });
+
+    await runDocList(harness.context);
+
+    const value = JSON.parse(harness.stdout()) as { items: Record<string, unknown>[] };
+    expect(Object.keys(value.items[0] ?? {})).toEqual(["id", "title"]);
+  });
+
+  it("keeps a field a row genuinely lacks absent rather than inventing null", async () => {
+    // A projection that turned an absent field into `null` would be inventing
+    // an answer — asserted over a raw body rather than the typed `page` helper,
+    // because the point is robustness to a row leaner than the compiled shape.
+    const { snippets: _omitted, ...bare } = DOC_ROW;
+    const stub = await startStubServer(
+      jsonResponder(200, { items: [bare], page: { total: 1, limit: 50, offset: 0 } }),
+    );
+    const harness = stubContext(stub, {
+      json: true,
+      flags: { json: true, fields: "id,snippets" },
+    });
+
+    await runDocList(harness.context);
+
+    const item = (JSON.parse(harness.stdout()) as { items: Record<string, unknown>[] }).items[0];
+    expect(item !== undefined && "snippets" in item).toBe(false);
+    expect(item?.id).toBe(DOC_ROW.id);
+  });
+
+  it("leaves the full --json object exactly as it was when --fields is absent", async () => {
+    const body = page([DOC_ROW]);
+    const stub = await startStubServer(jsonResponder(200, body));
+    const harness = stubContext(stub, { json: true, flags: { json: true } });
+
+    await runDocList(harness.context);
+
+    expect(JSON.parse(harness.stdout())).toEqual(body);
+  });
+
+  it("documents the reflection read and validates against the contract's own field list", () => {
+    const flag = listCommand.flags.find((candidate) => candidate.name === "fields");
+    expect(flag?.description).toContain("lastActor");
+    const reflection = listCommand.examples.find((example) => example.command.includes("--fields"));
+    expect(reflection?.command).toContain("lastActor");
+  });
+});

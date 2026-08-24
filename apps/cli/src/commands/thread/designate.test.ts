@@ -25,7 +25,7 @@ const THREAD = {
   parent: null,
   anchor: null,
   agent: "none",
-  resident: { name: "researcher", docId: "doc_r1", weight: null },
+  resident: { name: "researcher", docId: "doc_r1", weight: null, designationId: null },
   created: "2026-08-16T09:00:00.000Z",
   updated: "2026-08-16T09:05:00.000Z",
   turnCount: 1,
@@ -100,7 +100,10 @@ describe("corpus thread designate", () => {
     // SHARED-048: naming no profile is the ordinary case, and the contract
     // spells absence as an absent body — so a bare designation must not invent
     // `{}` , `{name: null}` or any other stand-in for it.
-    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
+    const general = {
+      ...THREAD,
+      resident: { name: null, docId: null, weight: null, designationId: null },
+    };
     const stub = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS });
@@ -117,7 +120,10 @@ describe("corpus thread designate", () => {
     // The acceptance criterion in one assertion: a reader of the printed line
     // can tell "this conversation has an agent with no profile" from "this
     // conversation has profile X".
-    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
+    const general = {
+      ...THREAD,
+      resident: { name: null, docId: null, weight: null, designationId: null },
+    };
     const bare = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
     const bareRun = stubContext(bare, { args: ARGS });
     await runThreadDesignate(bareRun.context);
@@ -136,7 +142,10 @@ describe("corpus thread designate", () => {
     // designation does not end the designation, and the miss is reported rather
     // than silently substituted. Archiving is not one of those — an archived
     // agent-def still under that root resolves, so it arrives with its id.
-    const orphaned = { ...THREAD, resident: { name: "researcher", docId: null, weight: null } };
+    const orphaned = {
+      ...THREAD,
+      resident: { name: "researcher", docId: null, weight: null, designationId: null },
+    };
     const stub = await startStubServer(jsonResponder(200, { thread: orphaned, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS, flags: { agent: "researcher" } });
@@ -148,7 +157,10 @@ describe("corpus thread designate", () => {
 
   it("emits the general resident's shape under --json without restating it", async () => {
     const response = {
-      thread: { ...THREAD, resident: { name: null, docId: null, weight: null } },
+      thread: {
+        ...THREAD,
+        resident: { name: null, docId: null, weight: null, designationId: null },
+      },
       warnings: [],
     };
     const stub = await startStubServer(jsonResponder(200, response));
@@ -160,7 +172,7 @@ describe("corpus thread designate", () => {
     // this CLI chose for them.
     expect(harness.stdout()).toBe(`${JSON.stringify(response)}\n`);
     expect(JSON.parse(harness.stdout())).toMatchObject({
-      thread: { resident: { name: null, docId: null, weight: null } },
+      thread: { resident: { name: null, docId: null, weight: null, designationId: null } },
     });
   });
 
@@ -169,7 +181,7 @@ describe("corpus thread designate", () => {
     // resident's weight is chosen, so this flag has to reach the wire.
     const heavy = {
       ...THREAD,
-      resident: { name: "researcher", docId: "doc_r1", weight: "heavy" },
+      resident: { name: "researcher", docId: "doc_r1", weight: "heavy", designationId: null },
     };
     const stub = await startStubServer(jsonResponder(200, { thread: heavy, warnings: [] }));
 
@@ -187,7 +199,10 @@ describe("corpus thread designate", () => {
   });
 
   it("sends a weight with no profile, since the two fields are independent", async () => {
-    const general = { ...THREAD, resident: { name: null, docId: null, weight: "heavy" } };
+    const general = {
+      ...THREAD,
+      resident: { name: null, docId: null, weight: "heavy", designationId: null },
+    };
     const stub = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS, flags: { weight: "heavy" } });
@@ -201,7 +216,10 @@ describe("corpus thread designate", () => {
     // §7 keeps the tier table in the orchestrate skill, so a key this CLI has
     // never heard of must reach the server unaltered — and a level the launcher
     // cannot meet is the launcher's report, not a refusal here.
-    const odd = { ...THREAD, resident: { name: null, docId: null, weight: "tier-2" } };
+    const odd = {
+      ...THREAD,
+      resident: { name: null, docId: null, weight: "tier-2", designationId: null },
+    };
     const stub = await startStubServer(jsonResponder(200, { thread: odd, warnings: [] }));
 
     const harness = stubContext(stub, { args: ARGS, flags: { weight: "tier-2" } });
@@ -215,7 +233,10 @@ describe("corpus thread designate", () => {
     // The acceptance criterion. Omitting the flag must send what a designation
     // sent before the flag existed — no `weight` key, and with `--agent` also
     // absent, no body at all.
-    const general = { ...THREAD, resident: { name: null, docId: null, weight: null } };
+    const general = {
+      ...THREAD,
+      resident: { name: null, docId: null, weight: null, designationId: null },
+    };
     const bare = await startStubServer(jsonResponder(200, { thread: general, warnings: [] }));
     const bareRun = stubContext(bare, { args: ARGS });
     await runThreadDesignate(bareRun.context);

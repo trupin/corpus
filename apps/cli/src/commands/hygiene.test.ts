@@ -354,6 +354,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
     expect(modules.map((module) => module.path)).toEqual([
       "age.ts",
       "agents.ts",
+      "batch.ts",
       "board/index.ts",
       "board/order.ts",
       "columns.ts",

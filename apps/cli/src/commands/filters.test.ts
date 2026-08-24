@@ -71,6 +71,11 @@ describe("the shared document filters", () => {
       "sort",
       "limit",
       "offset",
+      // CLI-065. `--fields` is `doc list`'s own, not a shared filter: it
+      // projects the answer rather than selecting rows, and `search` returns a
+      // ranked address list whose shape is fixed. Appended rather than placed
+      // among the filters so the published order above stays the order it was.
+      "fields",
     ]);
   });
 

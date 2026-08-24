@@ -1583,8 +1583,8 @@ suite cannot confirm. Both halves stand without it.
 
 | ID | Title | Status | Priority | Model | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| UI-167 | Designating a resident is reachable only by right-click | todo | P0 | opus | — |
-| UI-168 | A resident's weight cannot be chosen from the app at all | todo | P0 | opus | — |
+| UI-167 | Designating a resident is reachable only by right-click | done | P0 | opus | — |
+| UI-168 | A resident's weight cannot be chosen from the app at all | done | P0 | opus | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces | done | P1 | opus | — |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands | todo | P1 | fable | — |
 | UI-165 | A column's thread margin cannot be reached by any gesture | todo | P2 | opus | UI-163 |
@@ -1593,12 +1593,12 @@ suite cannot confirm. Both halves stand without it.
 | SERVER-147 | A designation is written without its identity | todo | P1 | opus | CONTRACT-071 |
 | AGENT-050 | A listener does not check which designation it serves | todo | P1 | fable | CONTRACT-071, SERVER-147 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | done | P1 | fable | CLI-060 |
-| CLI-064 | A batch verb needs a decided exit code before it is worth building | todo | P1 | fable | CLI-057, CLI-058 |
+| CLI-064 | A batch verb needs a decided exit code before it is worth building | done | P1 | fable | CLI-057, CLI-058 |
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
 | AGENT-048 | The standing style rule is paid twice per context | done | P2 | opus | SHARED-070 |
 | AGENT-049 | `queue idle` prints a shape the skill does not promise | done | P2 | opus | SHARED-070 |
 | SERVER-144 | Retrieval ranks the product's own skills into every pack | todo | P1 | opus | SHARED-070 |
-| CLI-065 | `doc list --json` pays 293 tokens a row | todo | P1 | opus | SHARED-070 |
+| CLI-065 | `doc list --json` pays 293 tokens a row | done | P1 | opus | SHARED-070 |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | opus | — |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | todo | P1 | opus | — |
 | SERVER-146 | One server test failed once under load and was not named | todo | P2 | opus | — |

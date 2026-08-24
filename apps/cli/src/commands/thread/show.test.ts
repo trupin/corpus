@@ -133,7 +133,7 @@ describe("corpus thread show", () => {
         ...ANCHORED,
         parent: null,
         anchor: null,
-        resident: { name: "researcher", docId: "doc_r1", weight: null },
+        resident: { name: "researcher", docId: "doc_r1", weight: null, designationId: null },
       }),
     );
 
@@ -154,7 +154,10 @@ describe("corpus thread show", () => {
     // `resident null · null`, which reads as a bug in the thread rather than as
     // the ordinary designation it is.
     const stub = await startStubServer(
-      jsonResponder(200, { ...ANCHORED, resident: { name: null, docId: null, weight: null } }),
+      jsonResponder(200, {
+        ...ANCHORED,
+        resident: { name: null, docId: null, weight: null, designationId: null },
+      }),
     );
 
     const harness = stubContext(stub, { args: ARGS });
@@ -173,7 +176,7 @@ describe("corpus thread show", () => {
     const stub = await startStubServer(
       jsonResponder(200, {
         ...ANCHORED,
-        resident: { name: "researcher", docId: null, weight: null },
+        resident: { name: "researcher", docId: null, weight: null, designationId: null },
       }),
     );
 
@@ -202,7 +205,7 @@ describe("corpus thread show", () => {
     const stub = await startStubServer(
       jsonResponder(200, {
         ...ANCHORED,
-        resident: { name: "researcher", docId: "doc_r1", weight: null },
+        resident: { name: "researcher", docId: "doc_r1", weight: null, designationId: null },
       }),
     );
 

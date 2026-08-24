@@ -17,6 +17,7 @@ export const ExitCode = {
   partialFailure: 8,
   staleKey: 9,
   patchRefused: 10,
+  batchFailed: 11,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -61,6 +62,13 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
       "Patch refused by the document's own text — `--old` matched zero times or more than once, " +
       "so nothing was written. The message names the count and which of the two it was: zero " +
       "means re-read the document, several means quote more context (or pass `--all`).",
+  },
+  {
+    code: ExitCode.batchFailed,
+    meaning:
+      "At least one command in a `corpus batch` failed or never ran. The per-command report on " +
+      "stdout says which — and what every command that succeeded did **stays done**, because a " +
+      "batch is not a transaction.",
   },
 ];
 
@@ -362,6 +370,39 @@ export class PatchRefusedError extends CliError {
     this.code = options.code;
     this.status = options.status;
   }
+}
+
+/**
+ * `corpus batch`'s summary failure (CLI-064): at least one command in the batch
+ * failed, or never ran because a run-level failure ended the batch early.
+ *
+ * ## Why it is its own code (exit 11)
+ *
+ * Exit codes in this CLI group by what the caller does next
+ * ({@link StaleKeyError}'s doctrine), and after a failed batch the next move is
+ * one no existing code names: **read the per-command report on stdout**, where
+ * each entry says whether it ran and what happened. Every reuse candidate says
+ * something false in its place:
+ *
+ * - **Not the first failure's code.** Rejected by the user (issue CLI-064): one
+ *   code for two different causes, and the second invisible without parsing the
+ *   report anyway.
+ * - **Not `check_failed` (6).** Its meaning is "its work succeeded", which a
+ *   caller reads as permission to skip verifying — wrong the moment a write
+ *   inside the batch landed before another failed.
+ * - **Not `partial_failure` (8).** It asserts `changed: true`, a lie for a
+ *   batch of reads. This class leaves `changed` undefined — the entries
+ *   themselves say what ran, and a global claim in either direction would be
+ *   less honest than the report.
+ * - **Not `internal_error` (1).** Nothing malfunctioned: the batch did exactly
+ *   what its help promises, ran what it could and reported per command.
+ *
+ * `details` carries `failed` and `notRun` as 1-based positions into the batch,
+ * so a machine caller branches without re-deriving them from the array.
+ */
+export class BatchFailedError extends CliError {
+  override readonly exitCode = ExitCode.batchFailed;
+  override readonly code = "batch_failed";
 }
 
 /**

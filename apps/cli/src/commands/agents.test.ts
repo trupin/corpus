@@ -37,7 +37,7 @@ const ORCHESTRATOR_ROW = {
 
 const LIVE_LANE = {
   lane: "th_4b8e2c",
-  resident: { name: "researcher", docId: "doc_r1", weight: null },
+  resident: { name: "researcher", docId: "doc_r1", weight: null, designationId: null },
   live: true,
   since: ago(12),
   summary: "reading the mortgage docs",
@@ -46,7 +46,7 @@ const LIVE_LANE = {
 
 const LAPSED_LANE = {
   lane: "th_9f1a2b",
-  resident: { name: "analyst", docId: "doc_a7", weight: null },
+  resident: { name: "analyst", docId: "doc_a7", weight: null, designationId: null },
   live: false,
   since: ago(41 * 60),
   summary: null,
@@ -55,7 +55,7 @@ const LAPSED_LANE = {
 
 const WAITING_LANE = {
   lane: "th_c0ffee",
-  resident: { name: "scribe", docId: "doc_s3", weight: null },
+  resident: { name: "scribe", docId: "doc_s3", weight: null, designationId: null },
   live: false,
   since: null,
   summary: null,
@@ -85,7 +85,7 @@ describe("corpus agents", () => {
   it("prints a mixed roster legibly: the orchestrator, a general lane, a profiled lane", async () => {
     const general = {
       lane: "th_11aa22",
-      resident: { name: null, docId: null, weight: null },
+      resident: { name: null, docId: null, weight: null, designationId: null },
       live: true,
       since: ago(30),
       summary: null,
@@ -126,9 +126,15 @@ describe("corpus agents", () => {
     // SHARED-048. A reader of this one surface has to be able to say which of
     // these a conversation has: an agent with no profile, a profile they can
     // open, or a profile that has gone since it was designated.
-    const general = { ...LIVE_LANE, resident: { name: null, docId: null, weight: null } };
+    const general = {
+      ...LIVE_LANE,
+      resident: { name: null, docId: null, weight: null, designationId: null },
+    };
     const profiled = LIVE_LANE;
-    const orphaned = { ...LIVE_LANE, resident: { name: "researcher", docId: null, weight: null } };
+    const orphaned = {
+      ...LIVE_LANE,
+      resident: { name: "researcher", docId: null, weight: null, designationId: null },
+    };
 
     expect(renderLane(general, NOW)).toContain("· a general resident ·");
     expect(renderLane(profiled, NOW)).toContain("· researcher (doc_r1) ·");
@@ -151,7 +157,7 @@ describe("corpus agents", () => {
     // not a weight was chosen.
     const heavy = {
       ...LIVE_LANE,
-      resident: { name: "researcher", docId: "doc_r1", weight: "heavy" },
+      resident: { name: "researcher", docId: "doc_r1", weight: "heavy", designationId: null },
     };
 
     expect(renderLane(heavy, NOW)).toBe(
@@ -176,7 +182,10 @@ describe("corpus agents", () => {
   it("carries a weight on a general resident too, since the two are independent", () => {
     // §7's rider: a general resident may run at a stated weight and a profiled
     // one at none, so all four combinations are ordinary rows.
-    const general = { ...LIVE_LANE, resident: { name: null, docId: null, weight: "heavy" } };
+    const general = {
+      ...LIVE_LANE,
+      resident: { name: null, docId: null, weight: "heavy", designationId: null },
+    };
     expect(renderLane(general, NOW)).toContain("· a general resident at heavy ·");
     expect(renderLane(general, NOW)).not.toContain("(");
   });

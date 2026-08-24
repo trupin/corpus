@@ -1,5 +1,6 @@
-import { DOC_SORTS, type DocList, type DocRow } from "@corpus/contract";
+import { DOC_SORTS, DocRowSchema, type DocList, type DocRow } from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
+import { UsageError } from "../../errors.js";
 import { parseTriStateBoolean, plural } from "../../input.js";
 import type {
   FlagSpec,
@@ -89,13 +90,14 @@ const IS_PARENT_FLAG: FlagSpec = {
 const LIST_FILTER_FLAGS = insertFlagAfter(DOC_FILTER_FLAGS, "unread", IS_PARENT_FLAG);
 
 export async function runDocList(context: WorkspaceCommandContext): Promise<void> {
+  const fields = requestedFields(context);
   const query = collectQuery(context);
 
   const result = await context.client.request((api) =>
     api.GET("/api/docs", Object.keys(query).length === 0 ? {} : { params: { query } }),
   );
 
-  context.out.emit(result);
+  context.out.emit(fields === undefined ? result : projectFields(result, fields));
 
   if (result.items.length === 0) {
     context.out.line(
@@ -148,6 +150,85 @@ function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   };
 }
 
+/**
+ * The row fields `--fields` may name — the contract's own `DocRowSchema` keys,
+ * enumerated at runtime so a field the contract adds or renames is known here
+ * with no edit, and a validation list spelled by hand cannot drift.
+ */
+const KNOWN_FIELDS: readonly string[] = Object.keys(DocRowSchema.shape);
+
+/**
+ * `--fields`, validated **before any request** (CLI-065). The full row is ~293
+ * tokens in an agent's context against ~25 for the human line — measured on the
+ * SHARED-070 audit, 11.7×, growing with the corpus — because every row carries
+ * `excerpt`, `lastTurn`, `kanban` and friends whether or not the caller wants
+ * them. The reflection loop reads this listing under `--json` for exactly one
+ * field the human row lacks (`lastActor`), so it paid the whole surface per
+ * row. Projection happens CLI-side: the tokens are paid in the agent's context,
+ * not on the wire, so no contract change is needed and the server's response is
+ * untouched.
+ *
+ * A misspelled field is a usage error naming the known ones, before any
+ * request — the same stance every enumerated filter on this verb takes. It
+ * requires `--json` because the human rendering is a fixed reading order, not
+ * a projection surface: a caller selecting fields is parsing, and `--json` is
+ * the form this CLI promises parsers.
+ */
+function requestedFields(context: WorkspaceCommandContext): readonly string[] | undefined {
+  const raw = context.flags.string("fields");
+  if (raw === undefined) return undefined;
+
+  if (!context.out.json) {
+    throw new UsageError("--fields selects JSON fields, so it needs --json.", {
+      hint:
+        "Add --json: each item then carries exactly the fields named. The human rows have a " +
+        "fixed shape and are not a parsing surface. No request was sent.",
+    });
+  }
+
+  const fields = [...new Set(raw.split(",").map((field) => field.trim()))].filter(
+    (field) => field !== "",
+  );
+  if (fields.length === 0) {
+    throw new UsageError("--fields names no field.", {
+      hint: `Pass a comma-separated subset of: ${KNOWN_FIELDS.join(", ")}. No request was sent.`,
+    });
+  }
+
+  const unknown = fields.filter((field) => !KNOWN_FIELDS.includes(field));
+  if (unknown.length > 0) {
+    throw new UsageError(
+      `--fields names ${plural(unknown.length, "field")} no row carries: ${unknown.join(", ")}.`,
+      {
+        hint: `Known fields: ${KNOWN_FIELDS.join(", ")}. No request was sent.`,
+      },
+    );
+  }
+  return fields;
+}
+
+/**
+ * The projection: each item cut to the named fields, in the order asked for,
+ * with the `page` envelope untouched — the truncation stays visible to a caller
+ * that reads no human tally line, which is the reason the envelope exists.
+ * A field that is absent on a row (`snippets` without `q`) stays absent rather
+ * than becoming `null`: the projection selects, it never invents.
+ */
+function projectFields(
+  result: DocList,
+  fields: readonly string[],
+): { items: readonly Record<string, unknown>[]; page: DocList["page"] } {
+  return {
+    items: result.items.map((item) => {
+      // A `DocRow` is an object type, so it satisfies the index signature; the
+      // widening is what lets a runtime-chosen key read a compile-time shape.
+      const source: Record<string, unknown> = item;
+      return Object.fromEntries(fields.map((field) => [field, source[field]]));
+    }),
+    page: result.page,
+  };
+}
+
 /** One row per document, columns padded to the widest value in the page. */
 function renderRows(items: readonly DocRow[]): readonly string[] {
   return renderColumns(
@@ -194,7 +275,9 @@ export const listCommand: WorkspaceCommandSpec = {
     "envelope is emitted unchanged — `page` is what makes the truncation visible to a caller " +
     "that is not reading the human line, and every row carries its `extra` frontmatter, its " +
     "Attention reasons and its thread affordances, so a skill parses one response instead of " +
-    "issuing a read per row.\n\n" +
+    "issuing a read per row. That full row is wide — ~293 tokens in an agent's context — so a " +
+    "caller that wants a few fields per row names them with `--fields` and pays only for " +
+    "those.\n\n" +
     "A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, " +
     "`--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request " +
     "is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through " +
@@ -231,6 +314,20 @@ export const listCommand: WorkspaceCommandSpec = {
       type: "number",
       valueName: "n",
       description: "Rows to skip — how the tally line's next page is fetched.",
+    },
+    {
+      name: "fields",
+      type: "string",
+      valueName: "a,b,c",
+      description:
+        "Under `--json`, cut each item to exactly these comma-separated fields. The full row is " +
+        "~293 tokens in an agent's context — `excerpt`, `lastTurn`, `kanban` and ~22 more — " +
+        "against ~34 for `id,title,lastActor,updated`, so a loop that wants a few fields per " +
+        "row should name them (the reflection window read wants `lastActor` and little else). " +
+        "The `page` envelope is kept whole either way, so truncation stays visible. A field no " +
+        "row carries is a usage error naming the known ones (exit 2), before any request; " +
+        "without `--json` the flag itself is one, because the human rows are not a parsing " +
+        "surface. Omitted, `--json` is the full object it has always been.",
     },
   ],
   // Both sides of `--is-parent` get an example, deliberately. A reader who skims
@@ -276,6 +373,14 @@ export const listCommand: WorkspaceCommandSpec = {
         'One JSON value: `{"items":[{"id":"th_x9y8","type":"thread","title":"Rate assumptions",' +
         '"parent":"doc_a1b2c3","unread":true,"attention":["unread-reply"],"extra":{},…}],' +
         '"page":{"total":3,"limit":50,"offset":0}}`.',
+    },
+    {
+      command:
+        "corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,title,lastActor,updated",
+      description:
+        "The reflection window read (SPEC.md §7) at ~34 tokens a row instead of ~293: enough to " +
+        "skip the agent's own writes (`lastActor`) and pick the rows worth a real read, without " +
+        "paying for every excerpt and turn body in the window.",
     },
   ],
   handler: (context) => runDocList(context),

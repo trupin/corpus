@@ -14,6 +14,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [Usage](#usage)
 - [Global flags](#global-flags)
 - [`corpus agents`](#corpus-agents)
+- [`corpus batch`](#corpus-batch)
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
 - [`corpus reflect`](#corpus-reflect)
@@ -163,6 +164,52 @@ The lanes something is actually listening on, one per line.
 
 ```
 corpus agents --json | jq -r '.agents[] | select(.live) | .lane'
+```
+
+## `corpus batch`
+
+Run several commands in one invocation, with a per-command report.
+
+Runs the commands given on stdin, in order, in one process — and one `corpus` invocation costs ~159 ms of fixed startup before any work happens (CLI-058), so a sequence the agent loop makes as five calls costs ~1 s of pure startup that one batch pays once. The commands arrive as a **JSON array of commands, each itself an array of strings** — exactly the argv you would have given `corpus`, without the word `corpus`. No shell touches the tokens, so a body travels safely as a `-m` value inside the entry — `["thread","reply","th_x9y8","--from","agent","-m","The figure moved to 6.4%."]` — with none of the heredoc ceremony a shell needs. The batch owns stdin, so an entry cannot read a body from there: give bodies with `-m` or `--file`.
+
+**A batch is not a transaction.** Every command that succeeds stays done, whatever fails after it. Corpus commits through §4's window, so several writes may land as one git commit — that is an artifact of timing, **not** a promise of atomicity, and nothing rolls back. Plan a batch as what it is: the same commands you would have run one by one, minus the startup cost.
+
+**Every command runs, and the report says what each one did.** A failure about one command — a missing id, a stale key, a refused patch — costs that command alone; the ones after it still run. A failure about the _run_ — the server unreachable, a rejected token — ends the batch where it happens, since every remaining command would fail the same way, and the remaining entries are reported as **never run**. Exit 0 means every command ran and succeeded; anything else is exit 11, and the per-command report is the answer to what happened.
+
+Under `--json`, stdout carries one array with **one entry per command, in the order sent**: `{"command":[…],"ran":true,"ok":true,"value":…}` for a success (`value` is the command's own `--json` value, `null` when it emits none), `"ok":false` with `error` — the same `{code,message,hint,…}` object a lone failure's envelope carries — for a failure, and `{"command":[…],"ran":false}` for an entry that never ran. So _did not run_ is always distinguishable from _ran and returned nothing_. On failure, stderr adds the summary envelope with `details.failed` and `details.notRun` as 1-based positions. The human rendering prints each command's ordinary output under a `──────── <n>: <command> ────────` rule, `failed — `-style lines for a failure, and `not run.` for the rest.
+
+**Refused whole, before anything runs** (exit 2): a batch with any entry that does not resolve and parse — unknown verb, unknown flag, missing argument — plus an empty batch and one of more than 200 commands. An entry may not carry `--json`, `--help`, `--version`, `--no-color`, `--verbose` or `--workspace` — those belong to the batch invocation — and may not be `batch` itself, `corpus upgrade`, or a command that runs without a workspace (`corpus init`). `--from` and `--timeout` on the batch apply to every entry; an entry's own `--from` wins over the batch's.
+
+One command's output cannot feed another's input — entries are fixed before the first one runs. A sequence where a later command needs an earlier one's answer is two invocations, and the second can be a batch. A long-polling entry (`queue idle`) holds the batch exactly as it would hold a shell.
+
+```
+corpus batch [flags]
+```
+
+**Examples**
+
+A worked event's write tail — patch, log, reply — as one invocation: three commands, one startup cost. The `-m` value is a JSON string, so the shell never touches the body.
+
+```
+corpus batch <<'CORPUS_EOF'
+[["doc","patch","doc_a1b2c3","--from","agent","--old","6.1%","--new","6.4%"],
+ ["job","log","evt_7c1d9a","updated the rate assumption"],
+ ["thread","reply","th_4b8e2c","--from","agent","-m","Updated the assumption to 6.4%. ↳ updated [[doc_a1b2c3]]"]]
+CORPUS_EOF
+```
+
+One array on stdout, one entry per command in the order sent. The missing id costs its own entry alone — `{"command":["doc","show","doc_nosuchid"],"ran":true,"ok":false,"error":{"code":"not_found",…}}` — and the third command still runs. Exit 11; stderr names positions in `details.failed`.
+
+```
+corpus batch --json <<'CORPUS_EOF'
+[["doc","show","doc_a1b2c3"],["doc","show","doc_nosuchid"],["thread","show","th_4b8e2c"]]
+CORPUS_EOF
+```
+
+The batch's `--from` is the default actor for every entry that names none — the same standing an exported `CORPUS_FROM` would have. An entry's own `--from` still wins.
+
+```
+corpus batch --from agent --json < commands.json
 ```
 
 ## `corpus health`
@@ -964,7 +1011,7 @@ Reads `GET /api/docs`, the single collection query behind every list (SPEC.md §
 
 Archived documents are **excluded by default** (SPEC.md §10). `--status archived` selects them alone; `--include-archived` widens the default set to the union.
 
-**The list is paginated and says so.** The server applies its own page limit, and the last line always states the range shown out of the total that matched, naming the `--offset` that fetches the next page when there is one. Under `--json` the server's `{items, page}` envelope is emitted unchanged — `page` is what makes the truncation visible to a caller that is not reading the human line, and every row carries its `extra` frontmatter, its Attention reasons and its thread affordances, so a skill parses one response instead of issuing a read per row.
+**The list is paginated and says so.** The server applies its own page limit, and the last line always states the range shown out of the total that matched, naming the `--offset` that fetches the next page when there is one. Under `--json` the server's `{items, page}` envelope is emitted unchanged — `page` is what makes the truncation visible to a caller that is not reading the human line, and every row carries its `extra` frontmatter, its Attention reasons and its thread affordances, so a skill parses one response instead of issuing a read per row. That full row is wide — ~293 tokens in an agent's context — so a caller that wants a few fields per row names them with `--fields` and pays only for those.
 
 A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, `--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through verbatim, since the CLI does not know the workspace's tags, its folders, or every `type:` its documents carry.
 
@@ -996,6 +1043,7 @@ corpus doc list [flags]
 | `--sort <key>`              | string  | —       | Sort key: updated, -updated, created, -created, due, title, order, relevance. Defaults to `-updated` (newest first).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `--limit <n>`               | number  | —       | Rows per page, 1–200. The server applies its own default when omitted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `--offset <n>`              | number  | —       | Rows to skip — how the tally line's next page is fetched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `--fields <a,b,c>`          | string  | —       | Under `--json`, cut each item to exactly these comma-separated fields. The full row is ~293 tokens in an agent's context — `excerpt`, `lastTurn`, `kanban` and ~22 more — against ~34 for `id,title,lastActor,updated`, so a loop that wants a few fields per row should name them (the reflection window read wants `lastActor` and little else). The `page` envelope is kept whole either way, so truncation stays visible. A field no row carries is a usage error naming the known ones (exit 2), before any request; without `--json` the flag itself is one, because the human rows are not a parsing surface. Omitted, `--json` is the full object it has always been.                                                                                                                                                                                                                                                                                 |
 
 **Examples**
 
@@ -1039,6 +1087,12 @@ One JSON value: `{"items":[{"id":"th_x9y8","type":"thread","title":"Rate assumpt
 
 ```
 corpus doc list --type thread --unread --json
+```
+
+The reflection window read (SPEC.md §7) at ~34 tokens a row instead of ~293: enough to skip the agent's own writes (`lastActor`) and pick the rows worth a real read, without paying for every excerpt and turn body in the window.
+
+```
+corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,title,lastActor,updated
 ```
 
 ### `corpus doc move`
@@ -2838,3 +2892,4 @@ corpus workspace upgrade --json
 | `8`  | Failed partway — something had already been changed, so verify before retrying.                                                                                                                                                                                                                                                         |
 | `9`  | Stale key — the document changed after the read the write was made against, so nothing was written. On `doc edit`, re-read, merge, and resend with the fresh `--key`. On `doc patch` — which presents no key of its own — it means an outside editor moved the file mid-operation, and re-running the same patch is the whole recovery. |
 | `10` | Patch refused by the document's own text — `--old` matched zero times or more than once, so nothing was written. The message names the count and which of the two it was: zero means re-read the document, several means quote more context (or pass `--all`).                                                                          |
+| `11` | At least one command in a `corpus batch` failed or never ran. The per-command report on stdout says which — and what every command that succeeded did **stays done**, because a batch is not a transaction.                                                                                                                             |
