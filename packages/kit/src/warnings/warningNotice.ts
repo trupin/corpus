@@ -92,7 +92,13 @@ export const WARNING_PRESENTATION: Record<WarningCode, WarningPresentation> = {
  * is wrong**, and the code is on the line so the reader can look it up.
  */
 export function warningNotice(warning: Warning): RowNotice {
-  const shown: WarningPresentation = WARNING_PRESENTATION[warning.code] ?? { tone: "error" };
+  // `Object.hasOwn`, not `??`. A wire code of `constructor` or `toString` finds a
+  // truthy inherited member on the record, `??` never fires, and the notice ships
+  // with `tone: undefined` — the swallowed unknown code this fallback exists to
+  // prevent (PR #61 review).
+  const shown: WarningPresentation = Object.hasOwn(WARNING_PRESENTATION, warning.code)
+    ? WARNING_PRESENTATION[warning.code]
+    : { tone: "error" };
   const lead = shown.lead === undefined ? warning.code : shown.lead;
   return {
     tone: shown.tone,

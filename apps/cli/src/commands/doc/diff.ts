@@ -169,9 +169,11 @@ function diffLines(diff: string): readonly string[] {
  * **It names no boundary, and that is the decision rather than an omission**
  * (CLI-028). It used to say "cut at a hunk boundary", which was true of the rule
  * of the day and false of the next one: CONTRACT-032 replaced hunk-dropping with
- * *the last line boundary at or before the bound*, and kept a fallback that cuts
- * mid-line for a single line longer than the whole cap. So no fixed adjective is
- * true of both shapes — and **nothing on the wire says which shape happened**.
+ * *the last line boundary at or before the bound*. It briefly kept a fallback
+ * cutting mid-line, which SERVER-149 removed to obey §9.2's signed sentence — a
+ * bound with no line boundary before it now answers the empty string. So the cut
+ * may land on a hunk boundary or merely on a line boundary, no fixed adjective is
+ * true of both — and **nothing on the wire says which happened**.
  * `DocDiff` carries `diff`, `truncated` and `totalChars`, so a client that named
  * the boundary would be inferring the server's rule from a trailing byte and
  * printing the inference as a fact. That is the class of sentence this notice

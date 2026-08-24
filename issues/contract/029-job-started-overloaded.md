@@ -38,15 +38,15 @@ never be newer than the request), which is correct but is a heuristic standing i
 for a field that should just exist.
 
 ## Acceptance Criteria
-- [ ] A job exposes its **enqueue** instant as its own field, distinct from
+- [x] A job exposes its **enqueue** instant as its own field, distinct from
       whenever work began
-- [ ] Existing consumers of `started` keep working, or are updated in the same
+- [x] Existing consumers of `started` keep working, or are updated in the same
       change — decide whether `started` is redefined or joined by a sibling, and
       say why
-- [ ] `apps/ui/src/thread/outstandingAgentRequest.ts` drops its bounding
+- [x] `apps/ui/src/thread/outstandingAgentRequest.ts` drops its bounding
       heuristic and reads the real field, with the workaround comment removed
-- [ ] The generated client and `openapi.json` are regenerated, not hand-edited
-- [ ] The console's job list still shows whatever it means to show — check
+- [x] The generated client and `openapi.json` are regenerated, not hand-edited
+- [x] The console's job list still shows whatever it means to show — check
       whether it was relying on the post-log meaning
 
 ## Technical Design
@@ -58,6 +58,9 @@ for a field that should just exist.
 ## Testing Strategy
 Contract test pinning both instants; a server test where a job is enqueued,
 sits, then logs — asserting the enqueue instant does not move.
+
+
+**Checklist corrected 2026-08-24 (PR #61 review).** The boxes were left unticked while the issue read `done`. The work was finished — the contract half in `373b07b7` and the server half in SERVER-148 — but a record that disagrees with itself is this release's own defect, so it is fixed here rather than after the merge.
 
 ## E2E Verification Log
 
@@ -165,11 +168,11 @@ from this issue (`src/jobs/project.ts(152,3)`, `enqueued` missing), which is the
 forcing function.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

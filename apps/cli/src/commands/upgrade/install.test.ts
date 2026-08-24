@@ -233,6 +233,12 @@ describe("downloadAndVerify", () => {
     // on every call, so redirecting it is enough, and it makes the assertion
     // stronger rather than weaker: the expected listing is now *empty* rather
     // than "whatever happened to be there beforehand".
+    //
+    // **Restore by deletion when there was nothing to restore.** Assigning
+    // `undefined` into `process.env` coerces it to the *string* `"undefined"`,
+    // so `os.tmpdir()` then answers `"undefined"` and every later `mkdtemp`
+    // fails with `ENOENT`. macOS always sets `TMPDIR`, so this is invisible
+    // there and red on Linux CI — which is exactly what it did (PR #61).
     const staging = mkdtempSync(join(tmpdir(), "corpus-cli025-staging-"));
     scratch.push(staging);
     const outerTmp = process.env["TMPDIR"];
@@ -250,7 +256,8 @@ describe("downloadAndVerify", () => {
       ).rejects.toMatchObject({ code: "upgrade_checksum_mismatch", exitCode: ExitCode.refused });
       expect(readdirSync(staging)).toEqual([]);
     } finally {
-      process.env["TMPDIR"] = outerTmp;
+      if (outerTmp === undefined) delete process.env["TMPDIR"];
+      else process.env["TMPDIR"] = outerTmp;
     }
   });
 

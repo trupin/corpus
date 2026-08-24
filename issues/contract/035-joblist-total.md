@@ -55,12 +55,12 @@ them, which is a worse contract than one honest field.
 
 ## Acceptance Criteria
 
-- [ ] A caller can tell, from a single `GET /api/jobs` response, whether it
+- [x] A caller can tell, from a single `GET /api/jobs` response, whether it
       received everything that matched
-- [ ] The vocabulary matches the two surfaces that already solve this
+- [x] The vocabulary matches the two surfaces that already solve this
       (`total` + `truncated`), rather than inventing a third spelling
-- [ ] `openapi.json` and the typed client regenerated, not hand-edited
-- [ ] The in-progress schema's "never puts anything out of reach" prose is either
+- [x] `openapi.json` and the typed client regenerated, not hand-edited
+- [x] The in-progress schema's "never puts anything out of reach" prose is either
       made true or corrected — it is currently the only remaining overclaim
 
 ## Technical Design
@@ -85,6 +85,9 @@ non-terminal set and needs its own argument.
 
 Contract tests over the new field's presence and its agreement with the returned
 array; a server test that a query at exactly the cap reports the cut.
+
+
+**Checklist corrected 2026-08-24 (PR #61 review).** The boxes were left unticked while the issue read `done`. The work was finished — the contract half in `373b07b7` and the server half in SERVER-148 — but a record that disagrees with itself is this release's own defect, so it is fixed here rather than after the merge.
 
 ## E2E Verification Log
 
@@ -162,12 +165,12 @@ assertions in `schemas/job.test.ts`. Typecheck, ESLint, Prettier clean.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

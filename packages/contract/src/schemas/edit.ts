@@ -405,11 +405,15 @@ export const DocDiffQuerySchema = z.object({
  * consumer in this repository applies a diff — the CLI prints it and the agent
  * reads it.
  *
- * **`apps/server/src/edit/diff.ts`'s `truncateDiff` implements the narrow rule
- * and has to follow this.** Under §9.2's rule the function collapses to "the last
- * line boundary at or before the bound", because every hunk boundary is also a
- * line boundary — which is exactly why SERVER-058 could not make the change
- * without one here first.
+ * **`apps/server/src/edit/diff.ts`'s `truncateDiff` implements the narrow rule.**
+ * Under §9.2's rule the function collapses to "the last line boundary at or
+ * before the bound", because every hunk boundary is also a line boundary — which
+ * is exactly why SERVER-058 could not make the change without one here first.
+ * Where no line boundary sits at or before the bound it answers the **empty
+ * string** rather than a mid-line prefix (SERVER-149), because §9.2's rider says
+ * the cut is never mid-line and a mid-line prefix of a diff is not readable as
+ * one. `truncated` and `totalChars` still accompany it, so an empty body under
+ * truncation is never "nothing changed".
  */
 export const DocDiffSchema = openapi(
   z.object({

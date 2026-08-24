@@ -117,6 +117,21 @@ describe("the mapping itself", () => {
     expect(notice.message).toBe("quota_exceeded — the workspace is full");
   });
 
+  /**
+   * The test above passes with a plain `??` lookup. This one does not: a code
+   * that happens to name an `Object.prototype` member finds a truthy inherited
+   * value, so `??` never fires and the notice ships with `tone: undefined` — a
+   * swallowed unknown code wearing the shape of a handled one (PR #61 review).
+   */
+  it.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "does not mistake the prototype member %s for a handled code",
+    (code) => {
+      const notice = warningNotice({ code, detail: "something happened" } as unknown as Warning);
+      expect(notice.tone).toBe("error");
+      expect(notice.message).toBe(`${code} — something happened`);
+    },
+  );
+
   it("keeps the server's order when a response carries several", () => {
     expect(
       warningNotices([warning("carried_skill", "one"), warning("commit_failed", "two")]).map(
