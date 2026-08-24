@@ -261,3 +261,20 @@ measurement**, rather than raising budgets across the board.
 Routed to cli-dev with that instruction. Recorded here because this issue exists
 for the pattern, and because the pattern now has instances in two workspaces
 found on the same day.
+
+## A fourth instance, and an unnamed one (2026-08-24)
+
+`vitest run scripts` reported `1 failed | 990 passed` on the **first** of four
+runs during AGENT-052, and **scrolled without naming the test**. Three runs since
+are green, the template file alone is green five times, and the orchestrator ran
+it twice more afterwards at 991 passed, exit 0.
+
+**The name is lost, again.** That is the second time in two releases — SERVER-146
+was filed for exactly this and closed with its own search recorded. The agent
+recorded it rather than dismissing it as a retry-pass, which is the right
+instinct and the reason it is here.
+
+The standing instruction stands and is evidently not enough on its own: **capture
+every run to a file**. A summary line that scrolls is a summary line that cannot
+be read twice. Where a suite is being run repeatedly to chase a flake,
+`--reporter=verbose` into a file is the only form that survives.

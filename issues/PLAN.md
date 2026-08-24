@@ -1604,3 +1604,4 @@ suite cannot confirm. Both halves stand without it.
 | SERVER-146 | One server test failed once under load and was not named | done | P2 | opus | — |
 | AGENT-051 | The skills collect what the CLI now saves (CLI-064, CLI-065 reports) | done | P1 | opus | CLI-064, CLI-065 |
 | CLI-068 | `queue claim-all` inside a batch loses its payload, silently (AGENT-051 finding) | done | P0 | opus | CLI-064 |
+| AGENT-052 | The prohibition on batching a claim is lifted (CLI-068 follow-up) | done | P2 | opus | CLI-068 |

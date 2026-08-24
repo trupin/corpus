@@ -6451,13 +6451,27 @@ describe("a run of commands as one invocation (AGENT-051)", () => {
     }
   });
 
-  it("never parks inside a batch", () => {
-    // `corpus queue idle` holds the array for its whole ~8-minute window, and
-    // *The loop* already forbids chaining it to the claim. An array is a chain.
+  it("never parks or follows inside a batch", () => {
+    // An entry that long-polls or follows holds every entry after it, exactly
+    // as it holds a shell — the array is one process running them in order.
+    // `corpus queue idle` parks for its whole ~8-minute window, and
+    // `corpus server logs --follow` never returns at all (CLI-068 measured that
+    // one: inside a batch it streamed until a 6 s bound killed the run, exit
+    // 124). Both are instances of the rule, so the pin is over the property —
+    // an entry that does not return on its own — and not over a list of two.
     for (const { label, entries } of allBlocks) {
       for (const entry of entries) {
         expect(verbOf(entry), `${label}: a batch that parks is a loop that stops`).not.toBe(
           "queue idle",
+        );
+        // `--follow` is checked on every entry, whatever the verb, so a second
+        // command that grows one is caught. `-f` is only checked where
+        // docs/cli.md gives it that meaning today (`server logs`), so a future
+        // `-f` for something else does not fail this by its spelling alone.
+        const follows =
+          entry.includes("--follow") || (verbOf(entry) === "server logs" && entry.includes("-f"));
+        expect(follows, `${label}: \`${entry.join(" ")}\` follows, so the array stops there`).toBe(
+          false,
         );
       }
     }
@@ -6585,6 +6599,139 @@ describe("a run of commands as one invocation (AGENT-051)", () => {
     // And the two rules that bound it, both about the reply rather than the writes.
     expect(body).toMatch(/before you take your own turn at its word/);
     expect(body).toMatch(/\*\*a run never\s+shortens a reply\.\*\*/);
+  });
+});
+
+/**
+ * AGENT-052 — the prohibition AGENT-051 wrote is lifted, because the defect
+ * underneath it is gone. CLI-068 fixed it in one line: `createNestedOutput`
+ * hardcoded `json: false`, so every command a batch ran was told the invocation
+ * was in human mode, and `queue claim-all` — whose whole payload sits on the
+ * mode-dependent branch — wrote its claim to the channel a `--json` parent
+ * suppresses.
+ *
+ * The reproduction was worse than AGENT-051 reported. The events **were**
+ * claimed (`pending` 2 → 0, `inProgress` 0 → 2) and the caller was handed
+ * `null` at exit `0`, then held two events it could not name or settle.
+ *
+ * Three parts to the lift, each failing differently if it goes:
+ *
+ * - **The rule that replaced it is about returning, not about a verb.** An
+ *   entry that follows or long-polls holds every entry after it, because the
+ *   array is one process running its entries in order. `queue idle` and
+ *   `server logs --follow` are two instances, and a list of two is a list the
+ *   third one will be missing from.
+ * - **The reasoning outlives the rule.** A reader who learned the prohibition
+ *   has to be able to find out that it was lifted and why. So the skill still
+ *   says the payload came back `null` — in the past tense, which the negative
+ *   guard below is about — and says that it was a defect and that it is fixed.
+ * - **A batch is not a transaction** (CLI-064, the user's decision), and a
+ *   batched claim is where that bites. The skill says what the loop does when
+ *   an entry behind a claim fails, rather than only warning that it can.
+ */
+describe("the claim goes back in the batch (AGENT-052)", () => {
+  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  const section = orchestrate.slice(
+    orchestrate.indexOf("## Several commands in one invocation"),
+    orchestrate.indexOf("## The loop"),
+  );
+  const loop = orchestrate.slice(
+    orchestrate.indexOf("## The loop"),
+    orchestrate.indexOf("## Claiming"),
+  );
+  const headBlock = [
+    ...section.matchAll(/corpus batch[^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g),
+  ]
+    .map((match) => JSON.parse(match[1] ?? "") as string[][])
+    .find((entries) => entries.some((entry) => entry.join(" ") === "queue claim-all"));
+
+  it("states the holding rule as a property of the verb, with instances rather than a list", () => {
+    expect(section).toMatch(
+      /\*\*An entry that follows or long-polls holds every entry after it\*\*/,
+    );
+    // Why it holds: one process, entries in order. Not a rule about the queue.
+    expect(section).toMatch(/the array is one process running the entries in order/);
+    expect(section).toMatch(/one that never returns stops the array there/);
+    // The two instances, named as instances.
+    expect(section).toMatch(/`corpus queue idle`\s+parks for its whole/);
+    expect(section).toMatch(/`corpus server logs --follow`/);
+    expect(section).toMatch(/two instances rather than the list/);
+    // And the test a reader applies to a third verb nobody has written down.
+    expect(section).toMatch(/ask of a verb whether it returns\s+on its own/);
+  });
+
+  it("lifts the prohibition and leaves the reasoning where it stood", () => {
+    expect(section).toMatch(
+      /\*\*The claim is an ordinary entry, and step 4 belongs in a batch\.\*\*/,
+    );
+    // The history, so a reader who learned the old rule can see it end.
+    expect(section).toMatch(/used to hand back `null` while claiming\s+the events anyway/);
+    expect(section).toMatch(
+      /a defect in the\s+batch's JSON channel rather than anything about the verb/,
+    );
+    expect(section).toMatch(/It is fixed/);
+    // And what the fix bought, in the terms the loop reads it in.
+    expect(section).toMatch(/carries exactly what it carries alone/);
+    expect(section).toMatch(/the `events` list and the `inProgress` list/);
+  });
+
+  it("does not let the prohibition back in through a present-tense sentence", () => {
+    // The old text, word for word, must not reappear anywhere in the skill.
+    expect(orchestrate).not.toMatch(/the claim stays its own\s+invocation/);
+    expect(orchestrate).not.toMatch(/Three things are never entries/);
+    // `null` is a fact about the past here and about nothing else: one mention,
+    // and it is the one the history sentence carries. A new present-tense
+    // sentence about a lost payload fails this rather than shipping beside it.
+    const mentions = section.match(/`null`/g) ?? [];
+    expect(mentions, "the batch section names `null` more than once").toHaveLength(1);
+    expect(section).toMatch(/used to hand back `null`/);
+    // And no skill tells the loop to keep its claim out of an array. The tense
+    // is the whole discriminator: *kept* is the history the section is required
+    // to carry two assertions above, and *keeps* would be the rule returning.
+    for (const { label, body } of installedSkillTexts) {
+      expect(body, `${label}: forbids a claim in a batch again`).not.toMatch(
+        /\b(?:keep|keeps|stay|stays)\b[^.]{0,80}claim[^.]{0,80}out of (?:a|every|any) (?:batch|array)/i,
+      );
+      expect(body, `${label}: makes the claim ineligible as an entry again`).not.toMatch(
+        /claim[^.]{0,60}(?:is never|may not be|cannot be) (?:a|an) (?:batch )?entry/i,
+      );
+    }
+  });
+
+  it("puts the loop's head in one array, claim last, in the order the loop runs", () => {
+    expect(headBlock, "no batch in the skill claims anything").toBeDefined();
+    // The three commands of steps 2, 3 and 4, in that order. Order is not
+    // decoration: reaping requeues a dead session's events, and the claim below
+    // it is what collects them.
+    expect(headBlock).toEqual([["queue", "reap-stale"], ["agents"], ["queue", "claim-all"]]);
+    expect(section).toMatch(/reaping requeues a dead session's events in\s+time for the claim/);
+    // The claim is the last entry, which is the whole answer to a failing tail.
+    expect(headBlock?.at(-1)?.join(" ")).toBe("queue claim-all");
+    // The loop's own step list points at it and does not restate it. It also
+    // says what does not join: dispatch is not a command, and step 7 parks.
+    expect(loop).toMatch(/\*\*Steps 2, 3 and 4 go as one invocation, in that order\.\*\*/);
+    expect(loop).toMatch(/\*Several commands in one invocation\*/);
+    expect(loop).toMatch(/step 6 is not a command, and step 7 parks/);
+    // The steps survive as steps: what changed is the number of process starts.
+    expect(loop).toMatch(/They stay three steps/);
+    // AGENT-019's structural rule still holds over the section that gained a
+    // pointer: there is no script in *The loop* for anyone to copy.
+    expect(fencedBlocks(loop)).toEqual([]);
+  });
+
+  it("says what the loop does when an entry behind a claim fails", () => {
+    expect(section).toMatch(
+      /\*\*A batch that claims, claims — whatever the entries behind it do\.\*\*/,
+    );
+    // The exposure, stated as state the agent now owns rather than as a warning.
+    expect(section).toMatch(/leaves those events in `in-progress\/` and\s+yours to settle/);
+    expect(section).toMatch(/dispatch what was claimed and settle each event on its own\s+outcome/);
+    expect(section).toMatch(/rather than treating a failed tail as an unclaim/);
+    // And why it is not an argument against batching a claim.
+    expect(section).toMatch(/same exposure as running the commands one after another/);
+    expect(section).toMatch(/neither adds it nor removes\s+it/);
+    // The transaction rule itself stays where it was, once, in this same owner.
+    expect(section).toMatch(/\*\*A batch is not a transaction, and nothing in it rolls back\.\*\*/);
   });
 });
 

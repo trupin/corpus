@@ -179,11 +179,43 @@ Four things about the grammar, each a refusal when you get it wrong:
   `corpus init`. Each refuses the whole array at exit `2`, before anything runs, as do an
   empty array and one of more than two hundred commands.
 
-**Three things are never entries.** `corpus queue idle` parks, and an array holds for the whole
-park exactly as a shell would — *The loop* forbids chaining it to the claim, and an array is a
-chain. Dispatch is not a command at all, so nothing can carry it. And the claim stays its own
-invocation: under `corpus batch --json` its payload comes back as `null` rather than as the
-batch you are owed, which is a silent loss of the one thing step 4 exists to read.
+**An entry that follows or long-polls holds every entry after it**, exactly as it holds a
+shell: the array is one process running the entries in order, so nothing behind such an entry
+runs until it returns, and one that never returns stops the array there. `corpus queue idle`
+parks for its whole ~8-minute window and `corpus server logs --follow` streams until something
+kills it, and those are two instances rather than the list — ask of a verb whether it returns
+on its own, and keep it out when the answer is no. `idle` is doubly out: *The loop* forbids
+chaining it to the claim, and an array is a chain. Dispatch is the other thing no array can
+carry, for a different reason — it is not a command at all.
+
+**The claim is an ordinary entry, and step 4 belongs in a batch.** It did not always: a
+`corpus queue claim-all` inside `corpus batch --json` used to hand back `null` while claiming
+the events anyway, so the loop kept its claim out of every array. That was a defect in the
+batch's JSON channel rather than anything about the verb. It is fixed, and a batched claim now
+carries exactly what it carries alone — the `events` list and the `inProgress` list, field for
+field. So steps 2, 3 and 4 of *The loop* are one invocation:
+
+```bash
+corpus batch <<'CORPUS_EOF'
+[["queue","reap-stale"],["agents"],["queue","claim-all"]]
+CORPUS_EOF
+```
+
+None of the three wants what another printed, which is what makes them one array. Their
+**order** still matters, and a batch keeps it: reaping requeues a dead session's events in
+time for the claim below it to collect them. Read all three reports — they are three steps
+still, and one invocation merges nothing you owe attention to. What it saves is two process
+starts a pass — 1003 ms as three commands against 415 ms as one, on the machine that was
+measured on.
+
+**A batch that claims, claims — whatever the entries behind it do.** Nothing rolls back, so a
+claim that succeeds ahead of an entry that fails leaves those events in `in-progress/` and
+yours to settle. The run above ends on the claim for that reason: with nothing behind it,
+nothing can fail behind it. Where you do put work behind a claim, the events it claimed are
+yours on the report alone — dispatch what was claimed and settle each event on its own
+outcome, exactly as step 9 does, rather than treating a failed tail as an unclaim. That is the
+same exposure as running the commands one after another. The batch neither adds it nor removes
+it, and it is no reason to leave a claim out of an array.
 
 ## The loop
 
@@ -229,6 +261,12 @@ in the console to show for it. Run these steps in order, indefinitely:
    `corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"`, or
    `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"`
    — and then repeat from step 2.
+
+**Steps 2, 3 and 4 go as one invocation, in that order.** None of the three wants what
+another printed, so *Several commands in one invocation* has them as one array and the head
+of a pass costs one process start rather than three. They stay three steps: what changes is
+how many times the tool starts, never what you read or what you do with it. Nothing else in
+this list joins them — step 6 is not a command, and step 7 parks.
 
 The order is claim → dispatch → park. You return to `corpus queue idle` **as soon as the
 batch is dispatched** — you do not wait for the batch to finish, because a session waiting
