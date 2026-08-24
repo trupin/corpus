@@ -304,3 +304,24 @@ returned nothing on two attempts earlier in the session, because the shell proxy
 had filtered the output down to the lines matching the port query. The lesson is
 not "sweep more often" — it is that **a sweep returning nothing must be verified
 rather than believed**, by naming pids directly or by disabling the proxy.
+
+## A fifth instance — and this one has its name (2026-08-24, v0.21.0 harvest)
+
+`apps/ui/e2e/changelog.spec.ts:243 — a conversation anchored inside a clipped
+entry > expands the clip when the conversation is revealed`, failing
+`expect(locator).toBeInViewport()`.
+
+- Full Playwright run 1: **1 failed, 617 passed**
+- The same spec file alone: **7 passed**
+- Full Playwright run 2, unchanged tree: **618 passed, exit 0**
+
+**Recorded because the name was captured, which is the improvement.** The two
+earlier instances in this release lost their names to a scrolled summary line.
+This one was found by grepping the captured log backwards from the assertion
+text to the test id — worth writing down as the technique, since a Playwright
+failure prints its title far above its error.
+
+It was checked as a possible regression before being called load. UI-165 changed
+when a column earns a thread margin, and a viewport assertion on a revealed
+conversation is exactly what that could disturb — so it was run in isolation and
+then in a second full suite before the release moved on. Neither reproduced it.
