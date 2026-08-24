@@ -67,13 +67,27 @@ export function useActiveColumn(columns: readonly { readonly id: string }[]): Ac
    */
   const keyboardOwns = useRef(false);
 
+  /**
+   * The release, **in the capture phase** (UI-033).
+   *
+   * The phase is load-bearing and it took a browser to find out. React 18
+   * attaches its handlers at the root container, which is inside `document`'s
+   * bubble path, so a bubble-phase listener here runs *after* the column's own
+   * `onMouseMove` — which would therefore still see the latch armed and drop the
+   * activation it was added to carry. Capture on `document` runs before the root
+   * either way, so the latch is down by the time the column is asked.
+   *
+   * Nothing else changes: a re-render that slides a column under a stationary
+   * cursor emits `mouseover` and no `mousemove`, so the latch still survives
+   * exactly the event it exists for.
+   */
   useEffect(() => {
     const release = (): void => {
       keyboardOwns.current = false;
     };
-    document.addEventListener("mousemove", release);
+    document.addEventListener("mousemove", release, { capture: true });
     return () => {
-      document.removeEventListener("mousemove", release);
+      document.removeEventListener("mousemove", release, { capture: true });
     };
   }, []);
 
