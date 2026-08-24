@@ -241,6 +241,13 @@ export const contextCommand: WorkspaceCommandSpec = {
     "When the parent-side prose was cut to fit, a `#` line says so and names the escalation — " +
     "`corpus doc show <parent>`. Nothing is ever silently trimmed: an agent editing a section " +
     "must know whether it saw all of it.\n\n" +
+    "**The excerpts leave out five document types** (SERVER-144): `skill`, `agent-def`, " +
+    "`template`, `view` and `board`. Before that, an anchored comment on a mortgage note packed " +
+    "four rows of the agent's own instructions quoted back to it — 52% of the retrieval tokens " +
+    "in the audit that found it. The exclusion is about **ranking neighbours only**, so a thread " +
+    "whose _parent_ is a skill document still gets that skill as its parent block: the " +
+    "conversation is on it. There is no flag — this route takes no type — and nothing is " +
+    "de-indexed, so `corpus search --type skill` still finds every one of them.\n\n" +
     "Each excerpt is one padded line — id, heading path, relation, excerpt — and **never a " +
     "body**. Reading one is a separate, deliberate `corpus doc show <id>` on that row's id, " +
     "exactly as with `corpus search` and `corpus doc related`. A pack with nothing related is a " +

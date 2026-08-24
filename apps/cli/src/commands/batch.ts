@@ -435,8 +435,17 @@ export const batchCommand: WorkspaceCommandSpec = {
     "entry; an entry's own `--from` wins over the batch's.\n\n" +
     "One command's output cannot feed another's input — entries are fixed before the first " +
     "one runs. A sequence where a later command needs an earlier one's answer is two " +
-    "invocations, and the second can be a batch. A long-polling entry (`queue idle`) holds " +
-    "the batch exactly as it would hold a shell.",
+    "invocations, and the second can be a batch.\n\n" +
+    "**An entry that waits holds every entry after it**, exactly as it would hold a shell: " +
+    "entries run one at a time, in order, and the batch is done when the last one is. The rule " +
+    "is the general one rather than a list of verbs — **if a command would not return on its " +
+    "own, it does not return here either** — and two shapes have it: a verb that long-polls " +
+    "(`corpus queue idle` parks for about eight minutes) and a verb that follows (`corpus " +
+    "server logs --follow` streams until interrupted). Neither is refused for being in a batch, " +
+    "because neither is a mistake outside one. Park and follow in their own invocations. " +
+    "`--follow` is the one that also collides with `--json`, which it may never be combined " +
+    "with: under `corpus batch --json` it is that ordinary usage error on its own entry, and " +
+    "the batch carries on.",
   args: [],
   flags: [],
   examples: [

@@ -340,14 +340,108 @@ did to a real caller.
 
 Restored, both suites green: `53 passed (53)`.
 
+## Follow-up 1: `corpus batch`'s help named one waiting verb, and there are two
+
+Folded in here rather than filed separately, because it is the same finding. The
+sweep turned up `server logs --follow` hanging a batch, and the verb's help
+named only `queue idle` as a command that would hold one. Two instances make a
+class, so the help now states the **rule** with both as its examples, rather
+than a list a third verb will later be missing from:
+
+> **An entry that waits holds every entry after it**, exactly as it would hold a
+> shell: entries run one at a time, in order, and the batch is done when the
+> last one is. The rule is the general one rather than a list of verbs — **if a
+> command would not return on its own, it does not return here either** — and
+> two shapes have it: a verb that long-polls (`corpus queue idle` parks for
+> about eight minutes) and a verb that follows (`corpus server logs --follow`
+> streams until interrupted). Neither is refused for being in a batch, because
+> neither is a mistake outside one. Park and follow in their own invocations.
+> `--follow` is the one that also collides with `--json`, which it may never be
+> combined with: under `corpus batch --json` it is that ordinary usage error on
+> its own entry, and the batch carries on.
+
+The last sentence exists because the two modes genuinely differ after this
+issue's fix, and a rule stated without it would be wrong in one of them: under
+`--json` the entry is refused at exit 11 and the batch continues, and only in
+human mode does `--follow` actually hold. Behaviour unchanged — help only.
+`docs/cli.md` regenerated.
+
+## Follow-up 2: three retrieval verbs under-described their ranking
+
+SERVER-144 landed hours before this issue and changed what three CLI verbs rank,
+without the help text following. Flagged by its implementer against
+`search.ts`; on reading the change, the two **neighbour** surfaces were worse
+off, so all three were corrected.
+
+| verb | what the help now says |
+| --- | --- |
+| `corpus search` | `skill`, `agent-def` and `template` are ranked out by default — measured at 3 of 5 hits, top one included. **Naming any `--type` lifts it entirely**, so `--type skill` finds them. `view` and `board` are **kept**, because search asks _where is this said?_ and a board is a real answer. The accepted cost is stated: a user's own `template` documents need `--type template` |
+| `corpus doc related` | five types are never neighbours — the three above plus `view` and `board`. **No flag widens it**: the route takes no type. A skill as the _subject_ still works |
+| `corpus thread context` | the same five, with the reason (4 of 5 excerpt rows were the agent's own instructions quoted back to it) and the guard: a thread whose **parent** is a skill still gets that skill as its parent block |
+
+Two constraints shaped where the prose went. The `--type` flag is
+`DOC_FILTER_FLAGS`, shared with `corpus doc list` by one definition, so a
+search-only fact may not go in it — `doc list` would then describe a default it
+does not have. And CLI-056's rule means `--help=brief` renders only flag and
+argument descriptions, never the command's. So the search-only behaviour lives
+in `search`'s own description and in a new worked example
+(`corpus search "…" --type skill`), which is where a reader looks for what
+`--type` does to a ranking.
+
+## Follow-up 3: one flaky test, measured rather than nudged
+
+`workspace/maintenance.test.ts > stops git repacking the repository behind us
+across a run of commits` timed out at 5000 ms in the orchestrator's full run and
+passed 3 of 3 in isolation straight after. INFRA-020's third instance.
+
+Measured before touching it, load average recorded per shape:
+
+| shape | load | ms |
+| --- | --- | --- |
+| alone, `-t` filtered, 5 runs | 7.8–8.9 | 2056 · 2107 · 2304 · 2387 · 2480 |
+| inside its own file, 8 runs | 7.3–16.3 | 1605 · 1878 · 2107 · 2184 · 2370 · 3158 · 3197 · 3278 |
+| inside the whole `apps/cli` suite, 2 runs | 11–16 | 2901 · 3483 |
+| inside a full run beside another agent's | — | **timed out at 5000** |
+
+**The measurement says it is genuinely near its budget**, so the honest outcome
+is a sized budget rather than no change. It costs **32–70% of vitest's 5 s
+default**, median ~45%. INFRA-020's proposed rule is *>20% idle will flake under
+the gate*, and the **cheapest run ever observed**, 1605 ms, is still over it.
+Every load average above is 7 or higher, so no figure here is a true at-rest
+one — which only strengthens the reading, since a minimum taken under load can
+only over-state the at-rest cost, and that minimum already exceeds the rule.
+
+**The spread is the diagnosis, and it is why the first three-run sample was not
+enough.** The same shape ranges 1605–3278 ms at effectively the same reported
+load — a 2× swing. The cost is 60 sequential `git commit`s, so it is dominated
+by fsync and directory churn, which contend machine-wide and are invisible to a
+CPU load average. Sampling three times caught only the bad end and would have
+mis-stated the floor as 3.2 s. A budget has to cover the bad end of that spread
+rather than its middle.
+
+The work is real: a `git init`, **60 sequential real commits**, and a
+`git fsck --full`. It gets `{ timeout: 20_000 }` with the table above written
+beside it — ~9× the median and ~6× the worst run observed, which clears a
+machine several times more contended than any seen here while still failing fast
+if the commit loop stops progressing. **Not raised across the board**: every
+other test in the file keeps the default, and none makes more than a handful of
+commits. The same 20 s as SERVER-146's case, whose worst measured cost is the
+same 3 s.
+
+INFRA-020's second criterion — *make the work cheaper* — does not apply. The 60
+is load-bearing: git 2.54's geometric-repack task was measured firing at the
+41st commit through the product, so the count cannot fall far below that without
+the test ceasing to prove the thing it names.
+
 ### Checks
 
-- `vitest run apps/cli` — **105 files, 2,092 tests, all passed**, exit 0.
+- `vitest run apps/cli` — **105 files, 2,092 tests, all passed**, exit 0. Re-run
+  after the three follow-ups: same, exit 0.
 - `tsc --noEmit -p apps/cli` — exit 0.
-- `eslint` on all four touched files — exit 0, no rule disabled.
-- `prettier --check` on the four files and both issue files — clean.
-- `npm run docs:cli -w apps/cli` — `docs/cli.md` regenerated and **byte
-  identical**; no registry prose moved.
+- `eslint` on every touched file — exit 0, no rule disabled.
+- `prettier --check` on every touched file and both issue files — clean.
+- `npm run docs:cli -w apps/cli` — `docs/cli.md` regenerated. Byte identical for
+  the fix itself; the four help edits are the only reason it moves.
 - Scratch server stopped by pid, port 8801 verified free. 8765 never touched.
 
 ## AGENT-051's prohibition — recommendation
