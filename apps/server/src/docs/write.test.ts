@@ -16,6 +16,7 @@ import { moveDocument } from "./move.js";
 import { updateDocument } from "./update.js";
 import {
   assertContained,
+  claudeCodeRootFor,
   createDocumentMutex,
   resolveFolder,
   validateBeforeWrite,
@@ -970,5 +971,54 @@ describe("createDocumentMutex", () => {
     await expect(failing).rejects.toThrow("boom");
     await Promise.all([slow, after, other]);
     expect(order.slice(order.indexOf("first"))).toEqual(["first", "second", "third"]);
+  });
+});
+
+/**
+ * SERVER-126's decision, pinned so it cannot be changed by accident.
+ *
+ * The question the issue existed to answer: should a description-less `SKILL.md`
+ * start failing `corpus doc check`? The answer is **no**, and it is measured.
+ * Claude Code discovers a skill by the directory holding its `SKILL.md` and only
+ * reads `name` when the file offers one — over the twelve hand-authored
+ * `SKILL.md` files in this repository's own `.claude/skills/`, all in daily use,
+ * eleven carry no `name:` at all. `discoveredAs` is what turns Claude Code's
+ * fields into a requirement, so a non-null value here for a skill root is the
+ * whole of the change this issue rejected.
+ */
+describe("Claude Code's fields are required of personas and not of skills (SERVER-126)", () => {
+  it("requires them under `.claude/agents/`, by the filename Claude Code dispatches to", () => {
+    expect(claudeCodeRootFor(".claude/agents/researcher.md")).toEqual({
+      discoveredAs: "researcher",
+    });
+  });
+
+  it("does not require them under `.claude/skills/**`", () => {
+    // A persona exists *to be addressed*, so one Claude Code cannot load has no
+    // other purpose. A skill has a life outside invocation — discovered by its
+    // directory, read as documentation — so a skill with no `name` is not dead.
+    expect(claudeCodeRootFor(".claude/skills/errands/SKILL.md")).toEqual({ discoveredAs: null });
+    expect(claudeCodeRootFor(".claude/skills/vendor/nested/SKILL.md")).toEqual({
+      discoveredAs: null,
+    });
+  });
+
+  it("does not require them under `.claude/skills-archived/**` either", () => {
+    expect(claudeCodeRootFor(".claude/skills-archived/legacy/SKILL.md")).toEqual({
+      discoveredAs: null,
+    });
+  });
+
+  it("still waives §5's canonical block under every one of those roots", () => {
+    // The waiver and the requirement are one seam (SERVER-123). Waiving is what
+    // `null` vs an object answers; requiring is what `discoveredAs` answers.
+    for (const path of [
+      ".claude/agents/researcher.md",
+      ".claude/skills/errands/SKILL.md",
+      ".claude/skills-archived/legacy/SKILL.md",
+    ]) {
+      expect(claudeCodeRootFor(path), path).not.toBeNull();
+    }
+    expect(claudeCodeRootFor("data/docs/note.md")).toBeNull();
   });
 });
