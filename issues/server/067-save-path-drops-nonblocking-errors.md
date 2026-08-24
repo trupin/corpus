@@ -23,11 +23,16 @@ with no code at all.
 
 ## Dependencies
 
-- Depends on: SERVER-066 (which introduced the first non-blocking error code and
+- Depends on: CONTRACT-084 (the wire code this issue reports through), SERVER-066
+  (which introduced the first non-blocking error code and
   then, in review, closed the log half of this issue)
 - Blocks: —
 - Related: any future §11 rule that is an **error** the write path does not
-  refuse. Today there is exactly one (`unterminated-fence`); this issue is about
+  refuse. **Correction 2026-08-24:** there are now two tolerated families —
+  `unterminated-fence` plus `frontmatter-invalid` on a `.claude/` root, added by
+  SERVER-123/124 — and `isSkillFrontmatterException`, which this issue's Summary
+  cites, has since been deleted. Two families strengthens the case for a response
+  channel rather than weakening it; this issue is about
   whether the second one has anywhere to go on the wire.
 
 ## Spec References
@@ -61,6 +66,44 @@ one level the logger never gates, so a server run at `--log-level silent` still
 says a thread's turns are being eaten as they are written. Verified live: the
 turn that reproduced the original bug now writes a `level":"error"` line naming
 the file and the finding, while the write is still not refused.
+
+## Adjudicated 2026-08-24 — no rider needed
+
+The question below was put to spec-writer on Fable, and its premise was wrong.
+**The two families this issue treats as one are two.** `CHECK_WARNING_CODES`
+(`packages/contract/src/schemas/check.ts`) is the *validator's* severity split —
+closed, load-bearing, and what decides `corpus doc check`'s exit 0 versus 6. The
+*response* family is `WARNING_CODES` (`packages/contract/src/schemas/warning.ts`),
+eight members of mixed severity, `commit_failed` among them. `check.ts`'s own
+docblock says so: "**Not the §11 commit warning.** … It is unrelated to
+`Warning`".
+
+So §11 already answers the question. Its auto-commit paragraph calls the event a
+**failure** and puts it on the response as a **warning**, in one sentence. The
+2026-08-10 rider says outright that "a warning is not only a failure". The
+response channel already spans `carried_skill` to `commit_failed`, which makes it
+a reporting channel and not a severity class.
+
+**Option 2 wins and needs no signature.** Option 1 preserves a purity the wire
+never had, and leaves the harmed party — the agent whose turn was eaten, which
+reads responses and not `.corpus/server.log` — with no way to learn it. Option 3
+would grow every mutation response a field that is empty on almost every call,
+and would imply the first channel was severity-pure.
+
+**Implement against `WARNING_CODES`, not `CHECK_WARNING_CODES`.** The contract
+half is CONTRACT-084. This issue is the server half: in `checkSave`, emit one
+warning under the new code for **every** finding in `tolerated` — both the
+`REPORTED_CHECK_CODES` members and the Claude-root frontmatter family, because
+"reported, never refused" is one rule. The consequence is chosen, not stumbled
+into: every save of a still-faulty `.claude/agents/*.md` warns until the file is
+repaired, which is `corpus doc check`'s answer delivered on the path the write
+happens on. `WARNING_CODE_BY_CHECK` stays what it is. `REPORTED_CHECK_CODES`
+stays an explicit allow-list, so `anchor-unused` still never reaches the
+response. `codes.test.ts` passes **unchanged**.
+
+**One optional recording amendment is with the user** and implementation does not
+wait on it: §11 permits this behaviour but does not state it, so nothing in
+SPEC.md would fail if a later change silently removed the response warning.
 
 **What is left is one question, and it is not a coding question.** Putting the
 same finding on the mutation **response** — where the console and the UI would

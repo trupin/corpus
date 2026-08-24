@@ -1637,3 +1637,9 @@ blocked issues in the tracker), UI-083 (its own issue says rewrite, not patch),
 UI-060, CONTRACT-056, CONTRACT-057, SERVER-101 and SERVER-106 (the last two
 would need a fifth signed rider in one day), and AGENT-043 (a question for the
 user, not work).
+
+**Filed during the phase.**
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | todo | P2 | opus | — |
