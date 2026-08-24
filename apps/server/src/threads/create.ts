@@ -358,7 +358,7 @@ export async function createThread(
         ),
       );
       // The response is re-read from the file this write is about to make
-      // (`toWireThread(loadThread(...))` below), so the turn's model reaches the
+      // (`toWireThread(workspace, loadThread(...))` below), so the turn's model reaches the
       // wire through the read join rather than from here; `turn` is used only
       // for the stamp the enqueued event names.
       const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
@@ -452,6 +452,11 @@ export async function createThread(
         })
       : null;
 
-    return { thread: toWireThread(loadThread(workspace, id)), anchorId, eventId, result };
+    return {
+      thread: toWireThread(workspace, loadThread(workspace, id)),
+      anchorId,
+      eventId,
+      result,
+    };
   });
 }

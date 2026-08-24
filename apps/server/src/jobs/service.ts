@@ -5,12 +5,12 @@
 // offers on a failed job; the queue owns every status transition, and this
 // service calls it rather than reimplementing one.
 
-import type { Job, JobLog } from "@corpus/contract";
+import type { Job, JobList, JobLog } from "@corpus/contract";
 import { notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { QueueService } from "../queue/index.js";
-import { listJobRows, readJobRow, recordJobLine, type JobFilter } from "./project.js";
+import { listJobPage, readJobRow, recordJobLine, type JobFilter } from "./project.js";
 import { JobLogStore, type AppendOutcome, type LogSource } from "./store.js";
 
 /** Recorded in the log when the console asks for a failed job to run again. */
@@ -84,8 +84,12 @@ export class JobService {
     return { lines: lines.slice(cursor), nextCursor: lines.length };
   }
 
-  list(recent: number, filter: JobFilter = {}): Job[] {
-    return listJobRows(this.projection, recent, filter);
+  /**
+   * The page and whether it is all of it (CONTRACT-035). One call answers both,
+   * so the count can never be taken over a different query than the rows.
+   */
+  list(recent: number, filter: JobFilter = {}): JobList {
+    return listJobPage(this.projection, recent, filter);
   }
 
   /**

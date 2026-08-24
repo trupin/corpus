@@ -19,16 +19,16 @@
 // `200` would clear a badge the next collection query lights again.
 //
 // The file is a flat `{threadId: isoInstant}` map, which is exactly what
-// `projectSeen` already reads (SERVER-004). One file for the whole workspace
-// means one lane (`SEEN_LANE`): a read-modify-write of a shared JSON file is the
-// canonical lost-update, and two tabs marking two threads read at once is the
-// ordinary case, not the exotic one.
+// `projectSeen` already reads (SERVER-004). Reading it, and asking it whether a
+// thread is unread, live in `marks.ts` — `GET /api/threads/{id}` needs the same
+// answer since CONTRACT-036, and this module reads threads through `read.ts`.
+// One file for the whole workspace means one lane (`SEEN_LANE`): a
+// read-modify-write of a shared JSON file is the canonical lost-update, and two
+// tabs marking two threads read at once is the ordinary case, not the exotic one.
 
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MarkSeenRequest, MarkSeenResult } from "@corpus/contract";
-import { ThreadIdSchema } from "@corpus/contract";
-import { instantToEpochMs, normalizeInstant } from "../core/index.js";
+import { normalizeInstant } from "../core/index.js";
 import {
   SEEN_LANE,
   isThreadUnread,
@@ -37,6 +37,7 @@ import {
 } from "../docs/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { SEEN_FILE, projectSeen } from "../projection/index.js";
+import { movesForward, readSeenMarks } from "./marks.js";
 import { loadThread, type LoadedThread } from "./read.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
@@ -51,41 +52,6 @@ const serializeMarks = (marks: Record<string, string>): string => {
   );
   return `${JSON.stringify(sorted, null, 2)}\n`;
 };
-
-/**
- * The marks on disk. Anything unreadable or malformed reads as "no marks yet"
- * rather than failing the request: read state is derived comfort, and refusing
- * to record that a thread was read because some *other* entry is corrupt would
- * be a worse answer than dropping the corruption. `projectSeen` makes the same
- * call, so the file and the table agree about what they ignore.
- */
-export function readSeenMarks(corpusDir: string): Record<string, string> {
-  const path = join(corpusDir, SEEN_FILE);
-  if (!existsSync(path)) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return {};
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  const marks: Record<string, string> = {};
-  for (const [threadId, value] of Object.entries(parsed)) {
-    if (!ThreadIdSchema.safeParse(threadId).success || typeof value !== "string") continue;
-    const ts = normalizeInstant(value);
-    if (ts !== null) marks[threadId] = ts;
-  }
-  return marks;
-}
-
-/** True when `candidate` is strictly newer than `current` — the forward-only rule. */
-export function movesForward(current: string | undefined, candidate: string): boolean {
-  if (current === undefined) return true;
-  const currentMs = instantToEpochMs(current);
-  const candidateMs = instantToEpochMs(candidate);
-  if (currentMs === null || candidateMs === null) return true;
-  return candidateMs > currentMs;
-}
 
 /**
  * The read-modify-write itself, synchronous because every part of it is: one

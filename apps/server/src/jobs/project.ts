@@ -6,12 +6,13 @@
 // A row therefore exists for every event — a job that never logged shows an
 // empty last line rather than disappearing from the console.
 
-import type { Job, JobLogLine, QueueEventStatus } from "@corpus/contract";
+import type { Job, JobList, JobLogLine, QueueEventStatus } from "@corpus/contract";
 import { DocumentIdSchema, QueueEventStatusSchema } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 
 /**
- * Stand-in for an instant the files do not carry. Every event the queue writes
+ * Stand-in for an instant the files do not carry — `Job.enqueued`, which the
+ * contract requires and `events.created` supplies. Every event the queue writes
  * has `created` (the schema requires it), so this is reachable only for a file
  * dropped in by hand with the field missing — and listing such an event with an
  * unknown timestamp is better than dropping it from the console.
@@ -145,9 +146,19 @@ export function resolveOriginFromPayload(db: ProjectionDb, payload: unknown): Jo
   return null;
 }
 
+/**
+ * **`enqueued` and `started` are two instants and neither stands in for the
+ * other** (CONTRACT-029). `started` used to be `row.started ?? row.created`, so
+ * a job that had not spoken reported its enqueue instant under the name of its
+ * start and a display counting elapsed time reset the moment the agent began
+ * talking. The columns were always separate — `events.created` is the enqueue,
+ * `jobs.started` is the first log line and is NULL for exactly the jobs that
+ * have written none — and nothing new is computed here: the coalesce was the
+ * whole bug, and removing it is the whole fix.
+ */
 function toJob(db: ProjectionDb, row: JobJoinRow): Job {
   const status = QueueEventStatusSchema.safeParse(row.status);
-  const started = row.started ?? row.created ?? UNKNOWN_INSTANT;
+  const enqueued = row.created ?? UNKNOWN_INSTANT;
   const origin = resolveOrigin(db, row.payload_json);
   return {
     eventId: row.event_id,
@@ -160,8 +171,13 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
     // what the mirror recorded; an unrecognised value can only come from a
     // hand-made row, and `pending` is the harmless reading.
     status: status.success ? status.data : ("pending" satisfies QueueEventStatus),
-    started,
-    updated: row.updated ?? row.created ?? started,
+    enqueued,
+    // Null until the job writes its first line — `pending`, and claimed but
+    // still silent, both read null rather than borrowing `enqueued`.
+    started: row.started,
+    // The newest line's instant, falling back to `enqueued` for a job that has
+    // written none. Never to `started`, which is null in exactly that case.
+    updated: row.updated ?? enqueued,
     lastLine: row.last_line,
     originId: origin?.id ?? null,
     originTitle: origin?.title ?? null,
@@ -175,12 +191,24 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
   };
 }
 
+/**
+ * The rows a console query is over, named once so the page and its count cannot
+ * be taken from different sets. `total` is *"counted over the same filters the
+ * array was selected with"* (CONTRACT-035), and the only way to keep that true
+ * as filters are added is for both statements to share their `FROM`.
+ */
+const FROM_JOBS = `
+  FROM events e
+  LEFT JOIN jobs j ON j.event_id = e.id`;
+
 const SELECT_JOBS = `
   SELECT e.id AS event_id, e.type AS type, e.status AS status, e.created AS created,
          e.payload_json AS payload_json, e.blocked_on AS blocked_on,
          j.started AS started, j.updated AS updated, j.last_line AS last_line
-  FROM events e
-  LEFT JOIN jobs j ON j.event_id = e.id`;
+  ${FROM_JOBS}`;
+
+/** The same rows, counted rather than shaped — the `LIMIT` deliberately absent. */
+const COUNT_JOBS = `SELECT COUNT(*) AS total ${FROM_JOBS}`;
 
 /**
  * `resolveOrigin`'s rule, spelled in SQL so a filter can be a `WHERE`.
@@ -225,7 +253,7 @@ export interface JobFilter {
  * used to disappear while its reply was still coming (CONTRACT-030). One
  * document's jobs are bounded by its own history, so nothing here needs the cap.
  */
-export function listJobRows(db: ProjectionDb, recent: number, filter: JobFilter = {}): Job[] {
+export function listJobPage(db: ProjectionDb, recent: number, filter: JobFilter = {}): JobList {
   const clauses: string[] = [];
   const params: unknown[] = [];
 
@@ -241,13 +269,28 @@ export function listJobRows(db: ProjectionDb, recent: number, filter: JobFilter 
   const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
   // The unfiltered path keeps its `LIMIT ?` exactly as it was, ordering and
   // tie-break included; the filtered one drops it rather than raising it.
-  const limit = filter.originId === undefined ? " LIMIT ?" : "";
-  if (filter.originId === undefined) params.push(recent);
+  const complete = filter.originId !== undefined;
 
   const rows = db
-    .prepare(`${SELECT_JOBS}${where} ${ORDER_JOBS}${limit}`)
-    .all(...params) as JobJoinRow[];
-  return rows.map((row) => toJob(db, row));
+    .prepare(`${SELECT_JOBS}${where} ${ORDER_JOBS}${complete ? "" : " LIMIT ?"}`)
+    .all(...(complete ? params : [...params, recent])) as JobJoinRow[];
+  const jobs = rows.map((row) => toJob(db, row));
+
+  // **The count is skipped exactly when it could not differ.** A query that
+  // dropped the window selected every row its `WHERE` matches, so `jobs.length`
+  // *is* the count — not an assumption about it — and re-running `ORIGIN_ID_SQL`
+  // (a `json_extract` per key against a subquery over `documents`) to be told the
+  // number already in hand would double the most expensive filter's cost. Every
+  // windowed query counts for real, because that is the one case where the page
+  // and the set can disagree.
+  const total = complete
+    ? jobs.length
+    : (db.prepare(`${COUNT_JOBS}${where}`).get(...params) as { readonly total: number }).total;
+
+  // Derived from the two, never guessed from `jobs.length === recent`: a set of
+  // exactly `recent` rows is complete, and a caller told otherwise would go
+  // looking for a page that is not there.
+  return { jobs, total, truncated: total > jobs.length };
 }
 
 export function readJobRow(db: ProjectionDb, eventId: string): Job | undefined {

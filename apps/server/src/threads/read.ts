@@ -33,6 +33,7 @@ import { storedResident } from "../core/resident.js";
 import { loadDocument, type LoadedDocument } from "../docs/index.js";
 import { notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
+import { threadUnread, type MarkReader } from "./marks.js";
 import { MENTION_TYPE, resolveMentionTarget } from "./mentions.js";
 
 /**
@@ -198,8 +199,19 @@ export function readThread(workspace: ThreadReader, loaded: LoadedDocument): Loa
   };
 }
 
-/** `GET /api/threads/{id}` — the thread and every turn, oldest first. */
-export function toWireThread(thread: LoadedThread): Thread {
+/**
+ * `GET /api/threads/{id}` — the thread and every turn, oldest first.
+ *
+ * **Takes a {@link MarkReader} because `unread` is not in the file** (SPEC.md
+ * §7, CONTRACT-036). Read marks are runtime state in `.corpus/seen.json`, not
+ * frontmatter, so this is the one field on the resource that the bytes on disk
+ * cannot answer — and the answer is {@link threadUnread}'s, which is
+ * `docs/needs.ts`'s comparison, which is the one `GET /api/docs` puts in every
+ * row. Deriving it from `turns` instead would have been available for free and
+ * would have been wrong: the turns say when the conversation happened and
+ * nothing at all about what was read.
+ */
+export function toWireThread(reader: MarkReader, thread: LoadedThread): Thread {
   return {
     id: thread.id,
     title: thread.title,
@@ -211,6 +223,7 @@ export function toWireThread(thread: LoadedThread): Thread {
     anchor: thread.anchor,
     agent: thread.agent,
     resident: thread.resident === null ? null : { ...thread.resident },
+    unread: threadUnread(reader, thread.id),
     turns: thread.turns.map((turn) => ({ ...turn })),
   };
 }
