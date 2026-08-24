@@ -1649,3 +1649,4 @@ user, not work).
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
 | SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |
+| SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | todo | P2 | opus | INFRA-020 |

@@ -275,6 +275,12 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 
 - Unit/integration: Vitest, colocated `*.test.ts` next to source. Run all: `npm test`; one workspace: `npm test -w apps/server`.
 - E2E: Playwright specs in `apps/ui/e2e/`, real app only — no mocks, no test clients.
+- **A failing test is diagnosed before its timeout moves** (INFRA-020). Three of
+  the four things that look like load are not load, and a test that has never
+  failed is not evidence either — two issues this repository carried as flakes
+  for releases turned out to be product defects a green suite could not see.
+  The diagnosis order and the 50%-of-its-own-budget threshold live in
+  `docs/TS_GUIDELINES.md` → Testing. `npm run test:slow` reports against it.
 - See `docs/TS_GUIDELINES.md` → Testing.
 
 ## Lint Discipline
