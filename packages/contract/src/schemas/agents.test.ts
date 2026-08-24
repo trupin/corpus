@@ -4,10 +4,13 @@ import {
   AgentLaneSchema,
   AgentNameSchema,
   AgentPresenceSchema,
+  AGENT_DEF_ROOT,
   AgentRosterSchema,
   DesignateResidentRequestSchema,
   LANE_SUMMARY_MAX_LENGTH,
   LaneOriginSchema,
+  MISSING_PROFILE_CAUSE_CLAUSE,
+  MISSING_PROFILE_CAUSES,
   parseResidentDesignatedPayload,
   parseResidentReleasedPayload,
   presenceLiveField,
@@ -191,6 +194,57 @@ describe("Resident.weight", () => {
     expect(DesignateResidentRequestSchema.shape.weight.description).toContain(
       RESIDENT_WEIGHT_BOUNDARY,
     );
+  });
+});
+
+/**
+ * SHARED-054. The causes were prose here, with nothing tying them to the array
+ * the rest of the product composes from — the same shape SHARED-053's four false
+ * statements came out of, one layer out.
+ *
+ * The checks below are all **derivations**, never spellings: each one fails if
+ * the array changes and the published sentence does not follow. Whether the
+ * array is *right* is not decidable in this package — it is a question about
+ * what `apps/server` does to a workspace — and it is measured in
+ * `scripts/missing-profile-parity.test.ts`, which also holds this array equal to
+ * `packages/kit`'s copy.
+ */
+describe("the ways a designated profile goes missing", () => {
+  it("lists exactly the three §7 names, and archiving is not among them", () => {
+    expect(MISSING_PROFILE_CAUSES).toEqual([
+      "renamed",
+      "deleted",
+      `moved out of ${AGENT_DEF_ROOT}`,
+    ]);
+    // Not "does not equal 'archived'": the false clause has to be unable to come
+    // back in any spelling, which is the standard SHARED-053's pin set.
+    for (const cause of MISSING_PROFILE_CAUSES) expect(cause).not.toMatch(/archiv/i);
+  });
+
+  /**
+   * The clause is the array plus one typographic rule — the root code-quoted for
+   * the markdown a `description` and `docs/cli.md` both are — so it is asserted
+   * as that composition and never as a sentence somebody typed.
+   */
+  it("composes the clause rather than restating it, and quotes the root", () => {
+    const [renamed, deleted, moved] = MISSING_PROFILE_CAUSES;
+    expect(MISSING_PROFILE_CAUSE_CLAUSE).toBe(
+      `${renamed}, ${deleted}, or ${moved.replace(AGENT_DEF_ROOT, `\`${AGENT_DEF_ROOT}\``)}`,
+    );
+    // The array's members stay bare: the kit renders them into a lane's own
+    // sentence, where a backtick reaches a person's eye as a backtick.
+    expect(moved).not.toContain("`");
+  });
+
+  /**
+   * The site the issue named: `Resident.docId`'s published description. It is
+   * the sentence four domains read, so it is the one that must follow the array
+   * rather than agree with it by hand.
+   */
+  it("publishes that clause on Resident.docId, and mentions archiving only to deny it", () => {
+    const description = ResidentSchema.shape.docId.description ?? "";
+    expect(description).toContain(`has since been ${MISSING_PROFILE_CAUSE_CLAUSE}`);
+    expect(description).toContain("**Archiving a profile does not empty this field**");
   });
 });
 

@@ -69,6 +69,7 @@ import {
 import { contextualizeSelector } from "./anchor-context.js";
 import { enqueueComment } from "./events.js";
 import { TURN_SUBJECT, assertAppendableTurnText } from "./fences.js";
+import { assertWritableForm } from "./forms.js";
 import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toWireThread } from "./read.js";
@@ -277,6 +278,14 @@ export async function createThread(
   // being guarded and this one not is how SERVER-070 happened (malformed forms),
   // so the guards are placed together by design.
   assertAppendableTurnText(input.text, TURN_SUBJECT);
+  // And the same for a `form` fence that does not parse (SERVER-070). The turn
+  // path refused it and this one accepted it, which made the rule about which
+  // door the same bytes arrived through rather than about the bytes — and an
+  // arbitrary rule is one a later reader "simplifies" in whichever direction
+  // they meet first. One implementation, called from every door: agent turns
+  // only, because §6 makes a form something an agent asks and a person quoting a
+  // fence is quoting.
+  assertWritableForm(actor, input.text);
   // And likewise for an attribution nobody made: this route is the second door
   // onto a turn, so §10's "a person's turn names no model" is refused here too
   // rather than only on the reply path (SPEC.md §10, CONTRACT-043).
@@ -349,7 +358,7 @@ export async function createThread(
         ),
       );
       // The response is re-read from the file this write is about to make
-      // (`toWireThread(loadThread(...))` below), so the turn's model reaches the
+      // (`toWireThread(workspace, loadThread(...))` below), so the turn's model reaches the
       // wire through the read join rather than from here; `turn` is used only
       // for the stamp the enqueued event names.
       const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
@@ -443,6 +452,11 @@ export async function createThread(
         })
       : null;
 
-    return { thread: toWireThread(loadThread(workspace, id)), anchorId, eventId, result };
+    return {
+      thread: toWireThread(workspace, loadThread(workspace, id)),
+      anchorId,
+      eventId,
+      result,
+    };
   });
 }

@@ -120,6 +120,71 @@ export const QUEUE_EVENT_STATUSES = [
   "abandoned",
 ] as const;
 
+/**
+ * Which of §7's statuses are ends of the line, classified **one at a time**.
+ *
+ * This exists so `NON_TERMINAL_QUEUE_EVENT_STATUSES` below can be enumerated
+ * rather than guessed at, and so that adding a status to
+ * {@link QUEUE_EVENT_STATUSES} is a **compile error here** rather than a silent
+ * classification somewhere else: the record is keyed by the union, so a seventh
+ * status leaves it incomplete until somebody says which kind it is. Deriving the
+ * non-terminal list as "everything not terminal" would have made that seventh
+ * status non-terminal by default, which is a guess about a state nobody has
+ * described yet — and the wrong direction to guess in, since a caller polling a
+ * non-terminal set waits forever on a state that never leaves it.
+ */
+const QUEUE_EVENT_STATUS_TERMINALITY: Readonly<
+  Record<(typeof QUEUE_EVENT_STATUSES)[number], "terminal" | "non-terminal">
+> = {
+  pending: "non-terminal",
+  "in-progress": "non-terminal",
+  deferred: "non-terminal",
+  processed: "terminal",
+  failed: "terminal",
+  abandoned: "terminal",
+};
+
+/**
+ * **§7's non-terminal statuses — the states in which work is still owed.**
+ *
+ * **Not a wire field, and deliberately so** (CONTRACT-073). `JobsQuerySchema`'s
+ * `status` publishes the general set rather than an `outstanding` shorthand,
+ * because which states count as unsettled is a *caller's* reading and baking one
+ * into the wire makes every other caller live with it. Nothing here changes
+ * that: `openapi.json` gains no field, and this is a TypeScript export beside
+ * {@link QUEUE_EVENT_STATUSES} — the enumeration both sides already share — so
+ * the two sides can stop keeping their own copies of the same three strings.
+ *
+ * It replaced `OUTSTANDING_EVENT_STATUSES` in `apps/server` and
+ * `OUTSTANDING_JOB_STATUSES` in `packages/kit`, which were one reading of §7
+ * written twice in two packages that cannot import each other — the shape that
+ * produced PR #48's CRITICAL, with both suites green because each asserted its
+ * own copy. The two ask *different questions* of it (the server's is a SQL `IN`
+ * list behind the pending-agent dot, the kit's is a query filter and a client
+ * predicate), and the **set** is the same for both: work is owed exactly while
+ * the event has not settled, whichever surface is asking.
+ *
+ * **`deferred` is one of them.** The agent claimed the event and parked it
+ * because a person was editing the document it needs, and it returns to
+ * `pending` on its own when that session ends (SPEC.md §7) — so the reply is
+ * still coming. `processed`, `failed` and `abandoned` are terminal: nothing more
+ * arrives without somebody asking again.
+ *
+ * **The word is "non-terminal", not "outstanding".** Terminality is a property
+ * of §7's state machine and this constant states it. "Outstanding" is what a
+ * caller concludes from it, and each caller may keep its own name for that
+ * conclusion — which is why both consumers alias this rather than importing the
+ * word.
+ */
+export const NON_TERMINAL_QUEUE_EVENT_STATUSES: readonly (typeof QUEUE_EVENT_STATUSES)[number][] =
+  QUEUE_EVENT_STATUSES.filter(
+    (status) => QUEUE_EVENT_STATUS_TERMINALITY[status] === "non-terminal",
+  );
+
+/** §7's terminal statuses — the complement, and the other half of the partition. */
+export const TERMINAL_QUEUE_EVENT_STATUSES: readonly (typeof QUEUE_EVENT_STATUSES)[number][] =
+  QUEUE_EVENT_STATUSES.filter((status) => QUEUE_EVENT_STATUS_TERMINALITY[status] === "terminal");
+
 export const QueueEventStatusSchema = openapi(z.enum(QUEUE_EVENT_STATUSES), {
   description:
     "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. " +
@@ -195,9 +260,16 @@ export const QueueEventSchema = openapi(
  * Small on purpose. This list is read on **every** claim, and its job is to make
  * a discrepancy *noticeable* — not to be an inventory. A healthy loop holds a
  * handful; past twenty rows the actionable fact is "many, and here is the
- * total", and the complete inventory is one documented route away
- * (`GET /api/jobs?status=in-progress`), so the cap never puts anything out of
- * reach.
+ * total", and a bigger page is one documented route away
+ * (`GET /api/jobs?status=in-progress`).
+ *
+ * **That route windows too, and says so** (CONTRACT-035). `recent` caps it at
+ * 200 and the status filter is applied before the limit, so what the pointer
+ * buys is a larger page rather than an unbounded one — and `JobList` now reports
+ * its own `total` and `truncated`, so a caller who follows the pointer can
+ * always tell a short answer from a whole one. This cap therefore bounds this
+ * report and hides nothing; it is not, and never was, a promise that the queue's
+ * whole history fits in one response.
  */
 export const MAX_IN_PROGRESS_REPORTED = 20;
 
@@ -315,9 +387,10 @@ export const InProgressSetSchema = openapi(
       .describe(
         "How many events the server holds `in-progress` **in total**, equal to `events.length` " +
           'whenever `truncated` is false. It is the "and N more" the cap owes the caller: ' +
-          `subtract the list's length to get it. For the complete set past ${MAX_IN_PROGRESS_REPORTED}, ` +
-          "ask `GET /api/jobs?status=in-progress` — the cap bounds this report, never the caller's " +
-          "reach.",
+          `subtract the list's length to get it. For more than ${MAX_IN_PROGRESS_REPORTED} of them, ` +
+          "ask `GET /api/jobs?status=in-progress`, which pages up to 200 and reports its own " +
+          "`total` and `truncated` — so this cap bounds this report, and the route it points at " +
+          "windows without hiding it.",
       ),
     truncated: z
       .boolean()

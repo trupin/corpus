@@ -473,7 +473,7 @@ test.describe("the Attention row a form leaves behind", () => {
           eventId: "evt_working",
           type: "comment.created",
           status: "in-progress",
-          started: "2026-07-19T10:07:30Z",
+          enqueued: "2026-07-19T10:07:30Z",
           lastLine: "comparing the two quotes",
           originId: "th_form",
         },
@@ -490,8 +490,19 @@ test.describe("the Attention row a form leaves behind", () => {
       "comparing the two quotes",
     );
 
-    // In the card: the form still asks, and §8's row still counts — measured
-    // from the requesting turn, which is what survives a reload.
+    /*
+     * In the card: the form still asks, and §8's row still counts — measured
+     * from `Job.enqueued`, the instant the event entered the queue, which is
+     * what survives a reload.
+     *
+     * That instant is 10:07:30 and the agent's form turn is 10:07:00. The wait
+     * used to be reported as the turn's, because `Job.started` meant *enqueued*
+     * while a job was queued and *first log line* afterwards, so the indicator
+     * bounded it by the newest turn that was not newer than it rather than
+     * letting the clock reset when the agent began talking (CONTRACT-029,
+     * UI-169). The wire now carries the enqueue instant as a field, and the
+     * heuristic is gone with the field it stood in for.
+     */
     await row(page, "th_form").click();
     const card = reader(page).locator(".thread-card");
     const working = card.locator(".working");
@@ -499,7 +510,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(card.locator(".form-submit")).toBeVisible();
     await expect(working).toBeVisible();
     await expect(working).toContainText("working");
-    await expect(working).toHaveAttribute("data-working-since", FORM_TS);
+    await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:07:30Z");
 
     // Answering takes the question away and leaves the wait exactly where it
     // was: the queue event is still outstanding, and an answer is not a reply.
@@ -528,10 +539,17 @@ test.describe("the Attention row a form leaves behind", () => {
    * user's 10:05 turn.
    *
    * That last one is the assertion. A windowed answer would stop one row short
-   * of it and the row would count from the agent's 10:07 form turn instead — a
-   * wait that started twenty-five minutes late, and the exact silent
-   * one-directional failure the rider names. `10:05` on the wire is the buried
-   * job having been found.
+   * of it and the row would count from one of the 11:xx asks instead — a wait
+   * that started an hour late, and the exact silent one-directional failure the
+   * rider names. `10:06` on the wire is the buried job having been found.
+   *
+   * **`10:06` and not `10:05`** since UI-169: the indicator reports
+   * `Job.enqueued` straight off the wire. It used to bound `Job.started` by the
+   * newest turn not newer than it, which reached back to the user's 10:05 turn —
+   * a heuristic that existed only because `started` meant two different instants
+   * (CONTRACT-029). The seed's own words are the honest reading: the event was
+   * enqueued at 10:06. Nothing about what this test distinguishes has moved,
+   * since the windowed answer's nearest row is still a whole hour away.
    */
   test("counts the wait from the buried ask a windowed answer would miss", async ({ page }) => {
     /** Enough unrelated unfinished work to saturate the shared query. */
@@ -539,7 +557,7 @@ test.describe("the Attention row a form leaves behind", () => {
       eventId: `evt_elsewhere${String(index)}`,
       type: "doc.edited",
       status: "pending",
-      started: "2026-07-19T12:00:00Z",
+      enqueued: "2026-07-19T12:00:00Z",
       originId: "doc_elsewhere",
     }));
     /** This thread's later asks — a full console window of them, newest first. */
@@ -547,14 +565,14 @@ test.describe("the Attention row a form leaves behind", () => {
       eventId: `evt_later${String(index)}`,
       type: "comment.created",
       status: "in-progress",
-      started: `2026-07-19T11:${String(59 - index).padStart(2, "0")}:00Z`,
+      enqueued: `2026-07-19T11:${String(59 - index).padStart(2, "0")}:00Z`,
       originId: "th_form",
     }));
     const buried: StubJob = {
       eventId: "evt_buried",
       type: "comment.created",
       status: "deferred",
-      started: "2026-07-19T10:06:00Z",
+      enqueued: "2026-07-19T10:06:00Z",
       originId: "th_form",
     };
 
@@ -566,7 +584,7 @@ test.describe("the Attention row a form leaves behind", () => {
     await row(page, "th_form").click();
     const working = reader(page).locator(".thread-card .working");
     await expect(working).toBeVisible();
-    await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:05:00Z");
+    await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:06:00Z");
 
     // …and it got there by asking the exact question, not by scanning a list.
     const asked = await corpus.of("GET", "/api/jobs");

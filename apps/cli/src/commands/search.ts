@@ -2,7 +2,13 @@ import { RETRIEVAL_DEFAULT_LIMIT, RETRIEVAL_MAX_LIMIT } from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
 import { oneLine, renderColumns } from "./columns.js";
 import { collectDocFilters, DOC_FILTER_FLAGS } from "./filters.js";
-import { semanticIndexNote } from "./retrieval.js";
+import {
+  SEARCH_EXCLUSION_NOTE,
+  SEARCH_KEEPS_NEIGHBOUR_TYPES_NOTE,
+  semanticIndexNote,
+  typeList,
+  UNRANKED_SEARCH_TYPES,
+} from "./retrieval.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../registry/types.js";
 
 /**
@@ -71,13 +77,16 @@ export const searchCommand: WorkspaceCommandSpec = {
     "**This is how the agent locates content** (SPEC.md §7): searching, then reading the one or " +
     "two documents the ranking pointed at, costs what the answer costs. Listing the corpus and " +
     "reading candidates costs the corpus.\n\n" +
+    `${SEARCH_EXCLUSION_NOTE}\n\n` +
+    `${SEARCH_KEEPS_NEIGHBOUR_TYPES_NOTE}\n\n` +
     "Threads are documents too, so a match inside a reply is a hit on the thread, and its " +
     "heading path is that turn's heading. A passage with no heading above it reports the " +
     "document's title, so a hit always has an address. Heading levels are joined for display by " +
     "a spaced `›` — print the path, never split it, since a heading may contain the " +
     "character.\n\n" +
     "It takes the same structured filters as `corpus doc list`, with the same meanings and the " +
-    "same archived default, because both are built from one definition. What it does **not** " +
+    "same archived default, because both are built from one definition — the type default above " +
+    "is this verb's own and applies on top of it. What it does **not** " +
     "take is `--sort`, `--pinned` or `--offset`: a ranked result set has one order — its " +
     `ranking — and is a top-k rather than a page. \`--limit\` (default ${String(RETRIEVAL_DEFAULT_LIMIT)}, ` +
     `max ${String(RETRIEVAL_MAX_LIMIT)}) is the cap; widen it or narrow the filters. ` +
@@ -115,12 +124,18 @@ export const searchCommand: WorkspaceCommandSpec = {
     {
       command: 'corpus search "mortgage" --type note --folder finance --limit 5',
       description:
-        "The same structured filters `corpus doc list` takes, narrowing the ranking rather than enumerating what matched.",
+        "The same structured filters `corpus doc list` takes, narrowing the ranking rather than " +
+        `enumerating what matched. Naming \`--type\` at all also lifts the default that skips ` +
+        `${typeList(UNRANKED_SEARCH_TYPES)} — here that changes nothing, since \`note\` excludes ` +
+        "them anyway.",
     },
     {
       command: 'corpus search "reconcile in-progress" --type skill',
       description:
-        "Name the type you want and the ranking is confined to it, so the hits are installed skills rather than whatever else says `reconcile`. This is the genesis lookup the comment skill makes before it writes a new skill.",
+        "How to reach a type the default ranking skips: name it. The ranking is then confined to " +
+        "it, so the hits are installed skills rather than whatever else says `reconcile`. This " +
+        "is the genesis lookup the comment skill makes before it writes a new skill, and it is " +
+        "the reason the default is a type gate rather than a hard exclusion.",
     },
     {
       command: 'corpus search "deadline" --json',

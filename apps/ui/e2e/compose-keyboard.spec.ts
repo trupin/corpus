@@ -334,6 +334,22 @@ test.describe("the top bar's way in", () => {
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
 
+    /*
+     * **Deliberately unguarded, and it is a different mechanism** (UI-080's
+     * fourth class, decided rather than left unexamined).
+     *
+     * `c` is a document-level hotkey. It needs no particular element focused —
+     * it needs the *previous* focus released, so the composer's own textarea
+     * does not swallow the letter — and the click does that synchronously on
+     * mousedown, before `click()` resolves. So `toBeFocused()` is the wrong
+     * instrument here: there is nothing this click is waiting to become focused,
+     * and the state it does produce is already in hand.
+     *
+     * It also fails loudly. A `c` that reached the old surface would type a
+     * letter rather than open the dialog, and the assertion below names exactly
+     * that. Compare `board.spec.ts`'s ghost-column `Escape`, which *is* aimed at
+     * a specific surface and is guarded — the two look alike and are not.
+     */
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });
     await page.keyboard.press("c");
     await expect(panel).toBeVisible();
@@ -437,6 +453,8 @@ test.describe("the cheat sheet is generated from the registry", () => {
   test("`?` toggles it, and it lists SPEC.md §10's seventeen bindings in the prototype's order", async ({
     page,
   }) => {
+    // A global hotkey on a page with nothing focused: the click is defensive and
+    // there is no condition to wait on — see the note at `c`'s site (UI-080).
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });
     await page.keyboard.press("?");
     const sheet = page.getByRole("dialog", { name: "Keyboard" });
@@ -477,6 +495,8 @@ test.describe("the cheat sheet is generated from the registry", () => {
   });
 
   test("refuses to stack: `?` over the composer is ignored, ⌘K replaces it", async ({ page }) => {
+    // Same class as the two above: a document-level hotkey, no focus target
+    // (UI-080).
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });
     await page.keyboard.press("c");
     await expect(page.getByRole("dialog", { name: "Ask or capture" })).toBeVisible();

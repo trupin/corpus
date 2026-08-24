@@ -89,6 +89,9 @@ async function stubThread(page: Page): Promise<void> {
         anchor: null,
         agent: "engaged",
         resident: null,
+        // The server's answer to §10's interlock, published rather than derived
+        // (CONTRACT-036).
+        unread: false,
         turns: [{ author: "agent", ts: "2026-07-01T09:05:00.000Z", body: BODY, model: null }],
       } satisfies Thread),
     });

@@ -1,6 +1,7 @@
 import { isAgentPresent, ORCHESTRATOR_LANE } from "@corpus/contract";
 import { humanizeElapsed, useQueueStatus, type LaneRow } from "@corpus/kit";
 import type { ReactElement } from "react";
+import { deferredOnName, type DeferredOn, type PendingState } from "./outstandingAgentRequest";
 import { useNowTick } from "./useNowTick";
 
 /**
@@ -24,12 +25,13 @@ import { useNowTick } from "./useNowTick";
  * "agent is working…" and then escalated to "still working — longer than usual",
  * with increasing urgency, about work that had not started — which is what a
  * person sees whenever they post to an agent that is not running. So the row has
- * two vocabularies, {@link WORKING_TIERS} and {@link WAITING_TIERS}, chosen by
- * who is holding the event, over **one clock**: the wait is the wait, and being
- * claimed after ten minutes does not make it a fresh request.
+ * three vocabularies — {@link WORKING_TIERS}, {@link WAITING_TIERS} and
+ * {@link deferredLabel} — chosen by what is holding the event, over **one
+ * clock**: the wait is the wait, and being claimed after ten minutes does not
+ * make it a fresh request.
  */
 
-export type PendingState = "working" | "waiting";
+export type { PendingState };
 
 export const WORKING_TIERS = {
   /** Under 45 s. */
@@ -105,6 +107,77 @@ export function waitingLabel(elapsedMs: number, agentPresent: boolean): string {
   }
   if (elapsedMs >= SLOW_AFTER_MS) return WAITING_TIERS.slow;
   return WAITING_TIERS.fresh;
+}
+
+/**
+ * **The third vocabulary: a request that was seen and put down** (SPEC.md §7,
+ * §8; UI-115).
+ *
+ * UI-097 put `deferred` under {@link WAITING_TIERS}, which is more honest than
+ * what was there and is still not the whole answer. *"Still waiting to be picked
+ * up"* read against a deferred event invites the conclusion that nothing has
+ * happened and nobody has looked. §7 says the opposite in as many words:
+ * *"Nothing refused it: the agent deferred because it saw, not because it was
+ * blocked."* It was claimed, read, and parked **because a person is editing the
+ * document it needs** — and it returns to `pending` on its own when that edit
+ * session ends.
+ *
+ * So this is the one state where the person reading the row is the person who
+ * can clear it, and the wording has to say so. Three things follow:
+ *
+ * - **It names the document.** Somebody with four readers open needs to know
+ *   which one to leave alone, and inferring it from "whichever is open" would be
+ *   a guess that is wrong exactly when it matters. The name comes off the job
+ *   (`Job.blockedOn`/`blockedOnTitle`); where the wire gives neither, the
+ *   sentence drops the clause rather than inventing one.
+ * - **It says what ends it**, from the middle tier on. That is the actionable
+ *   half and the reason the state is distinct at all.
+ * - **It does not escalate in urgency.** A deferral that lasts an hour is a
+ *   document somebody has had open for an hour, which is not breakage. The
+ *   tiers restate and lengthen; none of them reaches for the register
+ *   {@link WAITING_TIERS}`.absent` uses, and the fifteen-minute tier adds a
+ *   duration rather than an alarm.
+ *
+ * The lane is deliberately **not** named here, unlike in the two ladders below.
+ * A deferral has already been claimed, so which resident holds it is settled and
+ * uninteresting; what the reader needs is what it is parked on and who can move
+ * it, and both of those are about the document.
+ */
+export const DEFERRED_TIERS = {
+  /** Under 45 s. */
+  fresh: "paused while you are editing",
+  /** 45 s – 3 m. */
+  slow: "still paused while you are editing",
+  /** 3 m and up — the tier that says what ends it. */
+  longer: "still paused — it resumes when you finish editing",
+} as const;
+
+/** …and the same three where the wire named no document to point at. */
+export const DEFERRED_TIERS_UNNAMED = {
+  fresh: "paused while a document is being edited",
+  slow: "still paused while a document is being edited",
+  longer: "still paused — it resumes when that editing finishes",
+} as const;
+
+/**
+ * The deferral ladder, at {@link workingLabel}'s own thresholds.
+ *
+ * The fifteen-minute tier states the duration, exactly as the other two ladders
+ * do, and then goes on saying the same calm thing: the escalation is in
+ * precision, never in volume.
+ */
+export function deferredLabel(elapsedMs: number, deferred: DeferredOn): string {
+  const name = deferredOnName(deferred);
+  const tiers = name === null ? DEFERRED_TIERS_UNNAMED : DEFERRED_TIERS;
+  const on = name === null ? "" : ` ${name}`;
+  if (elapsedMs >= ELAPSED_AFTER_MS) {
+    return `still paused for ${humanizeElapsed(elapsedMs)} — it resumes when ${
+      name === null ? "that editing finishes" : `you finish editing ${name}`
+    }`;
+  }
+  if (elapsedMs >= LONGER_AFTER_MS) return `${tiers.longer}${on}`;
+  if (elapsedMs >= SLOW_AFTER_MS) return `${tiers.slow}${on}`;
+  return `${tiers.fresh}${on}`;
 }
 
 /**
@@ -242,7 +315,13 @@ export function pendingLabel(
   elapsedMs: number,
   agentPresent: boolean,
   lane?: PendingLane,
+  deferred?: DeferredOn | null,
 ): string {
+  // The deferral is the most specific true thing about this wait, and the only
+  // one the reader can end, so it is said before anything about who or whether.
+  if (state === "deferred") {
+    return deferredLabel(elapsedMs, deferred ?? { docId: null, title: null });
+  }
   if (nameable(lane)) {
     if (state === "waiting") return laneWaitingLabel(elapsedMs, lane);
     // A claimed event on an away lane may have been taken by the fallback, so
@@ -256,11 +335,18 @@ export interface PendingIndicatorProps {
   /** Timestamp of the turn that asked for the agent. */
   readonly since: string;
   /**
-   * Whether the outstanding event has actually been claimed. It changes the
-   * wording and nothing else — never the clock, which counts from `since` in
-   * both states.
+   * What is holding the outstanding event — claimed, parked, or nobody. It
+   * changes the wording and nothing else — never the clock, which counts from
+   * `since` in all three states.
    */
   readonly state: PendingState;
+  /**
+   * The document a `deferred` request is parked on, from the job's own
+   * `blockedOn` (SPEC.md §7). Ignored in the other two states, and safe to omit:
+   * a deferral with nothing to name still says it is paused, in a sentence that
+   * names no document rather than one with a hole in it.
+   */
+  readonly deferred?: DeferredOn | null | undefined;
   /**
    * The lane this conversation's messages are addressed to, from the shared
    * roster vocabulary (`useResidentLane`), or `undefined` while nothing can be
@@ -274,7 +360,12 @@ export interface PendingIndicatorProps {
   readonly lane?: PendingLane | undefined;
 }
 
-export function PendingIndicator({ since, state, lane }: PendingIndicatorProps): ReactElement {
+export function PendingIndicator({
+  since,
+  state,
+  lane,
+  deferred,
+}: PendingIndicatorProps): ReactElement {
   const now = useNowTick();
   /*
    * The roster's own verdict, aggregated over every lane (`QueueStatus.agent`,
@@ -300,7 +391,7 @@ export function PendingIndicator({ since, state, lane }: PendingIndicatorProps):
     <div
       /*
        * One class, because it is one row: the hairline, the gap and the ink are
-       * the same in both states and only the dot and the sentence differ. What
+       * the same in every state and only the dot and the sentence differ. What
        * it is *saying* is on `data-pending-state`, which is where a stylesheet
        * or a spec asks — a second class would be a second thing to keep in step
        * with the state that already decides both.
@@ -312,12 +403,19 @@ export function PendingIndicator({ since, state, lane }: PendingIndicatorProps):
       /* The lane the row is speaking about, or absent when it is speaking about none. */
       {...(nameable(lane) ? { "data-pending-lane": lane.lane } : {})}
     >
+      {/*
+       * The dot answers *is anything being worked*, which is a two-state
+       * question — so a deferral takes the queued dot, exactly as a row's own
+       * signal does (`useRowSignals`). Its distinctness is in the sentence,
+       * where it can be explained; a third dot would be a shape nobody could
+       * read without one.
+       */}
       {state === "working" ? (
         <span className="working-dot" aria-hidden="true" />
       ) : (
         <span className="queued-dot" aria-hidden="true" />
       )}
-      {pendingLabel(state, elapsed, agentPresent, lane)}
+      {pendingLabel(state, elapsed, agentPresent, lane, deferred)}
     </div>
   );
 }

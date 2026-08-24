@@ -214,6 +214,11 @@ test.describe("the context menu", () => {
 
       await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
       const menu = page.getByRole("menu");
+      // A right click opens the menu asynchronously, so `ArrowDown` sent
+      // straight after it can reach a page with no menu on it (UI-080). The
+      // guarded sibling at the top of this file waits on visibility; the wait is
+      // on the condition and never on a duration.
+      await expect(menu).toBeVisible();
       await page.keyboard.press("ArrowDown");
       await expect(menu.locator('[data-act="open"]')).toBeFocused();
 
@@ -230,13 +235,27 @@ test.describe("the context menu", () => {
     await page.goto("/");
 
     await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    // Visibility is enough here: what follows is `Escape`, which the menu
+    // handles as a whole, and the `toBeHidden()` below fails loudly if the key
+    // was lost (UI-080).
+    await expect(page.getByRole("menu")).toBeVisible();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("menu")).toBeHidden();
     await expect(page.locator(".reader")).toHaveCount(0);
 
     await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    /*
+     * The stronger condition, because this half needs **the first item** to hold
+     * focus: `Space` activates whatever is focused, so an `ArrowDown` lost to the
+     * open gap would activate the wrong entry — or nothing — and a loose
+     * assertion could still be satisfied by the wrong act. Visibility is weaker
+     * than focus here, since a menu's roving focus arrives after it is drawn
+     * (UI-080).
+     */
+    await expect(page.getByRole("menu")).toBeVisible();
     await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("menu").locator('[data-act="open"]')).toBeFocused();
     await page.keyboard.press("Space");
     await expect(page.getByRole("menu")).toBeHidden();
     await expect(page.locator('.reader[data-reader-doc="doc_note"]')).toBeVisible();

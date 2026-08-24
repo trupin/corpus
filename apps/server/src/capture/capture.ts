@@ -58,6 +58,7 @@ import {
   CAPTURE_SUBJECT,
   EVENT_SOURCE,
   assertAppendableTurnText,
+  assertWritableForm,
   decideParticipation,
   deriveThreadTitle,
   enqueueComment,
@@ -115,6 +116,13 @@ export async function captureDocument(
   // document the same line would be nothing but a heading, which is why the
   // refusal is worded about the turn and not about the markdown.
   assertAppendableTurnText(request.text, CAPTURE_SUBJECT);
+  // The third door onto an agent's first turn, and refused on the same terms as
+  // the other two (SERVER-070). The captured text *is* that turn, so a `form`
+  // fence that does not parse arrives here exactly as it would through
+  // `POST /api/threads` — and the document written beside it is unaffected
+  // either way, because §6 makes a form something a *turn* carries and no reader
+  // looks for one in a document body.
+  assertWritableForm(actor, request.text);
 
   // One lane: both ids are minted against the projection and the document's
   // filename is deduped against the filesystem, so a concurrent capture of the

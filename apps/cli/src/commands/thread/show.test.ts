@@ -26,6 +26,7 @@ const ANCHORED = {
   anchor: "anc_1",
   agent: "engaged",
   resident: null,
+  unread: false,
   turns: [
     { author: "user", ts: "2026-07-28T10:00:00.000Z", body: "Is 6.1% right?" },
     { author: "agent", ts: "2026-07-28T10:05:00.000Z", body: "Checked today: it holds.\n" },
@@ -49,7 +50,7 @@ describe("corpus thread show", () => {
     expect(harness.stdout()).toBe(
       [
         "Is 6.1% right?",
-        "th_x9y8 · open · agent engaged",
+        "th_x9y8 · open · agent engaged · read",
         "parent doc_a1b2c3 · anchor anc_1 · anchored to a selection",
         "created 2026-07-28T10:00:00.000Z · updated 2026-07-28T10:10:00.000Z",
         "tags finance",
@@ -94,7 +95,7 @@ describe("corpus thread show", () => {
     expect(harness.stdout()).toBe(
       [
         "Is 6.1% right?",
-        "th_x9y8 · open · agent none",
+        "th_x9y8 · open · agent none · read",
         "parent — · anchor — · standalone",
         "created 2026-07-28T10:00:00.000Z · updated 2026-07-28T10:10:00.000Z",
         "tags —",
@@ -116,15 +117,35 @@ describe("corpus thread show", () => {
     expect(JSON.parse(harness.stdout())).toEqual(ANCHORED);
   });
 
-  it("reports neither read-state nor events, because the endpoint carries neither", async () => {
+  it("reports the server's read-state, and never calls the mutation that clears it", async () => {
+    const stub = await startStubServer(jsonResponder(200, { ...ANCHORED, unread: true }));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    // The flag is the server's answer against its own seen mark (CONTRACT-036),
+    // not this session's guess — which is why it can say "unread" at all.
+    expect(harness.stdout()).toMatch(/th_x9y8 · open · agent engaged · unread/);
+    // Reading must clear nothing: POST /seen is the only read-state mutation.
+    expect(stub.requests.map((request) => request.path)).toEqual(["/api/threads/th_x9y8"]);
+  });
+
+  it("says read when the server says the mark is current", async () => {
     const stub = await startStubServer(jsonResponder(200, ANCHORED));
 
     const harness = stubContext(stub, { args: ARGS });
     await runThreadShow(harness.context);
 
-    expect(harness.stdout()).not.toMatch(/unread|lastSeenTs|events/i);
-    // And the mutating read-state endpoint is never called.
-    expect(stub.requests.map((request) => request.path)).toEqual(["/api/threads/th_x9y8"]);
+    expect(harness.stdout()).toMatch(/th_x9y8 · open · agent engaged · read/);
+  });
+
+  it("still reports no events, because the endpoint carries none", async () => {
+    const stub = await startStubServer(jsonResponder(200, ANCHORED));
+
+    const harness = stubContext(stub, { args: ARGS });
+    await runThreadShow(harness.context);
+
+    expect(harness.stdout()).not.toMatch(/lastSeenTs|events/i);
   });
 
   it("names the resident of a designated conversation, and the document defining it", async () => {

@@ -257,6 +257,20 @@ export const updateDoc = createRoute({
   },
 });
 
+/**
+ * **The source rule lives here and nowhere else** (CONTRACT-065, found by
+ * CONTRACT-064's second sweep). `MoveDocRequest.folder` describes the
+ * destination, which is what that field is. Where a document may come *from* is
+ * a property of the document rather than of the field, and every published
+ * description covered only the destination half — so a caller reading the
+ * contract met `assertMovable`'s `400`
+ * (`apps/server/src/docs/move.ts`) with nothing having predicted it.
+ *
+ * Written from that function rather than from SPEC: it refuses on
+ * `parseDocumentPath(loaded.path)` returning `null` or a `root` other than
+ * `docs`, and its two messages are quoted here verbatim so the contract and the
+ * refusal cannot drift into two accounts of one rule.
+ */
 export const moveDoc = createRoute({
   method: "post",
   path: "/api/docs/{id}/move",
@@ -266,7 +280,18 @@ export const moveDoc = createRoute({
     "Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every " +
     "`[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. " +
     "**A move names its own delta and presents no key** (SPEC.md §7): it rewrites the path, not " +
-    "the content, so it invalidates nobody's key and overwrites nothing.",
+    "the content, so it invalidates nobody's key and overwrites nothing. " +
+    "**Only a document already under `data/docs/` can be moved**, and its source is checked " +
+    "before the destination is resolved, so a document that can never move says so rather than " +
+    "complaining about the folder. A `type: thread` document is flat at `data/threads/<id>.md` " +
+    "(SPEC.md §4) — its filename is its id, so there is nowhere to move it to — and the `400` " +
+    "reads *threads are flat under data/threads/ and cannot be moved*. A document under any " +
+    "other root — an `agent-def` in `.claude/agents/`, a skill under `.claude/skills/` — reads " +
+    "*<path> is not under data/docs/ and cannot be moved*. That holds in both directions, since " +
+    "`folder` reaches no root either: this route never takes a document out of a SPEC.md §7 root " +
+    "and never files one into it. **A persona written to the wrong place is repaired by creating " +
+    "it in `.claude/agents/`** (`POST /api/docs`, whose `folder` may name a root), not by moving " +
+    "the misfiled one.",
   request: {
     params: DocIdParamSchema,
     headers: ActorHeaderSchema,

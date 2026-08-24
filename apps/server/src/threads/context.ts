@@ -63,6 +63,7 @@ import {
   findDocumentRow,
   loadDocument,
   notArchivedSql,
+  rankableNeighbourSql,
   readAnchorsMap,
   type LoadedDocument,
 } from "../docs/index.js";
@@ -422,6 +423,14 @@ interface RelatedHalf {
  * there is one, its parent — are excluded in the same fragment on both sides,
  * because the pack is context *around* the conversation and both are already in
  * it.
+ *
+ * `rankableNeighbourSql("d")` rides in the same fragment (SERVER-144). The SHARED-070
+ * audit measured **4 of 11 excerpt rows** in a pack naming `doc_skillcomment`,
+ * `doc_skillorchestrate`, `doc_skillconverse` and `doc_skillb8a2308c` — the
+ * agent's own instructions, quoted back to it as if they were the corpus. It
+ * cannot reach the **parent** block: a parent is read by id through
+ * `readableParent`, never through this candidate set, so a thread anchored on a
+ * skill still gets that skill above the conversation.
  */
 async function relatedExcerpts(
   db: ProjectionDb,
@@ -438,7 +447,7 @@ async function relatedExcerpts(
 
   const fetchLimit = overFetchLimit(CONTEXT_MAX_EXCERPTS);
   const scope: SemanticScope = {
-    where: `${notArchivedSql("d")} AND d.id NOT IN (${placeholders})`,
+    where: `${rankableNeighbourSql("d")} AND ${notArchivedSql("d")} AND d.id NOT IN (${placeholders})`,
     params,
   };
   // A query with nothing to embed is not a question the index can answer, and
@@ -452,7 +461,9 @@ async function relatedExcerpts(
         : await deps.semantic.forQuery(text, scope, fetchLimit);
 
   const linked = db
-    .prepare(LINKED_SQL(placeholders, `WHERE ${notArchivedSql("d")}`))
+    .prepare(
+      LINKED_SQL(placeholders, `WHERE ${rankableNeighbourSql("d")} AND ${notArchivedSql("d")}`),
+    )
     .all({ ...params, limit: fetchLimit }) as RawNeighbour[];
 
   // One list means the list itself: RRF over a single ranking re-derives its own

@@ -31,6 +31,7 @@ export type { TurnTextSubject } from "./fences.js";
 export {
   FORM_ANSWER_LABEL,
   answerThreadForm,
+  assertWritableForm,
   formAnswerBody,
   formCommitSubject,
   formRespondPayload,
@@ -78,7 +79,9 @@ export { mountThreadRoutes } from "./routes.js";
 export type { ThreadRoutesOptions } from "./routes.js";
 export { mountThreadScopeRoutes } from "./scope-route.js";
 export type { ThreadScopeDeps } from "./scope-route.js";
-export { markThreadSeen, movesForward, readSeenMarks } from "./seen.js";
+export { markThreadSeen } from "./seen.js";
+export { movesForward, readSeenMarks, threadUnread } from "./marks.js";
+export type { MarkReader } from "./marks.js";
 export { setThreadStatus } from "./status.js";
 export type { StatusChange } from "./status.js";
 export {

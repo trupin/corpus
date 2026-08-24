@@ -207,15 +207,46 @@
   .t-collapse { margin-left: 4px; color: var(--ink-3); font-size: 13px; padding: 0 5px; line-height: 1; }
   .t-collapse:hover { color: var(--ink); }
 
-  /* comments summary (reader header) */
+  /* Document / Comments switch (reader header) — the same pill 💬 always was,
+     now two-state: pressed while the list is showing. Colour changes, never
+     content, so flipping it moves no neighbour. The count sits in its own
+     two-character box for the same reason. */
   .reader-head, .focus-head { position: relative; }
   .comments-btn { font-family: var(--mono); font-size: 11px; color: var(--accent-ink); background: var(--accent-wash); border-radius: 99px; padding: 3px 9px; flex: none; margin-left: 8px; }
+  .comments-btn.on { background: var(--accent); color: var(--accent-ink); }
+  .comments-count { display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Still here, and still used: the ⋯ document menu is drawn with these. Only
+     the 💬 popover's use of them went. */
   .comments-pop { position: absolute; top: calc(100% + 6px); right: 12px; z-index: 20; width: 300px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; display: none; }
   .comments-pop.open { display: block; }
   .cp-item { display: block; width: 100%; padding: 8px 10px; border-radius: 7px; }
   .cp-item:hover { background: var(--surface-2); }
   .cp-quote { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
   .cp-meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+
+  /* ── The comments list (SPEC.md §10's comments-list rider) ──
+     Built out of treatments this file already defines: the filters are the
+     composer toggle's pill, the rows are `.thread-slot`s, and the composer at
+     the foot is `.composer`. Nothing here resizes because of what it holds —
+     each count sits in a reserved box and each quote truncates onto a title. */
+  .comments-tab { display: flex; flex-direction: column; gap: 14px; }
+  .cm-filters { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .cm-filter { display: flex; align-items: center; gap: 4px; }
+  .cm-filter-label { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); min-width: 6ch; }
+  .cm-opt { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px; padding: 2px 9px; cursor: pointer; flex: none; white-space: nowrap; }
+  .cm-opt:hover { color: var(--accent-ink); border-color: var(--accent); }
+  .cm-opt.on { color: var(--accent-ink); background: var(--accent-wash); border-color: var(--accent); }
+  .cm-count { display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+  .cm-opt.on .cm-count { color: inherit; }
+  .cm-rows { display: flex; flex-direction: column; gap: 12px; }
+  .cm-row { display: flex; flex-direction: column; gap: 4px; }
+  .cm-why { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--ink-3); min-width: 0; }
+  .cm-why-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+  .cm-row[data-anchor-state="orphaned"] .cm-why-text { color: var(--signal); }
+  .cm-reveal { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent-ink); background: var(--accent-wash); border-radius: 99px; padding: 2px 8px; cursor: pointer; }
+  .cm-reveal:hover { background: var(--accent); color: var(--accent-ink); }
+  .cm-empty { font-size: 12.5px; color: var(--ink-3); margin: 0; padding: 18px 0; }
+  .cm-new { margin-top: 4px; }
 
   /* focus-mode margin threads (Docs-style) — margin overrides collapse */
   .focus-inner.with-margin { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; max-width: calc(76ch + 330px); align-items: start; }
@@ -576,7 +607,7 @@
     <button class="back" id="focus-back" data-focus-back hidden>‹ Back</button>
     <button class="back" data-close-focus>✕ Close</button>
     <span class="focus-hint">esc closes · click anywhere to edit</span>
-    <span class="reader-id" id="focus-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments hidden>💬</button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button>
+    <span class="reader-id" id="focus-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments data-tab="document" aria-pressed="false" hidden>💬 <span class="comments-count">0</span></button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button>
   </div>
   <div class="focus-scroll" id="focus-scroll"><div class="focus-inner" id="focus-inner"></div></div>
 </div>
@@ -1080,6 +1111,120 @@ function readerHTML(docId) {
   return fm + changeNoticeHTML(docId) + `<h1 class="doc-title"${edT}>${esc(d.title)}</h1><div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
 }
 
+/* ── The comments list (SPEC.md §10, rider signed 2026-08-04) ──────────────
+   *"A document's comments are also available as a list, reached by a Document /
+   Comments switch in the reader's header and present in both column view and
+   full screen."*
+
+   It holds **every** thread on the document, filters on two independent axes,
+   reveals an anchored row at its anchor, says why an unanchored one has no
+   anchor, and carries the composer that starts a new thread with no selection.
+   Each row is a `.thread-slot` — the same object the below-body list draws — so
+   a conversation listed here can be read, replied to and resolved in place.
+
+   The counts are over the **whole** list rather than over what the other axis
+   leaves standing: a number that moved when its neighbour moved would be
+   answering a question nobody asked of it. */
+
+const CM_DEFAULT_FILTERS = { status: "all", anchor: "all" };
+function cmFilters(key) { return state.cmFilters[key] || CM_DEFAULT_FILTERS; }
+
+/* Where a conversation sits relative to the text. Three states, because the two
+   unanchored ones mean different things: a comment on the whole document never
+   had an anchor, and an orphan lost one. `orphaned` is drawn from the thread's
+   own flag — no fixture here sets it, and the prototype draws it if one does. */
+function anchorState(tid) {
+  const th = THREADS[tid];
+  if (!th || !th.quote) return "unanchored";
+  return th.orphaned ? "orphaned" : "anchored";
+}
+
+/* Why this row has no anchor, or what it is anchored to — one sentence each. */
+function anchorReason(tid) {
+  const th = THREADS[tid];
+  const quote = th && th.quote ? th.quote : "";
+  switch (anchorState(tid)) {
+    case "anchored": return `anchored to “${quote}”`;
+    case "orphaned": return `detached — the document no longer contains “${quote}”`;
+    default: return "about the whole document — it never had an anchor";
+  }
+}
+
+/* `esc` leaves quotation marks alone, which is right in text and wrong in an
+   attribute — and the sentences above carry a quote of somebody's own words. */
+const escAttr = (s) => esc(s).replace(/"/g, "&quot;");
+
+/* What an empty list says, and the two emptinesses are different sentences: a
+   list emptied by a filter names the filter and says how many rows it hides;
+   a document with no comments at all names the act instead of the absence. */
+function cmEmptyNotice(total, f) {
+  if (!total) return "No comments on this document yet. Write the first one below — no text selection needed.";
+  const words = [f.status === "all" ? "" : f.status, f.anchor === "all" ? "" : f.anchor].filter(Boolean);
+  const described = words.length ? words.join(", ") + " " : "";
+  return `No ${described}comments. ${total} ${total === 1 ? "comment is" : "comments are"} hidden by these filters.`;
+}
+
+function cmOptHTML(key, axis, value, label, count, current) {
+  return `<label class="cm-opt${current === value ? " on" : ""}" data-filter="${axis}:${value}">
+    <input type="radio" class="cm-opt-input" name="cm-${axis}-${key}" ${current === value ? "checked" : ""} data-cm-filter="${key}|${axis}|${value}" hidden> ${label} <span class="cm-count">${count}</span></label>`;
+}
+
+function commentsTabHTML(docId, key) {
+  const tids = docThreads(docId);
+  const f = cmFilters(key);
+  const at = (state) => tids.filter(t => anchorState(t) === state).length;
+  const counts = {
+    all: tids.length,
+    open: tids.filter(t => THREADS[t].status !== "resolved").length,
+    resolved: tids.filter(t => THREADS[t].status === "resolved").length,
+    anchored: at("anchored"),
+    unanchored: tids.length - at("anchored"),
+  };
+  const visible = tids.filter(t => {
+    const okStatus = f.status === "all" || (f.status === "resolved" ? THREADS[t].status === "resolved" : THREADS[t].status !== "resolved");
+    const okAnchor = f.anchor === "all" || (f.anchor === "anchored" ? anchorState(t) === "anchored" : anchorState(t) !== "anchored");
+    return okStatus && okAnchor;
+  });
+
+  const filters = `<div class="cm-filters">
+    <div class="cm-filter" role="group" aria-label="Status filter"><span class="cm-filter-label">Status</span>
+      ${cmOptHTML(key, "status", "all", "All", counts.all, f.status)}
+      ${cmOptHTML(key, "status", "open", "Open", counts.open, f.status)}
+      ${cmOptHTML(key, "status", "resolved", "Resolved", counts.resolved, f.status)}</div>
+    <div class="cm-filter" role="group" aria-label="Anchor filter"><span class="cm-filter-label">Anchor</span>
+      ${cmOptHTML(key, "anchor", "all", "All", counts.all, f.anchor)}
+      ${cmOptHTML(key, "anchor", "anchored", "Anchored", counts.anchored, f.anchor)}
+      ${cmOptHTML(key, "anchor", "unanchored", "Unanchored", counts.unanchored, f.anchor)}</div>
+  </div>`;
+
+  const rows = visible.length ? `<div class="cm-rows">${visible.map(tid => {
+    const state = anchorState(tid);
+    const reason = anchorReason(tid);
+    const reveal = state === "anchored"
+      ? `<button class="cm-reveal" data-reveal-thread="${tid}" title="Show this conversation at its anchor in the document">Show in document</button>` : "";
+    return `<section class="cm-row" data-comment-row="${tid}" data-anchor-state="${state}">
+      <div class="cm-why"><span class="cm-why-text" title="${escAttr(reason)}">${esc(reason)}</span>${reveal}</div>
+      ${threadCardHTML(tid, { context: false })}
+    </section>`;
+  }).join("")}</div>` : `<p class="cm-empty" role="status">${cmEmptyNotice(counts.all, f)}</p>`;
+
+  /* The composer §10's rider is about: a remark on the whole document starts its
+     own thread, with nothing selected first. Same box as a reply, different
+     words on the button and the hint. */
+  const composer = `<div class="composer cm-new">
+    <textarea rows="2" placeholder="Comment on this document — @ route · / skill · [[ link · paste or drop files" aria-label="New comment"></textarea>
+    <div class="composer-foot"><button class="clip" title="Attach files from disk">📎</button><span class="toggle on" data-toggle-agent>◉ ask agent</span><span>starts a new thread</span><button class="send">Comment ⌘↵</button></div>
+  </div>`;
+
+  return `<section class="comments-tab" aria-label="Comments on this document">${filters}${rows}${composer}</section>`;
+}
+
+/* Which of the two surfaces this reader is showing. Every render goes through
+   here, so the switch, a re-render and a restore cannot disagree. */
+function readerBodyHTML(key, docId) {
+  return state.tab[key] === "comments" ? commentsTabHTML(docId, key) : readerHTML(docId);
+}
+
 function backlinksHTML(d) {
   if (!d.backlinks || !d.backlinks.length) return "";
   return `<div class="backlinks"><h3>Referenced by</h3>` + d.backlinks.map(id =>
@@ -1095,7 +1240,7 @@ function colHTML(col) {
     </div>
     <div class="col-list">${visibleRows(col).map(r => rowHTML(r)).join("")}</div>
     <div class="reader">
-      <div class="reader-head"><button class="back" data-close-reader>‹ ${col.title}</button><span class="reader-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments hidden>💬</button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button><button class="expand" data-expand aria-label="Read full screen" title="Read full screen">⤢</button></div>
+      <div class="reader-head"><button class="back" data-close-reader>‹ ${col.title}</button><span class="reader-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments data-tab="document" aria-pressed="false" hidden>💬 <span class="comments-count">0</span></button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button><button class="expand" data-expand aria-label="Read full screen" title="Read full screen">⤢</button></div>
       <div class="reader-scroll"></div>
     </div>
   </section>`;
@@ -1108,6 +1253,8 @@ state.open = state.open || {};
 state.nav = state.nav || {};
 state.focusNav = state.focusNav || [];
 state.seen = state.seen || {};
+state.tab = state.tab || {};          // per reader: "document" (default) or "comments"
+state.cmFilters = state.cmFilters || {}; // per reader: the two comment-list axes
 state.addedCols = state.addedCols || [];
 // migrate old single-doc state to nav stacks
 for (const [colId, docId] of Object.entries(state.open)) {
@@ -1137,7 +1284,7 @@ function openDoc(colId, docId, opts = {}) {
     if (!cur || cur.d !== docId) stack.push({ d: docId, y: 0 });
   }
   $col.classList.add("reading");
-  scrollEl.innerHTML = readerHTML(docId);
+  scrollEl.innerHTML = readerBodyHTML(colId, docId);
   scrollEl.scrollTop = opts.restore ? (opts.y || 0) : 0;
   $col.querySelector(".reader-id").textContent = docId + " · git ✓";
   updateCommentsBtn($col, docId);
@@ -1171,12 +1318,30 @@ function goBack(colId, toList = false) {
   saveState();
 }
 
+/* ── The Document / Comments switch (SPEC.md §10's comments-list rider) ──
+   The head's 💬 is a two-state toggle: pressed while the list is showing.
+   It is NOT drawn unconditionally, and the deviation is deliberate — measured
+   in UI-063: at a 560px column with a parent title at its `max-width: 40%` cap
+   the head has 13px of slack and this control needs 61px. So it appears when
+   the document has conversations, **or** whenever the list is showing, so the
+   way back is never missing. A document with none reaches the list through the
+   ⋯ menu, which costs the row nothing. */
+function tabKey(scope) { return scope.id === "focus-overlay" ? "focus" : scope.id.replace("col-", ""); }
+function docTab(scope) { return state.tab[tabKey(scope)] === "comments" ? "comments" : "document"; }
+
 function updateCommentsBtn(scope, docId) {
   const btn = scope.querySelector("[data-comments]");
   if (!btn) return;
   const tids = docThreads(docId);
-  btn.hidden = !tids.length;
-  btn.textContent = `💬 ${tids.length}`;
+  const tab = docTab(scope);
+  btn.hidden = !tids.length && tab !== "comments";
+  btn.classList.toggle("on", tab === "comments");
+  btn.dataset.tab = tab;
+  btn.setAttribute("aria-pressed", String(tab === "comments"));
+  const label = `Comments — ${tab === "comments" ? `showing the list of ${tids.length} comment${tids.length === 1 ? "" : "s"} on this document. Back to the document` : `${tids.length} comment${tids.length === 1 ? "" : "s"} on this document`}`;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = `💬 <span class="comments-count">${tids.length}</span>`;
 }
 
 // find the column a doc "lives in" (first column listing it; fallback: finance)
@@ -1198,7 +1363,7 @@ function openFocus(docId, opts = {}) {
   }
   const inner = document.getElementById("focus-inner");
   inner.className = "focus-inner";
-  inner.innerHTML = readerHTML(docId);
+  inner.innerHTML = readerBodyHTML("focus", docId);
   document.getElementById("focus-id").textContent = docId + " · git ✓";
   $focus.classList.add("open");
   scrollEl.scrollTop = opts.restore ? (opts.y || 0) : 0;
@@ -1224,6 +1389,9 @@ function maybeMargin() {
   const d = DOCS[state.focus];
   const inner = document.getElementById("focus-inner");
   if (!inner || !d || (d.type !== "note" && d.type !== "skill")) return;
+  // The margin is a property of reading the **document**: the comments list
+  // holds the same cards and has its own layout for them.
+  if (state.tab["focus"] === "comments") return;
   layoutMargin(inner);
   // focus margin displays thread content → those threads are seen
   markSeen(docThreads(state.focus));
@@ -1510,6 +1678,10 @@ function toggleDocMenu(btn) {
   if (pop.classList.contains("open")) { pop.classList.remove("open"); return; }
   const isThread = d.type === "thread";
   pop.innerHTML = [
+    // First, because it is a place to go rather than a change to make — and
+    // because it is how a document with **no** conversations reaches the list
+    // at all: the head's toggle is not drawn until there is something to list.
+    `<button class="cp-item" data-dm-act="comments" data-dm-doc="${docId}"><div class="cp-quote">Comments</div><div class="cp-meta">every conversation on this document — and where a new one starts</div></button>`,
     `<button class="cp-item" data-dm-act="review" data-dm-doc="${docId}"><div class="cp-quote">Still current</div><div class="cp-meta">sets reviewed: now — resets staleness</div></button>`,
     isThread ? `<button class="cp-item" data-dm-act="resolve" data-dm-doc="${docId}"><div class="cp-quote">${THREADS[d.thread].status === "resolved" ? "Reopen" : "Resolve"}</div><div class="cp-meta">status flip, committed</div></button>` : "",
     `<button class="cp-item" data-dm-act="archive" data-dm-doc="${docId}"><div class="cp-quote">Archive</div><div class="cp-meta">reversible — hidden from default lists</div></button>`,
@@ -1529,6 +1701,10 @@ function docMenuAction(el) {
     return;
   }
   el.closest(".comments-pop").classList.remove("open");
+  if (act === "comments") {
+    setDocTab(el.closest("#focus-overlay") || el.closest(".col"), "comments");
+    return;
+  }
   const closeEverywhere = () => {
     COLUMNS.forEach(c => { c.rows = c.rows.filter(r => r.doc !== docId); });
     renderAllLists();
@@ -1619,30 +1795,36 @@ function openCompose() {
 }
 function closeCompose() { composeOverlay.classList.remove("open"); }
 
-/* comments summary popover + jump */
-function toggleCommentsPop(btn) {
-  const scope = btn.closest("#focus-overlay") || btn.closest(".col");
-  const docId = scope.id === "focus-overlay" ? state.focus : state.open[scope.id.replace("col-", "")];
-  const head = btn.parentElement;
-  let pop = head.querySelector(".comments-pop");
-  if (!pop) {
-    pop = document.createElement("div");
-    pop.className = "comments-pop";
-    head.appendChild(pop);
+/* ── The Document / Comments switch, and the reveal that leaves the list ──
+   The head's 💬 used to open a popover listing the same conversations with
+   nothing to do about any of them. It swaps the reader's body for the comments
+   list instead, and back — a surface that filters, replies, resolves and
+   writes. The popover it replaced is gone; `.comments-pop` and `.cp-item` are
+   not, because the ⋯ document menu is drawn with them. */
+function setDocTab(scope, tab, opts = {}) {
+  const key = tabKey(scope);
+  const docId = key === "focus" ? state.focus : state.open[key];
+  if (!docId) return;
+  state.tab[key] = tab;
+  saveState();
+  const scrollEl = key === "focus" ? document.getElementById("focus-scroll") : scope.querySelector(".reader-scroll");
+  const y = opts.keepScroll ? scrollEl.scrollTop : 0;
+  if (key === "focus") {
+    const inner = document.getElementById("focus-inner");
+    inner.className = "focus-inner";
+    inner.innerHTML = readerBodyHTML("focus", docId);
+    requestAnimationFrame(maybeMargin);
+  } else {
+    scrollEl.innerHTML = readerBodyHTML(key, docId);
   }
-  if (pop.classList.contains("open")) { pop.classList.remove("open"); return; }
-  pop.innerHTML = docThreads(docId).map(tid => {
-    const th = THREADS[tid];
-    const last = th.turns[th.turns.length - 1];
-    return `<button class="cp-item" data-cp-item="${tid}">
-      <div class="cp-quote">${th.quote ? `"${esc(th.quote)}"` : "whole-document thread"}</div>
-      <div class="cp-meta">${th.turns.length} turns · last: ${last ? last.who : "—"} · ${th.status}</div></button>`;
-  }).join("") || `<div class="cp-meta" style="padding:8px 10px">No threads on this document yet — select some text to start one.</div>`;
-  pop.classList.add("open");
+  scrollEl.scrollTop = y;
+  updateCommentsBtn(scope, docId);
 }
-function jumpToThread(el, tid) {
-  const scope = el.closest("#focus-overlay") || el.closest(".col");
-  el.closest(".comments-pop").classList.remove("open");
+
+/* Revealing means leaving the list: the body is not mounted while the list is,
+   so the switch flips first and the jump happens against the document. */
+function revealThread(scope, tid) {
+  setDocTab(scope, "document");
   const card = scope.querySelector(`.thread-card[data-thread="${tid}"]`);
   if (!card) return;
   card.closest(".thread-slot")?.classList.add("expanded");
@@ -1660,7 +1842,7 @@ function refreshReaders() {
       const scrollEl = $col.querySelector(".reader-scroll");
       const y = scrollEl.scrollTop;
       const expanded = [...scrollEl.querySelectorAll(".thread-slot.expanded")].map(s => s.dataset.slotThread);
-      scrollEl.innerHTML = readerHTML(state.open[colId]);
+      scrollEl.innerHTML = readerBodyHTML(colId, state.open[colId]);
       expanded.forEach(tid => scrollEl.querySelector(`.thread-slot[data-slot-thread="${tid}"]`)?.classList.add("expanded"));
       scrollEl.scrollTop = y;
     }
@@ -1670,7 +1852,7 @@ function refreshReaders() {
     const y = scrollEl.scrollTop;
     const inner = document.getElementById("focus-inner");
     inner.className = "focus-inner";
-    inner.innerHTML = readerHTML(state.focus);
+    inner.innerHTML = readerBodyHTML("focus", state.focus);
     scrollEl.scrollTop = y;
     requestAnimationFrame(maybeMargin);
   }
@@ -1746,13 +1928,33 @@ document.addEventListener("click", (e) => {
   const closeF = e.target.closest("[data-close-focus]");
   if (closeF) { closeFocus(); return; }
 
-  if (!e.target.closest(".comments-pop") && !e.target.closest("[data-comments]") && !e.target.closest("[data-doc-menu]"))
+  // `.comments-pop` is the ⋯ document menu's box now, and nothing else opens
+  // one — so the toggle beside it is an ordinary outside click and closes it.
+  if (!e.target.closest(".comments-pop") && !e.target.closest("[data-doc-menu]"))
     document.querySelectorAll(".comments-pop.open").forEach(p => p.classList.remove("open"));
 
   const cbtn = e.target.closest("[data-comments]");
-  if (cbtn) { toggleCommentsPop(cbtn); return; }
-  const cpi = e.target.closest("[data-cp-item]");
-  if (cpi) { jumpToThread(cpi, cpi.dataset.cpItem); return; }
+  if (cbtn) {
+    const scope = cbtn.closest("#focus-overlay") || cbtn.closest(".col");
+    setDocTab(scope, cbtn.dataset.tab === "comments" ? "document" : "comments");
+    return;
+  }
+  const rev = e.target.closest("[data-reveal-thread]");
+  if (rev) {
+    revealThread(rev.closest("#focus-overlay") || rev.closest(".col"), rev.dataset.revealThread);
+    return;
+  }
+  const cmf = e.target.closest("[data-cm-filter]");
+  if (cmf) {
+    const [key, axis, value] = cmf.dataset.cmFilter.split("|");
+    state.cmFilters[key] = { ...cmFilters(key), [axis]: value };
+    saveState();
+    const scope = cmf.closest("#focus-overlay") || cmf.closest(".col");
+    // A filter change re-renders the list and nothing else: the reader stays
+    // where it was, exactly as a live update would leave it.
+    setDocTab(scope, "comments", { keepScroll: true });
+    return;
+  }
   const tchip = e.target.closest("[data-toggle-slot]");
   if (tchip) { tchip.closest(".thread-slot").classList.add("expanded"); markSeen([tchip.dataset.toggleSlot]); return; }
   const tcoll = e.target.closest("[data-collapse-slot]");

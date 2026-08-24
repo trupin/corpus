@@ -294,4 +294,124 @@ describe("doctor", () => {
       "unparseable",
     ]);
   });
+
+  /**
+   * SERVER-132. An ill-shaped `resident:` block fails the parse as a whole —
+   * the right rule, and unchanged — and before this the loss was silent: the
+   * designation left the roster, the resident's next park was refused, and no
+   * surface named the file.
+   */
+  describe("an unreadable resident block (SERVER-132)", () => {
+    const thread = (id: string, resident: string): string =>
+      `---\nid: ${id}\ntype: thread\ntitle: ${id}\nparent: null\nanchor: null\n` +
+      `created: 2026-01-01T00:00:00Z\nupdated: 2026-01-01T00:00:00Z\n${resident}---\n\n` +
+      `## user · 2026-01-01T00:00:00Z\n\nHello.\n`;
+
+    const GOOD = "resident:\n  name: researcher\n  docId: doc_prof001\n";
+    // The reviewer's own case: a hand edit turning the weight into a number.
+    const ILL = "resident:\n  name: researcher\n  docId: doc_prof001\n  weight: 3\n";
+
+    it("is reported as a warning that names the file and the failing key", () => {
+      write("data/threads/th_bad001.md", thread("th_bad001", ILL));
+      cleanWorkspace();
+
+      const report = doctor(config);
+      const finding = (report.warnings ?? []).find((w) => w.kind === "resident_unreadable");
+      expect(finding).toBeDefined();
+      expect(finding?.path).toBe("data/threads/th_bad001.md");
+      expect(finding?.detail).toContain("`weight`");
+      expect(finding?.detail).toContain("data/threads/th_bad001.md");
+    });
+
+    it("never moves the verdict or the exit code — the projection is correct", () => {
+      write("data/threads/th_bad001.md", thread("th_bad001", ILL));
+      cleanWorkspace();
+
+      const report = doctor(config);
+      // §11's report-only family: the thread genuinely has no readable
+      // designation, every reader agrees, and no rebuild changes a byte.
+      expect(report.ok).toBe(true);
+      expect(report.drift).toEqual([]);
+    });
+
+    it("leaves the parse rule alone: the thread still reads as undesignated", () => {
+      write("data/threads/th_bad001.md", thread("th_bad001", ILL));
+      cleanWorkspace();
+
+      const db = openProjection(config, { populate: false });
+      const row = db
+        .prepare("SELECT resident_designated AS d, resident_name AS n FROM threads WHERE id = ?")
+        .get("th_bad001") as { d: number; n: string | null };
+      db.close();
+      expect(row).toMatchObject({ d: 0, n: null });
+    });
+
+    it("says nothing about a block that parses, or about a thread with none", () => {
+      write("data/threads/th_good01.md", thread("th_good01", GOOD));
+      write("data/threads/th_none01.md", thread("th_none01", ""));
+      cleanWorkspace();
+
+      expect((doctor(config).warnings ?? []).map((w) => w.kind)).not.toContain(
+        "resident_unreadable",
+      );
+    });
+
+    it("costs no file read: `stats.hashed` stays zero on a warm workspace", () => {
+      write("data/threads/th_bad001.md", thread("th_bad001", ILL));
+      cleanWorkspace();
+
+      // The constraint `semantic-integrity.ts` states and this pass inherits.
+      // It is why the reason is a projected column rather than a walk.
+      expect(doctor(config).stats.hashed).toBe(0);
+    });
+  });
+
+  /**
+   * SERVER-065. The document walk answered the empty list for a directory it
+   * could not read, so `doctor` compared the projection against a corpus it had
+   * silently truncated — and reported `ok`.
+   */
+  describe("a directory `doctor` cannot list (SERVER-065)", () => {
+    const breakDocsRoot = (): void => {
+      rmSync(join(config.workspaceRoot, "data", "docs"), { recursive: true, force: true });
+      writeFileSync(join(config.workspaceRoot, "data", "docs"), "not a directory", "utf8");
+    };
+
+    it("is reported as a warning naming the path and the reason", () => {
+      cleanWorkspace();
+      breakDocsRoot();
+
+      const warnings = doctor(config).warnings ?? [];
+      const finding = warnings.find((w) => w.kind === "unlistable_directory");
+      expect(finding).toBeDefined();
+      expect(finding?.path).toBe("data/docs");
+      expect(finding?.detail).toContain("ENOTDIR");
+    });
+
+    it("is a warning and not drift, so `rebuild && doctor` stays achievable", () => {
+      cleanWorkspace();
+      breakDocsRoot();
+
+      // Neither side can see into it: a rebuild cannot index what it cannot
+      // list, and this check cannot look either — so files and rows agree
+      // exactly and there is nothing a rebuild would fix.
+      const report = doctor(config);
+      expect(report.drift.filter((entry) => entry.kind !== "orphan_row")).toEqual([]);
+    });
+
+    it("keeps the skipped directory out of `stats.files` rather than counting it empty", () => {
+      cleanWorkspace();
+      const before = doctor(config).stats.files;
+      breakDocsRoot();
+
+      expect(doctor(config).stats.files).toBeLessThan(before);
+    });
+
+    it("says nothing on a workspace whose roots are merely absent", () => {
+      cleanWorkspace();
+      expect((doctor(config).warnings ?? []).map((w) => w.kind)).not.toContain(
+        "unlistable_directory",
+      );
+    });
+  });
 });

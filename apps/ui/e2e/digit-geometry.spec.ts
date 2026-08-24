@@ -486,7 +486,7 @@ test.describe("the pending row's clock", () => {
             eventId: "evt_pending",
             type: "comment.created",
             status: "in-progress",
-            started: since,
+            enqueued: since,
             originId: "th_pending",
           },
         ],

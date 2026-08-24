@@ -672,16 +672,22 @@ describe("answering a form", () => {
     expect(FormAnswerResponseSchema.parse(response)).toEqual(response);
   });
 
-  /** A resolved thread stops re-triggering the agent (SPEC.md §8), so null is legal. */
+  /**
+   * A thread the agent is not `engaged` in enqueues nothing, so null is legal
+   * (SPEC.md §8). **The fixture used to be a `resolved` thread**, which
+   * SERVER-062 turned into the opposite case: a person's answer reopens it and
+   * does enqueue, so an example built that way would have taught a reader the
+   * one wrong thing (CONTRACT-034).
+   */
   it("accepts a null event id but never a missing one", () => {
     const base = FormAnswerResponseSchema.parse({
       thread: {
         id: "th_x9y8",
         title: "Re: rates",
-        status: "resolved" as const,
+        status: "open" as const,
         parent: null,
         anchor: null,
-        agent: "engaged" as const,
+        agent: "none" as const,
         resident: null,
         created: "2026-07-19T10:05:00Z",
         updated: "2026-07-19T10:09:00Z",

@@ -317,3 +317,68 @@ describe("GET /api/docs/{id}/related", () => {
     expect((await get("/api/docs/doc_a/related", {})).status).toBe(401);
   });
 });
+
+/**
+ * SERVER-144, on the §7 rider signed 2026-08-24. Measured on a fresh workspace
+ * in the SHARED-070 audit: the #1 related document for a user's mortgage note
+ * was `doc_skillorchestrate`.
+ *
+ * Unlike `/api/search`, this route declares no `type` parameter to defer to, so
+ * the exclusion is unconditional — and it is the **wider** list, because a
+ * neighbour is an answer to "what else bears on this?" and a stored query bears
+ * on nothing. `template` is in neither list: it is the user's own writing.
+ */
+describe("the product's own machinery is never a neighbour (SERVER-144)", () => {
+  let machinery: Workspace;
+
+  const neighbours = async (id: string): Promise<string[]> =>
+    (await relatedDocs(machinery.db, id, RelatedQuerySchema.parse({}))).related.map(
+      (row) => row.id,
+    );
+
+  beforeAll(() => {
+    machinery = createWorkspace("s144-related");
+    machinery.doc({
+      id: "doc_subject",
+      title: "Mortgage",
+      body: "Refers to [[doc_skill01]], [[doc_agent01]], [[doc_tpl01]], [[doc_view01]], [[doc_brd01]] and [[doc_peer01]].",
+    });
+    machinery.doc({ id: "doc_peer01", title: "Peer note", body: "An ordinary note." });
+    machinery.doc({
+      id: "doc_skill01",
+      path: ".claude/skills/comment/SKILL.md",
+      title: "Comment",
+      body: "The skill.",
+    });
+    machinery.doc({
+      id: "doc_agent01",
+      path: ".claude/agents/resident.md",
+      title: "Resident",
+      body: "The agent definition.",
+    });
+    machinery.doc({ id: "doc_tpl01", type: "template", title: "Template", body: "A template." });
+    machinery.doc({ id: "doc_view01", type: "view", title: "A view", body: "A stored query." });
+    machinery.doc({ id: "doc_brd01", type: "board", title: "A board", body: "A column list." });
+    machinery.reproject();
+  });
+
+  afterAll(() => {
+    machinery.close();
+  });
+
+  it("answers with the corpus and not with the machinery", async () => {
+    expect((await neighbours("doc_subject")).sort()).toEqual(["doc_peer01", "doc_tpl01"]);
+  });
+
+  it("keeps a template, which the user wrote", async () => {
+    // The rider's carve-out, pinned on the neighbour surface too: the wider
+    // list adds `view` and `board`, never `template`.
+    expect(await neighbours("doc_subject")).toContain("doc_tpl01");
+  });
+
+  it("still answers for a skill as the subject, which is looked up by id", async () => {
+    // The exclusion is about neighbours. `doc related` on a skill keeps
+    // working; it simply reports the documents that refer to it.
+    expect(await neighbours("doc_skill01")).toEqual(["doc_subject"]);
+  });
+});

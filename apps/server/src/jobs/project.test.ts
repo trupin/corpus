@@ -6,7 +6,7 @@ import { createQueueService, type QueueService } from "../queue/index.js";
 import {
   UNKNOWN_EVENT_TYPE,
   UNKNOWN_INSTANT,
-  listJobRows,
+  listJobPage,
   readJobRow,
   recordJobLine,
   resolveOrigin,
@@ -117,14 +117,14 @@ describe("recordJobLine", () => {
   });
 });
 
-describe("listJobRows", () => {
+describe("listJobPage", () => {
   it("returns the contract's row, most recently active first", async () => {
     const older = await enqueue({ threadId: THREAD });
     clock += 60_000;
     const newer = await enqueue({});
     recordJobLine(ws.db, older, { ts: "2026-07-27T09:02:00Z", line: "worked on it" });
 
-    const rows = listJobRows(ws.db, 50);
+    const { jobs: rows, total, truncated } = listJobPage(ws.db, 50);
 
     expect(rows.map((row) => JobSchema.parse(row))).toEqual(rows);
     expect(rows.map((row) => row.eventId)).toEqual([older, newer]);
@@ -134,6 +134,9 @@ describe("listJobRows", () => {
       // `<type> · <originTitle>` row says the job actually is (CONTRACT-012).
       type: "comment.created",
       status: "pending",
+      // Two instants that used to be one (CONTRACT-029): this job entered the
+      // queue at 09:00 and did not speak until 09:02, and both facts survive.
+      enqueued: "2026-07-27T09:00:00Z",
       started: "2026-07-27T09:02:00Z",
       updated: "2026-07-27T09:02:00Z",
       lastLine: "worked on it",
@@ -152,8 +155,18 @@ describe("listJobRows", () => {
       lastLine: null,
       originId: null,
       originTitle: null,
-      started: "2026-07-27T09:01:00Z",
+      enqueued: "2026-07-27T09:01:00Z",
+      // **Null, not the enqueue instant under another name.** A job that has not
+      // written a line has not started, and the old coalesce made those two
+      // states indistinguishable — which is what reset an elapsed-time display
+      // the moment the agent began talking (CONTRACT-029).
+      started: null,
+      // `updated` falls back to `enqueued`, never to the null `started`.
+      updated: "2026-07-27T09:01:00Z",
     });
+
+    // Nothing was cut, so the pair says so.
+    expect({ total, truncated }).toEqual({ total: 2, truncated: false });
   });
 
   it("honours the requested count", async () => {
@@ -162,15 +175,89 @@ describe("listJobRows", () => {
       await enqueue({});
     }
 
-    expect(listJobRows(ws.db, 1)).toHaveLength(1);
-    expect(listJobRows(ws.db, 50)).toHaveLength(3);
+    expect(listJobPage(ws.db, 1).jobs).toHaveLength(1);
+    expect(listJobPage(ws.db, 50).jobs).toHaveLength(3);
   });
 
   it("lists no row for a `.gitkeep` — only `evt_*.json` is an event", async () => {
     ws.write(".corpus/queue/pending/.gitkeep", "");
     await enqueue({});
 
-    expect(listJobRows(ws.db, 50)).toHaveLength(1);
+    expect(listJobPage(ws.db, 50).jobs).toHaveLength(1);
+  });
+});
+
+/**
+ * CONTRACT-035: a windowed answer used to read exactly like a complete one, and
+ * the direction it failed in was silent — a job past the cut is indistinguishable
+ * from no job.
+ */
+describe("listJobPage says whether the window cut anything", () => {
+  const enqueueMany = async (count: number): Promise<void> => {
+    for (let index = 0; index < count; index += 1) {
+      clock += 1000;
+      await enqueue({});
+    }
+  };
+
+  it("counts every matching row, not the page, and says the page is short", async () => {
+    await enqueueMany(5);
+
+    expect(listJobPage(ws.db, 2)).toMatchObject({ total: 5, truncated: true });
+    expect(listJobPage(ws.db, 2).jobs).toHaveLength(2);
+  });
+
+  it("is not truncated when the page holds exactly `recent` rows", async () => {
+    // The guess `jobs.length === recent` would call this truncated, which is why
+    // `truncated` is derived from `total` instead.
+    await enqueueMany(3);
+
+    expect(listJobPage(ws.db, 3)).toMatchObject({ total: 3, truncated: false });
+  });
+
+  it("counts over the same `WHERE` the rows were selected with, never over everything", async () => {
+    const failed = await enqueue({ docId: DOC });
+    await queue.claimAll();
+    await queue.fail(failed, "boom");
+    await enqueueMany(4);
+
+    // Four pending plus one failed exist; the query asked about the failed one.
+    expect(listJobPage(ws.db, 50, { status: ["failed"] })).toMatchObject({
+      total: 1,
+      truncated: false,
+    });
+    expect(listJobPage(ws.db, 2, { status: ["failed", "pending"] })).toMatchObject({
+      total: 5,
+      truncated: true,
+    });
+  });
+
+  it("reports zero for a query nothing matches", async () => {
+    await enqueueMany(2);
+
+    expect(listJobPage(ws.db, 50, { status: ["abandoned"] })).toEqual({
+      jobs: [],
+      total: 0,
+      truncated: false,
+    });
+  });
+
+  /**
+   * The `originId` query drops the window (CONTRACT-030), so it is answered
+   * completely and `truncated` is false however many rows it found — including
+   * far more than `recent`.
+   */
+  it("is never truncated for an origin query, whatever `recent` says", async () => {
+    for (let index = 0; index < DEFAULT_RECENT_JOBS + 3; index += 1) {
+      clock += 1000;
+      await enqueue({ threadId: THREAD });
+    }
+
+    const page = listJobPage(ws.db, 1, { originId: THREAD });
+
+    expect(page.jobs).toHaveLength(DEFAULT_RECENT_JOBS + 3);
+    expect(page.total).toBe(DEFAULT_RECENT_JOBS + 3);
+    expect(page.truncated).toBe(false);
   });
 });
 
@@ -180,7 +267,7 @@ describe("listJobRows", () => {
  * question used to be answered by scanning the first one's answer, which put it
  * inside a recency window — and the failure was silent and one-directional.
  */
-describe("listJobRows filtered to one document", () => {
+describe("listJobPage filtered to one document", () => {
   const bury = async (count: number): Promise<void> => {
     for (let index = 0; index < count; index += 1) {
       clock += 1000;
@@ -193,9 +280,10 @@ describe("listJobRows filtered to one document", () => {
     await bury(DEFAULT_RECENT_JOBS + 10);
 
     // The console cannot see it any more — that is the bug, reproduced.
-    expect(listJobRows(ws.db, DEFAULT_RECENT_JOBS).map((row) => row.eventId)).not.toContain(wanted);
+    expect(listJobPage(ws.db, DEFAULT_RECENT_JOBS).jobs.map((row) => row.eventId)) //
+      .not.toContain(wanted);
     // The predicate can, and `recent` no longer bounds the answer.
-    expect(listJobRows(ws.db, DEFAULT_RECENT_JOBS, { originId: THREAD }).map((r) => r.eventId)) //
+    expect(listJobPage(ws.db, DEFAULT_RECENT_JOBS, { originId: THREAD }).jobs.map((r) => r.eventId)) //
       .toEqual([wanted]);
   });
 
@@ -206,7 +294,7 @@ describe("listJobRows filtered to one document", () => {
     // The user keeps editing; the rest of the queue moves on for a long time.
     await bury(DEFAULT_RECENT_JOBS + 5);
 
-    const outstanding = listJobRows(ws.db, DEFAULT_RECENT_JOBS, {
+    const { jobs: outstanding } = listJobPage(ws.db, DEFAULT_RECENT_JOBS, {
       originId: THREAD,
       status: ["pending", "in-progress", "deferred"],
     });
@@ -224,8 +312,8 @@ describe("listJobRows filtered to one document", () => {
     expect(
       resolveOrigin(ws.db, JSON.stringify({ threadId: "th_gone0000", parentId: DOC })),
     ).toEqual({ id: DOC, title: DOC_TITLE });
-    expect(listJobRows(ws.db, 50, { originId: DOC }).map((row) => row.eventId)).toEqual([id]);
-    expect(listJobRows(ws.db, 50, { originId: "th_gone0000" })).toEqual([]);
+    expect(listJobPage(ws.db, 50, { originId: DOC }).jobs.map((row) => row.eventId)).toEqual([id]);
+    expect(listJobPage(ws.db, 50, { originId: "th_gone0000" }).jobs).toEqual([]);
   });
 
   it("keeps the thread's own jobs apart from its parent's", async () => {
@@ -233,10 +321,12 @@ describe("listJobRows filtered to one document", () => {
     clock += 1000;
     const onDoc = await enqueue({ docId: DOC });
 
-    expect(listJobRows(ws.db, 50, { originId: THREAD }).map((row) => row.eventId)).toEqual([
+    expect(listJobPage(ws.db, 50, { originId: THREAD }).jobs.map((row) => row.eventId)).toEqual([
       onThread,
     ]);
-    expect(listJobRows(ws.db, 50, { originId: DOC }).map((row) => row.eventId)).toEqual([onDoc]);
+    expect(listJobPage(ws.db, 50, { originId: DOC }).jobs.map((row) => row.eventId)).toEqual([
+      onDoc,
+    ]);
   });
 
   it("filters by status alone without dropping the console's window", async () => {
@@ -246,17 +336,17 @@ describe("listJobRows filtered to one document", () => {
     clock += 1000;
     await enqueue({ docId: DOC });
 
-    expect(listJobRows(ws.db, 50, { status: ["failed"] }).map((row) => row.eventId)).toEqual([
+    expect(listJobPage(ws.db, 50, { status: ["failed"] }).jobs.map((row) => row.eventId)).toEqual([
       failed,
     ]);
     // Status without an origin is still the console's list, so `recent` applies.
-    expect(listJobRows(ws.db, 1, { status: ["failed", "pending"] })).toHaveLength(1);
+    expect(listJobPage(ws.db, 1, { status: ["failed", "pending"] }).jobs).toHaveLength(1);
   });
 
   it("returns nothing rather than everything for an origin with no jobs", async () => {
     await enqueue({ docId: DOC });
 
-    expect(listJobRows(ws.db, 50, { originId: "doc_nothing1" })).toEqual([]);
+    expect(listJobPage(ws.db, 50, { originId: "doc_nothing1" }).jobs).toEqual([]);
   });
 
   it("leaves the unfiltered query's ordering and tie-break untouched", async () => {
@@ -268,8 +358,8 @@ describe("listJobRows filtered to one document", () => {
     // the part an added `WHERE` must not disturb.
     recordJobLine(ws.db, older, { ts: "2026-07-27T09:02:00Z", line: "worked on it" });
 
-    expect(listJobRows(ws.db, 50).map((row) => row.eventId)).toEqual([older, newer]);
-    expect(listJobRows(ws.db, 50, {}).map((row) => row.eventId)).toEqual([older, newer]);
+    expect(listJobPage(ws.db, 50).jobs.map((row) => row.eventId)).toEqual([older, newer]);
+    expect(listJobPage(ws.db, 50, {}).jobs.map((row) => row.eventId)).toEqual([older, newer]);
   });
 });
 
@@ -294,7 +384,10 @@ describe("readJobRow", () => {
       .run("evt_handmade0", "comment.created", "pending", null, "{}");
 
     expect(readJobRow(ws.db, "evt_handmade0")).toMatchObject({
-      started: UNKNOWN_INSTANT,
+      // The stand-in stands in for the *enqueue* instant, which the contract
+      // requires. `started` has an honest answer already — it never logged.
+      enqueued: UNKNOWN_INSTANT,
+      started: null,
       updated: UNKNOWN_INSTANT,
     });
   });

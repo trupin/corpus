@@ -247,6 +247,20 @@ export function Column(props: ColumnProps): ReactElement {
       onDragOver={kanban === null ? undefined : kanban.onDragOver}
       onDrop={kanban === null ? undefined : kanban.onDrop}
       onMouseOver={onActivate}
+      /*
+       * `onMouseMove` beside `onMouseOver`, because a movement's **boundary**
+       * events are dispatched before its `mousemove` (UI-033). The first real
+       * movement after a keyboard latch therefore had its `mouseover` evaluated
+       * while the latch was still armed, and the `mousemove` that released the
+       * latch carried no activation of its own — so the column adopted the board
+       * only on the *next* element-boundary crossing. Inside one uniform region
+       * that can be a long way.
+       *
+       * Free in steady state: `activate` is a `setWanted` to the value already
+       * there, which React bails out of, so a pointer resting in an active
+       * column re-renders nothing.
+       */
+      onMouseMove={onActivate}
       onFocus={onActivate}
       onDragStart={(event: DragEvent<HTMLElement>) => {
         event.dataTransfer.effectAllowed = "move";

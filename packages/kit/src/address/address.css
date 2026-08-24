@@ -130,6 +130,8 @@
    * the reserved height is computed from both, and a pair that drifts apart is
    * a box that no longer holds the number of lines it clamps to.
    *
+   * ## The count is measured now, and this is only its floor (UI-143)
+   *
    * **Four lines was measured at a 218px measure** (UI-127), when the card was
    * 240px wide at every host and could not be anything else. Against the real
    * statements that measure produced:
@@ -143,36 +145,36 @@
    *       deleted, or moved out of .claude/agents/ since — last seen
    *       17m ago — the orchestrator will answer until it returns         6
    *
-   * A lapsed lane is ordinary, so the box held it whole, and §7's
-   * missing-profile report was the one statement that overflowed — revealed on
-   * this element's own `title` and on the row's, which has carried
-   * `name — note — line` since UI-126.
+   * UI-142 then widened the measure and left the four alone, and that made the
+   * mismatch the other way round: at a reply composer's ~378px no §7 statement
+   * reaches four lines, so an ordinary card carried about two lines of white
+   * space. **The defect was never the number's value.** The reservation was
+   * expressed in *lines* while the thing it reserves for is measured in
+   * *characters at a width*, and after UI-142 the width is no longer one thing —
+   * it is the room, which differs per host and moves when a window does.
    *
-   * **UI-142 widened the measure and deliberately left this number alone.** The
-   * card now takes its width from the room (`.address-pop`), so a reply
-   * composer's measure is ~378px and the six-line statement above wraps to four
-   * — the reserve is no longer reached by anything §7 can produce, and the one
-   * statement that used to be revealed here is now read. The cost is the other
-   * way round: on an ordinary two-line statement the box holds about two lines
-   * of white space.
+   * So the count is a **reading**, taken in `ComposerAddress.tsx`'s layout
+   * effect at the width the card actually has, over every statement this roster
+   * can produce — which is what SHARED-057 clause 3 asks for in as many words:
+   * *"the box is sized for the text people actually have, measured against real
+   * content"*. It is not the statement currently showing. That distinction is
+   * the whole of UI-127: a box that follows the shown sentence grows on hover
+   * and oscillates, while a box sized against the closed set of sentences the
+   * roster holds cannot move while a pointer travels over it.
    *
-   * That is a worse fit and not a defect under either rider, and every way of
-   * closing it was worse than leaving it:
+   * `AgentLane.summary` is free text, so the reading is capped by the room in
+   * the same breath — see `ComposerAddress.tsx`. A statement past the cap
+   * truncates in place and is revealed whole on this element's own `title` and
+   * on the row's, which has carried `name — note — line` since UI-126.
    *
-   * - **A smaller line count** is a constant re-measured at one measure, and the
-   *   measure is no longer one thing — it is the room, which differs per host
-   *   and moves when a window does. A number right at 378px truncates the
-   *   ordinary statement at the 240px floor.
-   * - **A reserve fitted to the statements** reads the content to size the box,
-   *   which is exactly what SHARED-057 forbids and what UI-127's oscillation was.
-   *
-   * So the reserve stays what it is: a fixed count of lines that no real
-   * sentence overflows. Closing the gap wants its own measurement and its own
-   * issue, and `AgentLane.summary` is free text in any case — the sentence is
-   * unbounded from above, so some ceiling has to exist here whatever its value.
+   * **One is a floor and not a measurement.** Every browser replaces it in the
+   * layout effect, before the first paint of an open card, so nobody sees it. It
+   * stands only where there is no layout to ask — jsdom, a server render — and
+   * one line is the honest answer there: a box that has not been measured must
+   * not reserve room it cannot justify.
    */
   --says-line-height: 1.6;
-  --says-lines: 4;
+  --says-lines: 1;
 }
 
 /* ── The line ── */
@@ -560,7 +562,10 @@ button.address-line:focus-visible {
  *
  * The height is fixed and the clamp holds the text to the same count, so the
  * two agree whichever way the sentence is short of or over the reserve. See
- * `--says-lines` on `.composer-address` for the measurement behind the number.
+ * `--says-lines` on `.composer-address` for where the count comes from — since
+ * UI-143 it is a reading taken at the card's own width rather than a number,
+ * and the two declarations below are what keep the reading and the clamp one
+ * measurement.
  */
 .recipient-says {
   color: var(--ink-3);

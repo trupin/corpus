@@ -469,7 +469,11 @@ describe("createAutoCommitter", () => {
       });
       expect(outcome).toEqual({ kind: "skipped", reason: "git is not available on PATH" });
     } finally {
-      process.env["PATH"] = path;
+      // Same idiom as HOME above. Unreachable in practice — a process with no
+      // PATH could not have started vitest — but a restore that writes the
+      // string "undefined" is the wrong shape wherever it appears.
+      if (path === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = path;
     }
   });
 
@@ -924,7 +928,13 @@ describe("createAutoCommitter", () => {
       expect(outcome.kind).toBe("committed");
       expect(r.log("%an|%cn")[0]).toBe("user|Corpus");
     } finally {
-      process.env["HOME"] = home;
+      // Delete rather than assign back an undefined: `process.env` coerces
+      // undefined to the string "undefined", so an unset HOME would come back
+      // as `"undefined"` and every later git call in this file would resolve
+      // global config against `./undefined`. XDG_CONFIG_HOME below already got
+      // this right; HOME did not (PR #61 re-review sweep).
+      if (home === undefined) delete process.env["HOME"];
+      else process.env["HOME"] = home;
       if (xdg === undefined) delete process.env["XDG_CONFIG_HOME"];
       else process.env["XDG_CONFIG_HOME"] = xdg;
     }

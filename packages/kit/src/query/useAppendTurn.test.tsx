@@ -22,8 +22,9 @@ const SERVER_THREAD = {
   anchor: null,
   agent: "none",
   resident: null,
-  turns: [{ author: "agent", ts: "2026-07-27T09:00:00Z", body: "First." }],
-} as unknown as Thread;
+  unread: false,
+  turns: [{ author: "agent", ts: "2026-07-27T09:00:00Z", body: "First.", model: null }],
+} satisfies Thread;
 
 /** The server stamps its own timestamp; SPEC.md §6 makes it unique and monotonic. */
 const SERVER_TURN = { author: "user", ts: "2026-07-27T10:00:00Z", body: "Mine." } as const;

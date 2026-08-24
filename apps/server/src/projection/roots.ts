@@ -164,7 +164,46 @@ type WalkState = {
   readonly visitedDirs: Set<string>;
   readonly seenFiles: Set<string>;
   readonly out: EnumeratedFile[];
+  readonly unlistable: UnlistableDirectory[];
 };
+
+/**
+ * A directory the walk could not list, and why (SERVER-065).
+ *
+ * **The whole shape of the fix, stated once and applied three times.** A
+ * directory the projection cannot list is *skipped*, *excluded from the counts*,
+ * and *reported* — never fatal, and never silent. `ENOENT` is the one cause that
+ * stays silent, because a root that does not exist genuinely is empty.
+ *
+ * Reported by being **returned**, not logged, which is SERVER-063's shape one
+ * walk over: the reader knows the fault, and the caller holds the channel. On
+ * the boot and projection path that channel is `db.logger.error` — the one level
+ * a server running at `silent` still writes, and only an operator can repair an
+ * unreadable directory. On `corpus db doctor` it is a report-only warning, which
+ * is the surface an operator is already looking at.
+ */
+export type UnlistableDirectory = {
+  /** Workspace-relative where one can be derived, absolute otherwise. */
+  readonly path: string;
+  readonly reason: string;
+};
+
+/** What every reader here puts in a report field for a thrown value. */
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * Whether a failed directory read means *absent* rather than *unreadable*.
+ *
+ * The distinction the two comments in this file and in `unindexable.ts` used to
+ * blur: their reasoning — "a root that does not exist is simply empty, and a
+ * directory that vanished mid-walk is a removal" — is exactly right for the two
+ * causes it names, and covers `EACCES` by accident. An unreadable directory is
+ * not empty, and reporting it as empty makes a partial projection indisplayable
+ * from a complete one.
+ */
+const isAbsent = (error: unknown): boolean =>
+  error instanceof Error && "code" in error && error.code === "ENOENT";
 
 /**
  * `readdirSync(..., { recursive: true })` does not descend through symlinked
@@ -177,9 +216,19 @@ function walk(state: WalkState, dir: string, depth: number): void {
   let entries: Dirent<string>[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
     // A root that does not exist is simply empty, and a directory that vanished
-    // mid-walk is a removal — neither is a projection failure.
+    // mid-walk is a removal — neither is a projection failure. Every *other*
+    // cause is (SERVER-065): an unreadable directory holds documents this walk
+    // will not return, and answering "empty" for it reports a partial corpus as
+    // a complete one. It is still not fatal — boot is a read, and the rest of
+    // the corpus is worth projecting — so it is skipped and reported.
+    if (!isAbsent(error)) {
+      state.unlistable.push({
+        path: workspaceRelativePath(state.workspaceRoot, dir) ?? dir,
+        reason: causeOf(error),
+      });
+    }
     return;
   }
 
@@ -238,28 +287,57 @@ function walk(state: WalkState, dir: string, depth: number): void {
   }
 }
 
+/** {@link enumerateDocuments}'s answer: what it found, and what it could not read. */
+export type DocumentEnumeration = {
+  readonly files: EnumeratedFile[];
+  /**
+   * Directories skipped because they could not be listed — see
+   * {@link UnlistableDirectory}. Returned rather than logged so the caller can do
+   * both things the issue asks for: report the skip, and keep it out of the
+   * counts. A caller that could not see it would have no choice but to report a
+   * partial projection as a complete one.
+   */
+  readonly unlistable: readonly UnlistableDirectory[];
+};
+
 /**
  * Every document file under every root, sorted by workspace-relative path.
  * Sorted because path order is the tie-break for duplicate ids and the thing
  * that makes two rebuilds byte-identical (§12 M1).
  */
-export function enumerateDocuments(workspaceRoot: string): EnumeratedFile[] {
+export function enumerateDocuments(workspaceRoot: string): DocumentEnumeration {
   const absoluteRoot = resolve(workspaceRoot);
   const seenFiles = new Set<string>();
   const out: EnumeratedFile[] = [];
+  const unlistable: UnlistableDirectory[] = [];
   for (const root of DOCUMENT_ROOTS) {
     const dir = join(absoluteRoot, ...root.path.split("/"));
     let real: string;
     try {
       real = realpathSync(dir);
-    } catch {
+    } catch (error) {
+      // A root that is not there is not a finding; a root that is there and
+      // cannot be resolved is the same fault the walk reports (SERVER-065).
+      if (!isAbsent(error)) {
+        unlistable.push({ path: root.path, reason: causeOf(error) });
+      }
       continue;
     }
     walk(
-      { root, workspaceRoot: absoluteRoot, visitedDirs: new Set([real]), seenFiles, out },
+      {
+        root,
+        workspaceRoot: absoluteRoot,
+        visitedDirs: new Set([real]),
+        seenFiles,
+        out,
+        unlistable,
+      },
       dir,
       0,
     );
   }
-  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return {
+    files: out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+    unlistable,
+  };
 }

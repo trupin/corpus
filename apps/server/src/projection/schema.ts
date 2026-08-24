@@ -199,8 +199,20 @@
  * CONTRACT-071 has no key there — so the rebuild this bump triggers is the whole
  * migration and every carried-over row correctly reads NULL, which the contract
  * defines as "no id to compare".
+ *
+ * 22 → 23 (SERVER-132): `threads.resident_problem` — why a `resident:` block
+ * that is *there* did not parse. The parse rule is unchanged: an ill-shaped
+ * block still yields no designation, because you cannot honour half a
+ * designation. What changed is that the reason stops being discarded. The
+ * designation disappears from the roster, the resident's next park is refused,
+ * work reroutes to the orchestrator, and before this column nothing anywhere
+ * said why. `corpus db doctor` reports it as a report-only warning (§11), which
+ * is a SQL question over this column and reads no file — doctor's promise that a
+ * warm workspace re-reads nothing is what forced the fact into a column rather
+ * than into a walk. NULL for every thread whose block is absent or good, which
+ * is nearly all of them.
  */
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -461,7 +473,17 @@ CREATE TABLE threads (
   -- listener launched by one designation compares against the lane's row to
   -- learn it has been replaced. Projected for the reason the three above are:
   -- the roster answers from these columns and opens no file per lane.
-  resident_designation_id TEXT
+  resident_designation_id TEXT,
+  -- Why a resident: block that IS there did not parse, or NULL (SERVER-132).
+  -- Not a fifth fact about a designation -- it is the absence of one, with its
+  -- reason. residentOrNull fails the whole block on any fault, deliberately,
+  -- because honouring half a designation would substitute "none chosen" for a
+  -- choice somebody made. Failing it silently substitutes NOBODY for that
+  -- choice, which is louder. This column is where the reason goes, so
+  -- corpus db doctor can say it. Asked only of a STANDALONE thread: SPEC.md
+  -- section 7 allows the designation nowhere else, so a resident: key on a
+  -- parented thread has lost nothing and is not a finding.
+  resident_problem TEXT
 );
 
 CREATE TABLE anchors (

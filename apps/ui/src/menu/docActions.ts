@@ -7,6 +7,7 @@ import {
   useSetDocArchived,
   useSetThreadStatus,
   useUpdateDoc,
+  warningNotices,
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
@@ -258,8 +259,15 @@ export function useDocActions(
    * survive the surface that started the write.
    */
   const setArchived = useSetDocArchived({
-    onSuccess: () => {
+    onSuccess: (response) => {
       onNotify({ tone: "info", message: unarchivedMessage(subject.title) });
+      /*
+       * The same channel `useRowActions`' Archive reports (UI-106). Unarchiving a
+       * skill folder is the direction that raises `carried_reconciliation`: a
+       * nested document swept back under the enabled root has its stale
+       * `status: archived` corrected, and nothing else in this response says so.
+       */
+      for (const notice of warningNotices(response.warnings)) onNotify(notice);
     },
     onError: (error) => {
       onNotify({ tone: "error", message: `Unarchive failed — ${error.message}` });

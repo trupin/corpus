@@ -53,6 +53,12 @@ jobs:
       # than a full compile. Fail-closed by omission — the pre-commit hook passes
       # `--tolerate-unreachable-registry`, and this step deliberately does not, so
       # an unreachable registry fails CI instead of quietly reporting success.
+      # That flag now covers an unanswering registry and nothing else (INFRA-015):
+      # npm failing to start, being killed, or writing more than the capture
+      # buffer holds is a check that did not run, and fails closed in BOTH
+      # callers. Before that, an overflowing report read as "the registry did not
+      # answer" and the local hook proceeded — on exactly the trees with the most
+      # findings.
       - name: npm audit (zero findings, any severity)
         run: node --import tsx scripts/check-audit.ts
       # Build first: cross-workspace imports resolve through each package's
@@ -77,8 +83,31 @@ jobs:
       # unit → e2e → merge → gate. The unit run enforces no threshold of its own
       # (INFRA-004): it emits raw istanbul coverage, the e2e run emits raw V8,
       # and the merged report below is the single place the 90% bar is applied.
+      # `--includeTaskLocation` and the extra JSON reporter cost this run nothing
+      # and are what let the budget report below join each test to the timeout its
+      # own source declares. No second suite run is spent on it.
       - name: unit tests (raw coverage, no gate)
-        run: npm run test:coverage
+        run: |
+          mkdir -p coverage-raw
+          npm run test:coverage -- --includeTaskLocation \
+            --reporter=default --reporter=json \
+            --outputFile.json=coverage-raw/vitest-results.json
+      # Names every test at or above 50% of its own timeout budget — the class that
+      # cannot be told apart from a regression when it goes red (INFRA-020).
+      #
+      # **Findings do not fail this job, and a report that could not be produced
+      # does.** There is no `continue-on-error` here and that is deliberate: the
+      # script exits 0 with findings and 1 only when it measured nothing. Findings
+      # must not block because the numerator is wall-clock time on a shared runner,
+      # so a blocking form would go red because the runner was busy — the exact
+      # failure the check exists to prevent. A missing report must block, because a
+      # check that did not run has to say so rather than print a clean summary it
+      # did not earn (the INFRA-015 rule, applied here).
+      #
+      # Making findings block is a gate-policy decision and is the user's.
+      - name: slow-test budget report (findings do not block; a missing report does)
+        if: always()
+        run: npm run test:slow:report
       # The `compgen -G "apps/ui/e2e/*.spec.ts"` guard that used to wrap this is
       # gone: the specs exist, and e2e output is now an INPUT to the gate. A run
       # that quietly produced none has to fail, not skip.

@@ -221,20 +221,44 @@ describe("downloadAndVerify", () => {
 
   it("refuses a mismatch and leaves nothing behind", async () => {
     // The bytes never reach the disk, so "nothing was installed" is not a
-    // promise to clean up — there is nothing to clean up. Asserted against the
-    // real temporary directory, because a leftover would live there.
-    const staging = (): readonly string[] =>
-      readdirSync(tmpdir()).filter((entry) => entry.startsWith("corpus-upgrade-"));
-    const before = staging();
-    await expect(
-      downloadAndVerify({
-        fetch: serve(`${"b".repeat(64)}  corpus-0.4.0.tgz\n`),
-        assets,
-        version: "0.3.0",
-        timeoutMs: 1000,
-      }),
-    ).rejects.toMatchObject({ code: "upgrade_checksum_mismatch", exitCode: ExitCode.refused });
-    expect(staging()).toEqual(before);
+    // promise to clean up — there is nothing to clean up. Asserted by listing
+    // the temporary directory `downloadAndVerify` would have staged into.
+    //
+    // **That directory is a private one for the length of this test**, and it
+    // has to be. `install.ts` stages with `mkdtemp(tmpdir(), "corpus-upgrade-")`,
+    // and `index.test.ts` exercises the same function in another vitest worker
+    // against the *same* OS temp directory — so listing the real one compared a
+    // neighbour's in-flight staging directory against this call's, and the whole
+    // suite went red on a test that passes alone. `os.tmpdir()` reads `TMPDIR`
+    // on every call, so redirecting it is enough, and it makes the assertion
+    // stronger rather than weaker: the expected listing is now *empty* rather
+    // than "whatever happened to be there beforehand".
+    //
+    // **Restore by deletion when there was nothing to restore.** Assigning
+    // `undefined` into `process.env` coerces it to the *string* `"undefined"`,
+    // so `os.tmpdir()` then answers `"undefined"` and every later `mkdtemp`
+    // fails with `ENOENT`. macOS always sets `TMPDIR`, so this is invisible
+    // there and red on Linux CI — which is exactly what it did (PR #61).
+    const staging = mkdtempSync(join(tmpdir(), "corpus-cli025-staging-"));
+    scratch.push(staging);
+    const outerTmp = process.env["TMPDIR"];
+    process.env["TMPDIR"] = staging;
+
+    try {
+      expect(readdirSync(staging)).toEqual([]);
+      await expect(
+        downloadAndVerify({
+          fetch: serve(`${"b".repeat(64)}  corpus-0.4.0.tgz\n`),
+          assets,
+          version: "0.3.0",
+          timeoutMs: 1000,
+        }),
+      ).rejects.toMatchObject({ code: "upgrade_checksum_mismatch", exitCode: ExitCode.refused });
+      expect(readdirSync(staging)).toEqual([]);
+    } finally {
+      if (outerTmp === undefined) delete process.env["TMPDIR"];
+      else process.env["TMPDIR"] = outerTmp;
+    }
   });
 
   it("refuses a download that is not HTTPS", async () => {

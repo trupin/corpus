@@ -217,11 +217,11 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
-| CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
+| CLI-024 | SIGPIPE guard for piped output (eval finding) | done | P2 | CLI-001 |
 | UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
-| INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
+| INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | done | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
-| UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |
+| UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | done | P2 | UI-031 |
 | PLUGINS-008 | Legacy frontmatter-items todo renders a silently empty body (dogfood 2026-08-02) | done | P1 | PLUGINS-005 |
 | PLUGINS-009 | Todo item rows: right-click quick actions — toggle, comment, open thread (dogfood) | done | P2 | PLUGINS-005, PLUGINS-003 |
 | PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | done | P2 | PLUGINS-005, UI-037 |
@@ -232,7 +232,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-039 | Column query editor: autocomplete + syntax help (dogfood) | done | P2 | — |
 | SERVER-051 | Embed worker emits SSE invalidations for index status (§10 pill rider) | done | P1 | — |
 | UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | closed | P1 | PLUGINS-009 |
-| UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | todo | P2 | — |
+| UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | done | P2 | — |
 | UI-040 | Console strip: semantic-index pill with live progress (§10 rider, signed) | done | P1 | SERVER-051 |
 | UI-041 | Copy button on fenced blocks in rendered turns (§10 canvas rider, signed) | done | P1 | — |
 | AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | done | P2 | — |
@@ -242,7 +242,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | done | P2 | — |
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
-| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
+| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | done | P2 | — |
 
 Note: the SPEC §10 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 
@@ -275,8 +275,8 @@ never auto-merged. The audience for that report is the agent.
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
 | SHARED-013 | Diff truncation is line-aligned, not hunk-aligned (SIGNED 2026-08-05, applied to §9.2) | done | P2 | SERVER-058 |
-| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SHARED-013 |
-| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SHARED-013 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | done | P2 | SHARED-013 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | done | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
@@ -383,7 +383,7 @@ belongs to the same fix wave.
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
 | UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | closed | P2 | UI-073 |
-| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
+| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | done | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | closed | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
@@ -411,7 +411,7 @@ belongs to the same fix wave.
 | SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
 | SERVER-089 | `rollback.test.ts` fails in CI at a git object the fixture should have — **blocks PR #41** | done | P0 | — |
 | CLI-037 | Corpus maintains the workspace's git; git no longer maintains it in the background (SERVER-089) | done | P0 | SERVER-089 |
-| UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
+| UI-106 | A carried effect is not an error, and the UI renders every warning as one | done | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
@@ -430,13 +430,13 @@ belongs to the same fix wave.
 | UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | done | P2 | SHARED-022, CONTRACT-039, SERVER-069, AGENT-015 |
 | AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | done | P2 | SHARED-022 |
 | PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | closed | P2 | UI-082 |
-| CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
+| CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | done | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
-| UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
-| SERVER-065 | Three projection readers swallow a failed `readdir` silently | todo | P2 | — |
+| UI-080 | Ten e2e sites send a key straight after click() with no focus wait | done | P2 | — |
+| SERVER-065 | Three projection readers swallow a failed `readdir` silently | done | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
@@ -467,13 +467,13 @@ belongs to the same fix wave.
 | UI-089 | The changelog's older entries clip, and the clip reports its size | done | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
-| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | todo | P2 | SERVER-066 |
+| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | done | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable — needs a one-line SPEC amendment signed | blocked | P2 | — |
-| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
-| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
+| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | done | P2 | — |
+| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | done | P2 | CLI-031 |
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
 | SERVER-084 | Count the unanswered forms on a row, from the query that already finds them | done | P1 | CONTRACT-040 |
-| SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
+| SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | done | P2 | SERVER-068, CONTRACT-038 |
 | UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | done | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
@@ -628,7 +628,7 @@ guarantees the watcher commits it as the `user` edit it is.
 | AGENT-023 | Teach the revert loop, and the operator's git path | done | P0 | SHARED-042 |
 | SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
-| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
+| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | done | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | done | P1 | — |
 | SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
 | CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
@@ -719,7 +719,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | AGENT-032 | The stand-down rule is written in both skills, and they now contradict | done | P0 | — |
 | CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
-| SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
+| SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | done | P2 | — |
 | UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | done | P1 | — |
 
@@ -741,9 +741,9 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | done | P2 | SERVER-113 |
-| CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
+| CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | done | P2 | SERVER-112 |
 | CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
-| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
+| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
 | CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
@@ -806,8 +806,8 @@ ones their own files carry.
 | SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
 | SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
 | SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
-| CONTRACT-029 | `Job.started` means two different instants | todo | P2 | — |
-| CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
+| CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
+| CLI-039 | A hung `git gc` leaves children the timeout does not kill | done | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
 
@@ -831,19 +831,20 @@ through.
 | --- | --- | --- | --- | --- |
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | done | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
-| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
-| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
-| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | todo | P2 | — |
-| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
+| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | done | P1 | — |
+| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | done | P1 | SERVER-113 |
+| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | done | P2 | — |
+| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | done | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
 had to pick a precedence between an artifact's own `origin` and its `parent`
 chain when the two reach different designated scopes, and §7 states a guarantee
 ("an artifact belongs to at most one scope") whose stated reason — origin is
-single-valued — covers only one of the two routes into a scope. The code took
-origin-first and ships that way; what needs a signed rider is the spec sentence
-that made both readings look correct. It needs user sign-off, so it cannot ride
-in v0.10.0 unattended.
+single-valued — covers only one of the two routes into a scope. The rider was
+signed on 2026-08-24 and §7 now says the parent chain decides, which is what
+`apps/server/src/queue/scope.ts` has always done — the walk tries the parent
+branch first and takes both edges. My own note above recorded origin-first, and
+that was wrong. All three riders in this table are signed and applied.
 
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
@@ -1014,12 +1015,12 @@ uncertain.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
-| SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | todo | P2 | SERVER-124 |
-| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
+| SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
+| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
-| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
-| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
-| CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | todo | P3 | — |
+| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | done | P2 | — |
+| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | done | P2 | — |
+| CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | done | P3 | — |
 
 ## Phase 36 — Residents you can see, stop, and choose (2026-08-19, user feedback)
 
@@ -1058,7 +1059,7 @@ not a behaviour change.
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
 | SHARED-056 | §7 enumerates the core events, §9.2 the routes, §10 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
-| SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
+| SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | done | P2 | SERVER-129 |
 
 ## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
 
@@ -1079,7 +1080,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
-| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
+| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | done | P2 | — |
 | UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | done | P2 | — |
 
@@ -1221,12 +1222,12 @@ left in a report.
 | --- | --- | --- | --- | --- |
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | done | P0 | — |
-| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
+| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | done | P2 | UI-063 |
 | SHARED-060 | The comments switch arrives with the first conversation (SIGNED 2026-08-21, applied) | done | P1 | — |
 | SHARED-061 | A surface is as large as its place allows (SIGNED 2026-08-21, applied) | done | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
-| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
-| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
+| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | done | P2 | UI-142 |
+| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | done | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
 | UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | done | P1 | UI-145 |
 | UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | done | P2 | UI-149 |
@@ -1234,7 +1235,7 @@ left in a report.
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
 | UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
-| CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
+| CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | done | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
 | UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |
@@ -1597,7 +1598,7 @@ suite cannot confirm. Both halves stand without it.
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
 | AGENT-048 | The standing style rule is paid twice per context | done | P2 | opus | SHARED-070 |
 | AGENT-049 | `queue idle` prints a shape the skill does not promise | done | P2 | opus | SHARED-070 |
-| SERVER-144 | Retrieval ranks the product's own skills into every pack — **rider signed 2026-08-24; re-implement without the `template` exclusion** | todo | P1 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack — **rider signed 2026-08-24; re-implemented without the `template` exclusion** | done | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row | done | P1 | opus | SHARED-070 |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | done | P1 | opus | — |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | done | P1 | opus | — |
@@ -1605,3 +1606,47 @@ suite cannot confirm. Both halves stand without it.
 | AGENT-051 | The skills collect what the CLI now saves (CLI-064, CLI-065 reports) | done | P1 | opus | CLI-064, CLI-065 |
 | CLI-068 | `queue claim-all` inside a batch loses its payload, silently (AGENT-051 finding) | done | P0 | opus | CLI-064 |
 | AGENT-052 | The prohibition on batching a claim is lifted (CLI-068 follow-up) | done | P2 | opus | CLI-068 |
+
+## Phase 45 — The product stops saying things that are not so (2026-08-24, v0.22.0 scope)
+
+A debt release with one sentence behind it. Every issue in it is the product
+telling a reader something untrue: prose that describes behaviour the code
+stopped having, a contract that declares less than the route returns, an error
+that reaches the log and not the response, help that misdescribes its own flags,
+a mockup still drawing UI we deleted, and tests that fail without naming why.
+
+**The issues keep their existing phase rows.** `scripts/check-issues.ts` allows
+exactly one PLAN row per id, so a release that gathers old issues records itself
+here in prose rather than restating thirty-five rows. The scope is:
+
+- **The product describes itself wrongly** — CONTRACT-029, CONTRACT-032,
+  CONTRACT-034, CONTRACT-035, CONTRACT-036, CONTRACT-053, CONTRACT-054,
+  CONTRACT-065, CONTRACT-073, CLI-028, CLI-052, SERVER-120, SERVER-126,
+  SHARED-054, UI-141
+- **Failures that disappear** — SERVER-065, SERVER-067, SERVER-070, SERVER-132,
+  UI-106, CLI-024, CLI-039, CLI-041
+- **The suite stops lying about why it failed** — INFRA-020 and its instances
+  SERVER-053, UI-033, UI-046, UI-080, plus INFRA-015
+- **Surfaces that misreport** — UI-115, UI-124, UI-138, UI-143, UI-144
+- **SERVER-144 returns**, on the rider signed 2026-08-24 and without the
+  `template` exclusion that was never signed
+
+Left out deliberately: SHARED-011 and UI-101 (features, each its own release),
+SERVER-050 + UI-035 and INFRA-026 + CLI-034 (feature arcs, and the only two
+blocked issues in the tracker), UI-083 (its own issue says rewrite, not patch),
+UI-060, CONTRACT-056, CONTRACT-057, SERVER-101 and SERVER-106 (the last two
+would need a fifth signed rider in one day), and AGENT-043 (a question for the
+user, not work).
+
+**Filed during the phase.**
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | done | P2 | opus | — |
+| CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | done | P1 | opus | SERVER-144 |
+| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
+| SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
+| UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
+| UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
+| SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |
+| SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | todo | P2 | opus | INFRA-020 |

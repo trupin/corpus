@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { useCreateThread } from "../query/useCreateThread.js";
 import { useSetDocArchived } from "../query/useSetDocArchived.js";
 import { useUpdateDoc } from "../query/useUpdateDoc.js";
+import { warningNotices } from "../warnings/warningNotice.js";
 
 /**
  * The three quick actions a stale row grows (SPEC.md §5, §10). Each one is a
@@ -101,8 +102,18 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
    * only part that mattered missing. Only `POST …/archive` moves the folder.
    */
   const archiveWrite = useSetDocArchived({
-    onSuccess: () => {
+    onSuccess: (response) => {
       notify("info", archivedMessage(row.title));
+      /*
+       * §7's folder move can carry documents this act never named — a nested
+       * `SKILL.md` disabled with the folder around it, and its frontmatter
+       * corrected to match where it landed. The server reports each one on §11's
+       * warning channel, and this hook used to drop the whole channel on the
+       * floor: the act narrated itself and said nothing about the skills it
+       * silently disabled. Rendered as information, because a carried effect is
+       * the spec working (UI-106).
+       */
+      for (const notice of warningNotices(response.warnings)) onNotify?.(notice);
     },
     onError: (error) => {
       setLeaving(false);

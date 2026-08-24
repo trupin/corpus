@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -216,6 +217,70 @@ function clipperOf(node: HTMLElement): HTMLElement | null {
  * `clientWidth` rather than the border-box right, because a scrollport's
  * scrollbar is room the card does not have.
  */
+/**
+ * How tall the statement box has to be to hold **any** sentence this roster can
+ * put in it, at the width the card currently has — in lines, and `null` where
+ * there is no layout to ask (UI-143).
+ *
+ * ## Why this is a reading and not a constant
+ *
+ * The reserve exists so that previewing a lane changes the words and never the
+ * height (SHARED-057, UI-127). It was four lines, measured once at the 240px
+ * card UI-142 removed; at the room-derived widths that replaced it no §7
+ * statement reaches four, so an ordinary card reserved about two lines of white
+ * space. SHARED-061 answers that directly — *"a bound is derived from the room,
+ * not chosen as a number"* — and the room here is a width, so the honest reserve
+ * is the height these sentences occupy **at that width**.
+ *
+ * ## Why measuring the content is not the thing SHARED-057 forbids
+ *
+ * The rule bans a box that follows **what it is showing**: that box grows on
+ * hover, the row under the pointer moves out from under it, and the surface
+ * oscillates. This measures the *closed set* of sentences the roster can
+ * produce, none of which changes while a pointer travels over the list — so the
+ * answer is the same before, during and after every preview. SHARED-057's own
+ * clause 3 asks for exactly this: *"the box is sized for the text people
+ * actually have, measured against real content"*.
+ *
+ * ## How
+ *
+ * A probe carrying `.recipient-says`' own class, appended beside the real
+ * element so every ancestor rule that styles it applies, given the real
+ * element's width and released from the clamp. Each candidate sentence in turn,
+ * then one short word for the height of a single line — measured rather than
+ * computed from `line-height`, so a fallback font that rounds differently
+ * cannot make the count and the reserved height disagree.
+ *
+ * It is `position: absolute` and `visibility: hidden`, so it is out of flow and
+ * cannot itself change the card it is measuring inside.
+ */
+function reserveLines(says: HTMLElement, statements: readonly string[]): number | null {
+  const probe = document.createElement("span");
+  probe.className = says.className;
+  probe.setAttribute("aria-hidden", "true");
+  probe.style.cssText =
+    "position:absolute;visibility:hidden;pointer-events:none;height:auto;max-height:none;-webkit-line-clamp:none;";
+  probe.style.width = `${String(says.getBoundingClientRect().width)}px`;
+  const host = says.parentElement;
+  if (host === null) return null;
+  host.appendChild(probe);
+  try {
+    probe.textContent = "x";
+    const line = probe.getBoundingClientRect().height;
+    // No layout to ask — jsdom, a server render. The CSS floor stands, and the
+    // card is not measured into a shape nobody can see.
+    if (line <= 0) return null;
+    let tallest = line;
+    for (const text of statements) {
+      probe.textContent = text;
+      tallest = Math.max(tallest, probe.getBoundingClientRect().height);
+    }
+    return Math.max(1, Math.round(tallest / line));
+  } finally {
+    probe.remove();
+  }
+}
+
 function roomFor(card: HTMLElement, host: HTMLElement | null): { ceiling: number; right: number } {
   const clip = clipperOf(card);
   if (clip === null) {
@@ -291,6 +356,44 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       : "";
 
   /**
+   * **Every sentence the statement box can be asked to hold** — the closed set
+   * the reserve is measured against (UI-143).
+   *
+   * Composed exactly as the rendered statement is, one row at a time, plus the
+   * no-row sentence for a preview naming a lane the roster has stopped listing.
+   * Deliberately independent of `previewed`: a set that changed with the pointer
+   * would put the measurement back inside the loop the reserve exists to break.
+   *
+   * A **pick** does change it — `statementFor`'s verb differs for a lane the
+   * person chose — and that is a deliberate act with no pointer feedback, so
+   * refitting on it moves nothing out from under anybody.
+   */
+  const statements = useMemo(
+    () => [
+      statementFor(undefined, false),
+      ...rows.map((row) => {
+        const text = statementFor(
+          row,
+          row.lane === recipient.chosen,
+          row.lane === recipient.refused,
+        );
+        const note =
+          row.lane === recipient.computed && row.lane !== recipient.refused
+            ? ` (${DEFAULT_ROW_NOTE})`
+            : "";
+        return `${text}${note}`;
+      }),
+    ],
+    [rows, recipient.chosen, recipient.computed, recipient.refused],
+  );
+  /** The fit's dependency on that set: its contents, never its identity. */
+  const saysKey = statements.join(" ");
+  // Read through a ref, so the fit depends on what the sentences say rather
+  // than on the array identity a render happened to build.
+  const candidates = useRef(statements);
+  candidates.current = statements;
+
+  /**
    * Fits the open card into the space above the line, and says so when the lane
    * list had to give (UI-130).
    *
@@ -303,14 +406,22 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
    * scrollport instead of behind the reader's head.
    *
    * **It runs on opening and never on previewing.** Its dependencies are the
-   * open flag and the roster's length: hovering or focusing a row changes
-   * neither, so nothing here can move a row out from under a pointer, which is
-   * the loop UI-127 closed and SPEC.md §10's rider forbids.
+   * open flag, the roster's length and the sentences the roster can say:
+   * hovering or focusing a row changes none of them, so nothing here can move a
+   * row out from under a pointer, which is the loop UI-127 closed and SPEC.md
+   * §10's rider forbids.
+   *
+   * **The statement's reserve is fitted here too, since UI-143.** It belongs in
+   * this pass rather than in CSS for the same reason the other three bounds do:
+   * it is a height at the card's own width, and the width is a reading of the
+   * room that CSS cannot take. See {@link reserveLines} for what is measured and
+   * why measuring it is not the content-driven sizing SHARED-057 forbids.
    */
   useLayoutEffect(() => {
     const card = pop.current;
     if (!open || card === null) return undefined;
     const list = lanes.current;
+    const says = card.querySelector<HTMLElement>(".recipient-says");
     const clip = clipperOf(card);
     // The row the address line was placed in — a composer foot, an action bar.
     // Read from the control's own parent rather than from a class name: the kit
@@ -329,6 +440,42 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       const room = roomFor(card, host);
       const width = Math.max(0, room.right - card.getBoundingClientRect().left);
       card.style.setProperty("--address-pop-w", `${String(Math.round(width))}px`);
+
+      /*
+       * **Then the statement's reserve, at the width just set** (UI-143).
+       *
+       * Two readings, and both are the room's rather than the content's:
+       *
+       * - *What the sentences need* — {@link reserveLines}, the tallest of the
+       *   closed set at this width. Below UI-127's old four on a wide card,
+       *   above it on a narrow one, and right at both.
+       * - *What the card can spare* — the room, minus everything in the card
+       *   that cannot shrink, minus one lane row. It is the same floor the
+       *   height fit takes below, for the same reason: a card that gave the
+       *   statement every line it wanted could squeeze the list to nothing, and
+       *   a list with no rows is a recipient control that offers no recipients.
+       *
+       * The smaller wins, and a statement past it truncates in place with the
+       * whole of it on this element's title and the row's — SHARED-057's
+       * reveal, which is what makes capping honest. `AgentLane.summary` is free
+       * text, so the cap is not hypothetical: without it one long summary would
+       * decide the card.
+       */
+      if (says !== null) {
+        const want = reserveLines(says, candidates.current);
+        if (want !== null) {
+          // Measured at the floor, so the card's own height carries exactly one
+          // line of statement and the spare below is the room for the rest.
+          card.style.setProperty("--says-lines", "1");
+          const one = says.getBoundingClientRect().height;
+          const bare = card.getBoundingClientRect();
+          const fixed = bare.height - (list?.scrollHeight ?? 0);
+          const bareRow = list?.firstElementChild?.getBoundingClientRect().height ?? 0;
+          const spare = bare.bottom - room.ceiling - POP_MARGIN - fixed - bareRow;
+          const affordable = one > 0 ? 1 + Math.max(0, Math.floor(spare / one)) : want;
+          card.style.setProperty("--says-lines", String(Math.min(want, affordable)));
+        }
+      }
 
       const free = card.getBoundingClientRect();
       const listFull = list?.scrollHeight ?? 0;
@@ -378,7 +525,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       window.removeEventListener("resize", fit);
       clip?.removeEventListener("scroll", fit);
     };
-  }, [open, rows.length]);
+  }, [open, rows.length, saysKey]);
 
   return (
     <div

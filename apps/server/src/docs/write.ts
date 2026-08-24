@@ -277,15 +277,43 @@ export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
  * of `.claude/skills/**` would only ever fire on files this system never wrote.
  * The agent-def root is where SERVER-122 made the gap consequential and where
  * AGENT-034 measured the silent failure, so it is where the rule starts.
- * Extending it later is this one expression — and it is now a cheaper decision
- * than it was: the reason first given for holding the line here was that
- * `frontmatter-invalid` blocks a save, so requiring the fields of hand-authored
- * skills would make them unwritable. That is no longer true of either root (see
- * {@link isClaudeRootFrontmatter}), so what remains is only whether every
- * description-less `SKILL.md` in an existing workspace should start failing
- * `corpus doc check` — a product call, not a safety one. **Residual: §7:399's
- * Corpus half is now true under every root this function names (SERVER-124);
- * its Claude Code half is true for agent-defs and still not for skills.**
+ *
+ * **SERVER-126 decided it stops there too, and the reason is measured rather
+ * than argued.** `name` is not something Claude Code requires of a skill: it
+ * discovers a skill by the directory holding its `SKILL.md`, and only reads
+ * `name` when the file offers one. Counted over the twelve hand-authored
+ * `SKILL.md` files in this repository's own `.claude/skills/` — a real
+ * population of skills in daily use, all of them loading correctly — **eleven
+ * carry no `name:` at all**. Extending this expression is one edit and it brings
+ * the `name` rule with it, so it would report 92% of a working population as
+ * faults. A finding that fires on files that work is how a workspace learns to
+ * ignore exit 6, and it would take the nine genuine `.claude/agents` findings
+ * down with it.
+ *
+ * **The `description` half alone was considered and rejected**, though it is
+ * defensible: a skill with no description is one Claude Code cannot choose to
+ * dispatch to. It is rejected because it buys almost nothing and costs real
+ * machinery. Nothing in this system can *create* such a skill —
+ * `SkillCreateRequestSchema` requires `description`, in exactly those words —
+ * so the finding can only ever fire on a file a person edited by hand, which is
+ * a finding about their editing. Splitting the pair also means
+ * `claudeCodeFrontmatterIssues` growing a per-root field set, i.e. a second
+ * place for "what Claude Code requires" to be written down and drift. If a
+ * description-less skill is ever *measured* in the wild, this is the expression
+ * to change, and the split is the shape to change it into.
+ *
+ * **The asymmetry, stated so it stops being undocumented.** A persona exists to
+ * be **addressed**: one Claude Code cannot load has no other purpose, which is
+ * the reasoning SERVER-123 accepted. A skill has a life outside invocation — it
+ * is discovered by its directory, it is documentation, and it is read — so a
+ * skill missing `name` is not dead in the way a persona missing `name` is.
+ *
+ * **Residual, and it is a SPEC question rather than a code one.** §7:399 says
+ * "`corpus doc check` validates both sets". Its Corpus half is true under every
+ * root this function names (SERVER-124). Its Claude Code half is true for
+ * agent-defs and, by this decision, deliberately not for skills — because under
+ * that root there is no second set to validate. The sentence needs a signed
+ * scope, drafted in SERVER-126 and not written here.
  *
  * A predicate reached through {@link checkSeams} rather than computed at each
  * call site, for the reason its filtering predecessor was: the save path and
@@ -616,10 +644,46 @@ export type SaveCheck = {
   readonly findings: readonly CheckFinding[];
   /**
    * Those findings translated into the §11 response warnings a mutation carries
-   * — the two-member set and nothing else. An error the save let through has no
-   * `WarningCode` to be reported under, and inventing one would put an
-   * error-severity finding into the wire's *warning* channel; it reaches the
-   * operator through {@link validateBeforeWrite}'s log instead.
+   * — **both** families, one warning per finding:
+   *
+   * - the two {@link WARNING_CODE_BY_CHECK} members, each under its own code,
+   *   because §11 names them one by one (`orphaned_anchor`, `unresolved_ref`);
+   * - every finding in the tolerated set — {@link REPORTED_CHECK_CODES} and
+   *   {@link isClaudeRootFrontmatter} alike — under the single code
+   *   `validation_error`, with the finding's own code riding in `detail` as
+   *   `<check-code>: <specifics>`.
+   *
+   * **Why an error travels the warning channel** (adjudicated 2026-08-24,
+   * SERVER-067 / CONTRACT-084 — recorded so it is not re-litigated). This field
+   * used to carry the first family alone, on the argument that inventing a code
+   * for the second "would put an error-severity finding into the wire's warning
+   * channel". That argument conflated two different families. `CHECK_WARNING_CODES`
+   * (`contract/schemas/check.ts`) is the *validator's* severity split — closed,
+   * load-bearing, and what decides whether `corpus doc check` exits 0 or 6.
+   * `WARNING_CODES` (`contract/schemas/warning.ts`) is the *response channel*,
+   * whose nine members already run from "nothing went wrong at all"
+   * (`carried_skill`) to `commit_failed`. A channel with that span is a reporting
+   * channel and not a severity class, and §11 says so in its own words: its
+   * auto-commit sentence calls the event a **failure** and puts it on the
+   * response as a **warning**, in one sentence. Nothing is re-graded — the
+   * finding keeps its code and its severity, `corpus doc check` still fails on
+   * the same bytes, and no code crossed the validator's partition
+   * (`check/codes.test.ts` passes unchanged).
+   *
+   * **Why the response and not the log alone.** The party an unclosed fence
+   * harms is the agent whose turn it swallowed, and an agent reads responses,
+   * never `.corpus/server.log`. {@link validateBeforeWrite}'s `logger.error`
+   * line stays beside this — the operator channel is not replaced, it is
+   * joined.
+   *
+   * **The chosen cost.** Every save of a still-faulty `.claude/agents/*.md`
+   * warns until the file is repaired. That is `corpus doc check`'s answer
+   * delivered on the path the write actually happens on, and it is deliberate.
+   * What is *not* carried is anything outside the allow-list: `anchor-unused` is
+   * answered a write behind on the commonest mutation in the product (see
+   * {@link REPORTED_CHECK_CODES}), so admitting it would put a false warning on
+   * nearly every anchored comment and teach a reader to skip the channel the
+   * fence finding needs them to read.
    */
   readonly warnings: readonly Warning[];
 };
@@ -650,6 +714,15 @@ export function checkSave(projection: ProjectionDb, path: string, text: string):
     (finding) => REPORTED_CHECK_CODES.has(finding.code) || isClaudeRootFrontmatter(finding),
   );
   const warnings: Warning[] = [];
+  // One `validation_error` per tolerated finding — both halves of the tolerated
+  // family, because "reported, never refused" is one rule and the writer that
+  // reads the response is the same writer in both cases. The finding's own code
+  // rides in `detail` rather than multiplying `WarningCode`s, which is why
+  // {@link WARNING_CODE_BY_CHECK} is not involved here (see
+  // {@link SaveCheck.warnings}).
+  for (const finding of tolerated) {
+    warnings.push({ code: "validation_error", detail: `${finding.code}: ${finding.detail}` });
+  }
   for (const finding of report.warnings) {
     const code = WARNING_CODE_BY_CHECK[finding.code];
     if (code !== undefined) warnings.push({ code, detail: finding.detail });
@@ -673,9 +746,13 @@ export function validateBeforeWrite(
   // `logger.error` on purpose: that is the level the logger never gates, and a
   // §11 *error* the save let through is precisely what must not be silenced —
   // an unterminated fence in a thread is destroying turns as it is written, and
-  // "silence is why a user had to notice their own reply had vanished". The
-  // response cannot carry it (see {@link SaveCheck.warnings}), so this line is
-  // the surface, and it costs no contract change to have.
+  // "silence is why a user had to notice their own reply had vanished".
+  // Since SERVER-067 the response carries it too, as a `validation_error`
+  // warning (see {@link SaveCheck.warnings}); this line is not replaced by that
+  // and must not be. The two surfaces have different readers — an operator
+  // reading `.corpus/server.log` after the fact, and the writer reading the
+  // response it got back — and only this one survives a caller that discards
+  // `warnings`.
   const failed = findings.filter((finding) => finding.severity === "error");
   if (failed.length > 0) {
     workspace.logger.error("document saved with validation errors", {

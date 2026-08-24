@@ -122,6 +122,75 @@ const calendarDate = (nowMs: number, days = 0): string =>
 export const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
 
 /**
+ * The document types Corpus's own **machinery** is made of, dropped from
+ * retrieval's default ranking (SERVER-144, on the §7 rider signed 2026-08-24).
+ *
+ * Measured in the SHARED-070 audit on a fresh workspace with five user notes:
+ * across seven retrieval calls, rows pointing at these documents were **52% of
+ * the output tokens** (1,746 of 3,355). The top hit for
+ * `corpus search "rate assumption 6.1%"` was the comment skill's worked example,
+ * which contains that exact sentence; the #1 related document for a mortgage
+ * note was `doc_skillorchestrate`. The skills' examples are written in realistic
+ * domain prose — mortgages, rates, insurance, filing — which makes them
+ * honeypots for exactly the questions a real corpus asks, and they displace the
+ * row the agent needed.
+ *
+ * **Ranking only, never the index.** These documents stay indexed and stay
+ * addressable: `corpus search --type skill` is the comment skill's own genesis
+ * path and bypasses this entirely, `doc show` and `doc list` are untouched, and
+ * a thread whose *parent* is a skill still gets that skill as its parent block —
+ * the pack reads a parent by id, not through the candidate query.
+ *
+ * **`template` is deliberately not here.** An earlier attempt excluded it and
+ * was withdrawn from v0.21.0 for that reason among others. A `template`
+ * document is the **user's own**, written by them for their own use, and
+ * excluding what a person wrote from their own search is a different act from
+ * excluding what the tool installed. The signed rider says so in those words,
+ * so the list is exactly the two types `corpus init` puts on disk. Anything
+ * added here later has to clear the same bar: the tool wrote it, not the user.
+ */
+export const UNRANKED_DOC_TYPES = ["skill", "agent-def"] as const;
+
+/**
+ * The same list plus the documents that **configure the board** — a view is a
+ * stored query and a board is a column list.
+ *
+ * The difference between the two lists is the difference between the two kinds
+ * of question, and it is the decision SERVER-144 asked for and the rider kept
+ * (the audit saw `doc_seedattention` and `doc_seedinbox` rank into packs).
+ *
+ * - `corpus search` asks **"where is this said?"**. A board or a view the user
+ *   named and can open is a real answer to that, so search keeps them.
+ * - `corpus doc related` and the context pack ask **"what else bears on this?"**.
+ *   A stored query bears on nothing: it has no prose, so a hit on one is a
+ *   title collision dressed as a neighbour. They are dropped there.
+ *
+ * They stay first-class everywhere they are the subject — the board bar,
+ * `doc list`, `doc show`, `doc related` **on** a board, an explicit `--type`.
+ * `template` is absent from this list too, for the reason above: a neighbour
+ * surface that hid the user's own templates would hide the user's own writing.
+ */
+export const UNRANKED_NEIGHBOUR_DOC_TYPES = [...UNRANKED_DOC_TYPES, "view", "board"] as const;
+
+const excludesTypes = (alias: string, types: readonly string[]): string =>
+  `${alias}.type NOT IN (${types.map((type) => `'${type}'`).join(", ")})`;
+
+/**
+ * {@link UNRANKED_DOC_TYPES} as a fragment, parameterized by the row it judges —
+ * written beside {@link notArchivedSql} because the surfaces that apply it reach
+ * `documents` three different ways and must exclude the same rows.
+ *
+ * The values are a module constant rather than bound parameters on purpose: the
+ * fragment is embedded in statements that are built once and cached, and there
+ * is no caller-supplied string anywhere in it.
+ */
+export const rankableSql = (alias: string): string => excludesTypes(alias, UNRANKED_DOC_TYPES);
+
+/** {@link UNRANKED_NEIGHBOUR_DOC_TYPES} as the same kind of fragment. */
+export const rankableNeighbourSql = (alias: string): string =>
+  excludesTypes(alias, UNRANKED_NEIGHBOUR_DOC_TYPES);
+
+/**
  * The two optional rows every filter fragment may name beside `d`, as joins a
  * statement can append to a `documents` alias it reached its own way.
  *

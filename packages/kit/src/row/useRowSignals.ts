@@ -1,4 +1,4 @@
-import type { DocRow, QueueEventStatus } from "@corpus/contract";
+import type { DocRow, Job, QueueEventStatus } from "@corpus/contract";
 import { useOutstandingJobs } from "../query/useOutstandingJobs.js";
 
 /**
@@ -30,12 +30,16 @@ import { useOutstandingJobs } from "../query/useOutstandingJobs.js";
  * `deferred` is not here either, and for the reason it never was: it is work the
  * agent parked because a person was editing the document (SPEC.md §7). It is
  * claimed, and it is not being worked — so it reads as waiting, like anything
- * else nobody is holding.
+ * else nobody is holding. What it says *while* waiting is its own sentence since
+ * UI-115; see {@link deferredRowTitle}.
  */
 const WORKING_JOB_STATUS: QueueEventStatus = "in-progress";
 
 /** The queue state that means the event exists and nobody has taken it. */
 const WAITING_JOB_STATUS: QueueEventStatus = "pending";
+
+/** …and the one that means it was taken, looked at, and put down (SPEC.md §7). */
+const DEFERRED_JOB_STATUS: QueueEventStatus = "deferred";
 
 /**
  * What a row may honestly say about the agent (SPEC.md §8).
@@ -44,7 +48,9 @@ const WAITING_JOB_STATUS: QueueEventStatus = "pending";
  *   is holding it now.
  * - `waiting` — something is outstanding and **nobody is holding it**: an
  *   unclaimed event, a deferral, or a thread whose reply has not arrived where
- *   the queue's answer no longer names the job.
+ *   the queue's answer no longer names the job. A deferral is still `waiting`
+ *   here and says something different in its title — see
+ *   {@link deferredRowTitle}.
  * - `idle` — nothing outstanding, so the row says nothing.
  *
  * There is no fourth state for "outstanding, claim unknown": the honest floor is
@@ -108,6 +114,18 @@ export function useAgentActivity(row: Pick<DocRow, "id" | "awaitingAgent">): Age
   if (working !== undefined) {
     return { state: "working", title: working.lastLine ?? "Agent is working on this document" };
   }
+  /*
+   * **A deferral is read before an unclaimed event**, which is the precedence
+   * `apps/ui`'s `pendingStateOf` uses for the thread card's own row — the two
+   * must not disagree about what state a row is in (UI-115). Among the things
+   * nobody is holding, a deferral is the only one whose reason is knowable and
+   * whose end is in the reader's hands, so a row that said "queued — waiting to
+   * be picked up" over it would hide the one fact they could act on.
+   */
+  const parked = mine.find((candidate) => candidate.status === DEFERRED_JOB_STATUS);
+  if (parked !== undefined) {
+    return { state: "waiting", title: deferredRowTitle(parked) };
+  }
   if (mine.some((candidate) => candidate.status === WAITING_JOB_STATUS)) {
     return { state: "waiting", title: "Queued — waiting to be picked up" };
   }
@@ -115,4 +133,24 @@ export function useAgentActivity(row: Pick<DocRow, "id" | "awaitingAgent">): Age
     return { state: "waiting", title: "Agent has not replied in this thread yet" };
   }
   return { state: "idle", title: "" };
+}
+
+/**
+ * What a deferred row's dot says (SPEC.md §7; UI-115).
+ *
+ * Two things a bare "waiting" cannot say: that the work was **seen** rather than
+ * ignored, and **what it is parked on** — because that is the one wait the
+ * person reading the row can end, by finishing the edit. §7's own words: *"the
+ * agent deferred because it saw, not because it was blocked."*
+ *
+ * The document is named from `blockedOnTitle`, then `blockedOn`, then not at
+ * all. A deferral whose document the wire did not name is still a deferral, and
+ * a sentence with an empty quotation in it would be worse than one clause
+ * shorter (UI-098's rule: an absent answer is never presented as one).
+ */
+export function deferredRowTitle(job: Pick<Job, "blockedOn" | "blockedOnTitle">): string {
+  const named = job.blockedOnTitle ?? job.blockedOn ?? "";
+  return named === ""
+    ? "Paused — the agent is waiting for an edit to finish"
+    : `Paused while ${named} is being edited`;
 }

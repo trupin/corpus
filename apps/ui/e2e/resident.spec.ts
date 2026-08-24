@@ -1,4 +1,4 @@
-import { MISSING_PROFILE_NOTE } from "@corpus/kit";
+import { MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE } from "@corpus/kit";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
@@ -466,14 +466,21 @@ test.describe("designating a resident", () => {
     // the resident is named by the profile it was designated with.
     await expect(page.locator(BADGE)).toHaveAttribute("data-resident-kind", "profile-gone");
     await expect(page.locator(`${BADGE} .t-resident-name`)).toHaveText("researcher");
-    await expect(page.locator(`${BADGE} .t-resident-note`)).toHaveText(MISSING_PROFILE_NOTE);
+    // At row width since UI-124 — the badge is one line in a head, and the whole
+    // sentence overflowed it. The sentence is on the badge's own title, which is
+    // SHARED-057's reveal, and `mark` and `note` are one fact off `LaneRow.kind`.
+    await expect(page.locator(`${BADGE} .t-resident-note`)).toHaveText(MISSING_PROFILE_MARK);
+    await expect(page.locator(BADGE)).toHaveAttribute(
+      "title",
+      new RegExp(MISSING_PROFILE_NOTE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
 
     await openMenu(page);
     const menu = page.getByRole("menu");
     const release = menu.locator('[data-act="resident-release"]');
     // Named, because the designation is what is being released…
     await expect(release).toContainText("Release researcher");
-    // …and now qualified, in the same words the badge above uses.
+    // …and qualified in the sentence, which is the form a menu item has room for.
     await expect(release).toContainText(MISSING_PROFILE_NOTE);
     // The consequence is still said: the report is joined ahead of it, never in
     // place of it.

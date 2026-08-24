@@ -2,7 +2,14 @@ import { RESIDENT_WEIGHT_BOUNDARY } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 import { warningSuffix } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
-import { GENERAL_RESIDENT, residentLabel, withWeight } from "../resident.js";
+import {
+  ARCHIVING_IS_NOT_A_CAUSE,
+  GENERAL_RESIDENT,
+  MISSING_PROFILE_CAUSES_PHRASE,
+  PROFILE_MISSING,
+  residentLabel,
+  withWeight,
+} from "../resident.js";
 
 /**
  * `corpus thread designate` — give a conversation a resident (SPEC.md §7).
@@ -77,11 +84,11 @@ export async function runThreadDesignate(context: WorkspaceCommandContext): Prom
   // The server resolves the name to a `type: agent-def` document and answers
   // with both halves, so the printed line is the resolution rather than an echo
   // of what was typed — `--agent RESEARCHER` designating `researcher` should say
-  // which document it landed on, and a name whose document has since been
-  // renamed, deleted, or moved out of `.claude/agents/` should say *that* rather
-  // than a stale id. **Archiving is not one of those**: an archived `agent-def`
-  // still under that root resolves exactly as before, and is still designatable,
-  // so the line keeps printing its id. The weight rides the same resident and
+  // which document it landed on, and a name whose document has gone one of
+  // `MISSING_PROFILE_CAUSES`'s ways should say *that* rather than a stale id.
+  // Archiving is not among them, and the reason is on that constant: an archived
+  // `agent-def` still under the root resolves exactly as before and stays
+  // designatable, so the line keeps printing its id. The weight rides the same resident and
   // is printed the same way, by the same label. A `200` always carries a
   // resident; the fallback exists so a server that somehow did not is reported
   // as what was asked for — weight included — rather than crashing on it.
@@ -185,11 +192,9 @@ export const designateCommand: WorkspaceCommandSpec = {
     "typo is refused rather than quietly downgraded to a general resident. A **blank** name " +
     '(`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a ' +
     "mistake, while asking for no profile is a decision, and the two must not look alike. Where " +
-    "a profile has since been renamed, deleted, or moved out of `.claude/agents/`, the residency " +
-    "stands, and the printed line reports `name (profile missing)` rather than substituting " +
-    "anything for it. **Archiving is not one of those**: an archived `agent-def` still under that " +
-    "root resolves exactly as before, and is still designatable, so the line keeps printing its " +
-    "id.\n\n" +
+    `a profile has since been ${MISSING_PROFILE_CAUSES_PHRASE}, the residency stands, and the ` +
+    `printed line reports \`name (${PROFILE_MISSING})\` rather than substituting anything for ` +
+    `it. ${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id.\n\n` +
     "**`--weight` says what the resident runs at**, and the designation is the only place that " +
     "choice exists (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is " +
     "designated, not per message — a running agent cannot change what it is without discarding " +
@@ -278,8 +283,8 @@ export const designateCommand: WorkspaceCommandSpec = {
         'One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null,"weight":null}},' +
         '"warnings":[]}` — the thread as it now stands. `name` and `docId` both null is a general ' +
         "resident; `name` set with " +
-        "`docId` null is a profile that has since been renamed, deleted, or moved out of " +
-        "`.claude/agents/` — never one merely archived, which still resolves to its id; the whole " +
+        `\`docId\` null is a profile that has since been ${MISSING_PROFILE_CAUSES_PHRASE} — ` +
+        "never one merely archived, which still resolves to its id; the whole " +
         "`resident` null is a thread that has none. `weight` is independent of all three: the " +
         "level the resident runs at, or null when none was chosen.",
     },

@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -200,19 +200,81 @@ the behaviour it describes is real.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model the
-implementing agent ran on ("implemented on: opus | fable")._
+### Implemented on
 
-### Reproduction (bugs only)
+opus.
 
-_[Agent fills: the pre-fix served description quoted from a running server, and
-the observed non-null `eventId` on a person's answer to a resolved thread — the
-two together are the contradiction.]_
+### What was already fixed, and what was not
 
-### Post-Implementation Verification
+`FormAnswerResponseSchema.eventId`'s `describe()` had **already** been corrected
+before this issue ran — it reads *"Null when the answer does not re-trigger it —
+which, since only the person answers a form, is exactly the thread the agent is
+not engaged in. A **resolved** thread does not stay silent: a person's answer
+reopens it and then re-triggers on §8's ordinary terms"*. Every acceptance
+criterion about the description is satisfied by that text, and it was left alone.
 
-_[Agent fills: corrected description served, the three answer cases above with
-observed `eventId` and thread status, drift check output.]_
+**The brief's second surviving reason no longer exists.** It listed "the agent
+answering its own form" as a case that still leaves `eventId` null.
+`answerThreadForm` now refuses an agent actor with a **`403`** before the lane
+(`apps/server/src/threads/forms.ts`), so an agent answer never produces a
+response at all. The published sentence is right to name **one** reason, and the
+brief is the thing that is out of date. Recorded here rather than "fixed" into
+the wire.
+
+### What this change actually did
+
+The two stale *comments* the issue names, both still carrying the falsified
+clause verbatim:
+
+- `packages/contract/src/openapi.test.ts` — `/** Nullable, not optional — a
+  resolved thread stops re-triggering the agent (§8). */`
+- `packages/contract/src/schemas/form.test.ts` — `/** A resolved thread stops
+  re-triggering the agent (SPEC.md §8), so null is legal. */`
+
+Both now give the surviving reason and name SERVER-062 as what falsified the old
+one. The `form.test.ts` **fixture** was misleading in the same way — it built its
+null-`eventId` example on a `status: "resolved"` thread, which is now the case
+that returns an id — so it was rebuilt on `status: "open", agent: "none"`, the
+reason that does survive.
+
+### Sweep
+
+`grep -rn "stops re-triggering"` over `packages/contract/src`, `apps/cli/src`,
+`apps/ui/src`, `packages/kit/src`: the only two hits were the two comments above.
+`grep -rn "resolved thread"` over the same trees returns 33 hits, all describing
+the corrected behaviour (`apps/cli/src/commands/thread/status.ts` and `reply.ts`,
+`apps/ui/src/thread/resolveNotice.ts`, `threadCollapse.ts`). Nothing else carries
+the claim.
+
+### The behaviour the corrected prose promises, on a real server
+
+Port **8838**, real workspace, `corpus` from source. Thread `th_j7xzwa3j`:
+`@agent` ask, an agent turn carrying a ```` ```form ```` fence, then resolved.
+
+```
+thread status before: resolved   formTs: 2026-08-24T17:43:26Z
+POST /api/threads/th_j7xzwa3j/turns/2026-08-24T17%3A43%3A26Z/form
+  {"answers":[{"question":"Which rate?","option":"Fixed"}]}
+answer HTTP 201
+eventId: evt_xesebs4qkukd
+thread status after: open
+```
+
+**Non-null `eventId` and a reopened thread** — precisely the case the deleted
+sentence said would be null. The served `openapi.json`, fetched from that running
+server, carries the corrected description (checked: no `stops re-triggering`).
+
+### Shape
+
+No shape change. `eventId` stays required-and-nullable, no property added,
+removed or reordered, no route touched. `openapi.json` and
+`schema.generated.ts` were regenerated in the same batch as the other issues in
+this phase; the only reason they differ here is regeneration.
+
+### Gates
+
+`vitest run packages/contract` — 2972 tests, exit 0. Typecheck, ESLint, Prettier
+clean.
 
 ## Completion Checklist (domain agent)
 

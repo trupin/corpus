@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
 import { NewChildThread } from "./NewChildThread";
-import { agentWaitSince, useOutstandingAgentRequest } from "./outstandingAgentRequest";
+import { pendingStateOf, useOutstandingAgentRequest } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { ResidentBadge } from "./ResidentBadge";
@@ -429,8 +429,18 @@ export function ThreadCard({
 
       {outstanding === null ? null : (
         <PendingIndicator
-          since={agentWaitSince(outstanding.job, turns)}
-          state={outstanding.working ? "working" : "waiting"}
+          /*
+           * The enqueue instant, straight off the wire (CONTRACT-029). This used
+           * to be `agentWaitSince(job, turns)`, which bounded `Job.started` by
+           * the newest turn that was not newer than it — a heuristic that
+           * existed only because `started` meant *enqueued* while the job was
+           * queued and *first log line* afterwards, so reporting it raw reset
+           * the wait the moment the agent began talking. `enqueued` is that
+           * instant as a field, and it never moves.
+           */
+          since={outstanding.job.enqueued}
+          state={pendingStateOf(outstanding)}
+          deferred={outstanding.deferred}
           lane={laneRow}
         />
       )}

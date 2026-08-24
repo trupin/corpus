@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -64,22 +64,22 @@ next person who reads the mockup.
 
 ## Acceptance Criteria
 
-- [ ] The reader head draws the **toggle**, not the old 💬 button: the same pill
+- [x] The reader head draws the **toggle**, not the old 💬 button: the same pill
       in the same place, with a pressed state for "showing the list"
       (`.comments-btn.on` in `apps/ui/src/reader/Reader.css`)
-- [ ] The head's toggle reflects **when it appears**, which is not
+- [x] The head's toggle reflects **when it appears**, which is not
       unconditional — see the Notes below, and `comments/CommentsSwitch.tsx` for
       the measurement behind it
-- [ ] The ⋯ menu carries a **Comments** item, which is how a document with no
+- [x] The ⋯ menu carries a **Comments** item, which is how a document with no
       conversations reaches the list
-- [ ] The mockup draws the comments list itself: the two filter axes with their
+- [x] The mockup draws the comments list itself: the two filter axes with their
       counts in reserved boxes, rows that say why an unanchored comment has no
       anchor, a reveal on an anchored row, and the composer at the foot
-- [ ] `.comments-pop` and `.cp-item` **stay** — the ⋯ document menu still uses
+- [x] `.comments-pop` and `.cp-item` **stay** — the ⋯ document menu still uses
       them, in the app and in the mockup. Only the 💬 popover's *use* of them goes
-- [ ] The prototype's behaviour matches: pressing the toggle swaps the body for
+- [x] The prototype's behaviour matches: pressing the toggle swaps the body for
       the list and back, and does not open a popover
-- [ ] Nothing else in the mockup changes
+- [x] Nothing else in the mockup changes
 
 ## Technical Design
 
@@ -139,13 +139,86 @@ comments surface against the running app, side by side.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: Opus 5 (1M context).** 2026-08-24. `design/index.html` opened as a
+`file://` URL in a real chromium and driven with Playwright's node API, twice.
+`localStorage` cleared before each drill. **Zero page errors, zero console
+errors, in both runs.**
+
+### What changed in the file
+
+- **CSS** — `.comments-btn.on` (the pressed state) and `.comments-count` (the
+  reserved two-character box) beside the existing pill; a `.comments-tab` block
+  ported from `apps/ui/src/comments/comments.css`. `.comments-pop`, `.cp-item`,
+  `.cp-quote` and `.cp-meta` are untouched and now carry a comment saying why
+  they stay.
+- **Markup** — both reader heads (the column's and full screen's) draw
+  `💬 <span class="comments-count">N</span>` with `data-tab` and `aria-pressed`.
+- **Prototype JS** — `state.tab` and `state.cmFilters` (browser-local, per
+  reader); `readerBodyHTML(key, docId)`, through which **every** render of a
+  reader now goes, so the switch, a re-render and a restore cannot disagree;
+  `commentsTabHTML` with the two axes, their counts, the row sentences, the
+  reveal and the composer; `setDocTab` and `revealThread` in place of
+  `toggleCommentsPop` and `jumpToThread`; a `Comments` item first on the ⋯ menu;
+  a `maybeMargin` guard so full screen does not lay out a Docs-style margin over
+  the list.
+
+### Drill 1 — a document with conversations, in a column
+
+| checked | observed |
+| --- | --- |
+| the toggle at rest | visible, `💬 2`, `aria-pressed="false"` |
+| pressed | `aria-pressed="true"`, `class="comments-btn on"` |
+| the body | `.comments-tab` × 1, `.doc-body` × 0 — swapped, not layered |
+| no popover | `.comments-pop.open` × 0 |
+| rows | 2 `.cm-row` |
+| filters | `All 2 · Open 1 · Resolved 1` and `All 2 · Anchored 2 · Unanchored 0`, each count in its own box |
+| row sentences | `anchored to “assume a 30-year fixed at 6.1%”`, `anchored to “PMI drops off automatically at 78% LTV”` |
+| reveal | 2 `.cm-reveal` |
+| composer | `Comment ⌘↵`, hint `starts a new thread` |
+| Resolved filter | 1 row; the pressed segment is the one clicked |
+| Open + Unanchored | `No open, unanchored comments. 2 comments are hidden by these filters.` |
+| the reveal | list gone, `.doc-body` back, the thread's slot expanded, toggle un-pressed |
+| the ⋯ menu | `.comments-pop.open` × 1, six `.cp-item`s, `Comments` first |
+| Comments from the menu | `.comments-tab` × 1 |
+
+### Drill 2 — the conditions, and full screen
+
+| checked | observed |
+| --- | --- |
+| a document with **no** conversations (`doc_payoff`) | the toggle is **hidden** |
+| the ⋯ menu on it | reaches the list anyway |
+| its empty sentence | `No comments on this document yet. Write the first one below — no text selection needed.` |
+| the toggle **while the list shows** | visible — the way back is never missing |
+| pressing it | back to `.doc-title` |
+| a whole-document conversation (`doc_insurance`) | `about the whole document — it never had an anchor`, and **no** reveal button |
+| full screen | the same toggle, the same list, 1 row |
+| the margin | `.focus-margin` × 0 while the list shows |
+| pressing it again in full screen | `.doc-body` back |
+
+### The two sentences an empty list can say
+
+Both are drawn and both were observed, which is the point of having two: a list
+emptied by a filter names the filter and says how many rows it hides; a document
+with no comments at all names the act instead of the absence.
+
+### One thing deliberately not drawn
+
+**No fixture produces an `orphaned` row.** `anchorState` reads a thread's own
+`orphaned` flag and the prototype draws the detached sentence and the `--signal`
+treatment if one is set, but no thread in `THREADS` carries it and inventing one
+would need a "detached threads" section in the mockup's data model — outside *"nothing
+else in the mockup changes"*. The two states the fixtures do produce (anchored,
+whole-document) are both drawn and both verified above.
+
+### Lint
+
+`prettier --check design/index.html` — clean.
 
 ## Completion Checklist (domain agent)
 
-- [ ] `/lint` passes (prettier covers the file)
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] `/lint` passes (prettier covers the file)
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

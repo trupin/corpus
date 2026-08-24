@@ -7,6 +7,7 @@ import {
   type PendingAttachment,
   type RowNotice,
   type ThreadTurn,
+  warningNotices,
 } from "@corpus/kit";
 import {
   useCallback,
@@ -135,9 +136,7 @@ export function useTurnComments({
 
   const create = useCreateThread({
     onSuccess: (result) => {
-      for (const warning of result.warnings) {
-        onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-      }
+      for (const notice of warningNotices(result.warnings)) onNotify(notice);
     },
     onError: (error) => {
       onNotify({ tone: "error", message: `Comment failed — ${error.message}` });

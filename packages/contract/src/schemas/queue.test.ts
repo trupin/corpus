@@ -16,12 +16,15 @@ import {
   isAgentPresent,
   MAX_IDLE_TIMEOUT_SECONDS,
   MAX_IN_PROGRESS_REPORTED,
+  NON_TERMINAL_QUEUE_EVENT_STATUSES,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
   QueueEventStatusSchema,
   QueueStatusSchema,
   ReapStaleResultSchema,
+  TERMINAL_QUEUE_EVENT_STATUSES,
 } from "./queue.js";
+import { buildOpenApiDocument } from "../openapi.js";
 import { RESIDENT_DESIGNATED_EVENT_TYPE, RESIDENT_RELEASED_EVENT_TYPE } from "./agents.js";
 import { WORKSPACE_REFLECT_EVENT_TYPE } from "./reflect.js";
 
@@ -719,5 +722,54 @@ describe("FailEventRequest", () => {
     expect(FailEventRequestSchema.parse({ reason: "tool timeout" })).toEqual({
       reason: "tool timeout",
     });
+  });
+});
+
+/**
+ * CONTRACT-073. The three non-terminal statuses were written out in
+ * `apps/server`'s `OUTSTANDING_EVENT_STATUSES` and again in `packages/kit`'s
+ * `OUTSTANDING_JOB_STATUSES` — two packages that cannot import each other, each
+ * suite asserting its own copy. Both now alias the constant below.
+ */
+describe("non-terminal queue statuses (CONTRACT-073)", () => {
+  /**
+   * The exact list both consumers used to hold, so the move is provably
+   * behaviour-preserving rather than merely plausible.
+   */
+  it("is the same three states the two consumers held literally", () => {
+    expect(NON_TERMINAL_QUEUE_EVENT_STATUSES).toEqual(["pending", "in-progress", "deferred"]);
+    expect(TERMINAL_QUEUE_EVENT_STATUSES).toEqual(["processed", "failed", "abandoned"]);
+  });
+
+  /**
+   * A partition, not two lists that happen to look right: every status is in
+   * exactly one, and together they are the enumeration. Adding a status is a
+   * compile error in the terminality record, and this is the runtime backstop
+   * for a build where somebody widened both at once.
+   */
+  it("partitions the published status set exactly", () => {
+    expect([...NON_TERMINAL_QUEUE_EVENT_STATUSES, ...TERMINAL_QUEUE_EVENT_STATUSES].sort()).toEqual(
+      [...QUEUE_EVENT_STATUSES].sort(),
+    );
+    for (const status of NON_TERMINAL_QUEUE_EVENT_STATUSES) {
+      expect(TERMINAL_QUEUE_EVENT_STATUSES).not.toContain(status);
+    }
+  });
+
+  /** Lifecycle order, which is what makes the joined query parameter readable. */
+  it("keeps the lifecycle order the enumeration is written in", () => {
+    expect(NON_TERMINAL_QUEUE_EVENT_STATUSES.join(",")).toBe("pending,in-progress,deferred");
+  });
+
+  /**
+   * The wire publishes no `outstanding` shorthand and this must not become one:
+   * the constant is a TypeScript export, and the only place its spelling reaches
+   * `openapi.json` is inside the `status` parameter's prose, where it was already
+   * written out by hand.
+   */
+  it("adds no component and no enum to the published document", () => {
+    const serialised = JSON.stringify(buildOpenApiDocument());
+    expect(serialised).not.toContain("NON_TERMINAL");
+    expect(serialised).not.toContain("nonTerminal");
   });
 });

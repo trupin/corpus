@@ -20,7 +20,8 @@ import {
   isErrorLine,
   jobDotClass,
   jobLabel,
-  jobStartedLabel,
+  jobClockLabel,
+  jobClockTime,
   resolveSelectedJob,
 } from "./consoleModel";
 
@@ -135,11 +136,38 @@ describe("the job row's label", () => {
 describe("the started clock", () => {
   it("renders local wall time to the minute", () => {
     const at = new Date(2026, 6, 27, 9, 12, 30);
-    expect(jobStartedLabel(at.toISOString())).toBe("09:12");
+    expect(jobClockTime(at.toISOString())).toBe("09:12");
   });
 
   it("shows the raw value rather than `Invalid Date` when the wire is odd", () => {
-    expect(jobStartedLabel("not-a-time")).toBe("not-a-time");
+    expect(jobClockTime("not-a-time")).toBe("not-a-time");
+  });
+});
+
+/**
+ * CONTRACT-029. `Job.started` is the first log line and is **null** until a job
+ * writes one, so the meta line has two instants to choose between and has to say
+ * which one it chose. The old line printed `started <enqueue>` for a job that had
+ * never started, which is the overloaded field's meaning leaking into the copy.
+ */
+describe("the detail meta clock", () => {
+  const enqueued = new Date(2026, 6, 27, 9, 12, 30).toISOString();
+  const spoke = new Date(2026, 6, 27, 9, 40, 0).toISOString();
+
+  it("says queued, and gives the enqueue instant, while the job has not spoken", () => {
+    expect(jobClockLabel({ enqueued, started: null })).toBe("queued 09:12");
+  });
+
+  it("says started, and gives the first log line's instant, once it has", () => {
+    expect(jobClockLabel({ enqueued, started: spoke })).toBe("started 09:40");
+  });
+
+  /*
+   * The defect in one line: a job that never started must not be labelled with a
+   * start time, whichever instant is printed beside the word.
+   */
+  it("never labels a silent job with a start time", () => {
+    expect(jobClockLabel({ enqueued, started: null })).not.toContain("started");
   });
 });
 

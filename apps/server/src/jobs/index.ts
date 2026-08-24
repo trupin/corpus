@@ -12,7 +12,7 @@
 
 export {
   UNKNOWN_INSTANT,
-  listJobRows,
+  listJobPage,
   readJobRow,
   recordJobLine,
   resolveOrigin,

@@ -1,5 +1,11 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
-import { residentLabel } from "../resident.js";
+import {
+  ARCHIVING_IS_NOT_A_CAUSE,
+  GENERAL_RESIDENT,
+  MISSING_PROFILE_CAUSES_PHRASE,
+  PROFILE_MISSING,
+  residentLabel,
+} from "../resident.js";
 
 /**
  * `corpus thread show` — the read half of the conversation surface (SPEC.md §6,
@@ -10,11 +16,15 @@ import { residentLabel } from "../resident.js";
  *
  * **It renders exactly what `GET /api/threads/{id}` returns** — turns, status,
  * agent state, parent and anchor (sprint-013 Adjudication 14). The endpoint
- * carries no `events` array and no read-state, so this verb reports neither: a
- * fabricated unread flag would be worse than none, and the only read-state
- * endpoint is a *mutation* (`POST /api/threads/{id}/seen`), which a read verb
- * must never call — showing a thread would silently clear its unread badge in
- * the board.
+ * carries no `events` array, so this verb reports none — a fabricated list would
+ * be worse than none.
+ *
+ * **Read-state it does report, since CONTRACT-036.** The endpoint now carries
+ * `unread`, computed server-side against the `.corpus/seen.json` mark, so the
+ * flag is the server's answer rather than this session's guess. Reading it
+ * clears nothing: the only read-state *mutation* is `POST /api/threads/{id}/seen`,
+ * which a read verb must never call — showing a thread would silently clear its
+ * unread badge in the board.
  *
  * The three thread shapes §7's skill branches on are named in the output rather
  * than left to be inferred from two nulls: anchored to a selection, on a whole
@@ -33,7 +43,15 @@ export async function runThreadShow(context: WorkspaceCommandContext): Promise<v
   context.out.emit(thread);
 
   context.out.line(thread.title);
-  context.out.line(`${thread.id} · ${thread.status} · agent ${thread.agent}`);
+  // `unread` arrived on this endpoint with CONTRACT-036 (v0.22.0). Before it,
+  // this verb reported no read-state because the endpoint carried none and a
+  // fabricated flag is worse than none. Both reasons are gone: the server
+  // answers it from the `.corpus/seen.json` mark, and reading it clears
+  // nothing — only `POST /api/threads/{id}/seen` does that, and a read verb
+  // must never call a mutation.
+  context.out.line(
+    `${thread.id} · ${thread.status} · agent ${thread.agent} · ${thread.unread ? "unread" : "read"}`,
+  );
   context.out.line(
     `parent ${thread.parent ?? NONE} · anchor ${thread.anchor ?? NONE} · ${shapeOf(thread.parent, thread.anchor)}`,
   );
@@ -89,11 +107,11 @@ export const showCommand: WorkspaceCommandSpec = {
     "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
     "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
     "`resident` line naming the agent that owns the conversation, with the `agent-def` document " +
-    "that defines it where it has one — a resident designated with no profile prints as `a " +
-    "general resident`, and one whose profile has since been renamed, deleted, or moved out of " +
-    "`.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an " +
-    "archived `agent-def` still under that root resolves exactly as before, and is still " +
-    "designatable, so the line keeps printing its id. Where the designation chose a weight " +
+    "that defines it where it has one — a resident designated with no profile prints as " +
+    `\`${GENERAL_RESIDENT}\`, and one whose profile has since been ` +
+    `${MISSING_PROFILE_CAUSES_PHRASE} prints \`name (${PROFILE_MISSING})\`. ` +
+    `${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id. ` +
+    "Where the designation chose a weight " +
     "(SPEC.md §7, rider signed 2026-08-19) the line names it after the resident — `resident a " +
     "general resident at heavy` — with the word taken from this workspace's own agent guidance " +
     "rather than being a model name, and a designation that chose none prints nothing extra. " +
@@ -102,9 +120,10 @@ export const showCommand: WorkspaceCommandSpec = {
     "and says nothing " +
     "about whether the agent is currently running — presence is one lane's row in " +
     "`corpus agents`, and the two are separate reads that may honestly disagree for a moment. " +
-    "**No read-state is reported**: the " +
-    "endpoint carries none, and the only endpoint that does is a mutation — reading a thread " +
-    "must not clear its unread badge. A thread id that names nothing is the server's `404`, " +
+    "The id line ends in `unread` or `read`, which the server answers from its own " +
+    "seen mark — so it survives a browser change and does not depend on this session having " +
+    "read anything. Asking does **not** clear it: only `POST /api/threads/{id}/seen` does, and " +
+    "this verb never calls a mutation. A thread id that names nothing is the server's `404`, " +
     "which is exit 5.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [],

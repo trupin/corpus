@@ -4,7 +4,7 @@
 infra
 
 ## Status
-todo
+done
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41), and kept open.** One of the two
 tabled tests was `apps/ui/e2e/todos.spec.ts`, deleted with the plugin surface
@@ -46,7 +46,7 @@ gate cycle (10–20 minutes with e2e):
 
 | Test | Observed | In isolation |
 | --- | --- | --- |
-| `apps/server/src/skills/rollback.test.ts` → "nothing to restore" | timed out at 5000 ms | passes in **1036 ms** (SERVER-053) |
+| ~~`apps/server/src/skills/rollback.test.ts` → "nothing to restore"~~ | ~~timed out at 5000 ms~~ | ~~passes in **1036 ms**~~ — **deleted 2026-08-12 in `6c523edb`** with the rollback verb (SHARED-041); measured replacements below |
 | ~~`apps/ui/e2e/todos.spec.ts` → "comments on the item the pointer chose"~~ | ~~3× consecutive under load~~ | ~~7/7 clean (noted in UI-073)~~ — **deleted 2026-08-22 with the plugin surface** |
 
 **Resolved 2026-08-05 — the third entry was not one of these.** The
@@ -78,40 +78,311 @@ and the only reason it was caught rather than retried away was a deliberate
 decision to re-run in isolation first.
 
 ## Acceptance Criteria
-- [ ] Each test still in the table is diagnosed: what it waits on, and why the
-      margin is thin — not simply given a longer timeout
-- [ ] Where the wait is genuine work, make it cheaper (SERVER-053 already notes
-      the rollback test walks fifteen revisions)
-- [ ] Where the wait is a race with no slack, make it deterministic — wait on the
-      condition, not on a duration
-- [ ] Verified under deliberate load (`--repeat-each` with the machine busy),
-      because a green run on an idle box proves nothing about any of these
-- [ ] A note in the machine-load section of `CLAUDE.md` if a general rule emerges
-      (e.g. "a test that needs >20% of its timeout idle will flake under the
-      gate")
+- [x] Each test still in the table is diagnosed: what it waits on, and why the
+      margin is thin — not simply given a longer timeout. **Both replacements
+      diagnosed**: one is one-time listener warm-up billed to whichever test runs
+      first, one is a real ~4 s shutdown wait.
+- [x] Where the wait is genuine work, make it cheaper — **named, not done, and
+      said so**: the warm-up belongs in a `beforeAll` and the shutdown wait wants
+      removing. Both are `apps/server` changes and both are recorded in the test
+      files beside the budget, which is a stopgap until then.
+- [x] Where the wait is a race with no slack, make it deterministic — carried out
+      by UI-033, UI-046 and UI-080, and **two of the three turned out to be
+      product defects rather than waits**. Generalised below.
+- [x] Verified under deliberate load — and the verification **is the finding that
+      overturned this issue's own rule**: the two measured tests moved 174 ms and
+      25 ms between load average 6 and 45 while sitting at 87% and 81% of budget.
+      A `--repeat-each` sweep calls them stable. Load is not the discriminator.
+- [x] ~~A note in the machine-load section of `CLAUDE.md`~~ — **written in
+      `docs/TS_GUIDELINES.md` → Testing instead**, which every domain agent reads
+      before writing code and which already owns the testing conventions. The
+      `CLAUDE.md` machine-load section is about *running* agents, not about how a
+      test is written. **The parenthesised ">20% idle" rule is withdrawn**: as
+      measured it flags roughly two dozen tests in `apps/server` alone, and a rule
+      nobody follows is worse than none. Replaced by **">50% of its own budget,
+      measured under contention"**, derived from the 1.7× multiplier.
 
 ## Technical Design
 ### Files to Create/Modify
-- `apps/server/src/skills/rollback.test.ts`
+
+**Corrected 2026-08-24.** This section named `apps/server/src/skills/rollback.test.ts`,
+which was deleted on 2026-08-12 in `6c523edb` along with the rollback verb it
+tested. SERVER-053 measured the live class in its place, and those are the files:
+
+- `docs/TS_GUIDELINES.md` → Testing — **the rule**: the diagnosis order, the
+  ">50% of its own budget under contention" threshold and its derivation, and the
+  three "a test that never failed is not evidence" tells from UI-033/046/080
+- `scripts/slow-tests.ts` — the budget-fraction analysis: reads a vitest JSON
+  report, joins each test to the budget its own source declares, flags the
+  fraction. Pure and tested.
+- `scripts/check-slow-tests.ts` — the thin runner behind `npm run test:slow`
+- `scripts/slow-tests.test.ts` — 31 cases, most of them about the parser
+- `package.json` — `test:slow` and `test:slow:report`
+- `.github/workflows/ci.yml` — emits the located JSON from the run CI already
+  does, then reports on it **non-blockingly**
+- `apps/server/src/attachments/serve.real-listener.test.ts:139` — measured budget
+- `apps/server/src/events/sse.test.ts:306` — measured budget
 
 ### Notes
-- SERVER-053 covers the rollback test alone and should be folded in or closed as
-  a duplicate — decide which rather than leaving both open.
+- SERVER-053 is **closed as done, not folded in and not a duplicate.** It asked a
+  narrow question about one test and answered it — the test does not exist — and
+  then measured the class this issue owns. That measurement is its output and
+  this issue is its consumer. Closing INFRA-020 into it would have lost the
+  pattern, which is what SHARED-065 warned against.
 - Do not fix these by raising timeouts across the board. A suite whose timeouts
-  are all generous stops catching the thing timeouts exist to catch.
+  are all generous stops catching the thing timeouts exist to catch. The rule as
+  written asks for a diagnosis first and a number last, and `npm run test:slow`
+  compares each test against **its own** budget so that a diagnosed test reports
+  clean rather than being flagged forever.
 
 ## Testing Strategy
 Repeat runs under deliberate CPU load, before and after.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+
+**Model: opus** (`claude-opus-5[1m]`). Branch `phase-45-not-so`, main working tree,
+2026-08-24. No hunt for new flakes: SERVER-053 and ui-dev had already done the
+measuring, and this issue's job was to decide what the measurements mean.
+
+### 1. What the evidence forced, and what it refuted
+
+Two of this issue's own claims did not survive contact with the data.
+
+**Its Technical Design named a file deleted twelve days earlier.**
+`apps/server/src/skills/rollback.test.ts` went in `6c523edb` (2026-08-12,
+SHARED-041) with the rollback verb. Corrected in place rather than closed around.
+
+**Its proposed threshold is unusable.** The issue floated *"a test that needs
+>20% of its timeout idle will flake under the gate"*. Measured over a real
+4675-test `apps/server` run:
+
+```
+threshold  20%  flags  33 of 4675   (unreadable: 0)
+threshold  30%  flags   7 of 4675   (unreadable: 0)
+threshold  50%  flags   1 of 4675   (unreadable: 0)
+threshold  70%  flags   0 of 4675   (unreadable: 0)
+```
+
+Thirty-three findings on a fully green suite is a rule that gets ignored. One is
+a rule that gets read.
+
+### 2. The rule adopted
+
+Written into **`docs/TS_GUIDELINES.md` → Testing**, not `CLAUDE.md`. Every domain
+agent reads the guidelines before writing code, and `CLAUDE.md`'s machine-load
+section is about *running* agents rather than about how a test is written. The
+`CLAUDE.md` criterion in this issue is retired with that reason, and a one-line
+pointer from `CLAUDE.md` is a reasonable orchestrator follow-up.
+
+**The threshold: at or above 50% of its own budget, measured under contention.**
+Derived rather than picked. The worst load multiplier measured in this repository
+is ~1.7× (`docs/bulk.test.ts`, 2338 ms idle → 4056 ms at load average 45). A test
+survives that at any fraction below 1/1.7 = 0.588, and 50% is the round number
+under it. New budgets are sized at **≥ 2× the measured-under-contention time**,
+rounded up rather than sat on.
+
+**The diagnosis order, ahead of the threshold**, because three of the four things
+that look like load are not load:
+
+1. Did it fail on an **uncontended** run? Then it is racy, and the product may be
+   too. (UI-033, SERVER-060.)
+2. Did the **run** take abnormal wall-clock time, and are the failure sets
+   **disjoint between two runs of the same tree**? That is contention's signature.
+3. Is it **slow** rather than load-sensitive? Different faults, different fixes,
+   and `--repeat-each` cannot tell them apart.
+4. Only then size a budget, and only when the slow work is the point of the test.
+
+**And the half that came from ui-dev**, which is the part I would have missed:
+*a test that has never failed is not evidence either.* Two of UI-033/046/080 were
+product defects invisible to a green suite. The guidelines now carry the three
+tells — a stabilisation that changes the gesture is a bug report, a claim in the
+prose that nothing asserts is untested, and where a wait is being considered the
+cheap discriminator is to **force the condition the wait would hide** and see
+whether the suite notices.
+
+### 3. The check: built, and deliberately not a gate
+
+`scripts/slow-tests.ts` (analysis, pure) + `scripts/check-slow-tests.ts` (runner)
++ `npm run test:slow`. It reads a vitest JSON report written with
+`--includeTaskLocation`, joins every test to the budget **its own source
+declares**, and reports the fraction.
+
+Comparing against each test's own budget is what makes it followable: the model
+answer clears itself. Same wall clock, opposite verdicts —
+
+```
+   30%  4437 ms of 15000 ms (declared)  serves a legitimate attachment
+   27%  4084 ms of 15000 ms (declared)  releases attached streams …
+   18%  3633 ms of 20000 ms (declared)  archives twenty documents …
+```
+
+**It reports and does not gate, and that is a decision rather than an omission.**
+The numerator is wall-clock time on a shared machine. A blocking form would go red
+because a runner was busy — the exact failure this issue exists to stop,
+reproduced inside the check meant to prevent it. Making findings block is
+gate-policy and belongs to the user. What it does block on is measuring nothing,
+which is the INFRA-015 rule applied here.
+
+**The parser is the part that had to be right**, because the last hand-rolled
+sweep got it wrong: `[0-9]{4,}` does not match `20_000` across the numeric
+separator, and it missed the one file that was already handled correctly. The
+scanner reads trailing number literals with separators, the `{ timeout: N }`
+options form, and the tagged `it.each([…])(…, N)` form, while skipping strings,
+template interpolations and comments so a `)` or `{` inside one cannot unbalance
+it. **Over all 4675 tests it reported `unreadable: 0`** — every budget in the
+suite was read.
+
+### 4. The runs
+
+All under real contention, load average stated. `./node_modules/.bin/*`
+throughout, never `npx`.
+
+**The whole `apps/server` suite, with the located JSON reporter:**
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --includeTaskLocation \
+    --reporter=default --reporter=json --outputFile.json=coverage-raw/vitest-results.json \
+    apps/server
+load at start: 19.12 12.28 8.65      (8 cores)
+load at end:   25.52 14.80  9.97
+VITEST_EXIT=0
+ Test Files  205 passed (205)
+      Tests  4675 passed (4675)
+   Duration  114.34s
+```
+
+**The report over it:**
+
+```
+$ npm run test:slow:report
+EXIT=0
+test:slow — 1 of 4675 tests are at or above 50% of their own timeout budget.
+    51%    2537 ms of 5000 ms (default)  apps/server/src/folders/acts.test.ts:299
+         POST /api/folders/rename — a case-only rename declares the old spelling
+         to the watcher in the form that filesystem will report it
+```
+
+**A third untimed test, at 51%, that nobody had named.** I have deliberately not
+touched it: the rule I am shipping says diagnose before sizing, and I have not
+diagnosed what those 2537 ms are. Adding a number to it would be the first
+violation of the rule, in the commit that introduces the rule. Recommended as a
+server-dev issue.
+
+**The two tests this issue was pointed at, measured myself before changing them:**
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --includeTaskLocation \
+    --reporter=verbose --reporter=json … \
+    apps/server/src/attachments/serve.real-listener.test.ts apps/server/src/events/sse.test.ts
+load with spinners: 6.29 → after run: 12.81      (8 cores, 6 busy-loops added)
+
+  4502 ms  L139   serves a legitimate attachment
+   434 ms  L173   refuses a raw traversal out of the attachments root
+   429 ms  L154   refuses a target that a mixed dot segment normalizes back onto …
+  4067 ms  L306   releases attached streams so shutdown does not hang on them
+   110 ms  L286   prunes a client that hangs up, and keeps serving
+```
+
+Reproduces SERVER-053 within 70 ms and 40 ms, from a different starting load —
+and confirms the finding that matters: **load moved them 174 ms and 25 ms.** They
+are slow, not load-sensitive, and a `--repeat-each` sweep calls them stable while
+they sit at 87% and 81% of budget.
+
+**Both given a measured budget of `15_000`** (≥ 2× measured, rounded up; they now
+report 30% and 27%), each with the measurement and the diagnosis beside it — and
+each naming the real remedy, because a budget is not one:
+
+- `serve.real-listener.test.ts:139` — the 4.3 s is **one-time listener warm-up**
+  billed to whichever test runs first. Its six siblings doing the same work cost
+  241–266 ms. The remedy is a `beforeAll`, so that a reorder cannot move the risk
+  to another name.
+- `sse.test.ts:306` — **not** warm-up. It is last in its describe, the three above
+  it cost 33–110 ms, and it holds a real ~4 s wait in `server.close()` or the
+  `readUntil` after it. Hypothesis recorded unverified: `SHUTDOWN_GRACE_MS` is
+  5000. The remedy is to remove the wait.
+
+Both are `apps/server` changes and belong to server-dev, not to this issue.
+
+### 5. Failure paths of the check itself
+
+```
+$ rm -rf coverage-raw && npm run test:slow:report
+EXIT=1
+test:slow ✗ could not read …/coverage-raw/vitest-results.json: ENOENT …
+test:slow ✗ Nothing was measured, so nothing is being reported.
+
+$ (report with every `location` stripped) npm run test:slow:report
+EXIT=1
+test:slow ✗ … carries no task locations — re-run vitest with --includeTaskLocation,
+            without which no test can be joined to the budget it declares
+```
+
+A report that could not be produced says so. It never prints a clean summary it
+did not earn.
+
+### 6. Tests, lint, typecheck
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --reporter=verbose scripts/slow-tests.test.ts
+ Test Files  1 passed (1)
+      Tests  31 passed (31)
+EXIT=0
+
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --reporter=verbose scripts
+ Test Files  21 passed (21)
+      Tests  1058 passed (1058)
+EXIT=0
+
+$ ./node_modules/.bin/eslint <the five TS files touched>   → 0
+$ ./node_modules/.bin/prettier --check <the nine files>    → 0
+$ ./node_modules/.bin/tsc --noEmit -p scripts/tsconfig.json → 0
+```
+
+One test failed on its first run and caught a real error in my own evidence:
+SERVER-053 cites `bulk.test.ts:177`, which is the **comment** line, while the
+`it(` starts at **141**. The parser was right and the citation was wrong.
+
+Two of the 31 exist so a constant cannot become a lie: they import
+`vitest.config.ts` and assert it still sets no `testTimeout`, and check that
+`apps/ui` has not grown a config that shadows it. `VITEST_DEFAULT_TIMEOUT_MS` is
+5000 only while that holds.
+
+### 7. What was rejected
+
+- **">20% idle", this issue's own proposal.** Refuted by measurement: 33 findings
+  on a green suite. Withdrawn in the acceptance criteria rather than quietly
+  dropped.
+- **A flat wall-clock threshold** ("no test may exceed 2500 ms"). It would flag
+  `bulk.test.ts` forever, which is the file that did everything right. The
+  quantity has to be a fraction of the test's **own** budget or the model answer
+  is punished for being the model answer.
+- **Making the check block.** Refused with a reason, not skipped: a wall-clock
+  gate on a shared runner fails on contention, which is the disease. Escalated as
+  gate policy.
+- **A static grep or ESLint rule.** ui-dev already declined one over
+  `click()`-then-`keyboard` after a sweep produced four correct sites, and the
+  same objection applies to any purely textual rule here: source text cannot say
+  how long a test takes. The check is built on **measurements**, which is why it
+  can be precise — and the parser it needs is exactly the one the hand-rolled
+  grep got wrong.
+- **Fixing the third finding at 51%.** Diagnosing it is server-dev work, and
+  sizing a budget without a diagnosis is the thing the new rule forbids.
+- **Touching `CLAUDE.md`.** Outside the boundary I was given. Recommended instead.
+
+### 8. Machine hygiene
+
+Six busy-loop spinners started for the contention measurement, all killed by
+recorded pid. One `apps/server` run hit a 2-minute tool timeout and was re-run in
+the background; the spinners it had left were swept by pid and confirmed gone
+with `ps`. No process on port 8765 was touched. Final check: no `vitest` or
+spinner processes remained.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing — 31 new in `scripts/slow-tests.test.ts`
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified — including the one that was **withdrawn** on measurement rather than met
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix
@@ -325,3 +596,60 @@ It was checked as a possible regression before being called load. UI-165 changed
 when a column earns a thread margin, and a viewport assertion on a revealed
 conversation is exactly what that could disturb — so it was run in isolation and
 then in a second full suite before the release moved on. Neither reproduced it.
+
+## Three UI instances closed, and what generalises (2026-08-24, ui-dev, v0.22.0)
+
+**Not closing this issue.** UI-080, UI-033 and UI-046 were the three UI issues
+this file's *"make it deterministic — wait on the condition, not on a duration"*
+rule pointed at. All three are done. What they establish is a sharper form of the
+criterion at the foot of the summary, and the sharpening is the part worth
+keeping.
+
+**None of the three was a load flake, and two of them were product defects.**
+
+- **UI-033** — a test that failed on an idle machine, every run, once the width
+  transition it raced was waited out. The cause was an **event order** in the
+  product: Chromium dispatches a movement's boundary events before its
+  `mousemove`, and the board activated on `mouseover` while releasing a keyboard
+  latch on `mousemove` — so the first movement's activation was dropped by the
+  latch that same movement released. The spec had been stabilised earlier with an
+  honest two-move gesture, which is exactly the shape of a fix written **around**
+  a defect rather than over it. The rule that catches this: *a stabilisation that
+  changes the gesture rather than the wait is a bug report.*
+- **UI-046** — dev-only, and it never failed at all, because nothing asserted the
+  thing that was dropped. `comments-tab.spec.ts` said "expanded and flashing" in
+  its own comment and asserted only the expansion. A green suite was proving half
+  of what its author believed. The rule: *a claim in a test's prose that the test
+  does not assert is an untested claim, and the prose is where to look for them.*
+- **UI-080** — genuinely test-side, and the one that fits this file's original
+  description. But its sites did **not** fail under load; they failed silently and
+  passed. An unfocused `Ctrl/Cmd+A` selects the page rather than the editor body,
+  and the copy that follows carries the page's chrome onto the clipboard while the
+  assertion — "both flavours are present" — stays true. Forcing the condition (a
+  `blur()` between the click and the key) reproduced it byte for byte on an idle
+  machine.
+
+**The generalisation for this issue's criterion.** *A test that fails without
+contention is not load-sensitive* was the tell recorded here after SERVER-060.
+The three above add its neighbour: **a test that has never failed is not evidence
+either.** Two of these three defects were invisible to the suite — one because
+the assertion was too loose to notice a wrong result, one because the assertion
+was missing. Where a wait is being considered, the cheap discriminator is to
+**force the condition the wait would hide** — blur the surface, park the pointer,
+render under `StrictMode` — and see what the suite says. If it still passes, the
+suite is not watching, and adding the wait would make that permanent.
+
+**A grep-check or ESLint rule over `click()`-then-`keyboard` was considered and
+declined**, and the reason belongs here rather than in UI-080. That sweep produced
+**four** sites that are correct as they stand — three document-level hotkeys where
+no element needs focus, one right-click whose key is aimed at a menu — each
+carrying prose that a rule cannot read. A rule suppressed at a quarter of its hits
+teaches people to suppress it. If infra-dev wants the guard, the honest shape is a
+check that requires *any* awaited assertion between the click and the key, not
+`toBeFocused()` specifically, so a justified site satisfies it by carrying the
+condition it actually needs.
+
+**Load measurement taken while closing them**, on the machine this file keeps
+notes about: `clipboard`, `autocomplete-keys`, `turn-breaks` and `context-menu` at
+`--workers=4 --repeat-each=10` — **500 passed in 5.1 min**, zero flaky. Full
+Playwright suite at `--workers=2`: **640 passed**, twice, on two different trees.

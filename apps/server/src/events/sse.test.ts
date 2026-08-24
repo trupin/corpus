@@ -313,5 +313,15 @@ describe("GET /events over a real socket", () => {
     // The stream ended because the server closed it, not because the client did.
     const rest = await readUntil(response.body as ReadableStream<Uint8Array>, () => false);
     expect(rest).not.toContain("event:");
-  });
+    // Measured 4042 ms idle, 4067-4107 ms under load averages of 12 and 45 — 81%
+    // of the 5000 ms default, and indifferent to load (INFRA-020). Unlike its
+    // neighbour in serve.real-listener.test.ts this is not warm-up: it is the
+    // last test in its describe, so nothing is being amortised, and the three
+    // tests above it cost 33-110 ms. The ~4 s is a real wait held by
+    // `server.close()` or by the `readUntil` after it. Unverified hypothesis for
+    // whoever picks it up: SHUTDOWN_GRACE_MS is 5000 (lifecycle.ts), and a
+    // shutdown that waits out a grace period would explain both the magnitude
+    // and the indifference. Given room so it cannot fail on the clock while that
+    // stands; the remedy is to remove the wait, not to keep the number.
+  }, 15_000);
 });

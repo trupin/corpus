@@ -1,4 +1,4 @@
-import type { Resident } from "@corpus/contract";
+import { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSES, type Resident } from "@corpus/contract";
 
 /**
  * **How this CLI says who is resident** — one function, so four surfaces cannot
@@ -12,13 +12,13 @@ import type { Resident } from "@corpus/contract";
  *   exist in the workspace first.
  * - `{name, docId}` — a **profiled resident**: an `agent-def` document a reader
  *   can open to see what the agent is.
- * - `{name, docId: null}` — a profiled resident whose **profile is missing**:
- *   renamed, deleted, or moved out of `.claude/agents/` since. The designation
- *   stands and the resident goes on owning its scope; §7 requires the miss be
- *   *reported* rather than silently substituted, and this is that report.
- *   **Archiving is not one of the ways in** — an archived `agent-def` still under
- *   that root resolves exactly as before, and is still designatable, so it prints
- *   as the second state, with its id.
+ * - `{name, docId: null}` — a profiled resident whose **profile is missing**.
+ *   The ways in are {@link MISSING_PROFILE_CAUSES}, which is the list every
+ *   surface here composes from rather than restating (SHARED-054); archiving is
+ *   deliberately not among them, and the reason is on that constant. The
+ *   designation stands and the resident goes on owning its scope; §7 requires
+ *   the miss be *reported* rather than silently substituted, and this is that
+ *   report.
  *
  * **The rule is the contract's; the word is this CLI's, and deliberately.**
  * `schemas/agents.ts` states the binding part — a caller must never substitute a
@@ -57,6 +57,63 @@ import type { Resident } from "@corpus/contract";
  * resident from th_…` — and a bare "general resident" reads there as a name.
  */
 export const GENERAL_RESIDENT = "a general resident";
+
+/**
+ * **What makes a resident's profile go missing — one home, re-exported here**
+ * (SHARED-054).
+ *
+ * These were hand-typed prose at ten sites, then composed from three separate
+ * arrays, then held equal by a parity test. A test holding three lists equal is
+ * not one home; it is three homes with a guard. `packages/contract` is the
+ * dependency-correct home — `apps/cli` and `packages/kit` may both import it and
+ * it may import neither — so the array lives there and this package re-exports
+ * it under the names its own help text already uses.
+ *
+ * **Archiving is deliberately absent** from the list, and that is the false
+ * statement PR #50 removed: an archived `agent-def` stays under
+ * `.claude/agents/`, keeps resolving, and stays designatable.
+ * `scripts/missing-profile-parity.test.ts` still pairs each cause with a
+ * **workspace act** and asks the real projector what that act does, so a cause
+ * added without an act — or an act that starts emptying the field without a
+ * cause — is a failing test rather than a sentence nobody re-measures. What it
+ * no longer has to do is compare copies against each other.
+ */
+export { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSES };
+
+/**
+ * The causes as one English list, with the root code-quoted for the help
+ * registry's markdown — `docs/cli.md` is generated from these strings, and a
+ * bare path there reads as prose rather than as a path.
+ *
+ * Every site says *"has since been ${this}"* or a close variant, so what is
+ * shared is the enumeration and not the whole sentence: a help paragraph in
+ * which every noun is interpolated reads worse than the drift it prevents, and
+ * an unreadable help text is its own defect (SHARED-054, decision 2).
+ */
+export const MISSING_PROFILE_CAUSES_PHRASE = ((): string => {
+  const quoted = MISSING_PROFILE_CAUSES.map((cause) =>
+    cause.replace(AGENT_DEF_ROOT, `\`${AGENT_DEF_ROOT}\``),
+  );
+  return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1] ?? ""}`;
+})();
+
+/**
+ * The sentence every one of these surfaces then adds, composed here so the true
+ * half of the claim travels with the false half's correction.
+ *
+ * SHARED-053 removed archiving from the causes; this is what replaced it, and
+ * it has to stay beside them — a reader who has just been told three ways a
+ * profile can vanish will otherwise assume archiving is a fourth.
+ *
+ * **`that root` rather than the path interpolated again**, deliberately: the
+ * clause always follows {@link MISSING_PROFILE_CAUSES_PHRASE}, which has just
+ * named `.claude/agents/`, and the same words are pinned against the contract's
+ * `Resident.docId` description by `resident.test.ts`. Spelling the path twice in
+ * two sentences would read worse and break that pin.
+ */
+export const ARCHIVING_IS_NOT_A_CAUSE =
+  "**Archiving is not one of those**: an archived `agent-def` still under that root resolves " +
+  "exactly as before, and is still designatable";
 
 /**
  * What stands where the profile document's id would be, when the name resolves

@@ -129,6 +129,9 @@ async function stubThreadTurns(page: Page): Promise<void> {
         // vocabulary and has no absent value (UI-102).
         agent: "none",
         resident: null,
+        // The server's answer to §10's interlock, published rather than derived
+        // (CONTRACT-036).
+        unread: false,
         turns: [
           {
             author: "user",
@@ -167,6 +170,13 @@ interface Flavors {
 /** Selects the whole body, copies it, and reads both flavors back. */
 async function copyWholeBody(page: Page): Promise<Flavors> {
   await page.locator(".reader .ProseMirror").click();
+  // `click()` resolves when the mouse events land, which is not when the target
+  // has taken focus. A key inside that gap reaches the page instead of the
+  // editor: an unfocused `Ctrl/Cmd+A` selects the whole document rather than the
+  // body, and the copy or paste that follows works on the wrong scope — a
+  // plausible-looking wrong result, not an error. Waiting on the condition, not
+  // on a duration (UI-080; the pattern is `soft-wrap.spec.ts`'s `caretIn`).
+  await expect(page.locator(".reader .ProseMirror")).toBeFocused();
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("ControlOrMeta+c");
   return page.evaluate(async () => {
@@ -313,6 +323,10 @@ async function copyViaContextMenu(page: Page, within: string): Promise<Flavors> 
   // right-clicking one collapses the selection before the menu is asked.
   const prose = page.locator(`${within} .doc-body h1`).first();
   await prose.click();
+  // The click target and the focus target differ — the `h1` is inside the
+  // editor, and focus lands on the editor root — so the wait is on the root, as
+  // `soft-wrap.spec.ts`'s `caretIn` does it (UI-080).
+  await expect(page.locator(`${within} .ProseMirror`)).toBeFocused();
   await page.keyboard.press("ControlOrMeta+a");
   await parkSentinel(page);
   await prose.click({ button: "right" });
@@ -408,6 +422,13 @@ async function pasteHtml(page: Page, html: string, plain: string): Promise<void>
     [html, plain] as const,
   );
   await page.locator(".reader .ProseMirror").click();
+  // `click()` resolves when the mouse events land, which is not when the target
+  // has taken focus. A key inside that gap reaches the page instead of the
+  // editor: an unfocused `Ctrl/Cmd+A` selects the whole document rather than the
+  // body, and the copy or paste that follows works on the wrong scope — a
+  // plausible-looking wrong result, not an error. Waiting on the condition, not
+  // on a duration (UI-080; the pattern is `soft-wrap.spec.ts`'s `caretIn`).
+  await expect(page.locator(".reader .ProseMirror")).toBeFocused();
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("ControlOrMeta+v");
 }
@@ -477,6 +498,8 @@ test.describe("pasting rich text into the document view", () => {
       await navigator.clipboard.writeText("## Pasted heading\n\n- pasted bullet\n");
     });
     await page.locator(".reader .ProseMirror").click();
+    // The caret has to be in the body before `Ctrl/Cmd+A` (UI-080).
+    await expect(page.locator(".reader .ProseMirror")).toBeFocused();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("ControlOrMeta+v");
 
@@ -507,6 +530,8 @@ test.describe("pasting through the right-click menu", () => {
 
     const prose = page.locator(".reader .doc-body h1").first();
     await prose.click();
+    // Clicked on the `h1`, focused on the editor root (UI-080).
+    await expect(page.locator(".reader .ProseMirror")).toBeFocused();
     await page.keyboard.press("ControlOrMeta+a");
     await prose.click({ button: "right" });
     const menu = page.getByRole("menu", { name: "Actions for the selection" });

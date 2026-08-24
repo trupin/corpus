@@ -87,9 +87,16 @@ import { useState } from "react";
  */
 const OUTSTANDING_STATUSES = OUTSTANDING_JOB_STATUSES;
 
-/** Sorting key that never throws a job out of the list for an unreadable stamp. */
-function startedAt(job: Job): number {
-  const at = Date.parse(job.started);
+/**
+ * Sorting key that never throws a job out of the list for an unreadable stamp.
+ *
+ * **`enqueued`, not `started`** (CONTRACT-029). "Oldest" here means the request
+ * that has been waiting longest, and a job that has not written a log line has
+ * no `started` at all — sorting by it would order the whole queued half of the
+ * list by `null`. The enqueue instant is always known and never moves.
+ */
+function enqueuedAt(job: Job): number {
+  const at = Date.parse(job.enqueued);
   return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
 }
 
@@ -115,7 +122,7 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
   for (const job of jobs) {
     if (job.originId !== threadId) continue;
     if (!OUTSTANDING_STATUSES.includes(job.status)) continue;
-    if (oldest === null || startedAt(job) < startedAt(oldest)) oldest = job;
+    if (oldest === null || enqueuedAt(job) < enqueuedAt(oldest)) oldest = job;
   }
   return oldest;
 }
@@ -138,18 +145,89 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
  *   reads as working, counting from the first ask — which is exactly the state
  *   the person is in.
  *
- * **`deferred` is `working: false`.** It was claimed and then parked because
- * somebody is editing the document it needs (SPEC.md §7): the reply is still
- * coming, so it stays outstanding, but nobody is working it this minute and the
- * row must not say otherwise. Naming *why* it is waiting is worth doing and is
- * not done here — it needs the blocking document, and that is a wider row than
- * this issue's split.
+ * **`deferred` is `working: false`, and since UI-115 it is more than that.** It
+ * was claimed and then parked because somebody is editing the document it needs
+ * (SPEC.md §7): the reply is still coming, so it stays outstanding, but nobody
+ * is working it this minute and the row must not say otherwise. UI-097 left it
+ * folded into "waiting", which is true and invites a false inference — *nothing
+ * is happening and nobody has looked* — when in fact something looked, and it is
+ * waiting on **the person reading the row**. So it is reported as its own state,
+ * carrying the document it is parked on.
  */
 export interface OutstandingAgentRequest {
   /** The oldest unfinished job on this thread — the one the clock runs from. */
   readonly job: Job;
   /** Whether some unfinished job on this thread has actually been claimed. */
   readonly working: boolean;
+  /**
+   * Where a **parked** request is parked, or `null` when nothing is parked.
+   *
+   * Non-null only while `working` is false: a thread with something genuinely
+   * in flight is being worked, whatever else is queued behind it.
+   */
+  readonly deferred: DeferredOn | null;
+}
+
+/**
+ * The document a deferral is waiting on — `Job.blockedOn` and its title
+ * (SPEC.md §7, CONTRACT-021).
+ *
+ * The title is the denormalised copy the server reads at response time, and it
+ * is `null` for a document that no longer exists — so the wording has to survive
+ * an unnamed document rather than printing an empty quotation.
+ */
+export interface DeferredOn {
+  /** The document the agent is waiting on, or `null` off-contract. */
+  readonly docId: string | null;
+  readonly title: string | null;
+}
+
+/**
+ * What to call the document a deferral is parked on, or `null` when it cannot be
+ * called anything.
+ *
+ * The title, then the id, then nothing. The id is a poor name and a true one —
+ * it is what every other surface falls back to — while a `null` here is what
+ * makes the wording drop the clause instead of printing an empty quotation
+ * (UI-098's rule: an absent answer is never presented as one).
+ */
+export function deferredOnName(deferred: DeferredOn): string | null {
+  if (deferred.title !== null && deferred.title !== "") return deferred.title;
+  return deferred.docId !== null && deferred.docId !== "" ? deferred.docId : null;
+}
+
+/**
+ * What a thread's outstanding work **is**, in the one vocabulary every surface
+ * that reports it shares (SPEC.md §8; UI-097, extended by UI-115).
+ *
+ * - `working` — something on this thread is `in-progress`. Somebody claimed it
+ *   and is holding it now.
+ * - `deferred` — something was claimed, looked at, and **put down on purpose**
+ *   because a person is editing the document it needs. §7 is emphatic that this
+ *   is not a failure: *"Nothing refused it: the agent deferred because it saw,
+ *   not because it was blocked."*
+ * - `waiting` — outstanding and nobody is holding it.
+ */
+export type PendingState = "working" | "deferred" | "waiting";
+
+/**
+ * Which of the three this request is in.
+ *
+ * **`deferred` outranks `waiting`, and `working` outranks both.** A thread can
+ * hold several events at once, so a precedence is needed rather than a lookup,
+ * and this one is chosen twice over: one claimed event is enough to make "the
+ * agent is working on this" true, and among the unclaimed ones a deferral is the
+ * only state whose reason is knowable *and* clearable by the person reading it.
+ * A row that said "queued — waiting to be picked up" while a deferral sat behind
+ * it would hide the one fact they could act on.
+ *
+ * `packages/kit/src/row/useRowSignals.ts` applies the same precedence for the
+ * board row's dot, so the two surfaces cannot disagree about what state a row is
+ * in.
+ */
+export function pendingStateOf(request: OutstandingAgentRequest): PendingState {
+  if (request.working) return "working";
+  return request.deferred === null ? "waiting" : "deferred";
 }
 
 /**
@@ -168,10 +246,27 @@ export function pickOutstandingRequest(
 ): OutstandingAgentRequest | null {
   const job = pickOutstandingJob(jobs, threadId);
   if (job === null) return null;
-  const working = jobs.some(
-    (candidate) => candidate.originId === threadId && candidate.status === "in-progress",
-  );
-  return { job, working };
+  const mine = jobs.filter((candidate) => candidate.originId === threadId);
+  const working = mine.some((candidate) => candidate.status === "in-progress");
+  /*
+   * The oldest deferral, for the same reason the clock takes the oldest job: two
+   * parked events are one pause as far as the person reading the card is
+   * concerned, and it began with the first of them. `blockedOn` is `null` only
+   * off-contract (CONTRACT-021 makes it non-null exactly when `status` is
+   * `deferred`), and a deferral that names no document is still a deferral —
+   * `PendingIndicator` has a sentence for it that names no document either,
+   * rather than this reading dropping it back into "waiting".
+   */
+  let parked: Job | null = null;
+  if (!working) {
+    for (const candidate of mine) {
+      if (candidate.status !== "deferred") continue;
+      if (parked === null || enqueuedAt(candidate) < enqueuedAt(parked)) parked = candidate;
+    }
+  }
+  const deferred =
+    parked === null ? null : { docId: parked.blockedOn, title: parked.blockedOnTitle };
+  return { job, working, deferred };
 }
 
 /**
@@ -260,65 +355,4 @@ export function useOutstandingAgentRequest(threadId: string): OutstandingAgentRe
   const answer =
     escalatedAt !== null && exact.dataUpdatedAt >= escalatedAt ? exact.data : undefined;
   return pickOutstandingRequest(answer?.jobs ?? outstanding.jobs, threadId);
-}
-
-/** The one field of a turn this module needs: when it was posted. */
-export interface TurnInstant {
-  readonly ts: string;
-}
-
-/**
- * When the wait began — what `PendingIndicator` counts from.
- *
- * **`Job.started` means two different instants** (CONTRACT-029, filed). It is the
- * queue event's own `created` — the moment the requesting turn was posted, since
- * the enqueue happens inside that request — right up until the job writes its
- * first log line, after which the server records *that* line's timestamp and
- * never moves the field again (`recordJobLine`'s `COALESCE`). Reported raw, a job
- * that sat pending for ten minutes would therefore **reset** the elapsed clock
- * the instant the agent started talking, which is the "reloading must not restart
- * the wait" lie `PendingIndicator` exists to avoid.
- *
- * The thread's own turns bound it, because the requesting turn is a turn *of this
- * thread* and it cannot be newer than the enqueue. So: **the newest turn that is
- * not newer than `job.started`**. While the job is queued that is the requesting
- * turn itself and the instant is exact; once the job's start has run ahead of the
- * request it holds the clock at the latest instant the request could possibly
- * have been made, instead of restarting it.
- *
- * **Newest-not-newer rather than simply the latest turn**, which is what this did
- * before and is where the review of PR #21 found it stepping. `min(job.started,
- * latestTurn)` is the minimum of two values that only ever increase, so it only
- * ever increases too: ask at 10:05, first log at 10:07 (`started` → 10:07), then a
- * note-only turn at 10:25 — and `since` moves 10:05 → 10:07, so the displayed wait
- * jumps *down* by two minutes. Filtering by `started` instead of taking the
- * minimum makes turns posted after the job's recorded start irrelevant, which is
- * every turn in that scenario, and the clock holds at 10:05. The answer is also
- * never *later* than the old one — it is a turn, and it is ≤ `job.started` — so it
- * cannot over-report a wait either.
- *
- * **What it still cannot do, and why.** A turn posted in the gap between the
- * enqueue and the first log — a note at 10:06 in the example — enters the
- * eligible set when `started` steps to 10:07, and `since` moves 10:05 → 10:06.
- * The step is bounded by (first log − enqueue) and it is the same step the
- * previous implementation had there; removing it needs the enqueue instant as a
- * field of its own, which is exactly CONTRACT-029. The test named for it records
- * the behaviour rather than blessing it.
- */
-export function agentWaitSince(job: Job, turns: readonly TurnInstant[]): string {
-  const started = Date.parse(job.started);
-  if (Number.isNaN(started)) return job.started;
-  let since: string | null = null;
-  let sinceAt = Number.NEGATIVE_INFINITY;
-  for (const turn of turns) {
-    const at = Date.parse(turn.ts);
-    // An unreadable stamp is not evidence about when anything happened, so it
-    // neither bounds the clock nor disqualifies the turns around it.
-    if (Number.isNaN(at) || at > started) continue;
-    if (at >= sinceAt) {
-      since = turn.ts;
-      sinceAt = at;
-    }
-  }
-  return since ?? job.started;
 }

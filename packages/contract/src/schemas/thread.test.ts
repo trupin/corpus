@@ -44,6 +44,7 @@ const thread = {
   anchor: "anc_k4f7",
   agent: "engaged",
   resident: null,
+  unread: false,
   turns,
 };
 
@@ -74,6 +75,38 @@ describe("Thread", () => {
 
   it("rejects `archived`, which is a document status but not a thread status", () => {
     expect(ThreadSchema.safeParse({ ...thread, status: "archived" }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-036. `unread` lived on `DocRow` alone, so a surface that reached a
+   * conversation without a list row — a standalone thread, or one past the first
+   * page of a busy parent — had to guess, and SPEC.md §10's interlock makes the
+   * answer an input to a placement rather than only to a badge.
+   *
+   * Required and non-nullable, unlike `DocRow.unread`: this resource is only
+   * ever a thread, so `false` means *nothing unseen* and never *unknown*.
+   */
+  it("carries read state, required and never null", () => {
+    expect(ThreadSchema.parse(thread).unread).toBe(false);
+    expect(ThreadSchema.parse({ ...thread, unread: true }).unread).toBe(true);
+
+    const { unread: _dropped, ...missing } = thread;
+    expect(ThreadSchema.safeParse(missing).success).toBe(false);
+    expect(ThreadSchema.safeParse({ ...thread, unread: null }).success).toBe(false);
+    expect(ThreadSchema.safeParse({ ...thread, unread: "true" }).success).toBe(false);
+  });
+
+  /**
+   * The description ties itself to `DocRow.unread` by name rather than restating
+   * the rule, so the two cannot come to describe the same comparison
+   * differently — the way `DocRow.unreadThreads` already ties itself to the
+   * per-thread flag.
+   */
+  it("names the row's field rather than restating the comparison", () => {
+    const description = ThreadSchema.shape.unread.meta()?.description ?? "";
+    expect(description).toContain("`DocRow.unread`");
+    expect(description).toContain("agree by construction");
+    expect(description).toContain("A thread with no turns reads `false`");
   });
 });
 

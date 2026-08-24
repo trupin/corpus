@@ -56,6 +56,29 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 - **Playwright** for e2e, in `apps/ui/e2e/*.spec.ts` only — e2e runs against the real app (real server, real files), never mocks.
 - A bug fix lands with a regression test that fails before the fix.
 
+### When a test goes red and you suspect the machine (INFRA-020)
+
+**Establish the cause before touching a timeout.** A longer number is the last step, never the first, and three of the four things that look like load are not load. Work down this list in order and stop at the first that matches.
+
+1. **Did it fail on an uncontended run?** Then it is not load-sensitive. It is racy, and the product may be too. UI-033 was filed as a race for two releases and was a product defect that failed _every_ run once the transition it raced was waited out. SERVER-060 was the same shape and was a torn read in the queue.
+2. **Did the run itself take an abnormal wall-clock time?** A normal `apps/server` run on the maintainer's machine is ~140 s. At 450–475 s the suite is not measuring the code. Sets of failures that are **disjoint between two runs of the same tree** are the signature of contention — a single stable failure is not.
+3. **Is it slow rather than load-sensitive?** These are different faults with different fixes, and `--repeat-each` on a busy box cannot tell them apart. Measured here: two `apps/server` tests sat at 87% and 81% of their budget and moved less than 250 ms between load average 6 and load average 45. A repeat sweep would have called them stable. The question that separates them is **what fraction of its budget does it use, and does that fraction move when the machine gets busy.**
+4. **Only then size a budget** — and only when the time is genuine work that is the point of the test.
+
+**The rule for the budget itself.** A test at or above **50% of its own timeout, measured under contention, is a gate risk.** The threshold is derived, not picked: the worst load multiplier measured in this repository is ~1.7× (`docs/bulk.test.ts`, 2338 ms idle → 4056 ms at load average 45), a test survives that at any fraction below 1/1.7 = 0.588, and 50% is the round number under it. Size a new budget at **at least twice the measured-under-contention time**, and round up rather than sitting on the line. INFRA-020 originally proposed ">20% when idle". Measured over a real 4675-test `apps/server` run under a load average of 19–25, that threshold flags **33 tests** and 50% flags **one** — and a rule nobody follows is worse than none.
+
+**Write the measurement and the reason beside the number.** `apps/server/src/docs/bulk.test.ts:141` is the model answer: what it measured, why the work is the point of the test, and why it was given room rather than trimmed. A bare `}, 20_000)` is not a diagnosis — it is the diagnosis being skipped, and the next reader cannot tell which.
+
+**Where the slow time is not the test's own work, say so and name the real remedy.** A 4 s test is a gate risk whether the 4 s is its own wait, its neighbours' one-time warm-up, or genuine load-sensitive cost — and only the third wants a bigger number. The first two want the wait removed or the warm-up moved into a `beforeAll`, and a budget is a stopgap until then.
+
+`npm run test:slow` measures the whole suite and lists every test at or above the threshold **of its own declared budget**, so a diagnosed test reports clean. It reports and does not block: the numerator is wall-clock time on a shared machine, and a blocking form would go red because a runner was busy — the exact failure this section exists to stop. Do not hand-roll the sweep with grep: `[0-9]{4,}` does not match `20_000` across the numeric separator, which is how the model answer above was missed once already.
+
+### Two tests that never failed are not two tests that work
+
+- **A stabilisation that changes the gesture rather than the wait is a bug report.** If a test only passes once you give the user a second click, the product needs the first one to work (UI-033).
+- **A claim in a test's prose that the test does not assert is an untested claim.** `comments-tab.spec.ts` said "expanded and flashing" and asserted only the expansion (UI-046). The prose is where to look for these.
+- **A test that has never failed is not evidence either.** UI-080's clipboard assertion — "both flavours are present" — stayed true while the copy carried the whole page's chrome. Where you are about to add a wait, first **force the condition the wait would hide**: blur the surface, park the pointer, render under `StrictMode`. If the suite still passes, it is not watching, and the wait would make that permanent.
+
 ## Lint & format
 
 - ESLint (flat config, typescript-eslint) + Prettier, configured at the repo root. `npm run lint` and `npm run format:check` must pass. Since INFRA-025 the hooks run them **scoped to the diff** — the whole-repo run is CI's — so a violation in a file you did not touch surfaces in CI, not locally.

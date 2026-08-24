@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness, docRowFixture } from "../testing/index.js";
 import { Row, type RowProps } from "./Row.js";
+import { deferredRowTitle } from "./useRowSignals.js";
 
 afterEach(cleanup);
 
@@ -309,6 +310,78 @@ describe("badges", () => {
       );
     });
     expect(container.querySelector(".queued-dot")).toBeNull();
+  });
+
+  /**
+   * UI-115. A **deferral** is not an unclaimed event: it was taken, read, and
+   * put down because a person is editing the document it needs (SPEC.md §7).
+   * The dot is unchanged — nothing is being worked — and the sentence behind it
+   * says what a bare "waiting to be picked up" cannot: that it was seen, and
+   * what it is parked on. It is the only wait the reader can end.
+   *
+   * The deferral is read **before** the queued event beside it, which is the
+   * precedence `apps/ui`'s `pendingStateOf` uses for the conversation's own
+   * pending row: the two must not disagree about what state a row is in.
+   */
+  it("says what a parked event is parked on, ahead of an unclaimed one", async () => {
+    const { container } = renderRow(
+      { row: docRowFixture({ id: "doc_401k" }) },
+      {
+        "/api/jobs": {
+          jobs: [
+            {
+              eventId: "evt_queued",
+              status: "pending",
+              started: NOW.toISOString(),
+              updated: NOW.toISOString(),
+              lastLine: null,
+              originId: "doc_401k",
+              originTitle: "401k rollover",
+            },
+            {
+              eventId: "evt_parked",
+              status: "deferred",
+              started: NOW.toISOString(),
+              updated: NOW.toISOString(),
+              lastLine: null,
+              originId: "doc_401k",
+              originTitle: "401k rollover",
+              blockedOn: "doc_policy",
+              blockedOnTitle: "The reimbursement policy",
+            },
+          ],
+        },
+      },
+    );
+    await waitFor(() => {
+      expect(container.querySelector(".queued-dot")?.getAttribute("title")).toBe(
+        "Paused while The reimbursement policy is being edited",
+      );
+    });
+    expect(container.querySelector(".working-dot")).toBeNull();
+  });
+});
+
+/**
+ * The sentence itself (UI-115), apart from the row that shows it — the honesty
+ * is in the wording, and wording asserted only through a render is wording no
+ * test reaches directly.
+ */
+describe("deferredRowTitle", () => {
+  it("names the document by its title, then by its id", () => {
+    expect(deferredRowTitle({ blockedOn: "doc_a", blockedOnTitle: "The policy" })).toBe(
+      "Paused while The policy is being edited",
+    );
+    expect(deferredRowTitle({ blockedOn: "doc_a", blockedOnTitle: null })).toBe(
+      "Paused while doc_a is being edited",
+    );
+  });
+
+  it("says it is paused with no document to name, rather than leaving a hole", () => {
+    const said = deferredRowTitle({ blockedOn: null, blockedOnTitle: null });
+    expect(said).toBe("Paused — the agent is waiting for an edit to finish");
+    expect(said).not.toContain("undefined");
+    expect(said).not.toContain("null");
   });
 });
 

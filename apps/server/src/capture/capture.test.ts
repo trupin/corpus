@@ -312,3 +312,43 @@ describe("captureTitle", () => {
     expect(captureTitle("```\n```")).toBe(UNTITLED_CAPTURE);
   });
 });
+
+/**
+ * SERVER-070's third door. A capture's text becomes the filing thread's **first
+ * turn** as well as the document's body, so it reaches a turn by a route neither
+ * `POST /api/threads/{id}/turns` nor `POST /api/threads` covers — and SERVER-068
+ * never surveyed it. The rule is about the bytes, so it cannot depend on which
+ * of the three doors they arrived through.
+ */
+describe("a malformed form is refused at capture too (SERVER-070)", () => {
+  const BAD_FORM = "```form\nprompt: [unclosed\n```\n";
+
+  it("refuses an agent's capture carrying a `form` fence that does not parse", async () => {
+    const response = await postForm(ws, "/api/capture", [["text", BAD_FORM]], {
+      "x-corpus-author": "agent",
+    });
+    const payload = (await response.json()) as { code: string; message: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.code).toBe("bad_request");
+    expect(payload.message).toContain("form");
+  });
+
+  it("writes nothing when it refuses — no inbox document, no filing thread", async () => {
+    const before = inboxFiles();
+    await postForm(ws, "/api/capture", [["text", BAD_FORM]], { "x-corpus-author": "agent" });
+    expect(inboxFiles()).toEqual(before);
+  });
+
+  it("does not police a person's capture, which is quoting rather than asking", async () => {
+    // §6 makes a form something an agent asks. A person capturing a broken
+    // fence is capturing ordinary content, and refusing it would be the same
+    // class of error as blocking a save for a pre-existing condition.
+    expect((await capture([["text", BAD_FORM]], "user")).status).toBe(201);
+  });
+
+  it("accepts a well-formed form from the agent", async () => {
+    const good = '```form\nfields:\n  - question: "Rate?"\n    kind: "write"\n```\n';
+    expect((await capture([["text", good]], "agent")).status).toBe(201);
+  });
+});

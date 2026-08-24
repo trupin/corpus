@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_NAME_MAX_LENGTH, REQUESTED_WEIGHT_MAX_LENGTH } from "@corpus/contract";
-import { residentOrNull, residentToStored, storedResident } from "./resident.js";
+import { residentOrNull, residentProblem, residentToStored, storedResident } from "./resident.js";
 
 describe("residentOrNull", () => {
   it("reads a well-formed designation", () => {
@@ -200,5 +200,65 @@ describe("storedResident", () => {
     const general = { name: null, docId: null, weight: null, designationId: null };
     expect(storedResident(general, null)).toEqual(general);
     expect(storedResident(general, "doc_parent1")).toBeNull();
+  });
+});
+
+describe("residentProblem (SERVER-132)", () => {
+  it.each([
+    ["nothing at all", undefined],
+    ["an explicit null", null],
+  ])("says nothing about %s, which is what nearly every thread carries", (_label, value) => {
+    expect(residentProblem(value)).toBeNull();
+  });
+
+  it("says nothing about a block that reads as a designation", () => {
+    expect(residentProblem({ name: "researcher", docId: "doc_a1b2c3" })).toBeNull();
+    expect(residentProblem({ name: null, docId: null })).toBeNull();
+  });
+
+  it.each([
+    ["a bare name", "researcher"],
+    ["a list", [{ name: "researcher", docId: "doc_a1b2c3" }]],
+  ])("reports %s as not a mapping", (_label, value) => {
+    expect(residentProblem(value)).toBe("`resident` is not a mapping");
+  });
+
+  it("names the key at fault on the issue's own example, a numeric weight", () => {
+    // The PR #52 reviewer's case: `weight: 3` from a hand edit fails the parse
+    // and takes the whole block with it, so the thread reads as undesignated.
+    const problem = residentProblem({ name: "researcher", docId: "doc_a1b2c3", weight: 3 });
+    expect(problem).not.toBeNull();
+    expect(problem).toContain("`weight`");
+  });
+
+  it("names a bad profile pair without restating what a designation may be", () => {
+    const problem = residentProblem({ name: "researcher", docId: "th_a1b2c3" });
+    expect(problem).not.toBeNull();
+    expect(problem).toContain("`docId`");
+  });
+
+  it("agrees with the reader about which blocks are ill-shaped", () => {
+    // The one invariant that must never drift: a block the reader refuses is
+    // exactly a block this reports on, and vice versa. Both go through the same
+    // two normalizations, which is what makes it true rather than watched.
+    const cases: unknown[] = [
+      undefined,
+      null,
+      "researcher",
+      { name: "researcher", docId: "doc_a1b2c3" },
+      { name: "researcher", docId: "doc_a1b2c3", weight: 3 },
+      { name: null, docId: null },
+      { name: "researcher" },
+      { name: "   ", docId: "doc_a1b2c3" },
+      { name: "a".repeat(AGENT_NAME_MAX_LENGTH + 1), docId: "doc_a1b2c3" },
+      { name: "researcher", docId: "doc_a1b2c3", weight: "x".repeat(REQUESTED_WEIGHT_MAX_LENGTH) },
+    ];
+    for (const value of cases) {
+      const absent = value === undefined || value === null;
+      const reported = residentProblem(value) !== null;
+      expect(reported, JSON.stringify(value) ?? "undefined").toBe(
+        !absent && residentOrNull(value) === null,
+      );
+    }
   });
 });

@@ -753,8 +753,49 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * ── The liveness word, reserved the same way and for a sharper reason (UI-138) ──
+ *
+ * This box holds a **word**, and the value changes on a **fifteen-second clock**
+ * with nobody touching anything: `Residents` re-evaluates presence on
+ * `useNowTick`, because `isAgentPresent` expires a `live: true` whose evidence
+ * has aged past the grace window. `margin-left: auto` makes this box's width
+ * decide where `.lane-name` beside it is cut — so an unreserved box re-cut a
+ * conversation's title while a person was reading the roster.
+ *
+ * It is UI-134's defect one axis over, and `tabular-nums` cannot reach it: the
+ * variation is in letters rather than digits.
+ *
+ * **The vocabulary is closed at four words** (`LaneLiveness`, `@corpus/kit`),
+ * which makes the reservation a measurement rather than a guess:
+ *
+ *     live      4
+ *     lapsed    6
+ *     waiting   7
+ *     unknown   7
+ *
+ * 8ch is one character past the longest, exactly as `.lane-weight` above is one
+ * past the longest shipped label — so **no state this app can reach truncates**
+ * (SHARED-057 clause 3: measured against real content, so revealing is the
+ * uncommon case). `ch` is the honest unit here for `.lane-weight`'s reason: the
+ * row is `var(--mono)`, so the unit *is* "how many characters of room".
+ *
+ * **A fifth word cannot appear from a workspace** — `laneLiveness` maps the
+ * roster onto those four and nothing on the wire reaches this element — but if
+ * one ever did, it ellipsizes in place rather than widening the box, and the
+ * row's own `title` carries `laneStatement`'s sentence about the lane's
+ * liveness, which is the whole answer in words.
+ *
+ * `text-align: right` keeps the word flush with the row's trailing edge, which
+ * is where `margin-left: auto` alone put it: the reservation changes what the
+ * name can rely on, not where the word is drawn.
+ */
 .lane-meta {
   margin-left: auto;
+  width: 8ch;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lane-scope {

@@ -136,6 +136,15 @@ const RUNTIME_SURFACE = [
   "triagePrompt",
   "useRowActions",
   "useAgentActivity",
+  // …and what a row says while the agent has a request parked on somebody's
+  // editing (SPEC.md §7, UI-115): a sentence, so the board's dot and the
+  // conversation's pending row cannot come to word one state two ways.
+  "deferredRowTitle",
+  // §11's warning channel as a notice: one tone per code, exhaustive over
+  // `WarningCode`, so a carried effect is not painted as a failure (UI-106).
+  "WARNING_PRESENTATION",
+  "warningNotice",
+  "warningNotices",
   // rendered markdown + the `[[ref]]` grammar
   "MarkdownView",
   "parseRefs",

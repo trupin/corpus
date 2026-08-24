@@ -144,7 +144,16 @@ describe("the attachment raw-target guard, over a real socket", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toBe("attachment-bytes-ok\n");
-  });
+    // Measured 4328 ms idle, 4502-4570 ms under load averages of 12 and 45 —
+    // 87% of the 5000 ms default, and barely moved by load (INFRA-020). The time
+    // is one-time warm-up, not this assertion: this is the first test in the file
+    // to bind a real listener and boot a server, and its six siblings doing the
+    // same work cost 241-266 ms each. Given room because a budget cannot fix a
+    // cost that belongs to the file rather than the test. The real remedy is to
+    // move the warm-up into a `beforeAll` so it stops being charged to whichever
+    // test happens to run first — a reorder would otherwise move this risk to a
+    // different name without changing anything real.
+  }, 15_000);
 
   it.each([
     ["an encoded dot segment", "%2e%2e"],

@@ -4,6 +4,7 @@ import {
   useDoc,
   useSetDocArchived,
   useUpdateDocById,
+  warningNotices,
   type OpenPayload,
   type RevealTarget,
   type RowNotice,
@@ -554,8 +555,16 @@ export function Board(): ReactElement {
     }
     void (async () => {
       try {
-        await setArchived.mutateAsync({ id: target.id, archived: true });
+        const response = await setArchived.mutateAsync({ id: target.id, archived: true });
         toast({ tone: "info", message: archivedMessage(target.title) });
+        /*
+         * §7's folder move can carry documents this act never named — a nested
+         * `SKILL.md` disabled with the folder around it. The server reports each
+         * on §11's warning channel, and `e` used to drop the whole channel: the
+         * act narrated itself and said nothing about the skills it disabled.
+         * Information, not red: a carried effect is the spec working (UI-106).
+         */
+        for (const notice of warningNotices(response.warnings)) toast(notice);
       } catch (cause) {
         toast({ tone: "error", message: `Archive failed — ${(cause as Error).message}` });
       }

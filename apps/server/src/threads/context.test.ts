@@ -22,7 +22,7 @@ import {
   SearchQuerySchema,
   type ContextPack,
 } from "@corpus/contract";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
@@ -875,5 +875,90 @@ describe("GET /api/threads/{id}/context", () => {
 
     expect(response.status).toBe(200);
     expect(keys).toEqual([]);
+  });
+});
+
+/**
+ * SERVER-144, on the §7 rider signed 2026-08-24. The audit measured **4 of 11
+ * excerpt rows** in one pack naming `doc_skillcomment`, `doc_skillorchestrate`,
+ * `doc_skillconverse` and `doc_skillb8a2308c` — the agent's own instructions,
+ * quoted back to it as though they were the corpus, at roughly 580 tokens an
+ * event. `template` is the user's own document and stays.
+ */
+describe("the pack's excerpts are the corpus, not the machinery (SERVER-144)", () => {
+  let machinery: Workspace;
+
+  const machineryPack = async (id: string): Promise<ContextPack> =>
+    threadContextPack(reader(machinery), id, {});
+
+  beforeAll(() => {
+    machinery = createWorkspace("s144-context");
+    machinery.doc({
+      id: "doc_skill01",
+      path: ".claude/skills/comment/SKILL.md",
+      title: "Comment",
+      body: "Worked example about the escrow reserve.",
+    });
+    machinery.doc({
+      id: "doc_tpl01",
+      type: "template",
+      title: "Template",
+      body: "Escrow reserve.",
+    });
+    machinery.doc({ id: "doc_view01", type: "view", title: "A view", body: "Escrow reserve." });
+    machinery.doc({ id: "doc_brd01", type: "board", title: "A board", body: "Escrow reserve." });
+    machinery.doc({ id: "doc_peer01", title: "Peer note", body: "The escrow reserve is set." });
+    machinery.doc({
+      id: "doc_parent01",
+      title: "Mortgage",
+      body: "The escrow reserve is recalculated annually.",
+    });
+    machinery.thread({
+      id: "th_one",
+      title: "About the reserve",
+      parent: "doc_parent01",
+      turns: [
+        {
+          author: "user",
+          ts: "2026-08-01T09:00:00Z",
+          body: "See [[doc_skill01]], [[doc_tpl01]], [[doc_view01]], [[doc_brd01]] and [[doc_peer01]].",
+        },
+      ],
+    });
+    // A thread whose parent *is* a skill: the parent block must survive the
+    // exclusion, because a parent is read by id and never through the
+    // candidate query.
+    machinery.thread({
+      id: "th_onskill",
+      title: "About the skill",
+      parent: "doc_skill01",
+      turns: [{ author: "user", ts: "2026-08-01T09:00:00Z", body: "Is this right?" }],
+    });
+    machinery.reproject();
+  });
+
+  afterAll(() => {
+    machinery.close();
+  });
+
+  it("carries no excerpt naming an excluded type, though every one is linked", async () => {
+    const result = await machineryPack("th_one");
+    expect(result.excerpts.map((row) => row.id).sort()).toEqual(["doc_peer01", "doc_tpl01"]);
+  });
+
+  it("keeps a template excerpt, which the user wrote", async () => {
+    const result = await machineryPack("th_one");
+    expect(result.excerpts.map((row) => row.id)).toContain("doc_tpl01");
+  });
+
+  it("still gives a thread on a skill that skill as its parent block", async () => {
+    const result = await machineryPack("th_onskill");
+    // A parent is read by id through `readableParent`, never through the
+    // candidate query the exclusion sits in — the shape is what proves the pack
+    // has one at all.
+    // The thread names a parent and no anchor, so the pack's shape is
+    // `whole-document` — either way it has a parent block, which is the point.
+    expect(result.shape).toBe("whole-document");
+    expect(result.shape === "whole-document" ? result.parent.id : null).toBe("doc_skill01");
   });
 });

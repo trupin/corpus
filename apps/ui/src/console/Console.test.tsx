@@ -55,7 +55,10 @@ function job(overrides: Partial<Job> = {}): Job {
     eventId: "evt_9f2",
     type: "comment.created",
     status: "in-progress",
-    started: "2026-07-27T09:12:00Z",
+    // Three instants, each meaning one thing (CONTRACT-029): the enqueue, the
+    // first log line, the last one. This row is in progress and has spoken.
+    enqueued: "2026-07-27T09:12:00Z",
+    started: "2026-07-27T09:12:04Z",
     updated: "2026-07-27T09:12:09Z",
     lastLine: "drafting…",
     originId: "th_carrier",
@@ -983,6 +986,30 @@ describe("the master-detail body", () => {
     const lines = [...container.querySelectorAll(".job-log-lines > div")];
     expect(lines[0]?.className).toBe("");
     expect(lines[1]?.className).toBe("err");
+  });
+
+  /**
+   * CONTRACT-029. `Job.started` is the first log line and is null until there is
+   * one, so a job that has not spoken has no start time to put on the meta line.
+   * It used to get one anyway, because `started` carried the enqueue instant
+   * while the job was queued — the overloaded field's second meaning showing up
+   * as a word that was not true.
+   */
+  it("says queued rather than started for a job that has written no log line", async () => {
+    const { container } = renderConsole(
+      transport({
+        jobs: [job({ status: "pending", started: null, lastLine: null })],
+        log: { nextCursor: 0, lines: [] },
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".job-detail-head")).not.toBeNull();
+    });
+    const meta = container.querySelector(".job-detail-head .job-meta")?.textContent ?? "";
+    expect(meta.startsWith("pending · queued ")).toBe(true);
+    expect(meta).not.toContain("started");
+    expect(meta.endsWith("· evt_9f2")).toBe(true);
   });
 
   it("offers Retry and Abandon only for a job that is going nowhere on its own", async () => {

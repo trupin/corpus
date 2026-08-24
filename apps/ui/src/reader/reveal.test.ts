@@ -579,6 +579,19 @@ describe("revealMissNotice", () => {
     expect(notice.message).toContain("did not finish loading");
   });
 
+  /**
+   * UI-144: a deleted document is a third fact, not the nearest of two. The
+   * quote did not move — there is nowhere for it to have moved from.
+   */
+  it("says the document was deleted rather than that the quote moved", () => {
+    const notice = revealMissNotice(target, "gone");
+    expect(notice.tone).toBe("info");
+    expect(notice.message).toContain("Book the passport appointment");
+    expect(notice.message).toContain("this document was deleted");
+    expect(notice.message).not.toContain("no longer on this document");
+    expect(notice.message).not.toContain("did not finish loading");
+  });
+
   it("cuts a quote too long to be a toast, and marks the cut", () => {
     const long = "x".repeat(200);
     const message = revealMissNotice({ kind: "item", exact: long }, "absent").message;

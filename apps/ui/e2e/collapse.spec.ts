@@ -461,6 +461,82 @@ test.describe("a thread opened as its own document", () => {
     ]);
     await expectOpen(page, "th_done");
   });
+
+  /**
+   * UI-169 — **the placement §6 names, for the one thread that has no row.**
+   *
+   * A standalone conversation has no parent to list it, so this reader had no
+   * `DocRow.unread` to read and fell back to `hasSeenMark`: the kit's record of
+   * the `POST …/seen` *this tab* sent, a module-level `Map` with a page
+   * session's lifetime. A fresh page has an empty one, so the answer was
+   * `unknown`, the rule stood down, and a resolved standalone thread opened
+   * **expanded** on its first visit after every reload — however long ago the
+   * server recorded it as read. `Thread.unread` (CONTRACT-036) is the field that
+   * replaces the guess.
+   *
+   * **A browser is the apparatus, not scenery.** The witness is a page session
+   * boundary: jsdom's runner clears the same module map between tests, so a
+   * jsdom test cannot tell "read in an earlier session" from "read a moment
+   * ago". A `page.reload()` can.
+   */
+  const STANDALONE_RESOLVED: StubRow = {
+    id: "th_alone",
+    type: "thread",
+    title: "Asked from the composer",
+    path: "data/docs/threads/th_alone.md",
+    body: "## user · 2026-07-03T09:00:00Z\nWhat did we decide?\n\n## agent · 2026-07-03T09:02:00Z\nWe decided.\n",
+    parent: null,
+    status: "resolved",
+    // The server's answer, and the whole point: read in some earlier session,
+    // which is a fact no page-local map can carry across a reload.
+    unread: false,
+  };
+
+  const ALONE_ROWS = [VIEW, THREADS_VIEW, NOTE, OPEN_THREAD, STANDALONE_RESOLVED] as const;
+
+  test("is placed collapsed on a first visit, though it has no row to read", async ({ page }) => {
+    await openThread(page, "th_alone", ALONE_ROWS);
+    await expectFolded(page, "th_alone");
+    const line = panel(page, "th_alone").locator(OWN_LINE);
+    await expect(line).toContainText("2 turns");
+    await expect(line).toContainText("resolved");
+  });
+
+  test("is still collapsed on the visit after a reload", async ({ page }) => {
+    await openThread(page, "th_alone", ALONE_ROWS);
+    await expectFolded(page, "th_alone");
+
+    /*
+     * No hand gesture anywhere in this test, deliberately. A collapse the reader
+     * makes is sticky in `localStorage` and would survive the reload on its own,
+     * which would leave the assertion below true for a reason that has nothing
+     * to do with the rule. The only thing carried across the reload here is what
+     * the server says.
+     */
+    await page.reload();
+    await page.locator(".board").waitFor();
+    await page.locator('.col[data-col="doc_view_threads"] .row[data-row-doc="th_alone"]').click();
+    await panel(page, "th_alone").waitFor();
+    await expectFolded(page, "th_alone");
+  });
+
+  /**
+   * The other direction, so the test above is a fact about the wire and not
+   * about a constant: the same standalone placement, the same fresh page, and an
+   * unread conversation is left open by §10's interlock.
+   */
+  test("leaves a standalone conversation open when the server says it is unread", async ({
+    page,
+  }) => {
+    await openThread(page, "th_alone", [
+      VIEW,
+      THREADS_VIEW,
+      NOTE,
+      OPEN_THREAD,
+      { ...STANDALONE_RESOLVED, unread: true },
+    ]);
+    await expectOpen(page, "th_alone");
+  });
 });
 
 /**

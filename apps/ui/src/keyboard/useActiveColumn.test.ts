@@ -111,6 +111,108 @@ describe("useActiveColumn", () => {
     expect(result.current.id).toBe("c");
   });
 
+  /**
+   * UI-033 — **the event order a real pointer produces, and the phase it forces.**
+   *
+   * A movement's boundary events are dispatched **before** its `mousemove`, so
+   * the first real movement after `hold()` has its `mouseover` evaluated while
+   * the latch is still armed. That activation is dropped, and the `mousemove`
+   * that disarms the latch carries none of its own — which is why `Column`
+   * activates on `mousemove` as well. This is the first half of it: with the
+   * events in the order the browser sends them, the boundary event alone leaves
+   * the column inactive.
+   */
+  it("drops the boundary event that arrives before the movement, as the browser sends it", () => {
+    const { result } = renderHook(() => useActiveColumn(columns));
+    act(() => {
+      result.current.hold();
+    });
+
+    // `mouseover` first, which is what Chromium does.
+    act(() => {
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("a");
+
+    // Then the movement itself: the latch goes, and the column that also
+    // activates on `mousemove` gets the board.
+    act(() => {
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("c");
+  });
+
+  /**
+   * The second half, and the one only a browser found: **the release has to be
+   * in the capture phase.**
+   *
+   * React 18 attaches its handlers at the root container, which sits inside
+   * `document`'s bubble path — so a bubble-phase release on `document` runs
+   * *after* the column's own `onMouseMove`, which would therefore still see the
+   * latch armed and drop the very activation it was added to carry. The listener
+   * below stands in for React's root: it is attached to a container element in
+   * the bubble phase and calls `activate`, exactly as `Column` does.
+   *
+   * Falsify by taking `{ capture: true }` off the hook's listener — the
+   * container's handler then runs first, the latch is still armed, and the
+   * column stays inactive.
+   */
+  it("releases before React's own handlers, not after them", () => {
+    const root = document.createElement("div");
+    const inner = document.createElement("div");
+    root.append(inner);
+    document.body.append(root);
+
+    const { result } = renderHook(() => useActiveColumn(columns));
+    act(() => {
+      result.current.hold();
+    });
+
+    const onMove = (): void => {
+      result.current.activate("c");
+    };
+    root.addEventListener("mousemove", onMove);
+    act(() => {
+      inner.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    });
+    root.removeEventListener("mousemove", onMove);
+    root.remove();
+
+    expect(result.current.id).toBe("c");
+  });
+
+  /**
+   * UI-033 asked for `pin()` to be **decided explicitly**, so: it keeps the same
+   * latch and gets the same release, on the first real movement.
+   *
+   * The alternative — a pin that outlives a movement — was rejected. The latch
+   * exists to stop a *forged* hover taking the board: a re-order or an unmount
+   * changes what is under a stationary cursor and Chromium emits `mouseover`
+   * with no `mousemove` beside it. A hand that actually moves is not a forgery,
+   * and §10 says the active column follows hover. Making `⇧←`/`⇧→` sticky
+   * against real movement would be a second rule, unwritten, that a person would
+   * discover by finding hover stop working after an arrow press.
+   */
+  it("hands a pinned column over on the first movement, exactly as `hold` does", () => {
+    const { result } = renderHook(() => useActiveColumn(columns));
+    act(() => {
+      result.current.pin("b");
+    });
+    // The boundary event of that same movement, still dropped.
+    act(() => {
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("b");
+
+    // The movement itself — one, not two.
+    act(() => {
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("c");
+  });
+
   it("pins through `switchBy` too — an arrow press is the keyboard's authority", () => {
     const { result } = renderHook(() => useActiveColumn(columns));
     act(() => {

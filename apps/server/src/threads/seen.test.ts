@@ -2,7 +2,6 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { QueryKey } from "@corpus/contract";
-import { movesForward, readSeenMarks } from "./seen.js";
 import {
   appendTurn,
   createDoc,
@@ -217,56 +216,5 @@ describe("POST /api/threads/{id}/seen", () => {
 
     expect((await ws.post(`/api/threads/${id}/seen`, {})).status).toBe(200);
     expect(seenFile()).toEqual({ [id]: stamps.at(-1) });
-  });
-});
-
-describe("readSeenMarks", () => {
-  it("is empty when the file does not exist", () => {
-    expect(readSeenMarks(join(ws.root, ".corpus"))).toEqual({});
-  });
-
-  it.each([
-    ["unparseable", "{ nope"],
-    ["a list", "[]"],
-    ["null", "null"],
-  ])("reads %s as no marks", (_label, content) => {
-    writeFileSync(seenPath(), content, "utf8");
-    expect(readSeenMarks(join(ws.root, ".corpus"))).toEqual({});
-  });
-
-  it("drops entries that are not a thread id mapped to an instant", () => {
-    writeFileSync(
-      seenPath(),
-      JSON.stringify({
-        th_a1b2c3d4: "2026-07-19T10:05:00Z",
-        doc_a1b2c3: "2026-07-19T10:05:00Z",
-        th_bad: 7,
-        th_e5f6g7h8: "not an instant",
-      }),
-      "utf8",
-    );
-    expect(readSeenMarks(join(ws.root, ".corpus"))).toEqual({
-      th_a1b2c3d4: "2026-07-19T10:05:00Z",
-    });
-  });
-
-  it("normalises what a hand-written file spells differently", () => {
-    writeFileSync(seenPath(), JSON.stringify({ th_a1b2c3d4: "2026-07-19T12:05:00+02:00" }), "utf8");
-    expect(readSeenMarks(join(ws.root, ".corpus"))).toEqual({
-      th_a1b2c3d4: "2026-07-19T10:05:00Z",
-    });
-  });
-});
-
-describe("movesForward", () => {
-  it.each([
-    [undefined, "2026-07-19T10:05:00Z", true],
-    ["2026-07-19T10:05:00Z", "2026-07-19T10:06:00Z", true],
-    ["2026-07-19T10:05:00Z", "2026-07-19T10:05:00Z", false],
-    ["2026-07-19T10:05:00Z", "2026-07-19T10:04:00Z", false],
-    // An unreadable mark on record cannot be compared, so the new one wins.
-    ["nonsense", "2026-07-19T10:05:00Z", true],
-  ])("%s → %s is %s", (current, candidate, expected) => {
-    expect(movesForward(current, candidate)).toBe(expected);
   });
 });

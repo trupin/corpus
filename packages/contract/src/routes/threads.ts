@@ -38,7 +38,13 @@ export const getThread = createRoute({
   path: "/api/threads/{id}",
   tags: ["threads"],
   summary: "Read a thread with its turns",
-  description: "Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2).",
+  description:
+    "Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2). " +
+    "**The response answers read state itself**: `unread` is the same comparison " +
+    "`DocRow.unread` makes, against the same server-side mark, so a reader that reached this " +
+    "conversation without a list row — a standalone thread, or one past the first page of a busy " +
+    "parent — does not have to guess. SPEC.md §10 makes read state an input to a placement and " +
+    "not only to a badge (CONTRACT-036).",
   request: { params: ThreadIdParamSchema },
   responses: {
     200: jsonContent(ThreadSchema, "The thread and every turn, oldest first."),

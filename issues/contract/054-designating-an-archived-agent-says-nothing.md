@@ -6,7 +6,7 @@ contract (then server)
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -76,7 +76,69 @@ archived definition returns the signal, and designating a current one does not.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+### Implemented on
+
+opus.
+
+### The question, answered: **no warning.** The criterion was wrong, not unmet.
+
+Four reasons, in the order they decided it:
+
+1. **Archiving an `agent-def` changes nothing about the persona.**
+   `ResidentSchema.docId` publishes it in so many words — *"an archived
+   `agent-def` still under that root resolves exactly as before, and is still
+   designatable"*. A warning would tell a person their correct, fully-supported
+   act was suspect, and a contract cannot say both.
+2. **Archiving is an organisational act, not a deprecation** (SPEC.md §7: *"a
+   reversible organizational act, never a deletion"*). Designation is user-only
+   state on a standalone thread. A person who archived a definition and then
+   named it has done two deliberate things.
+3. **§11's `warnings` is about the write, not about the caller's judgement.** It
+   carries a rejected auto-commit or a workspace with no git. A warning about
+   *which document a request named* sets a precedent that every write
+   editorialises about the documents it mentions, with no principled stopping
+   point after the first one.
+4. **The cheap-looking fix is not cheap.** `Resident` is consumed by four domains
+   and appears in roughly fifty fixture literals (CONTRACT-071 measured it), and
+   a status on it would contradict `docId`'s published sentence that
+   *"archived-ness is not carried on a `Resident` at all — it is the document's
+   own `status`, on the document this id names, for the caller that cares."*
+
+A person who wants the answer keeps it one ordinary read away: `docId` names the
+document and the document carries its own `status`.
+
+### What changed
+
+No wire change, no new field, no follow-up CLI issue.
+
+- `issues/cli/043-lane-verbs-designation-and-corpus-agents.md` — the criterion is
+  marked **retired, not deferred**, and its Unresolved section carries the four
+  reasons above under an "Adjudicated 2026-08-24" heading.
+- `apps/server/src/threads/resident.ts` — SERVER-109's comment already gave this
+  reasoning and does **not** contradict the decision, so it stands. It gains a
+  "Re-asked and upheld" paragraph so the next reader does not reopen the question
+  by default.
+- `packages/contract/src/openapi.test.ts` — a decision to publish nothing leaves
+  nothing to assert about, so five assertions pin the reasoning's load-bearing
+  published sentences instead: `Resident` has no `status` and the string
+  `"archived"` appears nowhere in it, `docId` still says an archived profile
+  resolves and is designatable, `docId` still points at the document's own
+  status, and the designation operation carries no new warning code.
+
+### Verified against the published document
+
+From the running server on port **8838**:
+
+```
+Resident.properties = ['name', 'docId', 'weight', 'designationId']
+```
+
+No status, as decided.
+
+### Gates
+
+`vitest run packages/contract` — 2972 tests, exit 0. Typecheck, ESLint, Prettier
+clean. `openapi.json` unchanged by this issue.
 
 ## Completion Checklist (orchestrator)
 

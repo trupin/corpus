@@ -366,6 +366,169 @@ test.describe("an open that names an item", () => {
   });
 });
 
+/**
+ * **A reveal into a document that is not there names the right absence** —
+ * UI-144, the surviving half of PR #54's re-review.
+ *
+ * UI-140 extended the settled marker to the `.reader-gone` card, so a reveal
+ * into a deleted document concludes in ~350 ms and in the information tone,
+ * instead of spending four seconds and then blaming a load. That was right. What
+ * it then said was *"…is no longer on this document"* — and there is no
+ * document; the card beside the toast says so.
+ *
+ * The document is **absent from the corpus**, so the reader's own fetch 404s and
+ * `ReaderDoc.isMissing` is set — which is the same state a deletion in another
+ * tab leaves behind, and the only state this page can reach without one.
+ */
+test.describe("an open that names an item on a document that is gone", () => {
+  test("says the document was deleted rather than that the quote moved", async ({ page }) => {
+    // Seeded against a document the corpus does not hold: the reader gets a
+    // `404` and draws its "no longer exists" card, which carries the settled
+    // marker the reveal reads.
+    await stubCorpus(page, [VIEW]);
+    await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
+    await page.addInitScript(
+      ([columnId, docId, boardId, pending]) => {
+        window.localStorage.setItem(
+          "corpus.board",
+          JSON.stringify({
+            version: 4,
+            board: boardId,
+            boards: {
+              [boardId]: {
+                seq: 1,
+                strip: [
+                  {
+                    kind: "query",
+                    view: columnId,
+                    scroll: 0,
+                    nav: [{ docId, scrollY: 0, reveal: pending }],
+                  },
+                ],
+              },
+            },
+          }),
+        );
+      },
+      [
+        VIEW.id,
+        "doc_deleted",
+        STUB_BOARD_ID,
+        { kind: "item", exact: "Book the passport appointment" },
+      ] as const,
+    );
+    await page.goto("/");
+
+    // The card is the truth this toast has to agree with.
+    await expect(page.locator(".reader-gone")).toBeVisible();
+
+    const toast = page.locator(".toast");
+    await expect(toast).toBeVisible();
+    // Information, not a fault: deletion is a settled fact about the workspace.
+    await expect(toast).toHaveAttribute("data-tone", "info");
+    const message = toast.locator(".msg");
+    await expect(message).toContainText("Book the passport appointment");
+    await expect(message).toContainText("this document was deleted");
+    await expect(message).not.toContainText("no longer on this document");
+    await expect(message).not.toContainText("did not finish loading");
+  });
+});
+
+/**
+ * UI-170 — the same defect one state over, and the browser is the apparatus.
+ *
+ * `DocView` draws a second terminal card, "This document could not be read",
+ * for a read that **failed** rather than for a document that is gone. It carries
+ * the same settled marker, so the reveal's search finishes fast and honestly
+ * concludes "the words are not on this surface" — and the sentence built from
+ * that said the quote is no longer on the document. The document may be intact
+ * and the anchor perfectly sound; what failed was fetching it.
+ *
+ * Reached the only way a page can reach it: the document's own read is refused
+ * while everything around it keeps answering. A `403` rather than a `500`
+ * because the query client retries a server error once and not a client one, so
+ * the card is the first thing the reader draws rather than the second.
+ */
+test.describe("an open that names an item on a document that could not be read", () => {
+  test("says the read failed rather than that the quote moved", async ({ page }) => {
+    await stubCorpus(page, [VIEW, CHORES, THREAD]);
+    await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
+    // Registered after the stub, so it wins: Playwright tries handlers in
+    // reverse registration order. The list query is untouched — the row is in
+    // the column, and only reading the document itself fails.
+    await page.route(`**/api/docs/${CHORES.id}`, (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "forbidden", message: "the workspace refused this read" }),
+      }),
+    );
+    await page.addInitScript(
+      ([columnId, docId, boardId, pending]) => {
+        window.localStorage.setItem(
+          "corpus.board",
+          JSON.stringify({
+            version: 4,
+            board: boardId,
+            boards: {
+              [boardId]: {
+                seq: 1,
+                strip: [
+                  {
+                    kind: "query",
+                    view: columnId,
+                    scroll: 0,
+                    nav: [{ docId, scrollY: 0, reveal: pending }],
+                  },
+                ],
+              },
+            },
+          }),
+        );
+      },
+      [
+        VIEW.id,
+        CHORES.id,
+        STUB_BOARD_ID,
+        { kind: "item", exact: "Book the passport appointment" },
+      ] as const,
+    );
+    await page.goto("/");
+
+    // The card is the truth this toast has to agree with — and it is the
+    // read-failure card, not the deletion one.
+    const card = page.locator(".reader-gone");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("This document could not be read");
+    await expect(card).not.toContainText("no longer exists");
+
+    const toast = page.locator(".toast");
+    await expect(toast).toBeVisible();
+    // A fault of this attempt, so the tone the console marks.
+    await expect(toast).toHaveAttribute("data-tone", "error");
+    const message = toast.locator(".msg");
+    await expect(message).toContainText("Book the passport appointment");
+    await expect(message).toContainText("this document could not be read");
+    // The three existing wordings, none of which describes this state.
+    await expect(message).not.toContainText("no longer on this document");
+    await expect(message).not.toContainText("was deleted");
+    await expect(message).not.toContainText("did not finish loading");
+  });
+
+  /**
+   * The wording describes **this attempt**, not a permanent verdict: with the
+   * refusal lifted, the very same open reveals normally. Driven as a second
+   * page load rather than as a retry button, because the reveal is one-shot per
+   * navigation entry and a re-entry is what a person actually does.
+   */
+  test("reveals normally once the read succeeds", async ({ page }) => {
+    await openWithReveal(page, { kind: "item", exact: "Book the passport appointment" });
+    await expect(page.locator(".reader-gone")).toHaveCount(0);
+    await expect(page.locator(".reveal-flash")).toBeVisible();
+    await expect(page.locator(".toast")).toHaveCount(0);
+  });
+});
+
 test.describe("an open that names a thread", () => {
   test("expands and flashes the thread, through the 💬 jump that already existed", async ({
     page,

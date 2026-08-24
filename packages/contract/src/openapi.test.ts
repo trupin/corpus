@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSE_CLAUSE } from "./schemas/agents.js";
 import { BULK_ACTION_NAMES } from "./schemas/bulk.js";
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import {
@@ -2676,6 +2677,65 @@ describe("every folder sentence is true of every document root (CONTRACT-063)", 
   });
 });
 
+/**
+ * CONTRACT-065. Every published description of moving covered the destination
+ * and none covered the source, so the `400` `assertMovable` raises
+ * (`apps/server/src/docs/move.ts`) was unpredictable from the contract. Written
+ * against the **generated** document, and against the server's two refusal
+ * messages verbatim, so a second account of the rule cannot be written here
+ * without one of these failing.
+ *
+ * Falsify by deleting the source clause from `moveDoc`'s description and
+ * running this file alone.
+ */
+describe("a move states where a document may come from (CONTRACT-065)", () => {
+  const moveRouteText = (): string => operation("/api/docs/{id}/move", "post").description ?? "";
+  const moveFolder = (): string => {
+    const found = componentSchemas?.["MoveDocRequest"]?.properties?.["folder"]?.description;
+    if (found === undefined) throw new Error("No MoveDocRequest.folder description.");
+    return found;
+  };
+
+  it("names the source restriction on the route", () => {
+    expect(moveRouteText()).toContain("Only a document already under `data/docs/` can be moved");
+  });
+
+  /**
+   * The server's own words, not a paraphrase. `assertMovable` chooses between
+   * these two by `loaded.row.type`, and a caller who searches the `400` text
+   * they received must land on this description.
+   */
+  it("quotes the server's two refusals rather than inventing a second wording", () => {
+    expect(moveRouteText()).toContain("threads are flat under data/threads/ and cannot be moved");
+    expect(moveRouteText()).toContain("is not under data/docs/ and cannot be moved");
+  });
+
+  /** The source is resolved first, which is why the `400` never names a folder. */
+  it("says the source is checked before the destination is resolved", () => {
+    expect(moveRouteText()).toContain("before the destination is resolved");
+  });
+
+  /**
+   * The repair the v0.12.0 note makes a reader reach for. An `agent-def` filed
+   * in the inbox answers to no `@<name>`, and the next thought is to move it
+   * into `.claude/agents/` — the call this route refuses on both sides.
+   */
+  it("points at creation as the repair for a misfiled persona", () => {
+    expect(moveRouteText()).toContain("`POST /api/docs`");
+    expect(moveRouteText()).toContain(".claude/agents/");
+  });
+
+  /**
+   * One home and a pointer (CONTRACT-064's lesson). The field carries the
+   * destination grammar and a pointer, never a second copy of the source rule.
+   */
+  it("keeps the source rule off the folder field, which points at the route instead", () => {
+    expect(moveFolder()).toContain("This is the destination alone");
+    expect(moveFolder()).toContain("`POST /api/docs/{id}/move`");
+    expect(moveFolder()).not.toContain("cannot be moved");
+  });
+});
+
 describe("queue long-poll", () => {
   it("declares both outcomes, with the timeout bounded and defaulted", () => {
     const op = operation("/api/queue/idle", "get");
@@ -3281,14 +3341,47 @@ describe("one notion of presence, at two grains (CONTRACT-045)", () => {
     );
   });
 
-  /** The identity itself, stated where a server author will read it. */
-  it("states that the aggregate is the roster's own verdict and not a second one", () => {
-    expect(presence()?.description).toContain(
-      "`live` is true exactly when some lane of `GET /api/agents` is live",
+  /**
+   * CONTRACT-053 replaced the identity CONTRACT-045 wrote. *"`live` is true
+   * exactly when some lane of `GET /api/agents` is live"* is false for one real
+   * window — a listener parked on a lane whose resident was released holds its
+   * `idle` after the row is gone — so the aggregate now states what it measures
+   * and names the divergence, and the old sentence is asserted **absent** on
+   * both surfaces. Falsify by restoring either.
+   */
+  it("defines the aggregate by the parked request, not by another endpoint's rows", () => {
+    const description = presence()?.description ?? "";
+    expect(description).not.toContain("some lane of `GET /api/agents` is live");
+    expect(description).toContain(
+      "`live` is true exactly when some listener is holding a parked scoped `idle`",
     );
-    expect(operation("/api/queue/status", "get").description).toContain(
-      "the roster's own liveness aggregated",
-    );
+    const route = operation("/api/queue/status", "get").description ?? "";
+    expect(route).not.toContain("the roster's own liveness aggregated");
+    expect(route).toContain("measured here directly rather than read off another endpoint's rows");
+  });
+
+  /**
+   * Naming the divergence is the point of the issue: a caller comparing the two
+   * and finding them disagree must find the reason in the contract rather than
+   * having to reproduce it. Both halves are pinned — that it happens, and why it
+   * ends by itself.
+   */
+  it("names the window in which the aggregate and the roster legitimately differ", () => {
+    const description = presence()?.description ?? "";
+    expect(description).toContain("**It can therefore read `live` while `GET /api/agents` lists");
+    expect(description).toContain("removes the row at once");
+    expect(description).toContain("up to one grace window");
+    expect(description).toContain("It resolves itself when that listener stops");
+  });
+
+  /**
+   * The per-lane field must not go on claiming the two grains never disagree —
+   * it is the same object on both surfaces, so it is what a roster reader meets.
+   */
+  it("stops the per-lane field claiming the two grains never disagree", () => {
+    const live = JSON.stringify(presence()?.properties?.["live"]);
+    expect(live).not.toContain("never disagree");
+    expect(live).toContain("`AgentPresence` names the one window");
   });
 
   /**
@@ -4045,6 +4138,51 @@ describe("a folder move reports the documents it carried (CONTRACT-047)", () => 
   });
 
   /**
+   * CONTRACT-084. A save that accepts a §11 error now has somewhere on the wire
+   * to say so, and the published document is where the agent's client author
+   * reads what that code means.
+   *
+   * Pinned on the generated document rather than on the schema module for the
+   * usual reason, and pinned as **four separate claims** because the failure
+   * mode here is a description that names the type and stops: a reader who is
+   * told only "an error happened" will reasonably conclude the save downgraded
+   * the finding, and the whole point of the code is that it did not.
+   */
+  describe("a tolerated §11 error is reportable and says it was not downgraded", () => {
+    const description = (): string => codeSchema()?.description ?? "";
+
+    it("publishes the code in the shared warning vocabulary", () => {
+      expect(codeSchema()?.enum).toContain("validation_error");
+      expect(codeSchema()?.enum).toEqual([...WARNING_CODES]);
+    });
+
+    /** The severity claim, in both directions: tolerated here, still fatal there. */
+    it("says the check still fails on the same bytes", () => {
+      expect(description()).toContain("re-grades");
+      expect(description()).toContain("`corpus doc check` still fails on the same bytes");
+      expect(description()).toContain("exits 6");
+    });
+
+    /** The shape a console and the CLI render verbatim. */
+    it("states the detail's shape and that it is one warning per finding", () => {
+      expect(description()).toContain("`<check-code>: <specifics>`");
+      expect(description()).toContain("**One warning per finding, not one per save**");
+    });
+
+    /**
+     * The negative that keeps the channel worth reading: `anchor-unused` is
+     * answered a write behind on the commonest mutation in the product, so a
+     * later widening to "every error the save lets through" would put a false
+     * warning on nearly every anchored comment. Published, so the widening is
+     * argued against text rather than rediscovered.
+     */
+    it("refuses the generalisation to every error the write path lets through", () => {
+      expect(description()).toContain("`anchor-unused`");
+      expect(description()).toContain("a write behind");
+    });
+  });
+
+  /**
    * `detail` is prose the contract forbids parsing, so every distinction a
    * client acts on has to be in `code`. A routine carry (§7 working as
    * specified, on every nested skill) and the server rewriting a file the
@@ -4285,7 +4423,14 @@ describe("the forms surface", () => {
     expect(entry?.additionalProperties).toBe(false);
   });
 
-  /** Nullable, not optional — a resolved thread stops re-triggering the agent (§8). */
+  /**
+   * Nullable, not optional. **The reason is not the one this comment used to
+   * give** (CONTRACT-034): a resolved thread was said to stop re-triggering the
+   * agent, and SERVER-062 falsified that — a person's answer reopens the thread
+   * and then enqueues on §8's ordinary terms. The surviving reason is a thread
+   * the agent is not `engaged` in, which is why the key is always present and
+   * the value is what varies.
+   */
   it("always carries the enqueued event key on the answer response", () => {
     expect(componentSchemas?.["FormAnswerResponse"]?.required).toEqual([
       "thread",
@@ -4334,6 +4479,9 @@ describe("the CONTRACT-007 riders", () => {
       "eventId",
       "type",
       "status",
+      // CONTRACT-029 split the overloaded `started` into the enqueue instant and
+      // the first-log instant. Both are required keys; only `started` is nullable.
+      "enqueued",
       "started",
       "updated",
       "lastLine",
@@ -5332,8 +5480,12 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     // And the resolved half of a `Resident` says what leaving the root does to
     // it, since `docId` is re-resolved through the same gate on every response.
+    // Read out of the composed clause rather than typed (SHARED-054): the
+    // sentence is derived from MISSING_PROFILE_CAUSES, and a copy here would be
+    // a second opinion about it.
+    expect(MISSING_PROFILE_CAUSE_CLAUSE).toContain(`moved out of \`${AGENT_DEF_ROOT}\``);
     expect(componentSchemas?.["Resident"]?.properties?.["docId"]?.description).toContain(
-      "moved out of `.claude/agents/`",
+      MISSING_PROFILE_CAUSE_CLAUSE,
     );
   });
 
@@ -5387,7 +5539,11 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
    */
   it("does not list archiving among the ways a profile stops resolving", () => {
     const description = componentSchemas?.["Resident"]?.properties?.["docId"]?.description ?? "";
-    expect(description).toContain("renamed, deleted, or moved out of `.claude/agents/`");
+    // Derived, not transcribed (SHARED-054). The published sentence is composed
+    // from MISSING_PROFILE_CAUSES, so this asserts the composition reached the
+    // document rather than asserting one spelling of it — a fourth hand-typed
+    // copy of the list is exactly what the issue is about.
+    expect(description).toContain(`has since been ${MISSING_PROFILE_CAUSE_CLAUSE}`);
     expect(description).toContain("**Archiving a profile does not empty this field**");
     // Every sentence that mentions archiving must be one of the sentences
     // saying it changes nothing — a re-added "renamed, archived, …" lands in a
@@ -5921,5 +6077,205 @@ describe("workspace.reflect (CONTRACT-076)", () => {
     expect(events).toContain('`["reflect"]`');
     expect(events).toContain('every frame that names `["docs"]` or `["queue"]`');
     expect(operation(REFLECT_PATH, "get").description).toContain('`["reflect"]` invalidate key');
+  });
+});
+
+/**
+ * CONTRACT-029. `Job.started` published the event's `created` while the job was
+ * queued and the first log line's timestamp afterwards, so it silently changed
+ * meaning partway through a job's life and an elapsed-time display counting from
+ * it reset the wait. Pinned against the **generated** component, because what a
+ * consumer reads is this document.
+ *
+ * Falsify by deleting `enqueued` from `JobSchema`, or by dropping `.nullable()`
+ * off `started`, and running this file alone.
+ */
+describe("a job's instants each mean one instant (CONTRACT-029)", () => {
+  const job = (): SchemaNode => {
+    const found = componentSchemas?.["Job"];
+    if (found === undefined) throw new Error("No Job component.");
+    return found;
+  };
+
+  it("publishes the enqueue instant as its own required field", () => {
+    expect(job().required).toContain("enqueued");
+    expect(job().properties?.["enqueued"]?.type).toBe("string");
+    expect(job().properties?.["enqueued"]?.description).toContain("entered the queue");
+  });
+
+  /**
+   * Required **and** nullable, not optional: the key is always there and the
+   * value is what says whether the job has spoken. Optional would make "silent"
+   * and "field absent from this build" the same bytes.
+   */
+  it("makes the first-log instant nullable rather than borrowing the enqueue one", () => {
+    expect(job().required).toContain("started");
+    expect(job().properties?.["started"]?.type).toEqual(["string", "null"]);
+    const description = job().properties?.["started"]?.description ?? "";
+    expect(description).toContain("first wrote a log line");
+    expect(description).toContain("null until it writes one");
+  });
+
+  /** The two are different fields, so the document must not describe them alike. */
+  it("does not describe the two instants with one sentence", () => {
+    expect(job().properties?.["enqueued"]?.description).not.toBe(
+      job().properties?.["started"]?.description,
+    );
+    expect(job().properties?.["updated"]?.description).toContain("most recent log line");
+  });
+});
+
+/**
+ * CONTRACT-032, escalated from SERVER-058. SPEC.md §9.2's signed sentence has
+ * said since 2026-08-05 that truncation *"drops whole hunks while it can and then
+ * cuts the straddling hunk at a line boundary"*. `DocDiff.truncated` published
+ * something narrower — whole hunks, with one exception for a hunk larger than the
+ * **whole** bound — and the gap between the two is the ordinary edit shape, which
+ * answered 401 characters of an allowed 16 000 on the real route.
+ *
+ * Falsify by restoring the narrow sentence and running this file alone.
+ */
+describe("the diff's cut rule is the spec's (CONTRACT-032)", () => {
+  const truncated = (): string => {
+    const found = componentSchemas?.["DocDiff"]?.properties?.["truncated"]?.description;
+    if (found === undefined) throw new Error("No DocDiff.truncated description.");
+    return found;
+  };
+
+  it("states the spec's rule: whole hunks while they fit, then a line cut", () => {
+    expect(truncated()).toContain(
+      "**Whole hunks are kept while they fit, and the hunk that straddles the bound is then cut " +
+        "at a line boundary**",
+    );
+    expect(truncated()).toContain("SPEC.md §9.2");
+  });
+
+  /**
+   * The narrow exception is what made the near-miss unfixable in the server, so
+   * its absence is asserted rather than merely its replacement's presence.
+   */
+  it("no longer publishes the narrow single-hunk exception", () => {
+    expect(truncated()).not.toContain("larger than the whole bound is the one exception");
+    expect(truncated()).not.toContain("hunk-aligned");
+  });
+
+  /**
+   * The cost of the wider rule, stated where the caller reads it: the last hunk
+   * may be a prefix of itself, so the diff is for reading and not for applying.
+   * A contract that widened the cut and said nothing about this would have
+   * traded one silent surprise for another.
+   */
+  it("says what the wider cut costs, rather than only what it buys", () => {
+    expect(truncated()).toContain("the last hunk of a truncated diff may be a prefix of itself");
+    expect(truncated()).toContain("Read it, do not apply it");
+    expect(truncated()).toContain("never mid-line");
+  });
+
+  /** The frontmatter-only answer is named, because it is the shape people met. */
+  it("names the answer the old rule produced", () => {
+    expect(truncated()).toContain("`updated:` frontmatter hunk in front of it");
+  });
+});
+
+/**
+ * CONTRACT-054. The issue asked a question before it asked for code — *is
+ * designating an archived agent something a person should be warned about?* —
+ * and the answer is no: archiving an `agent-def` changes nothing about the
+ * persona, so a warning would call a fully supported act suspect. The criterion
+ * that asked for one (CLI-043) was retired rather than deferred, and no field
+ * was added.
+ *
+ * A decision to publish nothing leaves nothing to assert about, so what is
+ * pinned is the reasoning's two load-bearing published sentences. Falsify by
+ * adding a status to `Resident`, or by deleting either clause from `docId`.
+ */
+describe("designating an archived profile is not a warning (CONTRACT-054)", () => {
+  const resident = (): SchemaNode => {
+    const found = componentSchemas?.["Resident"];
+    if (found === undefined) throw new Error("No Resident component.");
+    return found;
+  };
+
+  it("carries no status, so archived-ness is not a fact about a resident", () => {
+    expect(Object.keys(resident().properties ?? {})).not.toContain("status");
+    expect(JSON.stringify(resident())).not.toContain('"archived"');
+  });
+
+  /**
+   * The sentence a warning would contradict. If an archived profile resolves
+   * exactly as before and is still designatable, then designating one is
+   * ordinary, and a contract cannot both say that and flag it.
+   */
+  it("says an archived profile still resolves and is still designatable", () => {
+    const docId = resident().properties?.["docId"]?.description ?? "";
+    expect(docId).toContain("**Archiving a profile does not empty this field**");
+    expect(docId).toContain("resolves exactly as before, and is still designatable");
+  });
+
+  /** And says where a caller that does care about it should look instead. */
+  it("points at the document's own status for the caller that wants it", () => {
+    expect(resident().properties?.["docId"]?.description).toContain(
+      "it is the document's own `status`, on the document this id names, for the caller that cares",
+    );
+  });
+
+  /**
+   * §11's `warnings` is about whether the write was recorded. The designation
+   * response must not have grown a warning code for the caller's choice of
+   * document.
+   */
+  it("adds no warning code for designating an archived profile", () => {
+    const designate = JSON.stringify(operation("/api/threads/{id}/resident", "post"));
+    expect(designate).not.toContain("agent-archived");
+    expect(designate).not.toContain("archived-profile");
+  });
+});
+
+/**
+ * CONTRACT-036. `unread` existed on `DocRow` and nowhere else, so a reader that
+ * reached a conversation through `GET /api/threads/{id}` had nothing to answer
+ * the question with and nothing to derive it from. SPEC.md §10's interlock makes
+ * that answer an input to a **placement** — a conversation carrying an unseen
+ * turn is never collapsed by §6's rule — so the two cases with no list row (a
+ * standalone thread, and one past the first page of a busy parent) could not
+ * apply the rule at all.
+ *
+ * Falsify by removing the field, or by making it optional or nullable.
+ */
+describe("a thread answers its own read state (CONTRACT-036)", () => {
+  const thread = (): SchemaNode => {
+    const found = componentSchemas?.["Thread"];
+    if (found === undefined) throw new Error("No Thread component.");
+    return found;
+  };
+
+  it("publishes `unread` on the Thread component, required and boolean", () => {
+    expect(thread().required).toContain("unread");
+    expect(thread().properties?.["unread"]?.type).toBe("boolean");
+  });
+
+  /**
+   * Not `["boolean", "null"]`. `DocRow.unread` is nullable because a row may be
+   * a document; this resource is only ever a thread, so there is no *unknown* to
+   * spell and `false` can mean exactly one thing.
+   */
+  it("is not nullable, unlike the row's, because there is no non-thread case", () => {
+    expect(thread().properties?.["unread"]?.type).not.toEqual(["boolean", "null"]);
+    expect(componentSchemas?.["DocRow"]?.properties?.["unread"]?.type).toEqual(["boolean", "null"]);
+  });
+
+  /** Tied to the row by name, so the two cannot describe one comparison twice. */
+  it("names the row's field rather than restating the rule", () => {
+    const description = thread().properties?.["unread"]?.description ?? "";
+    expect(description).toContain("`DocRow.unread`");
+    expect(description).toContain("agree by construction");
+    expect(description).toContain("SPEC.md §10's interlock");
+  });
+
+  /** And the route says it, since an OpenAPI reader meets the operation first. */
+  it("says on the route that read state no longer has to be guessed", () => {
+    const route = operation("/api/threads/{id}", "get").description ?? "";
+    expect(route).toContain("`unread` is the same comparison `DocRow.unread` makes");
+    expect(route).toContain("standalone thread");
   });
 });

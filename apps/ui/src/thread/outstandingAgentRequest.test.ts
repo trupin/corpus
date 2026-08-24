@@ -6,7 +6,8 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { jobFixture, readerTransport } from "../testing/readerFixture";
 import {
-  agentWaitSince,
+  deferredOnName,
+  pendingStateOf,
   pickOutstandingJob,
   pickOutstandingRequest,
   useOutstandingAgentRequest,
@@ -23,7 +24,7 @@ function noise(n: number): Job[] {
       eventId: `evt_noise_${String(index)}`,
       status: "processed",
       originId: `thread-other-${String(index)}`,
-      started: `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      enqueued: `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00.000Z`,
     }),
   );
 }
@@ -67,24 +68,24 @@ describe("pickOutstandingJob", () => {
       eventId: "evt_older",
       status: "deferred",
       originId: THREAD,
-      started: "2026-07-01T10:05:00.000Z",
+      enqueued: "2026-07-01T10:05:00.000Z",
     });
     const newer = jobFixture({
       eventId: "evt_newer",
       status: "pending",
       originId: THREAD,
-      started: "2026-07-01T10:40:00.000Z",
+      enqueued: "2026-07-01T10:40:00.000Z",
     });
     expect(pickOutstandingJob([newer, older, ...noise(10)], THREAD)?.eventId).toBe("evt_older");
     expect(pickOutstandingJob([older, newer], THREAD)?.eventId).toBe("evt_older");
   });
 
   it("does not let an unreadable stamp win the oldest slot", () => {
-    const broken = jobFixture({ eventId: "evt_broken", started: "not a date", originId: THREAD });
+    const broken = jobFixture({ eventId: "evt_broken", enqueued: "not a date", originId: THREAD });
     const real = jobFixture({
       eventId: "evt_real",
       originId: THREAD,
-      started: "2026-07-01T10:05:00.000Z",
+      enqueued: "2026-07-01T10:05:00.000Z",
     });
     // Still returned when it is all there is — a job with a bad stamp is a job.
     expect(pickOutstandingJob([broken], THREAD)?.eventId).toBe("evt_broken");
@@ -96,7 +97,7 @@ describe("pickOutstandingJob", () => {
       eventId: "evt_deferred",
       status: "deferred",
       originId: THREAD,
-      started: "2026-07-01T09:00:00.000Z",
+      enqueued: "2026-07-01T09:00:00.000Z",
       blockedOn: "doc-standup",
     });
 
@@ -120,27 +121,118 @@ describe("pickOutstandingRequest", () => {
 
   it("calls an unclaimed event waiting, not working", () => {
     const queued = jobFixture({ eventId: "evt_queued", status: "pending", originId: THREAD });
-    expect(pickOutstandingRequest([queued], THREAD)).toEqual({ job: queued, working: false });
+    expect(pickOutstandingRequest([queued], THREAD)).toEqual({
+      job: queued,
+      working: false,
+      deferred: null,
+    });
+    expect(pendingStateOf(pickOutstandingRequest([queued], THREAD)!)).toBe("waiting");
   });
 
   it("calls a claimed event working", () => {
     const held = jobFixture({ eventId: "evt_held", status: "in-progress", originId: THREAD });
-    expect(pickOutstandingRequest([held], THREAD)).toEqual({ job: held, working: true });
+    expect(pickOutstandingRequest([held], THREAD)).toEqual({
+      job: held,
+      working: true,
+      deferred: null,
+    });
+    expect(pendingStateOf(pickOutstandingRequest([held], THREAD)!)).toBe("working");
   });
 
   /**
    * A deferral was claimed and then parked because somebody is editing the
    * document it needs (SPEC.md §7). The reply is still coming — so it is still
    * outstanding — but nobody is working it this minute.
+   *
+   * **And it is not merely "waiting"** (UI-115). It was picked up, looked at,
+   * and put down on purpose, and the wait is on the person reading the row — so
+   * the request carries the document it is parked on and the state says so.
    */
-  it("calls a deferral waiting", () => {
+  it("calls a deferral parked, and says what it is parked on", () => {
     const parked = jobFixture({
       eventId: "evt_parked",
       status: "deferred",
       originId: THREAD,
       blockedOn: "doc-standup",
+      blockedOnTitle: "The standup notes",
     });
-    expect(pickOutstandingRequest([parked], THREAD)).toEqual({ job: parked, working: false });
+    const request = pickOutstandingRequest([parked], THREAD);
+    expect(request).toEqual({
+      job: parked,
+      working: false,
+      deferred: { docId: "doc-standup", title: "The standup notes" },
+    });
+    expect(pendingStateOf(request!)).toBe("deferred");
+  });
+
+  /**
+   * A claim outranks a deferral: one event being held makes "the agent is
+   * working on this thread" true, whatever else is parked behind it.
+   */
+  it("reports working rather than parked when something on the thread is claimed", () => {
+    const parked = jobFixture({
+      eventId: "evt_parked",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-standup",
+      enqueued: "2026-07-01T10:00:00.000Z",
+    });
+    const held = jobFixture({
+      eventId: "evt_held",
+      status: "in-progress",
+      originId: THREAD,
+      enqueued: "2026-07-01T10:20:00.000Z",
+    });
+    const request = pickOutstandingRequest([parked, held], THREAD);
+    expect(request?.deferred).toBeNull();
+    expect(pendingStateOf(request!)).toBe("working");
+  });
+
+  /**
+   * …and a deferral outranks an unclaimed event, because it is the one wait
+   * whose reason is knowable and whose end is in the reader's hands. The board
+   * row's own signal applies the same precedence (`useRowSignals`).
+   */
+  it("prefers the parked event to an unclaimed one, oldest deferral first", () => {
+    const queued = jobFixture({ eventId: "evt_queued", status: "pending", originId: THREAD });
+    const newer = jobFixture({
+      eventId: "evt_newer",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-b",
+      blockedOnTitle: "B",
+      enqueued: "2026-07-01T10:20:00.000Z",
+    });
+    const older = jobFixture({
+      eventId: "evt_older",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-a",
+      blockedOnTitle: "A",
+      enqueued: "2026-07-01T10:00:00.000Z",
+    });
+    for (const jobs of [
+      [queued, newer, older],
+      [older, newer, queued],
+    ]) {
+      const request = pickOutstandingRequest(jobs, THREAD);
+      expect(pendingStateOf(request!)).toBe("deferred");
+      expect(request?.deferred).toEqual({ docId: "doc-a", title: "A" });
+    }
+  });
+
+  /**
+   * `blockedOn` is non-null exactly when the status is `deferred`
+   * (CONTRACT-021), so this is off-contract — and it is still a deferral. The
+   * wording drops the clause; the state does not fall back to "waiting", which
+   * would be the false inference all over again.
+   */
+  it("still reports a deferral the wire named no document for", () => {
+    const parked = jobFixture({ eventId: "evt_parked", status: "deferred", originId: THREAD });
+    const request = pickOutstandingRequest([parked], THREAD);
+    expect(pendingStateOf(request!)).toBe("deferred");
+    expect(request?.deferred).toEqual({ docId: null, title: null });
+    expect(deferredOnName(request!.deferred!)).toBeNull();
   });
 
   /**
@@ -153,16 +245,24 @@ describe("pickOutstandingRequest", () => {
       eventId: "evt_older",
       status: "pending",
       originId: THREAD,
-      started: "2026-07-01T10:00:00.000Z",
+      enqueued: "2026-07-01T10:00:00.000Z",
     });
     const newer = jobFixture({
       eventId: "evt_newer",
       status: "in-progress",
       originId: THREAD,
-      started: "2026-07-01T10:20:00.000Z",
+      enqueued: "2026-07-01T10:20:00.000Z",
     });
-    expect(pickOutstandingRequest([older, newer], THREAD)).toEqual({ job: older, working: true });
-    expect(pickOutstandingRequest([newer, older], THREAD)).toEqual({ job: older, working: true });
+    expect(pickOutstandingRequest([older, newer], THREAD)).toEqual({
+      job: older,
+      working: true,
+      deferred: null,
+    });
+    expect(pickOutstandingRequest([newer, older], THREAD)).toEqual({
+      job: older,
+      working: true,
+      deferred: null,
+    });
   });
 
   /** Another thread's claim is not this thread's, however busy the queue is. */
@@ -173,7 +273,11 @@ describe("pickOutstandingRequest", () => {
       status: "in-progress",
       originId: "thread-other",
     });
-    expect(pickOutstandingRequest([mine, theirs], THREAD)).toEqual({ job: mine, working: false });
+    expect(pickOutstandingRequest([mine, theirs], THREAD)).toEqual({
+      job: mine,
+      working: false,
+      deferred: null,
+    });
   });
 });
 
@@ -204,7 +308,7 @@ describe("useOutstandingAgentRequest", () => {
     eventId: "evt_deferred",
     status: "deferred",
     originId: THREAD,
-    started: "2026-07-01T09:00:00.000Z",
+    enqueued: "2026-07-01T09:00:00.000Z",
     blockedOn: "doc-standup",
   });
 
@@ -350,7 +454,7 @@ describe("useOutstandingAgentRequest across two truncation episodes", () => {
     eventId: "evt_reply",
     status: "pending",
     originId: THREAD,
-    started: "2026-07-01T09:00:00.000Z",
+    enqueued: "2026-07-01T09:00:00.000Z",
   });
 
   /**
@@ -413,7 +517,7 @@ describe("useOutstandingAgentRequest across two truncation episodes", () => {
       eventId: "evt_asked_again",
       status: "pending",
       originId: THREAD,
-      started: "2026-07-01T11:00:00.000Z",
+      enqueued: "2026-07-01T11:00:00.000Z",
     });
     transition([...saturation("two"), asked]);
 
@@ -424,80 +528,5 @@ describe("useOutstandingAgentRequest across two truncation episodes", () => {
     // while the escalation was still active. Flat in the number of cards either
     // way — that is what `anchors/marginJobRequests.test.tsx` counts.
     expect(escalations()).toBe(3);
-  });
-});
-
-describe("agentWaitSince", () => {
-  const ask = "2026-07-01T10:05:00.000Z";
-  const turn = (ts: string) => ({ ts });
-
-  it("counts from the enqueue instant, which is the requesting turn's", () => {
-    // The note landed three minutes after the ask; the wait is the ask's.
-    const job = jobFixture({ started: ask });
-    expect(agentWaitSince(job, [turn(ask), turn("2026-07-01T10:08:00.000Z")])).toBe(ask);
-  });
-
-  it("holds the clock still when the job's start runs ahead of the conversation", () => {
-    // A job that sat queued and only started logging at 10:20 must not reset the
-    // wait to zero: the request cannot be newer than the thread's last turn.
-    const job = jobFixture({ started: "2026-07-01T10:20:00.000Z" });
-    expect(agentWaitSince(job, [turn(ask)])).toBe(ask);
-  });
-
-  /**
-   * The step the review of PR #21 found. `Job.started` flips from enqueue-time to
-   * first-log-time (CONTRACT-029), and a note-only turn arriving afterwards used
-   * to drag `min(started, latestTurn)` forward with it — the displayed wait
-   * jumping *down* by the whole queueing delay, which is the reset this function
-   * exists to prevent.
-   */
-  it("does not step forward when a note-only turn lands after the job started logging", () => {
-    const job = jobFixture({ started: "2026-07-01T10:07:00.000Z" });
-    const before = agentWaitSince(job, [turn(ask)]);
-    const after = agentWaitSince(job, [turn(ask), turn("2026-07-01T10:25:00.000Z")]);
-    expect(before).toBe(ask);
-    expect(after).toBe(ask);
-  });
-
-  it("is unmoved by any number of later turns", () => {
-    const job = jobFixture({ started: "2026-07-01T10:07:00.000Z" });
-    const later = ["10:25", "11:00", "12:30", "23:59"].map((hm) =>
-      turn(`2026-07-01T${hm}:00.000Z`),
-    );
-    expect(agentWaitSince(job, [turn(ask), ...later])).toBe(ask);
-  });
-
-  /**
-   * The residue CONTRACT-029 owns. A turn posted between the enqueue and the
-   * first log joins the eligible set the moment `started` flips to the log's
-   * timestamp, so `since` moves 10:05 → 10:06 — bounded by (first log − enqueue),
-   * and unfixable without the enqueue instant as a field of its own. Recorded,
-   * not blessed.
-   */
-  it("still steps within the gap between the enqueue and the first log (CONTRACT-029)", () => {
-    const note = "2026-07-01T10:06:00.000Z";
-    const queued = jobFixture({ started: ask });
-    const logging = jobFixture({ started: "2026-07-01T10:07:00.000Z" });
-    expect(agentWaitSince(queued, [turn(ask), turn(note)])).toBe(ask);
-    expect(agentWaitSince(logging, [turn(ask), turn(note)])).toBe(note);
-  });
-
-  it("uses the job's own start when the thread has no turns to bound it", () => {
-    expect(agentWaitSince(jobFixture({ started: ask }), [])).toBe(ask);
-  });
-
-  it("uses the job's own start when every turn is newer than it", () => {
-    const job = jobFixture({ started: ask });
-    expect(agentWaitSince(job, [turn("2026-07-01T10:06:00.000Z")])).toBe(ask);
-  });
-
-  it("never invents an instant out of an unparseable one", () => {
-    expect(agentWaitSince(jobFixture({ started: "not a date" }), [turn(ask)])).toBe("not a date");
-    expect(agentWaitSince(jobFixture({ started: ask }), [turn("not a date")])).toBe(ask);
-  });
-
-  it("reads past an unparseable turn to the readable one behind it", () => {
-    const job = jobFixture({ started: "2026-07-01T10:20:00.000Z" });
-    expect(agentWaitSince(job, [turn(ask), turn("not a date")])).toBe(ask);
   });
 });

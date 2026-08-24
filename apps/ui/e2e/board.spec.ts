@@ -316,6 +316,13 @@ test.describe("the board", () => {
     await stubCorpus(page, [EMPTY_BOARD]);
     await page.goto("/");
     await page.locator(".ghost-col").click();
+    /*
+     * Not a global hotkey, whatever it looks like: this `Escape` has to reach the
+     * **picker the click opens**, and the picker is drawn asynchronously. The
+     * condition is the one this file's guarded sibling already uses a few tests
+     * up — the menu is on screen — rather than a duration (UI-080).
+     */
+    await expect(page.locator(".ac-menu.open")).toBeVisible();
     await page.keyboard.press("Escape");
 
     const stored = await page.evaluate(() =>

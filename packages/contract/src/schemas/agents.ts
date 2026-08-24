@@ -115,6 +115,76 @@ export const RESIDENT_WEIGHT_BOUNDARY =
   "resident hands off (SPEC.md §7, rider signed 2026-08-19)";
 
 /**
+ * The one directory a `type: agent-def` document has to sit in to be
+ * addressable at all (SPEC.md §7) — see {@link AgentNameSchema}, where the root
+ * is the gate rather than a detail of the stem clause.
+ *
+ * Named because two things interpolate it: the third of
+ * {@link MISSING_PROFILE_CAUSES}, and the code-quoted spelling
+ * {@link MISSING_PROFILE_CAUSE_CLAUSE} publishes.
+ */
+export const AGENT_DEF_ROOT = ".claude/agents/";
+
+/**
+ * **Every way a designated profile stops resolving**, and the only place this
+ * package writes them down — SPEC.md §7, as amended by SHARED-053 (signed
+ * 2026-08-20): *"A profile that is renamed, deleted, or moved out of
+ * `.claude/agents/` after designation does not end the designation … the missing
+ * profile is reported rather than silently substituted."*
+ *
+ * **Archiving is not a member, and its absence is the point.** An archived
+ * `agent-def` stays under `.claude/agents/`, so it still resolves and its
+ * resident is still designatable — telling a person that a working archived
+ * profile is gone is a false statement about a lane that is fine. That clause
+ * was in this sentence for a release, at eight sites at once, because each site
+ * was typed (SHARED-053).
+ *
+ * **So no surface types the list.** {@link MISSING_PROFILE_CAUSE_CLAUSE} is
+ * composed from this array and `Resident.docId`'s published description is
+ * composed from that, which leaves one place to correct and one place a test
+ * has to read. The measurement lives in `scripts/missing-profile-parity.test.ts`,
+ * the one tree allowed to see `apps/server` and `packages/kit` at once: it pairs
+ * each cause with a **workspace act** by type identity, applies it to a real
+ * workspace, and asserts set-equality in both directions — so a cause added here
+ * without an act that produces it fails, and so does an act that starts emptying
+ * `docId` without a cause.
+ *
+ * **This is the home, and it is the only one** (SHARED-054, closed 2026-08-24).
+ * The dependency direction is fixed — `packages/contract` ← `packages/kit` /
+ * `apps/cli` — so neither downstream array could be this package's source and
+ * this one can be theirs. Both are now re-exports. The blocks that held three
+ * declarations equal are deleted rather than rewritten: a test holding three
+ * lists equal is not one home, it is three homes with a guard.
+ */
+export const MISSING_PROFILE_CAUSES = [
+  "renamed",
+  "deleted",
+  `moved out of ${AGENT_DEF_ROOT}`,
+] as const;
+
+/** One of {@link MISSING_PROFILE_CAUSES} — the type a parity fixture pairs with an act. */
+export type MissingProfileCause = (typeof MISSING_PROFILE_CAUSES)[number];
+
+/**
+ * The three causes as one English clause, for the descriptions that enumerate
+ * them. Composed, never written out — see {@link MISSING_PROFILE_CAUSES}.
+ *
+ * **The root is code-quoted here and bare in the array**, and the split is the
+ * point of having two constants. A published `description` is markdown, and so
+ * is `docs/cli.md`, which `apps/cli` generates from the same clause — a bare
+ * path reads there as prose rather than as a path. The array's members stay
+ * bare because `packages/kit` renders them into a lane's own sentence on the
+ * board, where a backtick reaches a person's eye as a backtick. So the
+ * enumeration is shared and the typography is not.
+ */
+export const MISSING_PROFILE_CAUSE_CLAUSE = ((): string => {
+  const quoted = MISSING_PROFILE_CAUSES.map((cause) =>
+    cause.replace(AGENT_DEF_ROOT, `\`${AGENT_DEF_ROOT}\``),
+  );
+  return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1] ?? ""}`;
+})();
+
+/**
  * A thread's resident: the agent that owns the conversation, and the profile it
  * works from — **when it has one** (SPEC.md §7, rider SHARED-048).
  *
@@ -131,7 +201,7 @@ export const RESIDENT_WEIGHT_BOUNDARY =
  * - `{name: "researcher", docId: "doc_…"}` — a **profiled resident**: open that
  *   document to see what the agent is.
  * - `{name: "researcher", docId: null}` — a profiled resident whose **profile is
- *   gone**: renamed, deleted, or moved out of `.claude/agents/` since. The
+ *   gone**: one of {@link MISSING_PROFILE_CAUSES} has happened to it since. The
  *   designation stands and the resident goes on owning its scope; §7 requires
  *   the miss be *reported* rather than silently substituted, and this is the
  *   report. Not the same state as the first: one is ordinary and one is worth
@@ -216,7 +286,7 @@ export const ResidentSchema = openapi(
       docId: DocIdSchema.nullable().describe(
         "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
           "none to resolve — either because no profile was named, or because the one that was named " +
-          "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
+          `has since been ${MISSING_PROFILE_CAUSE_CLAUSE}, the root a persona ` +
           "has to live in to be addressable at all. **Archiving a profile does not empty this " +
           "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
           "still designatable, so what stands here is its id and `name (profile missing)` is the " +
@@ -352,6 +422,18 @@ export const LaneOriginSchema = openapi(
  * therefore has to be named by where it sits, which is what the first sentence
  * does.
  *
+ * **What it must not claim is that the two grains always agree** (CONTRACT-053,
+ * found by SERVER-112 implementing both sides). CONTRACT-045 wrote *"`live` is
+ * true exactly when some lane of `GET /api/agents` is live"*, and a listener
+ * parked on a lane whose resident was released is a real state in which that is
+ * false: the row is gone at once, the park is held for up to one grace window,
+ * and the aggregate reports live because somebody genuinely is. The primary fact
+ * is the parked request — §7 defines presence as that and nothing else — so the
+ * aggregate defines itself directly and the divergence is stated on the
+ * component, where a caller comparing the two will meet it. `presence()` in
+ * `apps/server/src/queue/liveness.ts` is the implementation and reasons it out
+ * at length. No behaviour changed here.
+ *
  * **The grace window is applied server-side, before this is answered**, and that
  * is the one thing about it a client must not re-decide. §7 leaves the window's
  * length open but guarantees it is longer than a rearm gap, because a healthy
@@ -363,8 +445,9 @@ export const presenceLiveField = z
   .boolean()
   .describe(
     "**Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster " +
-      "row, on any lane at all where it sits on the queue status. The two are the same " +
-      "observation at two grains and never disagree. Presence is the parked scoped `idle` and " +
+      "row, on any lane at all where it sits on the queue status. One observation at two grains, " +
+      "and `AgentPresence` names the one window in which the two grains legitimately differ. " +
+      "Presence is the parked scoped `idle` and " +
       "nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that " +
       "stops parking stops being present whether it exited cleanly, crashed or was killed. **The " +
       "grace window is already applied**: a listener between parks is still live, since a healthy " +
@@ -416,11 +499,21 @@ export const AgentPresenceSchema = openapi(
       "Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is " +
       "reaped, and nothing new is asked of the agent, which is why it can be reported without a " +
       "heartbeat protocol.\n\n" +
-      "Where this sits on `QueueStatus` it is the roster's own liveness **aggregated over every " +
-      "lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` " +
-      "is the most recent of their instants. One notion of presence reported at two grains, so " +
-      "the console strip and the recipient picker can never disagree about whether anybody is " +
-      "listening. **It says whether an agent is present, never how many are**: one parked agent " +
+      "Where this sits on `QueueStatus` it measures the workspace **directly**: `live` is true " +
+      "exactly when some listener is holding a parked scoped `idle`, and `since` is the most " +
+      "recent instant among the lanes that are live — or, when none is, the most recent instant " +
+      "any lane has ever supplied, so *last parked 10m ago* stays distinguishable from *none has " +
+      "parked since the server started*. It is defined by the parked request, not by another " +
+      "endpoint's rows.\n\n" +
+      "**It can therefore read `live` while `GET /api/agents` lists no live lane** — briefly, and " +
+      "both answers correct. A roster row exists while a thread has a resident, and releasing " +
+      "that resident (or resolving the thread, which releases it too) removes the row at once. " +
+      "The listener parked on that lane does not go with it: it is still holding an `idle`, and " +
+      "it keeps holding it until it returns or lapses, up to one grace window. Presence is the " +
+      "parked request (SPEC.md §7), so this reports live for that window while the roster, which " +
+      "reports designated lanes, reports none. It resolves itself when that listener stops. A " +
+      "caller that must not watch two numbers disagree should read one of them.\n\n" +
+      "**It says whether an agent is present, never how many are**: one parked agent " +
       "and two are both `live`, and a count belongs to the roster, which has a row per lane to " +
       "put it on. Read it rather than deriving idleness from the queue counts beside it — an " +
       "empty queue means nobody asked for anything, not that somebody is waiting to be asked.",

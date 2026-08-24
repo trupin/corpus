@@ -13,7 +13,8 @@ import type { EffectiveModel } from "../semantic/state.js";
 import { openProjectionReadonly, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { hashContent, readDocumentIdentity } from "./project-document.js";
 import { listQueueEventFiles } from "./project-runtime.js";
-import { enumerateDocuments, type EnumeratedFile } from "./roots.js";
+import { checkResidentBlocks } from "./resident-integrity.js";
+import { enumerateDocuments, type EnumeratedFile, type UnlistableDirectory } from "./roots.js";
 import { checkSemanticIndex } from "./semantic-integrity.js";
 import { collectUnindexableFiles } from "./unindexable.js";
 
@@ -73,6 +74,19 @@ export type DoctorReport = {
    * as cheap as it was.
    */
   readonly warnings?: readonly DoctorWarning[];
+  /**
+   * Directories the document walk could not list (SERVER-065). Always present
+   * and free — the enumeration returns them either way — and deliberately *not*
+   * folded into {@link warnings}, which {@link inspectProjection} promises to
+   * leave absent for the boot catch-up. {@link doctor} is what turns them into
+   * warnings for an operator to read.
+   *
+   * They never move {@link ok}. An unreadable directory is not a disagreement
+   * between the files and the rows: a rebuild cannot index it and this check
+   * cannot see into it, so the two agree exactly. It is worth a person's
+   * attention all the same, which is §11's report-only family.
+   */
+  readonly unlistable: readonly UnlistableDirectory[];
   readonly stats: {
     /** Document files found under the roots. */
     readonly files: number;
@@ -232,8 +246,9 @@ function checkDocuments(
  * status directory, and counting those would make every real workspace report
  * drift forever.
  */
-function checkEvents(db: ProjectionDb, drift: Drift[]): void {
-  const files = listQueueEventFiles(db.config.corpusDir).length;
+function checkEvents(db: ProjectionDb, drift: Drift[]): readonly UnlistableDirectory[] {
+  const listing = listQueueEventFiles(db.config.corpusDir);
+  const files = listing.files.length;
   const row = db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number };
   if (files !== row.n) {
     drift.push({
@@ -241,6 +256,10 @@ function checkEvents(db: ProjectionDb, drift: Drift[]): void {
       detail: `.corpus/queue holds ${files} evt_*.json file(s) but the projection has ${row.n} event row(s)`,
     });
   }
+  // A status directory neither side could read makes this comparison agree about
+  // a queue that is short — the projection did not project those events and this
+  // count did not count them (SERVER-065). Carried out so it can be said.
+  return listing.unlistable;
 }
 
 /**
@@ -254,13 +273,14 @@ function checkEvents(db: ProjectionDb, drift: Drift[]): void {
  */
 export function inspectProjection(db: ProjectionDb): DoctorReport {
   const startedAt = Date.now();
-  const files = enumerateDocuments(db.config.workspaceRoot);
+  const { files, unlistable } = enumerateDocuments(db.config.workspaceRoot);
   const drift: Drift[] = [];
   const counts = checkDocuments(db, files, drift);
-  checkEvents(db, drift);
+  const unlistableQueue = checkEvents(db, drift);
   return {
     ok: drift.length === 0,
     drift,
+    unlistable: [...unlistable, ...unlistableQueue],
     stats: {
       files: files.length,
       documents: counts.documents,
@@ -295,11 +315,35 @@ export interface DoctorOptions {
   readonly effectiveModel?: EffectiveModel | undefined;
 }
 
+/**
+ * SERVER-065's report-only half. A directory the document walk could not list is
+ * skipped and excluded from the counts by `roots.ts`; this is where an operator
+ * hears about it, on the surface they ran to ask whether the projection is
+ * whole.
+ *
+ * A warning rather than drift, for `unindexable_file`'s reason: a rebuild cannot
+ * index what it cannot list and this check cannot see into it either, so files
+ * and rows agree exactly and there is nothing for `rebuild && doctor` to fix.
+ * Saying nothing, though, is the defect the issue is about — an unreadable
+ * directory reported as an empty one is a partial projection reporting as a
+ * complete one.
+ */
+const unlistableWarnings = (unlistable: readonly UnlistableDirectory[]): readonly DoctorWarning[] =>
+  unlistable.map((directory) => ({
+    kind: "unlistable_directory",
+    path: directory.path,
+    detail:
+      `${directory.path} could not be listed (${directory.reason}), so any document under it ` +
+      "is missing from the projection and invisible to this check. The projection is not " +
+      "wrong about what it holds — it was never able to see them.",
+  }));
+
 export function doctor(config: ProjectionConfig, options: DoctorOptions = {}): DoctorReport {
   const startedAt = Date.now();
   const db = openProjectionReadonly(config);
   let report: DoctorReport;
   let semantic: ReturnType<typeof checkSemanticIndex>;
+  let residents: readonly DoctorWarning[];
   try {
     report = inspectProjection(db);
     // Inside this connection's lifetime, and deliberately **not** inside
@@ -308,6 +352,11 @@ export function doctor(config: ProjectionConfig, options: DoctorOptions = {}): D
     // paying only for that one (SERVER-025). A semantic pass there would run on
     // every boot, and a chunk finding would trigger a full repopulation.
     semantic = checkSemanticIndex(db, options.effectiveModel ?? { kind: "unknown" });
+    // Inside the same connection, and outside `inspectProjection` for that
+    // function's stated reason: the boot catch-up is its other caller and asks
+    // the narrower drift question. One SELECT over a projected column, so it
+    // reads no file and keeps `stats.hashed`'s promise (SERVER-132).
+    residents = checkResidentBlocks(db);
   } finally {
     db.close();
   }
@@ -316,7 +365,12 @@ export function doctor(config: ProjectionConfig, options: DoctorOptions = {}): D
     ...report,
     ok: drift.length === 0,
     drift,
-    warnings: [...collectUnindexableFiles(config.workspaceRoot), ...semantic.warnings],
+    warnings: [
+      ...unlistableWarnings(report.unlistable),
+      ...collectUnindexableFiles(config.workspaceRoot),
+      ...semantic.warnings,
+      ...residents,
+    ],
     stats: { ...report.stats, durationMs: Date.now() - startedAt },
   };
 }

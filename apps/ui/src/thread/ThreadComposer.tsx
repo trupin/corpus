@@ -15,6 +15,7 @@ import {
   useComposerWeight,
   type PendingAttachment,
   type RowNotice,
+  warningNotices,
 } from "@corpus/kit";
 import {
   useCallback,
@@ -152,9 +153,7 @@ export function ThreadComposer({
           // SPEC.md §11: a non-fatal problem "surfaces loudly". The turn landed
           // either way — files are the source of truth — so this is a notice
           // beside a success, not a failure.
-          for (const warning of result.warnings) {
-            onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-          }
+          for (const notice of warningNotices(result.warnings)) onNotify(notice);
         },
         onError: (error) => {
           // Nothing was written — the server refuses the whole turn when the

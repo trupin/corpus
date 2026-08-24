@@ -2,8 +2,10 @@ import { ResidentSchema } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import { agentsCommand } from "./agents.js";
 import {
+  ARCHIVING_IS_NOT_A_CAUSE,
   AT_WEIGHT,
   GENERAL_RESIDENT,
+  MISSING_PROFILE_CAUSES_PHRASE,
   PROFILE_MISSING,
   residentLabel,
   withWeight,
@@ -153,8 +155,16 @@ describe("the weight a resident runs at", () => {
  * The archive clause is stated **positively** for the same reason: a reader who
  * archives a profile and then wonders comes looking for the word, and prose that
  * merely omits it answers nobody.
+ *
+ * **The three CLI surfaces no longer type either sentence** (SHARED-054): they
+ * interpolate {@link MISSING_PROFILE_CAUSES_PHRASE} and
+ * {@link ARCHIVING_IS_NOT_A_CAUSE}, so the pin below is now a check that the
+ * composition reached the registry, plus a check that the **contract's** copy —
+ * still hand-typed, and the outstanding half of SHARED-054 — still agrees with
+ * it. That second one is the reason the literal is compared at all: there is
+ * nothing yet for `packages/contract` to compose from.
  */
-const WAYS_A_PROFILE_GOES_MISSING = "renamed, deleted, or moved out of `.claude/agents/`";
+const WAYS_A_PROFILE_GOES_MISSING = MISSING_PROFILE_CAUSES_PHRASE;
 const ARCHIVING_IS_NOT_ONE =
   "an archived `agent-def` still under that root resolves exactly as before, and is still " +
   "designatable";
@@ -177,6 +187,10 @@ describe("what the CLI says makes a profile go missing", () => {
   });
 
   it("says archiving is not one of them, rather than leaving it out", () => {
+    // The composed clause carries the pinned literal, so the CLI's three
+    // surfaces and the contract's description are still being held to one
+    // sentence even though only one side composes it today.
+    expect(ARCHIVING_IS_NOT_A_CAUSE).toContain(ARCHIVING_IS_NOT_ONE);
     expect(ResidentSchema.shape.docId.description).toContain(ARCHIVING_IS_NOT_ONE);
     for (const [surface, prose] of surfaces) {
       expect(prose, surface).toContain(ARCHIVING_IS_NOT_ONE);

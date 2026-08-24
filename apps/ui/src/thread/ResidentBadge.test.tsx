@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import type { AgentLane } from "@corpus/contract";
-import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE } from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -215,6 +215,12 @@ describe("the three shapes a resident has", () => {
    * (`MISSING_PROFILE_CAUSES`). **Archiving is not one of them** — an archived
    * agent-def still resolves — so a badge reading this for an archived profile
    * would be reporting a miss that did not happen.
+   *
+   * **At row width, with the sentence on the title** (UI-124). The badge is one
+   * line in a conversation's head and the whole note clipped there — 499px of
+   * text in a 263px box, measured. `mark` and `note` are two renderings of one
+   * fact off `LaneRow.kind`, so this is the picker's rule applied to a surface
+   * that is also a row, and not a second wording of the claim.
    */
   it("reports a profile that has gone, still naming the resident", async () => {
     const { container } = renderBadge("th_root", [
@@ -227,8 +233,9 @@ describe("the three shapes a resident has", () => {
       expect(badge(container)?.dataset["residentKind"]).toBe("profile-gone");
     });
     expect(container.querySelector(".t-resident-name")?.textContent).toBe("researcher");
-    expect(container.querySelector(".t-resident-note")?.textContent).toBe(MISSING_PROFILE_NOTE);
-    // Readable without a pointer and without colour, like the liveness line.
+    expect(container.querySelector(".t-resident-note")?.textContent).toBe(MISSING_PROFILE_MARK);
+    // Revealed whole rather than lost (SHARED-057): the sentence is on the
+    // title, readable without a pointer being the reason the mark is beside it.
     expect(badge(container)?.getAttribute("title")).toContain(MISSING_PROFILE_NOTE);
   });
 

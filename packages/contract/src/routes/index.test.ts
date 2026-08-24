@@ -124,6 +124,7 @@ const thread = {
   anchor: "anc_k4f7",
   agent: "engaged" as const,
   resident: null,
+  unread: false,
   turns: [turn],
 };
 
@@ -227,7 +228,8 @@ const job = {
   eventId: "evt_7c1d",
   type: "comment.created",
   status: "in-progress" as const,
-  started: "2026-07-19T10:05:02Z",
+  enqueued: "2026-07-19T10:05:00Z",
+  started: "2026-07-19T10:05:02Z" as string | null,
   updated: "2026-07-19T10:05:40Z",
   lastLine: null,
   originId: "th_x9y8",
@@ -873,7 +875,9 @@ function createStubApp() {
     ),
   );
 
-  app.openapi(contractRoutes.listJobs, (c) => c.json({ jobs: [job] }, 200));
+  app.openapi(contractRoutes.listJobs, (c) =>
+    c.json({ jobs: [job], total: 1, truncated: false }, 200),
+  );
   app.openapi(contractRoutes.getJobLog, (c) =>
     c.json({ lines: [{ ts: job.updated, line: "step" }], nextCursor: 1 }, 200),
   );

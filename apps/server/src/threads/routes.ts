@@ -58,7 +58,7 @@ export function mountThreadRoutes(
 ): void {
   app.openapi(contractRoutes.getThread, (c) => {
     const { id } = c.req.valid("param");
-    return c.json(toWireThread(loadThread(workspace, id)), 200);
+    return c.json(toWireThread(workspace, loadThread(workspace, id)), 200);
   });
 
   // A pure read like `search` and `related`: no mutation, no commit, no

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { DocRow } from "@corpus/contract";
+import type { DocRow, Thread } from "@corpus/contract";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness, docRowFixture } from "../testing/index.js";
@@ -70,8 +70,9 @@ function renderStaleRow(
           anchor: null,
           agent: "requested",
           resident: null,
+          unread: false,
           turns: [],
-        },
+        } satisfies Thread,
         anchorId: null,
         eventId: "evt_1",
         warnings: [],

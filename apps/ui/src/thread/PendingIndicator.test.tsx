@@ -8,6 +8,9 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { liveQueue, QUIET_QUEUE, readerTransport } from "../testing/readerFixture";
 import {
+  DEFERRED_TIERS,
+  DEFERRED_TIERS_UNNAMED,
+  deferredLabel,
   ELAPSED_AFTER_MS,
   LANE_FALLBACK_CLAUSE,
   laneAwayClause,
@@ -91,10 +94,86 @@ describe("waitingLabel", () => {
   });
 });
 
+/**
+ * The third vocabulary (UI-115). §7: *"Nothing refused it: the agent deferred
+ * because it saw, not because it was blocked."* So the row has to say the
+ * request was **seen**, say what it is parked **on**, and stay calm about it —
+ * a deferral that lasts is a document somebody has had open, not breakage.
+ */
+describe("deferredLabel", () => {
+  const ON = { docId: "doc_policy", title: "The reimbursement policy" };
+
+  it("names the document, and says the request was seen rather than ignored", () => {
+    for (const ms of [0, SLOW_AFTER_MS, LONGER_AFTER_MS, ELAPSED_AFTER_MS]) {
+      const said = deferredLabel(ms, ON);
+      expect(said).toContain("paused");
+      expect(said).toContain(ON.title);
+      // Never the waiting ladder's words: "waiting to be picked up" is the
+      // false inference this state exists to prevent.
+      expect(said).not.toContain("picked up");
+      expect(said).not.toContain("working");
+    }
+  });
+
+  it("escalates in precision and not in volume", () => {
+    expect(deferredLabel(0, ON)).toBe(`${DEFERRED_TIERS.fresh} ${ON.title}`);
+    expect(deferredLabel(SLOW_AFTER_MS - 1, ON)).toBe(`${DEFERRED_TIERS.fresh} ${ON.title}`);
+    expect(deferredLabel(SLOW_AFTER_MS, ON)).toBe(`${DEFERRED_TIERS.slow} ${ON.title}`);
+    // From here it says what ends it — the actionable half, and the whole reason
+    // this state reads differently from `waiting`.
+    expect(deferredLabel(LONGER_AFTER_MS, ON)).toBe(`${DEFERRED_TIERS.longer} ${ON.title}`);
+    expect(deferredLabel(22 * 60_000, ON)).toBe(
+      `still paused for 22m — it resumes when you finish editing ${ON.title}`,
+    );
+    // No tier reaches for the register the waiting ladder keeps for an absent
+    // agent: nothing here is a fault (SPEC.md §7).
+    for (const ms of [0, SLOW_AFTER_MS, LONGER_AFTER_MS, 22 * 60_000]) {
+      expect(deferredLabel(ms, ON)).not.toContain(NO_AGENT_CLAUSE);
+      expect(deferredLabel(ms, ON)).not.toContain("longer than usual");
+    }
+  });
+
+  it("falls back to the id, and then to a sentence naming no document", () => {
+    expect(deferredLabel(0, { docId: "doc_policy", title: null })).toContain("doc_policy");
+    const unnamed = deferredLabel(0, { docId: null, title: null });
+    expect(unnamed).toBe(DEFERRED_TIERS_UNNAMED.fresh);
+    // A clause short rather than a clause with a hole in it.
+    expect(unnamed).not.toContain("“”");
+    expect(deferredLabel(LONGER_AFTER_MS, { docId: null, title: null })).toBe(
+      DEFERRED_TIERS_UNNAMED.longer,
+    );
+    expect(deferredLabel(22 * 60_000, { docId: null, title: null })).toBe(
+      "still paused for 22m — it resumes when that editing finishes",
+    );
+  });
+});
+
 describe("pendingLabel", () => {
   it("routes each state to its own vocabulary", () => {
     expect(pendingLabel("working", 0, true)).toBe(WORKING_TIERS.fresh);
     expect(pendingLabel("waiting", 0, true)).toBe(WAITING_TIERS.fresh);
+    expect(pendingLabel("deferred", 0, true, undefined, { docId: "doc_a", title: "Notes" })).toBe(
+      `${DEFERRED_TIERS.fresh} Notes`,
+    );
+  });
+
+  /**
+   * The deferral is the most specific true thing about the wait and the only one
+   * the reader can end, so it is said even where a lane could be named — naming
+   * the resident would answer a question nobody is asking about work that is
+   * already claimed.
+   */
+  it("prefers the deferral to the lane's own wording", () => {
+    const said = pendingLabel("deferred", 0, true, lane("live"), {
+      docId: "doc_a",
+      title: "Notes",
+    });
+    expect(said).toBe(`${DEFERRED_TIERS.fresh} Notes`);
+    expect(said).not.toContain("researcher");
+  });
+
+  it("still says it is paused when nothing named the document", () => {
+    expect(pendingLabel("deferred", 0, true)).toBe(DEFERRED_TIERS_UNNAMED.fresh);
   });
 
   /**
@@ -269,7 +348,12 @@ describe("humanizeElapsed", () => {
  * the wording, not the fetch.
  */
 function renderIndicator(
-  props: { readonly since: string; readonly state: PendingState; readonly lane?: PendingLane },
+  props: {
+    readonly since: string;
+    readonly state: PendingState;
+    readonly lane?: PendingLane;
+    readonly deferred?: { readonly docId: string | null; readonly title: string | null };
+  },
   queue: QueueStatus = QUIET_QUEUE,
 ): { readonly container: HTMLElement } {
   // `staleTime: Infinity` is the app's own default (`app/queryClient.ts`), and
@@ -333,6 +417,35 @@ describe("PendingIndicator", () => {
       vi.advanceTimersByTime(ELAPSED_AFTER_MS);
     });
     expect(text(container)).toContain("still working — ");
+  });
+
+  /**
+   * The rendered deferral (UI-115). The row says which state it is in on
+   * `data-pending-state`, which is what a stylesheet and a spec ask — and the
+   * **dot stays the queued one**, because the dot answers "is anything being
+   * worked" and the answer is still no. A third shape would need a sentence to
+   * explain it, and the sentence is already there.
+   */
+  it("says a parked request is paused, names what on, and keeps the queued dot", () => {
+    vi.setSystemTime(new Date("2026-07-19T10:05:00.000Z"));
+    const { container } = renderIndicator({
+      since: "2026-07-19T10:05:00.000Z",
+      state: "deferred",
+      deferred: { docId: "doc_policy", title: "The reimbursement policy" },
+    });
+    expect(text(container)).toBe(`${DEFERRED_TIERS.fresh} The reimbursement policy`);
+    expect(container.querySelector(".queued-dot")).not.toBeNull();
+    expect(container.querySelector(".working-dot")).toBeNull();
+    expect(container.querySelector(".working")?.getAttribute("data-pending-state")).toBe(
+      "deferred",
+    );
+
+    // It goes on saying the same calm thing as the clock runs, and picks up the
+    // clause that says who can end it.
+    act(() => {
+      vi.advanceTimersByTime(LONGER_AFTER_MS);
+    });
+    expect(text(container)).toBe(`${DEFERRED_TIERS.longer} The reimbursement policy`);
   });
 
   /**

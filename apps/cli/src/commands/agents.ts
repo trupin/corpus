@@ -2,7 +2,12 @@ import { AGENT_PRESENCE_WINDOW_SECONDS, ORCHESTRATOR_LANE, type AgentLane } from
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../registry/types.js";
 import { formatAge } from "./age.js";
 import { oneLine } from "./columns.js";
-import { residentLabel } from "./resident.js";
+import {
+  ARCHIVING_IS_NOT_A_CAUSE,
+  MISSING_PROFILE_CAUSES_PHRASE,
+  PROFILE_MISSING,
+  residentLabel,
+} from "./resident.js";
 
 /**
  * `corpus agents` — who is running (SPEC.md §7).
@@ -207,11 +212,10 @@ export const agentsCommand: WorkspaceCommandSpec = {
     "**The resident cell tells three states apart**, because they are three different facts about " +
     "a conversation: `a general resident` is an agent with no profile document — the ordinary " +
     "designation, which needs nothing to exist in the workspace first; `researcher (doc_r1)` is a " +
-    "profile a reader can open; and `researcher (profile missing)` is a designation whose profile " +
-    "has since been renamed, deleted, or moved out of `.claude/agents/`, which changes nothing " +
-    "about who owns the lane and is reported rather than silently substituted. **Archiving is not " +
-    "one of those**: an archived `agent-def` still under that root resolves exactly as before, and " +
-    "is still designatable, so the cell keeps printing its id.\n\n" +
+    `profile a reader can open; and \`researcher (${PROFILE_MISSING})\` is a designation whose ` +
+    `profile has since been ${MISSING_PROFILE_CAUSES_PHRASE}, which changes nothing about who ` +
+    "owns the lane and is reported rather than silently substituted. " +
+    `${ARCHIVING_IS_NOT_A_CAUSE}, so the cell keeps printing its id.\n\n` +
     "**The same cell says what the lane runs at**, where the designation chose a weight (SPEC.md " +
     "§7, rider signed 2026-08-19): `researcher (doc_r1) at heavy`, `a general resident at heavy`. " +
     "The word is a level's key from this workspace's own agent guidance, never a model name, and " +

@@ -221,3 +221,54 @@ describe("clearProjection", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM meta").get()).toEqual({ n: 1 });
   });
 });
+
+/**
+ * SERVER-065. `enumerateDocuments` swallowed a failed `readdir` and answered the
+ * empty list, so a rebuild over an unreadable root reported success over a
+ * partial corpus — the same shape SERVER-064 fixed one level down, for an
+ * unreadable *file*, and settled the rule this reuses.
+ */
+describe("a document root that cannot be listed (SERVER-065)", () => {
+  const breakDocsRoot = (): void => {
+    rmSync(join(config.workspaceRoot, "data", "docs"), { recursive: true, force: true });
+    writeFileSync(join(config.workspaceRoot, "data", "docs"), "not a directory", "utf8");
+  };
+
+  it("is skipped, reported, and logged at `error` — never fatal", () => {
+    write(
+      "data/threads/th_ttt.md",
+      `---\nid: th_ttt\ntype: thread\ntitle: T\n---\n\n## user · 2026-07-03T09:00:00Z\n\nHi.\n`,
+    );
+    breakDocsRoot();
+
+    const report = populateFromFiles(db);
+
+    // The rest of the corpus is still projected: boot is a read, and losing one
+    // root is not a reason to lose the others.
+    expect(report.threads).toBe(1);
+    expect(report.skipped.map((entry) => entry.path)).toEqual(["data/docs"]);
+    expect(report.skipped[0]?.reason).toContain("ENOTDIR");
+    // `error` is the level a server running at `silent` still writes, and only
+    // an operator can repair an unreadable directory.
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error.mock.calls[0]?.[0]).toContain("unlistable directory");
+  });
+
+  it("keeps it out of the counts rather than counting it empty", () => {
+    write("data/docs/a.md", doc("doc_aaa"));
+    const before = populateFromFiles(db).documents;
+    breakDocsRoot();
+
+    expect(populateFromFiles(db).documents).toBeLessThan(before);
+  });
+
+  it("says nothing about a root that is simply absent", () => {
+    write("data/docs/a.md", doc("doc_aaa"));
+
+    // No `.claude/agents`, no `skills-archived` — the ordinary shape of most
+    // workspaces. `ENOENT` stays silent, or every boot reports findings forever.
+    const report = populateFromFiles(db);
+    expect(report.skipped).toEqual([]);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+});

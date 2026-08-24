@@ -47,6 +47,33 @@ export const TurnSchema = openapi(
   "Turn",
 );
 
+/**
+ * One conversation, read on its own (SPEC.md §6).
+ *
+ * **`unread` is here because read state became an input to a placement, not
+ * only to a badge** (CONTRACT-036). It lived on `DocRow` and nowhere else, so a
+ * surface that reached a conversation through a *list* could answer "does this
+ * hold something I have not seen" and a surface that reached the same
+ * conversation through this route could not — and this resource carried nothing
+ * to derive it from either: no mark, no per-turn seen flag.
+ *
+ * That was tolerable while the answer only drew a badge. SPEC.md §10's interlock
+ * makes it a placement: *"a conversation carrying a turn you have not seen is
+ * never collapsed by the rule"*, so a reader that cannot answer it cannot apply
+ * §6's collapse rule either. Two ordinary cases have no row to fall back on — a
+ * **standalone** thread, which every Ask from the board's global composer
+ * creates and which no `?parent=` listing can ever return, and a thread past the
+ * first page of a busy parent — and what stood in was a browser-lifetime record
+ * of the marks *this tab* had sent. That can confirm a read and can never deny
+ * one, so a resolved standalone thread opened expanded on the first visit after
+ * every reload, however long ago the server had recorded it as read.
+ *
+ * **The comparison is the row's, not a second one.** `DocRow.unread` and
+ * `MarkSeenResult.unread` both ask whether any turn is newer than the mark; this
+ * asks the same question of the same mark, so the three agree by construction
+ * and a change to what "unread" means cannot make a thread disagree with its own
+ * row.
+ */
 export const ThreadSchema = openapi(
   z.object({
     id: ThreadIdSchema,
@@ -63,6 +90,21 @@ export const ThreadSchema = openapi(
     ),
     agent: ThreadAgentSchema,
     resident: residentField,
+    unread: z
+      .boolean()
+      .describe(
+        "**Whether this thread holds a turn you have not seen** (SPEC.md §7) — `DocRow.unread` " +
+          "for the thread you are reading, the same comparison against the same server-side mark " +
+          "in `.corpus/seen.json`, so the two agree by construction. Required and **never null**: " +
+          "this resource is only ever a thread, so there is no *null on non-threads* case to " +
+          "spell, and `false` means nothing is unseen rather than *unknown*. A thread with no " +
+          "turns reads `false` — there is nothing to have read. A partial read reads `true`, the " +
+          "same as the row and the same as the `unread` the mark itself reported " +
+          "(`MarkSeenResult`). It is here because SPEC.md §10's interlock makes read state an " +
+          "input to a **placement** — a conversation carrying an unseen turn is never collapsed " +
+          "by §6's rule — and a standalone thread has no list row a reader could take the answer " +
+          "from.",
+      ),
     turns: z.array(TurnSchema),
   }),
   "Thread",

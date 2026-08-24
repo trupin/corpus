@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { Thread, ThreadSummary } from "@corpus/contract";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useAppendTurn } from "../query/useAppendTurn.js";
@@ -47,6 +48,12 @@ function wire(): { fetch: typeof globalThis.fetch; sent: Sent[] } {
     }
     sent.push({ path: url.pathname, json, form });
 
+    /*
+     * `satisfies Thread` rather than a bare literal: the multipart routes parse
+     * their answers with the contract's own schema and the JSON ones do not, so
+     * a missing required field is a `ZodError` on exactly one branch and
+     * invisible on the other. The annotation moves that gap to compile time.
+     */
     const thread = {
       id: "th_1",
       title: "T",
@@ -56,10 +63,11 @@ function wire(): { fetch: typeof globalThis.fetch; sent: Sent[] } {
       tags: [],
       agent: "requested",
       resident: null,
+      unread: false,
       turns: [],
       created: "2026-08-08T10:00:00Z",
       updated: "2026-08-08T10:00:00Z",
-    };
+    } satisfies Thread;
     const payload =
       url.pathname === "/api/capture"
         ? { docId: "doc_1", threadId: "th_1", eventId: "evt_1", warnings: [] }
@@ -74,7 +82,6 @@ function wire(): { fetch: typeof globalThis.fetch; sent: Sent[] } {
                 parent: null,
                 anchor: null,
                 status: "open",
-                tags: [],
                 agent: "requested",
                 resident: null,
                 created: "2026-08-08T10:00:00Z",
@@ -82,7 +89,7 @@ function wire(): { fetch: typeof globalThis.fetch; sent: Sent[] } {
                 turnCount: 1,
                 lastAuthor: "user",
                 lastTs: "2026-08-08T10:00:00Z",
-              },
+              } satisfies ThreadSummary,
               turn: {
                 author: "user",
                 ts: "2026-08-08T10:00:00Z",

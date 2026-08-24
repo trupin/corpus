@@ -381,6 +381,9 @@ describe("GET /api/jobs", () => {
       // halfway through a release.
       "blockedOn",
       "blockedOnTitle",
+      // The enqueue instant, which `started` used to stand in for
+      // (CONTRACT-029). Both are on the row now, and they mean two things.
+      "enqueued",
       "eventId",
       "lastLine",
       "originId",
@@ -412,9 +415,20 @@ describe("GET /api/jobs", () => {
 
     const bare = JobListSchema.parse(await (await request("/api/jobs")).json());
     expect(bare.jobs).toHaveLength(3);
-    expect(
-      JobListSchema.parse(await (await request("/api/jobs?recent=1")).json()).jobs,
-    ).toHaveLength(1);
+    // Nothing was cut, and the response says so rather than leaving the caller
+    // to guess from the length (CONTRACT-035).
+    expect({ total: bare.total, truncated: bare.truncated }).toEqual({
+      total: 3,
+      truncated: false,
+    });
+
+    const windowed = JobListSchema.parse(await (await request("/api/jobs?recent=1")).json());
+    expect(windowed.jobs).toHaveLength(1);
+    // The two the window cut are reachable, and the reader is told they exist.
+    expect({ total: windowed.total, truncated: windowed.truncated }).toEqual({
+      total: 3,
+      truncated: true,
+    });
     expect((await request("/api/jobs?recent=200")).status).toBe(200);
 
     for (const recent of [0, 201]) {
@@ -442,6 +456,16 @@ describe("GET /api/jobs", () => {
         ).json(),
       );
       expect(asked.jobs.map((job) => job.eventId)).toEqual([wanted]);
+      // The console's own answer was cut at 50 of 56 and says so; the origin
+      // query dropped the window, so it is complete however small `recent` is.
+      expect({ total: console_.total, truncated: console_.truncated }).toEqual({
+        total: 56,
+        truncated: true,
+      });
+      expect({ total: asked.total, truncated: asked.truncated }).toEqual({
+        total: 1,
+        truncated: false,
+      });
     });
 
     it("refuses an unknown status instead of quietly matching nothing", async () => {

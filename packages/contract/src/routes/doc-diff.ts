@@ -50,8 +50,10 @@ export const getDocDiff = createRoute({
     "**Bounded, like the context pack.** Reading a diff costs roughly the same however large the " +
     `document or the change: the body is capped at ${DOC_DIFF_MAX_CHARS} characters ` +
     "(`DOC_DIFF_MAX_CHARS`) and a longer diff is **truncated, not refused** — whole hunks are " +
-    "dropped from the end so the answer is still a valid unified diff, `truncated` says so, and " +
-    "`totalChars` says how much was cut. Refusing would leave a caller that already spent a wake-up " +
+    "dropped from the end while that fits, and the hunk that straddles the bound is cut at a line " +
+    "boundary (SPEC.md §9.2). So the last hunk may be a **prefix of itself**, and its header can " +
+    "promise more lines than follow: read a truncated diff, do not apply one. `truncated` says so, " +
+    "and `totalChars` says how much was cut. Refusing would leave a caller that already spent a wake-up " +
     "with nothing; truncating leaves it with the front of the change and an honest measure of the " +
     "rest.\n\n" +
     "**Path-scoped**: the diff and the stats cover this document's file alone, so commits in the " +
