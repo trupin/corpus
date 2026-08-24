@@ -254,16 +254,21 @@ describe("an unterminated fenced code block", () => {
     expect(report.ok).toBe(false);
   });
 
-  it("is an error the write path nonetheless accepted — the check is the only gate", async () => {
+  it("is an error the write path nonetheless accepted, and reported rather than refused", async () => {
     // The document is created through the real API. That it exists at all is the
     // point: `unterminated-fence` is out of `LOCAL_CHECK_CODES` on purpose, so a
-    // save is never refused for it and a person is told about it here instead.
+    // save is never refused for it.
     const created = await createDoc(ws, {
       type: "note",
       title: "Fenced",
       body: "Here is the snippet:\n\n```\nconst x = 1;```",
     });
-    expect(created.warnings).toEqual([]);
+    // Since SERVER-067 the check is no longer the *only* gate: the save that
+    // tolerated the finding says so on its own response, under one code with the
+    // finding's own code in `detail`. Nothing is re-graded — `corpus doc check`
+    // fails on the same bytes below, at the same severity, and still exits 6.
+    expect(created.warnings.map((warning) => warning.code)).toEqual(["validation_error"]);
+    expect(created.warnings[0]?.detail).toMatch(/^unterminated-fence: /);
 
     const { report } = await check({ ids: [created.id] });
     expect(codes(report.errors)).toEqual(["unterminated-fence"]);

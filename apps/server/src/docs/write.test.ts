@@ -3,7 +3,7 @@
 
 import { chmodSync, existsSync, readdirSync, symlinkSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { QueryKey } from "@corpus/contract";
+import type { QueryKey, Warning } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
@@ -363,28 +363,45 @@ describe("validateBeforeWrite", () => {
    */
   const profile = (frontmatter: string): string => `---\n${frontmatter}---\n\nYou research.\n`;
 
+  /**
+   * SERVER-067. "Reported, never refused" is one rule, so this family reaches
+   * the response under `validation_error` exactly as the fence family does —
+   * one warning per finding, the finding's own code riding in `detail`. The
+   * chosen cost is stated where it is paid: every save of a still-faulty
+   * profile warns until the file is repaired.
+   */
+  const toleratedCodes = (warnings: readonly Warning[]): string[] =>
+    warnings.map((warning) => warning.code);
+
   it("does not block a save to an agent-def Claude Code cannot load", () => {
     validating("validate-agent-def");
-    for (const frontmatter of ["", "name: researcher\n", "description: For sources.\n"]) {
-      expect(
-        validateBeforeWrite(
-          { logger: silentLogger, projection: ws.db },
-          ".claude/agents/researcher.md",
-          profile(frontmatter),
-        ),
-      ).toEqual([]);
+    const cases = [
+      { frontmatter: "", findings: 2 },
+      { frontmatter: "name: researcher\n", findings: 1 },
+      { frontmatter: "description: For sources.\n", findings: 1 },
+    ];
+    for (const { frontmatter, findings } of cases) {
+      const warnings = validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        ".claude/agents/researcher.md",
+        profile(frontmatter),
+      );
+      expect(toleratedCodes(warnings)).toEqual(Array<string>(findings).fill("validation_error"));
+      for (const warning of warnings) {
+        expect(warning.detail).toMatch(/^frontmatter-invalid: /);
+      }
     }
   });
 
   it("does not block a save whose `name` disagrees with the filename", () => {
     validating("validate-agent-def-name");
-    expect(
-      validateBeforeWrite(
-        { logger: silentLogger, projection: ws.db },
-        ".claude/agents/bareprofile.md",
-        profile("name: numbers\ndescription: For sources.\n"),
-      ),
-    ).toEqual([]);
+    const warnings = validateBeforeWrite(
+      { logger: silentLogger, projection: ws.db },
+      ".claude/agents/bareprofile.md",
+      profile("name: numbers\ndescription: For sources.\n"),
+    );
+    expect(toleratedCodes(warnings)).toEqual(["validation_error"]);
+    expect(warnings[0]?.detail).toMatch(/^frontmatter-invalid: /);
   });
 
   /**
@@ -407,7 +424,9 @@ describe("validateBeforeWrite", () => {
       profile(""),
     );
 
-    expect(warnings).toEqual([]);
+    // The log line is not replaced by SERVER-067's response warning; the two
+    // surfaces have different readers and both must carry the finding.
+    expect(toleratedCodes(warnings)).toEqual(["validation_error", "validation_error"]);
     expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
     expect(logged[0]?.fields?.["errors"]).toEqual([
       expect.stringContaining("frontmatter-invalid: name: missing"),
@@ -477,13 +496,23 @@ describe("validateBeforeWrite", () => {
       ".claude/skills/demo/SKILL.md",
       ".claude/skills-archived/demo/SKILL.md",
     ]) {
-      expect(
-        validateBeforeWrite(
-          { logger: silentLogger, projection: ws.db },
-          path,
-          profile(`name: researcher\ndescription: For sources.\n${MALFORMED}`),
-        ),
-      ).toEqual([]);
+      const warnings = validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        path,
+        profile(`name: researcher\ndescription: For sources.\n${MALFORMED}`),
+      );
+      // Three malformed fields, three findings, three warnings — one per
+      // finding, never one per save (SERVER-067).
+      expect(toleratedCodes(warnings)).toEqual([
+        "validation_error",
+        "validation_error",
+        "validation_error",
+      ]);
+      expect(warnings.map((warning) => warning.detail)).toEqual([
+        expect.stringContaining("frontmatter-invalid: title:"),
+        expect.stringContaining("frontmatter-invalid: tags:"),
+        expect.stringContaining("frontmatter-invalid: status:"),
+      ]);
     }
   });
 
@@ -543,13 +572,15 @@ describe("validateBeforeWrite", () => {
   it("does not block a save whose body leaves a fenced code block open", () => {
     validating("validate-fence");
     const text = doc("doc_fence001", "Here is the snippet:\n\n```\nconst x = 1;```");
-    expect(
-      validateBeforeWrite(
-        { logger: silentLogger, projection: ws.db },
-        "data/docs/inbox/x.md",
-        text,
-      ),
-    ).toEqual([]);
+    const warnings = validateBeforeWrite(
+      { logger: silentLogger, projection: ws.db },
+      "data/docs/inbox/x.md",
+      text,
+    );
+
+    // Not blocked, and — since SERVER-067 — not silent either.
+    expect(toleratedCodes(warnings)).toEqual(["validation_error"]);
+    expect(warnings[0]?.detail).toMatch(/^unterminated-fence: /);
   });
 
   /**
@@ -578,7 +609,13 @@ describe("validateBeforeWrite", () => {
       text,
     );
 
-    expect(warnings).toEqual([]);
+    // SERVER-067 adds the response warning **beside** this log line, not instead
+    // of it: `logger.error` survives a caller that discards `warnings`, and the
+    // response reaches the agent whose turn the fence swallowed.
+    expect(toleratedCodes(warnings)).toEqual(["validation_error"]);
+    expect(warnings[0]?.detail).toContain(
+      "unterminated-fence: unterminated fenced code block opened at line",
+    );
     expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
     expect(logged[0]?.fields?.["path"]).toBe("data/docs/inbox/x.md");
     expect(logged[0]?.fields?.["errors"]).toEqual([

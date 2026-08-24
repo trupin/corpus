@@ -467,7 +467,7 @@ belongs to the same fix wave.
 | UI-089 | The changelog's older entries clip, and the clip reports its size | done | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
-| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | todo | P2 | SERVER-066 |
+| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | done | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable — needs a one-line SPEC amendment signed | blocked | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | done | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | done | P2 | CLI-031 |

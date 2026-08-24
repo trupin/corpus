@@ -197,7 +197,9 @@ describe("a turn that would swallow the turns after it (SPEC.md §6)", () => {
    * SERVER-066's decision, unchanged: a fault already on disk blocks nothing.
    * The guard asks about *this* turn's text only, so the person replying to a
    * thread somebody else broke is still able to speak — their turn lands, and
-   * `corpus doc check` is what reports the pre-existing fence.
+   * the pre-existing fence is reported rather than refused. Where it is reported
+   * is the describe below (SERVER-067): the server log, the response's
+   * `validation_error` warning, and `corpus doc check`.
    */
   it("still accepts a reply to a thread that already carries an open fence", async () => {
     const created = await createThread(ws, { body: "first" });
@@ -220,6 +222,63 @@ describe("a turn that would swallow the turns after it (SPEC.md §6)", () => {
 
     expect(response.status).toBe(400);
     expect(existsSync(join(ws.root, ".corpus", "attachments", created.id))).toBe(false);
+  });
+});
+
+/**
+ * SERVER-067 / CONTRACT-084, at the route. A §11 finding of **error** severity
+ * that the save tolerated used to reach `.corpus/server.log` and nothing else —
+ * and the party an unclosed fence harms is the agent whose turn it swallowed,
+ * which reads responses and never the log. It now rides the response too, as a
+ * `validation_error` warning carrying the finding's own code in `detail`.
+ *
+ * The two cases here are a pair and only read as one argument together. The
+ * first is the family that must be reported. The second is the family that must
+ * **not** be: `anchor-unused` is a cross-document rule answered a write behind
+ * on the commonest mutation in the product, so admitting it would put a false
+ * warning on nearly every anchored comment and teach a reader to skip the
+ * channel the fence needs them to read. `REPORTED_CHECK_CODES` is an explicit
+ * allow-list for exactly that reason.
+ */
+describe("a save that tolerates a §11 error says so on the response (SPEC.md §11)", () => {
+  it("answers 201 and carries the pre-existing fence as a `validation_error`", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const path = threadPath(created.id);
+    // The fence is already on disk, so this turn's own text is clean and the
+    // request guard has nothing to refuse — the document-level rule is what
+    // notices, which is the only shape in which this route reaches 201 with the
+    // finding present.
+    ws.write(path, `${ws.read(path)}\n\`\`\`js\nconst x = 1;\n`);
+    ws.reproject();
+
+    const appended = await appendTurn(ws, created.id, { body: "a perfectly ordinary reply" });
+
+    const warnings = appended.body["warnings"] as { code: string; detail: string }[];
+    expect(appended.status).toBe(201);
+    expect(warnings.map((warning) => warning.code)).toEqual(["validation_error"]);
+    expect(warnings[0]?.detail).toContain("unterminated-fence: unterminated fenced code block");
+    // The write still stands: reported, never refused.
+    expect(ws.read(path)).toContain("a perfectly ordinary reply");
+  });
+
+  it("carries no warning at all for an ordinary anchored comment", async () => {
+    const parent = await createDoc(ws, {
+      type: "note",
+      title: "Mortgage model",
+      body: "The model we assume a 30-year fixed at 6.1% which may be stale.\n",
+    });
+
+    const created = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "assume a 30-year fixed at 6.1%" },
+      body: "is this still right?",
+    });
+
+    // The parent is validated carrying the *new* anchor entry immediately before
+    // the thread that claims it is written, so `anchor-unused` is true of that
+    // instant and false of the world. It must not reach the caller.
+    expect(created.anchorId).toMatch(/^anc_[0-9a-f]{8}$/);
+    expect(created.warnings).toEqual([]);
   });
 });
 

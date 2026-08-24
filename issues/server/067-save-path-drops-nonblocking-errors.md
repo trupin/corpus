@@ -6,9 +6,10 @@ server
 
 ## Status
 
-todo — **re-scoped 2026-08-06.** The log half is done (SERVER-066's review-fix
-round, PR #26 finding B). What remains is one contract question that needs the
-user, not code. See "What is left" below.
+done — **2026-08-24.** The log half landed with SERVER-066's review-fix round
+(PR #26, finding B). The response half landed here, against CONTRACT-084's
+`validation_error`, after the adjudication below removed the question that was
+blocking it.
 
 ## Priority
 
@@ -52,10 +53,18 @@ with no code at all.
 `checkSave` ran §11's validator over the bytes of every save and then returned
 `findings: report.warnings` — so a finding that was an **error** but not a
 *blocking* error was computed on every write and thrown away. It reached no
-response, no log, and no console. The one rule in that shape,
-`unterminated-fence` (SERVER-066), exists precisely so that a swallowed turn
-stops being silent, and it was silent on the only path the bug actually happens
-on: the agent appending a turn.
+response, no log, and no console. `unterminated-fence` (SERVER-066) exists
+precisely so that a swallowed turn stops being silent, and it was silent on the
+only path the bug actually happens on: the agent appending a turn.
+
+**Two families are tolerated, not one** (corrected 2026-08-24; the earlier text
+said "exactly one"). `REPORTED_CHECK_CODES` holds `unterminated-fence`, and
+`isClaudeRootFrontmatter` holds every `frontmatter-invalid` raised under one of
+§7's `.claude/` roots — added by SERVER-123/124, from two rules (§7's `name` and
+`description`, and §5's canonical block where the file wrote a Corpus field down
+wrongly). Both are "reported, never refused", so both reach the response.
+`isSkillFrontmatterException`, which the original Summary cited, has since been
+deleted.
 
 **The log half of that is fixed.** SERVER-066's review-fix round (PR #26,
 finding B) added `REPORTED_CHECK_CODES`, made `SaveCheck.findings` carry the
@@ -105,7 +114,13 @@ response. `codes.test.ts` passes **unchanged**.
 wait on it: §11 permits this behaviour but does not state it, so nothing in
 SPEC.md would fail if a later change silently removed the response warning.
 
-**What is left is one question, and it is not a coding question.** Putting the
+### The question, as it stood before the adjudication above answered it
+
+_Kept for the record. The premise in the second sentence — that §11's wire
+warning family is `CHECK_WARNING_CODES` — is the error the adjudication
+corrected. Read it as history, not as an open question._
+
+Putting the
 same finding on the mutation **response** — where the console and the UI would
 see it — requires a third `WarningCode`. §11's wire warning family is a closed
 two-member set (`CHECK_WARNING_CODES` = `anchor-unresolved`, `ref-unresolved`),
@@ -139,19 +154,44 @@ decisions and belong with the user.
       finding reaches the log, and the parent text `threads/create.ts` produces
       does not
 
-### What this issue is now
+### What this issue delivered
 
-- [ ] The question is put to the user, stated as a §11 semantics change and not
-      as a bug: **should a non-blocking error appear on the mutation response,
-      and if so under what?** With the three options above and their costs.
-- [ ] If the answer is **no**: this issue closes with a recorded decision and no
-      code. The docblock on `SaveCheck.warnings` already states the rationale;
-      it is updated to cite the decision rather than the open question.
-- [ ] If the answer is **yes**: a SPEC.md §11 rider is drafted and signed
-      *first*, then a contract issue transcribes the new code (with its own
-      severity story), then the server maps `REPORTED_CHECK_CODES` onto it. That
-      is three issues, filed in that order — not this one growing.
-- [ ] Whatever the answer, `REPORTED_CHECK_CODES` stays an explicit allow-list.
+- [x] The question was put to spec-writer on Fable and **adjudicated**, not
+      guessed: the premise conflated two families, §11's own auto-commit
+      sentence already answers it, and **no rider is needed**. Recorded above.
+- [x] `checkSave` emits one `validation_error` warning **per tolerated finding**,
+      for **both** halves of `tolerated` — `REPORTED_CHECK_CODES` and
+      `isClaudeRootFrontmatter` alike, because "reported, never refused" is one
+      rule and the party that reads the response is the same party in both cases
+- [x] The warnings go into the **same array** `WARNING_CODE_BY_CHECK` already
+      fills, so a save carrying both a tolerated error and a §11 warning reports
+      both, each under its own code
+- [x] `detail` is `` `${finding.code}: ${finding.detail}` `` — the finding's own
+      code rides in prose rather than multiplying `WarningCode`s
+- [x] **Nothing is re-graded.** `WARNING_CODE_BY_CHECK` is unchanged,
+      `CHECK_WARNING_CODES` is unchanged, no code moved across the validator's
+      partition, and `apps/server/src/check/codes.test.ts` passes **with no
+      edit at all**
+- [x] `REPORTED_CHECK_CODES` stays an explicit allow-list — `anchor-unused` is
+      outside it and never reaches the response
+- [x] The `logger.error` line stays **beside** the response warning, not instead
+      of it: the two surfaces have different readers, and only the log survives a
+      caller that discards `warnings`
+- [x] The `SaveCheck.warnings` docblock is rewritten. Its old argument — that
+      inventing a code "would put an error-severity finding into the wire's
+      warning channel" — is refuted in place, citing the decision
+
+### The cost, chosen rather than stumbled into
+
+**Every save of a still-faulty `.claude/agents/*.md` now warns until the file is
+repaired.** That is `corpus doc check`'s answer delivered on the path the write
+actually happens on, and it is the point rather than a side effect: the whole
+reason SERVER-123 stopped refusing those saves is that the fault is in bytes the
+server never authored, and silence is what left the fault in place. It is a real
+behaviour change and it is bounded in two directions, both measured below —
+the warning stops the moment the frontmatter is repaired, and `anchor-unused`
+(the finding that would fire on nearly every anchored comment) is still outside
+the allow-list.
 
 ## Technical Design
 
@@ -211,16 +251,28 @@ no such blind spot, stays the place a genuinely dangling anchor is reported.
 
 ## Testing Strategy
 
-If the answer is "no": no new tests. The existing `write.test.ts` cases are the
-regression guard, and the decision is recorded in the docblock.
+_As implemented._ The pair lives in `apps/server/src/threads/turns.test.ts`,
+under one describe, because neither half reads as an argument on its own:
 
-If the answer is "yes": the response-side case is asserted at the route level
-(a `POST /api/threads/:id/turns` whose body carries an unterminated fence returns
-`201` **with** the warning in the response payload), the drift guard in
-`check/codes.test.ts` is updated to whatever the new partition asserts, and the
-`anchor-unused` negative — an anchored comment produces **no** response warning —
-is pinned alongside it, because that is the failure mode the allow-list exists
-to prevent.
+- `POST /api/threads/:id/turns` against a thread whose file already carries an
+  open fence returns `201` **with** the `validation_error` warning on the
+  payload. (The fence must be pre-existing: `turnRequestBody` refuses a fence
+  the *submitted turn* opens, with a `400`, so that shape never reaches the
+  save's validator.)
+- An ordinary anchored comment returns `201` with `warnings: []` — the
+  `anchor-unused` negative the allow-list exists to prevent.
+
+`check/codes.test.ts` needed **no edit**: no code moved across the validator's
+partition.
+
+Four existing assertions changed from `toEqual([])` to naming the warning, and
+each is a case that used to be silent by the defect this issue fixes — the two
+fence cases and the two Claude-root frontmatter cases in
+`apps/server/src/docs/write.test.ts`, plus
+`check/routes.test.ts`'s "the check is the only gate", whose title was true
+before this issue and is not now. **Every log assertion beside them was kept**:
+the response warning is added next to the `logger.error` line, never instead of
+it, and `write.test.ts` asserts both in the same test.
 
 ## E2E Verification Plan
 
@@ -255,20 +307,146 @@ finding B. Real workspace `/tmp/corpus-066r`, real server, real HTTP, real CLI._
 
 ### Post-Implementation Verification
 
-_[Agent fills, if and only if the question is answered "yes". The log half's
-verification is already recorded in SERVER-066 and is not re-run here.]_
+**2026-08-24 — server-dev on Opus 5 (1M context), branch `phase-45-not-so`.**
+
+Real workspace `…/scratchpad/ws067`, created by the real `corpus init` (port
+8766 — the user's server on 8765 was never touched). Real server started with
+`tsx apps/server/src/main.ts --workspace …/ws067`. Real HTTP with `curl`, real
+CLI, real `git`, real `.claude/agents/` file. Nothing stubbed.
+
+**1. The fence family, on the document route.** `POST /api/docs` with a body
+whose fence closes on the content line:
+
+```
+HTTP=201
+id: doc_wq4ziaoy
+warnings: [ { "code": "validation_error",
+  "detail": "unterminated-fence: unterminated fenced code block opened at line 17
+     with a run of 3 backticks: it closes only on a line holding nothing but 3 or
+     more backticks, so everything after it reads as code" } ]
+```
+
+**2. The fence family, on the route the issue names.** A thread was created
+(`th_tdqjfire`, `warnings: []`), an open fence was appended to its file out of
+band, and then `POST /api/threads/th_tdqjfire/turns` as `agent`:
+
+```
+HTTP=201
+turn ts: 2026-08-24T19:00:13Z
+warnings: [ { "code": "validation_error",
+  "detail": "unterminated-fence: … so everything after it reads as code — and
+     every `## author · timestamp` turn heading after it is invisible, so those
+     turns are lost" } ]
+```
+
+`201` **with** the finding on the payload — the exact case SERVER-066's
+reproduction ended at, where the response said `warnings []`. The turn's own
+text is clean, so the request guard has nothing to refuse and the document-level
+rule is what notices; that is the only shape in which this route reaches `201`
+with the finding present.
+
+**3. The pinned negative.** An ordinary anchored comment on a clean document:
+
+```
+POST /api/docs      → HTTP=201  doc_teoc6t5p  warnings: []
+POST /api/threads   → HTTP=201  anchorId: anc_66371790  warnings: []
+```
+
+`anchor-unused` is true of the instant the parent is validated and false of the
+world, and it did not reach the caller. The allow-list survived the change.
+
+**4. The Claude-root frontmatter family, and one warning per finding.** A
+hand-authored `.claude/agents/reviewer.md` carrying no `description` and
+`status: banana`, saved through `PUT /api/docs/doc_agentdefbe996402`:
+
+```
+HTTP=200
+warnings: [
+  { "code": "validation_error",
+    "detail": "frontmatter-invalid: description: missing or empty — Claude Code
+       loads a subagent only when its frontmatter carries both `name` and
+       `description` …" },
+  { "code": "validation_error",
+    "detail": "frontmatter-invalid: status: Invalid option: expected one of
+       \"open\"|\"resolved\"|\"archived\"" }
+]
+```
+
+Two findings, two warnings. Not refused: `200`, and the body was written.
+
+**5. The cost is bounded.** The same file repaired
+(`description: Reviews sources.`, `status: open`), saved again through the same
+route: `HTTP=200`, `warnings: []`. The channel warns until the file is repaired
+and goes quiet the moment it is.
+
+**6. The log line survived beside it.** From the running server's own output:
+
+```
+error | document saved with validation errors | data/docs/inbox/fenced.md    | ['unterminated-fence: …
+error | document saved with validation errors | data/threads/th_tdqjfire.md  | ['unterminated-fence: …
+```
+
+Both surfaces carry the finding. Neither replaced the other.
+
+**7. Nothing was re-graded.** `corpus doc check` in that workspace, through the
+real CLI:
+
+```
+EXIT=6
+error unterminated-fence data/threads/th_tdqjfire.md: …
+error unterminated-fence data/docs/inbox/fenced.md: …
+corpus: 2 errors in 17 documents.
+```
+
+Same code, same **error** severity, same exit 6. The validator's partition is
+untouched, and `check/codes.test.ts` passes unedited.
+
+**8. A consumer already renders it.** `corpus thread reply th_tdqjfire`
+through the real CLI, no CLI change of any kind:
+
+```
+EXIT=0
+replied to th_tdqjfire — turn 2026-08-24T19:01:29Z — warning: validation_error
+  (unterminated-fence: unterminated fenced code block opened at line 17 …)
+```
+
+The agent whose turn the fence swallows is now told, on the surface it reads.
+
+**Falsification.** With the emit loop deleted from `checkSave` and nothing else
+changed, the new route case fails and is the only thing that fails:
+
+```
+× turns.test.ts > a save that tolerates a §11 error says so on the response
+  > answers 201 and carries the pre-existing fence as a `validation_error`
+Tests  1 failed | 54 skipped (55)      EXIT=1
+```
+
+Restored, and the suite is green again.
+
+**Checks.**
+
+- `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --reporter=verbose apps/server`
+  → `EXIT=0`, **Test Files 205 passed (205)**, **Tests 4675 passed (4675)**
+- `tsc --noEmit -p apps/server/tsconfig.json` → exit 0
+- `eslint` on the four touched files → **0 errors, 0 warnings**. The five
+  `no-unsafe-assignment` warnings the first draft raised came from
+  `expect.stringContaining(…)` in an object property, and were fixed by asserting
+  the codes and the `detail` separately — no rule was disabled.
+- `prettier --check` on the four touched files → clean
+- Test server stopped, port 8766 free, port 8765 untouched.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing (4675 in `apps/server`, 205 files, exit 0)
+- [x] `/lint` passes (eslint clean, prettier clean, `tsc --noEmit` clean)
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] The §11 question put to the user and the answer recorded here
+- [x] The §11 question put to spec-writer on Fable, adjudicated, and recorded
+      here — no rider needed, no signature required
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-067]` prefix
