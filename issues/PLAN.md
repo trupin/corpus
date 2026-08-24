@@ -1603,4 +1603,4 @@ suite cannot confirm. Both halves stand without it.
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | done | P1 | opus | — |
 | SERVER-146 | One server test failed once under load and was not named | done | P2 | opus | — |
 | AGENT-051 | The skills collect what the CLI now saves (CLI-064, CLI-065 reports) | done | P1 | opus | CLI-064, CLI-065 |
-| CLI-068 | `queue claim-all` inside a batch loses its payload, silently (AGENT-051 finding) | todo | P0 | opus | CLI-064 |
+| CLI-068 | `queue claim-all` inside a batch loses its payload, silently (AGENT-051 finding) | done | P0 | opus | CLI-064 |

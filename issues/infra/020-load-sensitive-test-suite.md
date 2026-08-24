@@ -244,3 +244,20 @@ load average 12.
 
 A normal `apps/server` run on this machine is ~140 s. At 450–475 s the suite is
 not measuring the code.
+
+## A third instance, v0.21.0 (2026-08-24)
+
+`apps/cli/src/commands/workspace/maintenance.test.ts > stops git repacking the
+repository behind us across a run of commits` — **timed out at 5000ms** in a
+full `apps/cli` run while a ui-dev agent worked, and passed **3 of 3** in
+isolation immediately afterwards.
+
+It is the same shape SERVER-146 diagnosed hours earlier in `apps/server`: a
+git-heavy test on a fixed millisecond budget, where the budget was chosen when
+the machine was quiet. SERVER-146's own fix is the precedent worth copying —
+**measure what the test costs at rest, then size the budget to the
+measurement**, rather than raising budgets across the board.
+
+Routed to cli-dev with that instruction. Recorded here because this issue exists
+for the pattern, and because the pattern now has instances in two workspaces
+found on the same day.

@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P0 (critical path)
@@ -54,42 +54,88 @@ same class as CLI-066: a value the caller sent or expected, dropped at exit 0.
 That one took weeks to surface as an orphaned anchor. This one shipped today and
 was caught within the hour by the first thing that tried to use it.
 
+## The cause, in one sentence
+
+`createNestedOutput` hardcoded `json: false`, so every command a batch runs was
+told the invocation was in human mode — and `queue claim-all`, which writes its
+payload with `out.write` when the mode is human and emits it only under
+`--json`, took the human branch inside `corpus batch --json` and sent its claim
+to the channel a `--json` parent suppresses.
+
+Nothing about `claim-all` is special except that it is the only command whose
+**whole payload** is on the mode-dependent branch. Three others read the same
+flag and were wrong in three other ways. See the sweep below.
+
 ## Acceptance Criteria
 
-- [ ] `queue claim-all` inside `corpus batch --json` carries the same payload it
-      carries alone.
-- [ ] **The cause is named, not patched at the call site.** Find out why this
-      command's value is lost where `queue status` and `doc show` keep theirs —
-      if the batch runner captures output by a mechanism some commands bypass,
-      every command that bypasses it is affected and `claim-all` is the one that
-      was noticed.
-- [ ] Every command the registry knows is checked for the same loss. A sweep,
-      not a spot fix, and the result is stated: which commands were affected and
-      which were not.
-- [ ] A test asserts the payload's **contents**, not merely that `value` is
-      non-null. A test checking non-nullity would pass on an empty object.
-- [ ] Human mode stays exactly as it is.
-- [ ] Once fixed, AGENT-051's prohibition is revisited — the skill currently
-      keeps the claim out of every batch, and that rule should either go or be
-      restated for a reason that survives this fix.
+- [x] `queue claim-all` inside `corpus batch --json` carries the same payload it
+      carries alone. (Verified E2E against a real server with real claimable
+      events, and by a paired shape comparison of the two arms.)
+- [x] **The cause is named, not patched at the call site.** One line in
+      `apps/cli/src/output.ts`, and no line in `batch.ts` or `claim-all.ts`.
+- [x] Every command the registry knows is checked for the same loss — 60
+      commands, both arms of the sweep below, with the affected four named and
+      the other 56 accounted for.
+- [x] A test asserts the payload's **contents**: every claimed event id, type
+      and payload, and the `inProgress` set beside them. Falsified — with the
+      loss restored it fails `expected null to deeply equal { … }`.
+- [x] Human mode stays exactly as it is. A human batch is untouched by
+      construction (`parent.json` is `false` there, which is what was hardcoded),
+      and it is re-run E2E below.
+- [x] AGENT-051's prohibition is revisited — recommendation below.
 
 ## Technical Design
 
-### Files to Create/Modify
-- `apps/cli/src/commands/batch.ts` — the runner's output capture
-- whichever command surface bypasses it
-- the tests beside each
+### Files Modified (as shipped)
+- `apps/cli/src/output.ts` — `createNestedOutput` carries `json: parent.json`
+  instead of `false`. **One line.** Neither `batch.ts` nor `claim-all.ts` was
+  touched: the loss was never in either.
+- `apps/cli/src/output.test.ts` — the pinned `expect(nested.output.json).toBe(
+  false)` was the bug, written down as a guarantee. Replaced by three tests: the
+  mode is the parent's, a step still cannot print JSON, and a mode-branching
+  step takes the branch the invocation asked for.
+- `apps/cli/src/commands/batch.test.ts` — six tests, contents-asserting, against
+  the shipped registry and a real socket.
+- `apps/cli/src/commands/hygiene.test.ts` — a pinned inventory of every module
+  that reads the output mode, so the next one shows up as a failing diff.
+
+`docs/cli.md` is unchanged: no command's registry prose moved.
 
 ### Key Implementation Details
 
 Read CLI-064's decision record in `issues/cli/064-*.md` first. The envelope's
 shape — `{command, ran, ok, value|error}` — and the meaning of `value: null` are
 settled and signed; this issue makes the implementation honour them, and must
-not change them.
+not change them. **Neither changed.** `value` is still `null` exactly when a
+command emitted nothing, and the test that pins it still passes with the fix in
+and with the fix out.
 
 **Do not fix this by special-casing `claim-all`.** The interesting question is
 what class of command is affected, and a special case would leave the rest of
 that class broken and unfindable.
+
+### Why the flag lied, and why it did not have to
+
+`createNestedOutput` exists so a composite verb — `corpus upgrade`, and now
+`corpus batch` — can run ordinary handlers without each one printing its own
+JSON document to stdout. It secures that two ways:
+
+1. **Structurally.** `emit` captures the value into a closure rather than
+   writing it, and `write` is routed through `line`, which the parent decides
+   what to do with. A step cannot reach stdout at all.
+2. **By the flag.** `json: false`, so a step that asks "am I in `--json`?"
+   is told no.
+
+The second was redundant with the first and, unlike the first, was a claim about
+the world rather than a property of the plumbing. `Output.json` is **the
+invocation's mode** — the thing `--json` sets — not a permission to print. A
+step that reads it to decide _how to render_ is unaffected by the lie, because
+the parent suppresses its lines anyway. A step that reads it to decide **what to
+produce** is broken by it, and four commands do exactly that.
+
+The fix carries the parent's mode. The no-print guarantee is untouched, because
+it never rested on the flag: `output.test.ts` asserts it directly, under a
+`--json` parent, with `emit`, `write` and `line` all exercised.
 
 ### Edge Cases
 - A command that genuinely emits nothing — `value: null` is correct there, and
@@ -121,20 +167,224 @@ asserting only `value !== null` would pass with an empty object in place.
 
 ## E2E Verification Log
 
+implemented on: **opus** (claude-opus-5, 1M context)
+
+**Setup.** Built bin (`npm run build`, v0.20.0), scratch workspace
+`…/scratchpad/ws068`, its own daemonized server on port **8801**, pid 30178. The
+user's server on 8765 was never touched. Three real threads on
+`doc_nq4bgylu` seeded two real `comment.created` events before the
+reproduction. Every run below is captured under `…/scratchpad/e2e068/`.
+
 ### Reproduction (bugs only)
-Reported by AGENT-051's implementer, 2026-08-23, against a real workspace:
-`corpus queue claim-all` inside `corpus batch --json` returns `"value": null`
-while `queue status` and `doc show` in the same array carry theirs.
+
+Reported by AGENT-051's implementer, 2026-08-23. Reproduced here against the
+real server before any code was changed:
+
+```
+$ corpus batch --json <<'CORPUS_EOF'
+[["queue","claim-all"],["queue","status"],["doc","show","doc_nq4bgylu"]]
+CORPUS_EOF
+[{"command":["queue","claim-all"],"ran":true,"ok":true,"value":null},
+ {"command":["queue","status"],"ran":true,"ok":true,"value":{…,"pending":0,"inProgress":2,…}},
+ {"command":["doc","show","doc_nq4bgylu"],"ran":true,"ok":true,"value":{…}}]
+exit=0
+
+$ corpus queue status --json
+{…,"pending":0,"inProgress":2,…}
+```
+
+**Worse than reported.** The two events were claimed — `pending` went 2 → 0 and
+`inProgress` 0 → 2 — and the caller was handed `null` at exit 0. It then held
+two events it could not name, could not settle and had no reason to think
+existed. That is the CLI-066 shape exactly: a value dropped at exit 0, with the
+damage surfacing later as state nobody can account for. Those two events are
+still visible as `held 9m` orphans in the human-mode run further down, which is
+the loss made concrete.
+
+### The sweep: 60 commands, both arms
+
+**Statically, the class is closed.** A command's `value` is whatever it hands
+`out.emit`, and the nested output captures **every** `emit` unconditionally. The
+only way a command's value can differ between running alone and running nested
+is if the command reads the mode. Four modules in the whole CLI do:
+
+| command | reads the mode to… | affected? |
+| --- | --- | --- |
+| `queue claim-all` | choose `emit` (`--json`) or `write` (human) for its **whole payload** | **YES — the reported loss.** `value: null` for a claim that emptied the queue |
+| `doc list --fields` | refuse the projection unless `--json` is on | **YES.** Refused inside a `--json` batch, `usage_error`, exit 11 — visible, not silent |
+| `server logs --follow` | refuse `--follow` under `--json`, because it never returns | **YES.** Not refused nested, so it followed the log and **hung the batch** — killed at a 6 s bound, exit 124 |
+| `doc show --section` | write the section's raw bytes in human mode only | **no.** Its `emit` is unconditional, so the value always arrived; only the suppressed human lines differed |
+
+The other **56** commands never read the mode, so nested and lone runs are the
+same call by construction. The inventory is now pinned in `hygiene.test.ts` over
+the whole of `src/`, with a fabricated rogue proving the scan catches a new one
+and a fabricated doc comment proving it does not catch prose.
+
+**Empirically**, paired arms against the real server — each command run alone
+under `--json` and again as a one-entry `corpus batch --json`, values compared
+by key shape. 19 commands run in both arms, **19 identical, 0 different**
+(`…/scratchpad/e2e068/14-sweep-run.txt`):
+
+```
+agents  health  reflect  search  workspace diff  server status  server logs
+doc list  doc related  doc show  doc diff  thread show  thread context
+thread scope  queue status  job log  job list  db doctor  index status
+```
+
+`thread scope` failed identically in both arms (exit 5 / `<failed conflict>`),
+which is the batch reporting the same failure the lone invocation raises. The
+41 held back are named with a reason in that file: 3 a batch refuses outright
+(`init`, `batch`, `upgrade`), 1 long-polls (`queue idle`), and 37 are writes or
+state changes that cannot be run twice for a fair comparison. `doc check`,
+`doc create` and `queue claim-all` were then run by hand in both arms anyway
+(`…/15-sweep-extra.txt`, `…/08-after.txt`) — same shape each time.
 
 ### Post-Implementation Verification
-_[Agent fills]_
+
+**1. The reported case, fixed.** Same server, same batch shape, a freshly seeded
+event:
+
+```
+$ corpus batch --json <<'CORPUS_EOF'
+[["queue","claim-all"],["queue","status"],["doc","show","doc_nq4bgylu"]]
+CORPUS_EOF
+{
+  "command": ["queue","claim-all"], "ran": true, "ok": true,
+  "value": {
+    "events": [{ "id": "evt_v3smplxfneg4", "type": "comment.created",
+                 "created": "2026-08-24T02:29:16Z", "source": "thread",
+                 "payload": { "threadId": "th_sx5ns2zj", "parentId": "doc_nq4bgylu",
+                              "turnTs": "…", "mentions": [], "skills": [], "unresolved": [] } }],
+    "inProgress": { "events": [ {"id":"evt_jdfeefc7u56e",…}, {"id":"evt_mb2olh66abd5",…} ],
+                    "total": 2, "truncated": false }
+  }
+}
+exit=0
+```
+
+The two events the reproduction orphaned are now visible in `inProgress` —
+which is the point of that key, and was itself unreachable through a batch.
+
+**2. Parity with the lone invocation**, two freshly seeded events, one per arm.
+Ids and instants differ because the events differ; every key does not:
+
+```
+alone shape: {"events":[{created,id,payload:{mentions,parentId,skills,threadId,turnTs,unresolved},source,type}],
+              "inProgress":{events:[{heldSince,id,originId,originTitle,type}],total,truncated}}
+batch shape: (identical)
+identical: true      event payload keys equal: true
+```
+
+**3. The other two live sites.**
+
+```
+$ corpus batch --json   [["doc","list","--fields","id,title","--limit","3"]]
+[{…,"ok":true,"value":{"items":[{"id":"th_ihlo6zau","title":"Re: \"assumption\""},…],
+                       "page":{"total":18,"limit":3,"offset":0}}}]        exit=0
+
+$ timeout 20 corpus batch --json   [["server","logs","-f","-n","1"]]
+[{…,"ok":false,"error":{"code":"usage_error","message":"--follow streams; it cannot be
+   combined with --json.","hint":"Use `corpus server logs -n <count> --json` …"}}]
+exit=11        # before the fix: exit 124, killed at the bound
+```
+
+**4. Human mode, unchanged.** The claim is still one JSON line on stdout under
+its rule, and the in-progress block is still a readable stderr aside:
+
+```
+──────── 1: queue claim-all ────────
+{"events":[{"id":"evt_vsyvs6ql2cb4",…}],"inProgress":{…,"total":5,"truncated":false}}
+the server still holds 5 events in-progress — not claimed by this call:
+  evt_wz7qtpjpm7nz  comment.created  held 35s  Re: "assumption"
+  …
+──────── 2: queue status ────────
+queue running — pending 0, in-progress 6, deferred 0, processed 0, failed 0, abandoned 0
+all 2 commands succeeded.        exit=0
+```
+
+`doc list --fields` in a **human** batch is still the refusal it is alone, word
+for word — the mode really is human there, so the refusal is correct.
+
+### Falsification
+
+`json: parent.json` reverted to `json: false`, nothing else changed, scoped
+suites re-run. **Six tests fail**, and the two that must not, do not:
+
+```
+× a nested output … > reports the parent's mode rather than inventing a human one
+× a nested output … > gives a mode-branching step the branch the invocation asked for
+× corpus batch (CLI-068) > carries queue claim-all's claim, field for field, …
+× corpus batch (CLI-068) > hands the batch exactly what the same claim carries when it runs alone
+× corpus batch (CLI-068) > lets doc list --fields see the --json its own refusal asks for
+× corpus batch (CLI-068) > refuses server logs --follow inside a --json batch instead of streaming forever
+✓ corpus batch (CLI-068) > does not turn a command that really emitted nothing into an empty object
+✓ corpus batch (CLI-068) > keeps human mode exactly as it was: the claim is still one line on stdout
+Tests  6 failed | 47 passed (53)
+```
+
+The contents assertion fails on contents, not on nullity:
+
+```
+AssertionError: expected null to deeply equal { Object (events, inProgress) }
+- Expected: { "events": [ { "id": "evt_sxgnzdvfb747", "threadId": "th_o67m5q3s",
+              "type": "comment.created" }, { "id": "evt_9k2m4p1qr8sv", … } ],
+              "inProgress": { "events": [], "total": 0, "truncated": false } }
++ Received: null
+```
+
+A test asserting `value !== null` would have failed here too — but it would also
+have passed on `{}`, which is why the claimed ids and types are named. The
+`--follow` test is the sharper one: with the loss restored it does not fail, it
+**hangs for 5.4 s** before vitest's own bound ends it, which is what the batch
+did to a real caller.
+
+Restored, both suites green: `53 passed (53)`.
+
+### Checks
+
+- `vitest run apps/cli` — **105 files, 2,092 tests, all passed**, exit 0.
+- `tsc --noEmit -p apps/cli` — exit 0.
+- `eslint` on all four touched files — exit 0, no rule disabled.
+- `prettier --check` on the four files and both issue files — clean.
+- `npm run docs:cli -w apps/cli` — `docs/cli.md` regenerated and **byte
+  identical**; no registry prose moved.
+- Scratch server stopped by pid, port 8801 verified free. 8765 never touched.
+
+## AGENT-051's prohibition — recommendation
+
+**Lift it, and replace it with a narrower rule about long-polling.**
+
+AGENT-051's skill keeps the loop's claim out of every batch, and it was right
+to: at the time, a batched claim returned nothing. That reason is now gone —
+a batched `queue claim-all` carries what it carries alone, proven above against
+a real server, in both arms, with the payload's contents asserted in a test that
+fails when the loss returns.
+
+Two things worth restating rather than deleting, because both survive this fix
+and neither is about the payload:
+
+1. **`queue idle` may not go in a batch, and never could.** It long-polls for
+   about eight minutes. A batch runs its entries sequentially, so an `idle`
+   entry holds every command after it for as long as it parks — exactly as it
+   would hold a shell. `corpus batch`'s own help says this. The loop's parking
+   step is therefore its own invocation, and that is a property of the verb, not
+   a workaround.
+2. **A claim in a batch is a claim.** A batch is not a transaction (CLI-064,
+   decided by the user): if the claim succeeds and a later entry fails, the
+   events stay claimed. That is the same exposure as running the two commands
+   one after the other, so it is not an argument against batching — but a skill
+   that batches a claim with the work that follows it should say what it does
+   when the tail fails.
+
+This is a recommendation to agent-runtime, not a change: `assets/workspace/` is
+that domain's, and this issue touched nothing in it.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)

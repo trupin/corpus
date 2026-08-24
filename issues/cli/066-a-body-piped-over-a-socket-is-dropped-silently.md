@@ -1,4 +1,4 @@
-# [CLI-066] A body piped over a socket is dropped silently, and a template lands instead
+# [CLI-066] A body sent over a socket is dropped silently, and a template lands instead
 
 ## Domain
 cli
@@ -31,8 +31,25 @@ agent harnesses that hold a never-closing socket on fd 0), so the CLI read
 nothing: **five documents were created with the note template's empty scaffold
 as their bodies, exit 0, no warning anywhere.** The loss surfaced only later as
 an inexplicable `orphaned_anchor` on a thread whose quoted text "was" in the
-body the caller sent. 340 bytes of body were verifiably written to the pipe and
-verifiably absent from the document.
+body the caller sent. 340 bytes of body were verifiably written to the child's
+fd 0 and verifiably absent from the document.
+
+### Correction, 2026-08-23 — a pipe is read, and only a socket is refused
+
+**Measured, not inferred**, by AGENT-051's implementer against the shipped
+binary and re-measured under CLI-068: `echo '[…]' | corpus batch` runs, and
+`printf '# From a pipe\n' | corpus doc create …` writes the body. A shell pipe
+is a **FIFO** on fd 0, which `stdinKind()` classifies as `fifo` and reads. The
+refusal this issue added fires on a **socket** and on nothing else.
+
+This paragraph exists because the prose above once said "piped over a socket"
+in its own title and called the socketpair "the pipe" — wording that reads as a
+prohibition on piping, which was never the behaviour and is not the behaviour
+now. The CLI's own message has always been right: it says the body may come "on
+a heredoc or a pipe — the two transports that are read". The E2E log below runs
+both and both land. **Nothing about the behaviour changed here — only the
+words.** The transport table further down is the authority: `file` and `fifo`
+are read, `socket` is refused, `tty` and `other` are "nothing was offered".
 
 CLI-007's decision is right — a socket must never be *blocked on*. What is
 wrong is the silence: the CLI cannot tell "no body offered" from "a body
@@ -366,6 +383,34 @@ indistinguishable without reading, and reading is the hang. Choosing to write is
 the CLI-066 loss; choosing to refuse costs this caller one redirect. The refusal
 names it (`< /dev/null`, `stdio: ["ignore", …]`), and the product agent is not
 this caller — its Bash tool hands fd 0 a character device.
+
+### Re-measured 2026-08-23, under CLI-068 — the pipe, again
+
+Raised by AGENT-051's implementer, who read this file's original title and took
+it to mean a pipe was refused. Re-run against the shipped binary, v0.20.0,
+scratch workspace on port 8801:
+
+```
+$ echo '[["health"]]' | corpus batch --json
+[{"command":["health"],"ran":true,"ok":true,"value":{"status":"ok",…}}]   exit=0
+
+$ printf '# From a pipe\n\nThis body must land verbatim.\n' \
+    | corpus doc create --type note --title "CLI-066 pipe re-measure" --from agent --json
+id: doc_i7rrkleo
+body on disk: "# From a pipe\n\nThis body must land verbatim.\n"
+
+fstatSync(0):
+  heredoc      isFile true   isFIFO false  isSocket false
+  shell pipe   isFile false  isFIFO true   isSocket false
+  spawn input  isFile false  isFIFO false  isSocket true
+
+$ spawnSync(corpus doc create …, { input: "# body\n" })
+corpus: stdin is a socket, and a socket is never read — no body was taken.   exit 2
+```
+
+A pipe is read on both verbs. Only the socket is refused. The behaviour is
+unchanged since this issue shipped, and the correction at the top of this file
+is to the prose alone.
 
 **Checks.** `npm run build`, `npm run typecheck -w apps/cli`, `npm run lint`
 (repo-wide, exit 0), `prettier --check apps/cli/src docs/cli.md` (exit 0) all

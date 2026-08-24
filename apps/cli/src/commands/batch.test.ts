@@ -13,9 +13,11 @@ import type { Registry, WorkspaceCommandContext, WorkspaceCommandSpec } from "..
 import {
   closeStubServers,
   jsonResponder,
+  sendJson,
   startStubServer,
   stubContext,
   type StubContextOptions,
+  type StubResponder,
   type StubServer,
 } from "../testing/stub-server.js";
 import {
@@ -477,6 +479,154 @@ describe("corpus batch — through the real registry and a real socket", () => {
     const reports = reportsFrom(built.stdout());
     expect(reports.map((report) => report.ok)).toEqual([true, true]);
     expect(reports[0]?.value).toMatchObject({ status: "ok" });
+  });
+});
+
+/**
+ * CLI-068. A batch runs each command through a nested output, and that output
+ * used to report `json: false` whatever the invocation was. A command that
+ * reads `out.json` to decide **what** it produces — rather than merely how it
+ * prints it — was therefore told the wrong mode, and `queue claim-all` writes
+ * its payload with `out.write` in human mode: inside `corpus batch --json` the
+ * claim went to the channel a `--json` parent suppresses and the report said
+ * `value: null` for a command that had just emptied the queue.
+ *
+ * These assert the payload's **contents**. A test checking `value !== null`
+ * would pass on an empty object, and an empty claim reads as "nothing to do".
+ */
+describe("corpus batch — a command that reads the output mode (CLI-068)", () => {
+  const CLAIMED = {
+    events: [
+      { id: "evt_sxgnzdvfb747", type: "comment.created", threadId: "th_o67m5q3s" },
+      { id: "evt_9k2m4p1qr8sv", type: "document.updated", threadId: null },
+    ],
+    inProgress: { events: [], total: 0, truncated: false },
+  };
+
+  const QUEUE_STATUS = {
+    agent: { live: false, since: null },
+    halted: false,
+    pending: 0,
+    inProgress: 2,
+    deferred: 0,
+    processed: 0,
+    failed: 0,
+    abandoned: 0,
+  };
+
+  const queueResponder: StubResponder = (request, response) => {
+    if (request.path === "/api/queue/claim-all") return sendJson(response, 200, CLAIMED);
+    if (request.path === "/api/queue/status") return sendJson(response, 200, QUEUE_STATUS);
+    return sendJson(response, 404, { code: "not_found", message: "no such route" });
+  };
+
+  it("carries queue claim-all's claim, field for field, beside a command that never lost one", async () => {
+    const { registry: real } = await import("../registry/index.js");
+    const stub = await startStubServer(queueResponder);
+    const built = stubContext(stub, { registry: real, json: true });
+
+    await runBatch(
+      built.context,
+      stdinWith([
+        ["queue", "claim-all"],
+        ["queue", "status"],
+      ]),
+    );
+
+    const reports = reportsFrom(built.stdout());
+    expect(reports.map((report) => report.ok)).toEqual([true, true]);
+    // The contents, not the non-nullity: every claimed id and type, and the
+    // in-progress set that rides beside them rather than inside them.
+    expect(reports[0]?.value).toEqual(CLAIMED);
+    expect(reports[1]?.value).toEqual(QUEUE_STATUS);
+  });
+
+  it("hands the batch exactly what the same claim carries when it runs alone", async () => {
+    const { registry: real } = await import("../registry/index.js");
+    const stub = await startStubServer(queueResponder);
+
+    const batched = stubContext(stub, { registry: real, json: true });
+    await runBatch(batched.context, stdinWith([["queue", "claim-all"]]));
+
+    const alone = stubContext(stub, { registry: real, json: true });
+    const claimAll = real.topics
+      .find((topic) => topic.name === "queue")
+      ?.commands.find((command) => command.name === "claim-all");
+    await claimAll?.handler(alone.context);
+
+    expect(reportsFrom(batched.stdout())[0]?.value).toEqual(JSON.parse(alone.stdout()));
+  });
+
+  it("does not turn a command that really emitted nothing into an empty object", async () => {
+    // The other direction of the same guarantee: `value: null` still means
+    // ran-and-returned-nothing, and the fix must not manufacture a payload.
+    const { registry } = fixture();
+    const h = await harness(registry, { json: true });
+
+    await runBatch(h.context, stdinWith([["t", "quiet"]]));
+
+    expect(reportsFrom(h.stdout())[0]).toEqual({
+      command: ["t", "quiet"],
+      ran: true,
+      ok: true,
+      value: null,
+    });
+  });
+
+  it("lets doc list --fields see the --json its own refusal asks for", async () => {
+    // The second site of the same cause: this verb refuses itself unless the
+    // invocation is in `--json`, and inside a `--json` batch it used to be told
+    // it was not — so a projection was unusable in the one place it saves most.
+    const { registry: real } = await import("../registry/index.js");
+    const stub = await startStubServer(
+      jsonResponder(200, {
+        items: [
+          {
+            id: "doc_a1b2c3",
+            type: "note",
+            status: "open",
+            title: "Rate assumption",
+            path: "data/docs/inbox/rate-assumption.md",
+          },
+        ],
+        page: { total: 1, limit: 50, offset: 0 },
+      }),
+    );
+    const built = stubContext(stub, { registry: real, json: true });
+
+    await runBatch(built.context, stdinWith([["doc", "list", "--fields", "id,title"]]));
+
+    const reports = reportsFrom(built.stdout());
+    expect(reports[0]?.error).toBeUndefined();
+    expect(reports[0]?.value).toEqual({
+      items: [{ id: "doc_a1b2c3", title: "Rate assumption" }],
+      page: { total: 1, limit: 50, offset: 0 },
+    });
+  });
+
+  it("refuses server logs --follow inside a --json batch instead of streaming forever", async () => {
+    // The third site: `--follow` is refused under `--json` because it never
+    // returns. Told the mode was human, it followed the log and the batch hung.
+    const { registry: real } = await import("../registry/index.js");
+    const stub = await startStubServer(jsonResponder(200, {}));
+    const built = stubContext(stub, { registry: real, json: true });
+
+    const failure = await runBatch(built.context, stdinWith([["server", "logs", "-f"]])).catch(
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(BatchFailedError);
+    expect(reportsFrom(built.stdout())[0]?.error?.message).toContain("--follow streams");
+  });
+
+  it("keeps human mode exactly as it was: the claim is still one line on stdout", async () => {
+    const { registry: real } = await import("../registry/index.js");
+    const stub = await startStubServer(queueResponder);
+    const built = stubContext(stub, { registry: real });
+
+    await runBatch(built.context, stdinWith([["queue", "claim-all"]]));
+
+    expect(built.stdout()).toContain(JSON.stringify(CLAIMED));
   });
 });
 
