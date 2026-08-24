@@ -49,6 +49,11 @@ staged="$(git diff --cached --name-only --diff-filter=ACM)"
 # could change. `--tolerate-unreachable-registry` is passed HERE and nowhere
 # else — a dead network warns and lets the commit through, while CI runs the
 # identical command without the flag and fails closed.
+#
+# The flag covers an unanswering registry and NOTHING else (INFRA-015). If npm
+# cannot start, is killed, or writes more output than the capture buffer holds,
+# then the check did not run — and this step fails, flag or no flag. A gate
+# whose failure mode is silence is a gate that lies.
 step "npm audit"  node --import tsx scripts/check-audit.ts --tolerate-unreachable-registry
 
 # eslint, given the staged TypeScript explicitly. CI still lints the whole repo

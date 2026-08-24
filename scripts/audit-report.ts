@@ -167,7 +167,25 @@ export type AuditVerdict =
       readonly tolerated: readonly ToleratedException[];
     }
   /** The registry did not answer, or answered something this module cannot read as a verdict. */
-  | { readonly kind: "unreachable"; readonly reason: string };
+  | { readonly kind: "unreachable"; readonly reason: string }
+  /**
+   * **The check itself did not run** — `npm` never started, was killed, or wrote
+   * more than the capture buffer could hold. Deliberately a distinct kind from
+   * `unreachable`, because the two have opposite tolerances (INFRA-015):
+   * `unreachable` is a fact about the network, which a local commit may proceed
+   * past, while this is a fact about the gate, which nothing may proceed past.
+   * Nobody may derive a network story from it.
+   */
+  | { readonly kind: "unusable"; readonly cause: AuditRunFailure; readonly reason: string };
+
+/** Why {@link classifyAuditRun} could not get a payload to classify. */
+export type AuditRunFailure =
+  /** `npm` could not be started at all — absent from `PATH`, not executable, out of processes. */
+  | "spawn-failed"
+  /** `npm` wrote more than `maxBuffer` and the capture was truncated (`ENOBUFS`). */
+  | "output-overflowed"
+  /** `npm` started but never exited normally — killed by a signal, no exit code. */
+  | "terminated";
 
 /**
  * The live exception register. **One entry.** Adding a second one is a policy
@@ -610,6 +628,169 @@ export function classifyAuditReport(stdout: string, context: AuditContext = {}):
 }
 
 /**
+ * The half of `spawnSync`'s result that says whether there is a payload to read
+ * at all. Structural rather than `SpawnSyncReturns<string>` so a test can build
+ * one, and so this module never depends on `node:child_process`.
+ */
+export interface AuditRun {
+  /** `spawnSync`'s `error`: set when the child never started, or blew `maxBuffer`. */
+  readonly error?: unknown;
+  /** The child's exit code. `null` means it never exited normally. */
+  readonly status: number | null;
+  /** The signal that killed the child, when one did. */
+  readonly signal?: string | null;
+  /** Captured stdout. `undefined` when the child never ran. */
+  readonly stdout?: string | null;
+}
+
+/** `spawnSync` reports overflow as an `Error` carrying this `code`. Measured on Node 22 and 25. */
+const OVERFLOW_CODE = "ENOBUFS";
+
+/** `unknown` because `spawnSync`'s `error` is typed as a bare `Error`; the `code` is not in the type. */
+function errorCodeOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const { code } = error as { code?: unknown };
+  return typeof code === "string" ? code : undefined;
+}
+
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The verdict for a whole `npm audit` **run**, not just its stdout (INFRA-015).
+ *
+ * This exists because the three ways a run can produce no payload all used to
+ * arrive at `classifyAuditReport("")` and come back `unreachable` — the one
+ * verdict `.githooks/pre-commit` is allowed to proceed past. So the check most
+ * likely to break on a badly broken tree was also the one that broke *quietly*,
+ * and it blamed the registry for it. Concretely: a tree with more advisories
+ * than the capture buffer could hold got its stdout truncated, `JSON.parse`
+ * threw, and the commit went through with "the npm registry did not answer".
+ *
+ * Every branch here is fail-closed at the caller, with **no tolerate flag**:
+ * "the gate did not run" is never a reason to report that it found nothing.
+ * Only a payload that npm actually produced can reach `classifyAuditReport`,
+ * and only that can be `unreachable`.
+ */
+export function classifyAuditRun(run: AuditRun, context: AuditContext = {}): AuditVerdict {
+  const unusable = (cause: AuditRunFailure, reason: string): AuditVerdict => ({
+    kind: "unusable",
+    cause,
+    reason: sanitizeRegistryText(reason),
+  });
+
+  if (run.error !== undefined && run.error !== null) {
+    const code = errorCodeOf(run.error);
+    const message = errorMessageOf(run.error);
+    if (code === OVERFLOW_CODE) {
+      return unusable(
+        "output-overflowed",
+        `npm audit wrote more output than the capture buffer holds (${OVERFLOW_CODE}); ` +
+          "the payload was truncated and no verdict can be read from it",
+      );
+    }
+    return unusable(
+      "spawn-failed",
+      `npm audit could not be started${code === undefined ? "" : ` (${code})`}: ${message}`,
+    );
+  }
+
+  if (run.status === null) {
+    const bySignal = typeof run.signal === "string" && run.signal !== "" ? ` by ${run.signal}` : "";
+    return unusable(
+      "terminated",
+      `npm audit was killed${bySignal} and never exited, so it produced no verdict`,
+    );
+  }
+
+  return classifyAuditReport(run.stdout ?? "", context);
+}
+
+/**
+ * Registry-controlled text — advisory titles, ranges, URLs, npm's own error
+ * message — reaches a terminal through this module. Everything it renders is
+ * prefixed line-by-line by the caller, so an advisory title carrying a newline
+ * could forge a whole line of gate output ("audit:check ✓ …"), and an ANSI
+ * sequence could repaint or erase the lines around it. This is a spoofing
+ * defence for the human reader only: nothing downstream parses the report, and
+ * matching (advisory id, route) is always done against the **raw** field, never
+ * against this.
+ *
+ * Removes ANSI escape sequences, flattens every remaining control character to
+ * a space, collapses runs of whitespace, and bounds the length so one enormous
+ * field cannot push the rest of the report off the screen.
+ */
+export function sanitizeRegistryText(text: string): string {
+  const ESCAPE = 0x1b;
+  const BELL = 0x07;
+  const out: string[] = [];
+  let at = 0;
+  while (at < text.length) {
+    const code = text.charCodeAt(at);
+    if (code === ESCAPE) {
+      at = skipEscapeSequence(text, at);
+      continue;
+    }
+    // C0, DEL and C1 — newline and carriage return among them, on purpose.
+    out.push(code < 0x20 || (code >= 0x7f && code <= 0x9f) ? " " : (text[at] ?? ""));
+    at += 1;
+  }
+  const flattened = out.join("").replace(/\s+/g, " ").trim();
+  return flattened.length <= MAX_RENDERED_LENGTH
+    ? flattened
+    : `${flattened.slice(0, MAX_RENDERED_LENGTH)}… (truncated)`;
+
+  /** Returns the index just past the escape sequence starting at {@link from}. */
+  function skipEscapeSequence(source: string, from: number): number {
+    const next = source.charCodeAt(from + 1);
+    // CSI: ESC [ , parameter and intermediate bytes, then one final byte 0x40-0x7E.
+    if (next === 0x5b) {
+      let scan = from + 2;
+      while (scan < source.length) {
+        const byte = source.charCodeAt(scan);
+        scan += 1;
+        if (byte >= 0x40 && byte <= 0x7e) return scan;
+      }
+      return scan;
+    }
+    // OSC: ESC ] , a payload, then BEL or ST (ESC followed by a backslash).
+    // An unterminated sequence swallows the rest of the string, which is the point.
+    if (next === 0x5d) {
+      let scan = from + 2;
+      while (scan < source.length) {
+        const byte = source.charCodeAt(scan);
+        if (byte === BELL) return scan + 1;
+        if (byte === ESCAPE && source.charCodeAt(scan + 1) === 0x5c) return scan + 2;
+        scan += 1;
+      }
+      return scan;
+    }
+    /*
+     * Everything else follows the general escape grammar: ESC, then zero or more
+     * intermediate bytes (0x20-0x2F), then one final byte (0x30-0x7E). Assuming a
+     * flat two characters is wrong for the ones that carry an intermediate — the
+     * charset designators, `ESC ( 0` among them — and getting it wrong leaks the
+     * final byte back into the rendered line as ordinary text.
+     */
+    let scan = from + 1;
+    while (scan < source.length) {
+      const byte = source.charCodeAt(scan);
+      scan += 1;
+      if (byte >= 0x20 && byte <= 0x2f) continue; // intermediate
+      if (byte >= 0x30 && byte <= 0x7e) return scan; // final
+      // Anything else (a control byte, another ESC) never belonged to this
+      // sequence: stop before it and let the main loop deal with it.
+      return scan - 1;
+    }
+    return scan;
+  }
+}
+
+/** Generous for a real advisory title, far short of a screenful of forged output. */
+const MAX_RENDERED_LENGTH = 300;
+
+/**
  * npm's unreachable payload is `{ message, error: { summary, detail } }`. Any
  * other unreadable shape gets a generic reason rather than a guess.
  */
@@ -621,12 +802,21 @@ function reasonFromErrorEnvelope(parsedJson: unknown): string {
   return "npm audit returned no vulnerability totals — the registry did not answer";
 }
 
-/** One line per advisory, so the developer never has to re-run the command the gate just ran. */
+/**
+ * One line per advisory, so the developer never has to re-run the command the
+ * gate just ran. **One** line: every field here comes from the registry, and the
+ * caller prefixes each line it prints, so a title carrying a newline would
+ * otherwise forge a line of gate output. {@link sanitizeRegistryText} is applied
+ * here, at the render, and nowhere near the matching.
+ */
 export function formatFinding(finding: AuditFinding): string {
+  const clean = (field: string): string => sanitizeRegistryText(field);
   const where =
-    finding.range === undefined ? finding.package : `${finding.package}@${finding.range}`;
-  const link = finding.url === undefined ? "" : ` — ${finding.url}`;
-  return `${finding.severity.padEnd(8)} ${where} — ${finding.title}${link}`;
+    finding.range === undefined
+      ? clean(finding.package)
+      : `${clean(finding.package)}@${clean(finding.range)}`;
+  const link = finding.url === undefined ? "" : ` — ${clean(finding.url)}`;
+  return `${clean(finding.severity).padEnd(8)} ${where} — ${clean(finding.title)}${link}`;
 }
 
 /** `packages/contract (devDependency) → openapi-typescript → … → js-yaml`. */

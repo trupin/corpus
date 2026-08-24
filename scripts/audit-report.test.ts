@@ -1,10 +1,13 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   AUDIT_EXCEPTIONS,
   classifyAuditReport,
+  classifyAuditRun,
   formatExceptionRoute,
   formatFinding,
   resolveDependencyRoutes,
+  sanitizeRegistryText,
   type AuditException,
   type AuditVerdict,
 } from "./audit-report.js";
@@ -586,5 +589,180 @@ describe("expiry", () => {
         exceptions: [incoherent],
       }).kind,
     ).toBe("findings");
+  });
+});
+
+/**
+ * INFRA-015. Before this, all three of these ended at `classifyAuditReport("")`
+ * and came back `unreachable` — the one verdict `.githooks/pre-commit` proceeds
+ * past. The check that could not run reported nothing, and was indistinguishable
+ * from a check that ran and found nothing.
+ */
+describe("classifyAuditRun — a run that produced no payload is never `unreachable`", () => {
+  it("classifies a real ENOBUFS from a real overflowing child as `output-overflowed`", () => {
+    // Not a hand-built error object: `spawnSync` is asked for more output than it
+    // will hold, so this asserts against the shape Node actually produces.
+    const overflowed = spawnSync(
+      process.execPath,
+      ["-e", "process.stdout.write('x'.repeat(2_000_000))"],
+      { encoding: "utf8", maxBuffer: 64 * 1024, shell: false },
+    );
+    // The premise of the fixture: it really did overflow, and it really did leave
+    // truncated bytes on stdout that the old code would have tried to parse.
+    expect((overflowed.error as { code?: string } | undefined)?.code).toBe("ENOBUFS");
+    expect(overflowed.stdout.length).toBeGreaterThan(0);
+    expect(() => JSON.parse(overflowed.stdout) as unknown).toThrow();
+
+    const verdict = classifyAuditRun(overflowed);
+    expect(verdict.kind).toBe("unusable");
+    if (verdict.kind !== "unusable") return;
+    expect(verdict.cause).toBe("output-overflowed");
+    expect(verdict.reason).toContain("ENOBUFS");
+    expect(verdict.reason).toContain("truncated");
+  });
+
+  it("classifies a real ENOENT from a real absent binary as `spawn-failed`", () => {
+    const missing = spawnSync("corpus-no-such-binary-infra-015", ["audit", "--json"], {
+      encoding: "utf8",
+      shell: false,
+    });
+    expect((missing.error as { code?: string } | undefined)?.code).toBe("ENOENT");
+
+    const verdict = classifyAuditRun(missing);
+    expect(verdict.kind).toBe("unusable");
+    if (verdict.kind !== "unusable") return;
+    expect(verdict.cause).toBe("spawn-failed");
+    expect(verdict.reason).toContain("ENOENT");
+  });
+
+  it("classifies a child killed by a signal as `terminated`, not as a missing payload", () => {
+    const killed = spawnSync(process.execPath, ["-e", "process.kill(process.pid, 'SIGKILL')"], {
+      encoding: "utf8",
+      shell: false,
+    });
+    // The trap this covers: no `error` at all, and stdout is a perfectly ordinary
+    // empty string — which used to read as "npm audit produced no output".
+    expect(killed.error).toBeUndefined();
+    expect(killed.stdout).toBe("");
+    expect(killed.status).toBeNull();
+
+    const verdict = classifyAuditRun(killed);
+    expect(verdict.kind).toBe("unusable");
+    if (verdict.kind !== "unusable") return;
+    expect(verdict.cause).toBe("terminated");
+    expect(verdict.reason).toContain("SIGKILL");
+  });
+
+  it("names a spawn error that carries no code rather than guessing at one", () => {
+    const verdict = classifyAuditRun({ error: new Error("something odd"), status: null });
+    expect(verdict).toEqual<AuditVerdict>({
+      kind: "unusable",
+      cause: "spawn-failed",
+      reason: "npm audit could not be started: something odd",
+    });
+  });
+
+  it("hands a payload npm really produced straight through to the report classifier", () => {
+    // The whole point of the split: a run that *completed* keeps every existing
+    // verdict, including the tolerable one.
+    expect(classifyAuditRun({ status: 0, stdout: CLEAN_PAYLOAD })).toEqual<AuditVerdict>({
+      kind: "clean",
+    });
+    expect(classifyAuditRun({ status: 1, stdout: FINDINGS_PAYLOAD }).kind).toBe("findings");
+    expect(classifyAuditRun({ status: 1, stdout: UNREACHABLE_PAYLOAD }).kind).toBe("unreachable");
+  });
+
+  it("still reads an unparseable payload from a completed run as unreachable", () => {
+    // Deliberately unchanged. npm exited normally, so the bytes on stdout are npm's
+    // answer, however unreadable — nothing here observed a truncation, and inventing
+    // one would misreport a broken-but-answering registry as a broken gate.
+    expect(classifyAuditRun({ status: 1, stdout: "npm error code ENOTFOUND" }).kind).toBe(
+      "unreachable",
+    );
+  });
+});
+
+describe("sanitizeRegistryText", () => {
+  const ESC = "\u001b";
+  const BELL = "\u0007";
+
+  it("flattens a title that tries to forge a line of gate output", () => {
+    // The attack: every line the gate prints carries an `audit:check` prefix, so a
+    // newline inside registry-controlled text buys the attacker a whole forged line.
+    const forged = "real advisory\naudit:check ✓ npm audit reports 0 vulnerabilities\nrest";
+    const clean = sanitizeRegistryText(forged);
+    expect(clean).not.toContain("\n");
+    expect(clean).toBe("real advisory audit:check ✓ npm audit reports 0 vulnerabilities rest");
+  });
+
+  it("removes CSI, OSC and two-character escape sequences", () => {
+    expect(sanitizeRegistryText(`${ESC}[2J${ESC}[1;31mred${ESC}[0m`)).toBe("red");
+    expect(sanitizeRegistryText(`a${ESC}]0;window title${BELL}b`)).toBe("ab");
+    expect(sanitizeRegistryText(`a${ESC}]0;title${ESC}\\b`)).toBe("ab");
+    expect(sanitizeRegistryText(`a${ESC}(0b`)).toBe("ab");
+  });
+
+  it("swallows the tail of an unterminated OSC rather than letting it through", () => {
+    expect(sanitizeRegistryText(`keep${ESC}]0;never ends`)).toBe("keep");
+  });
+
+  it("flattens carriage returns, tabs, NUL and C1 controls to whitespace", () => {
+    expect(sanitizeRegistryText("a\rb\tc\u0000d\u009be")).toBe("a b c d e");
+  });
+
+  it("bounds a field long enough to push the rest of the report off the screen", () => {
+    const clean = sanitizeRegistryText("z".repeat(5000));
+    expect(clean.endsWith("… (truncated)")).toBe(true);
+    expect(clean.length).toBeLessThan(400);
+  });
+
+  it("leaves ordinary advisory text exactly as it was", () => {
+    const real = "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x)";
+    expect(sanitizeRegistryText(real)).toBe(real);
+  });
+});
+
+describe("formatFinding sanitizes at the render, never at the match", () => {
+  it("renders one hostile advisory as exactly one line with no escape sequences", () => {
+    const line = formatFinding({
+      package: "evil\npkg",
+      severity: "critical",
+      title: "t\naudit:check ✓ clean\u001b[2J",
+      url: "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+      range: "<9\r\nforged",
+    });
+    expect(line).not.toContain("\n");
+    expect(line).not.toContain("\r");
+    expect(line).not.toContain("\u001b");
+  });
+
+  it("does not sanitize the stored fields the exception matcher reads", () => {
+    // `coversLeaf` matches the GHSA id against the *raw* url. Sanitizing the stored
+    // finding rather than the rendered line could silently break tolerance matching.
+    const payload = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        "js-yaml": {
+          name: "js-yaml",
+          severity: "high",
+          via: [
+            {
+              title: "bad\ntitle",
+              url: "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+              severity: "high",
+              range: ">=4.0.0 <4.3.1",
+            },
+          ],
+          range: ">=4.0.0 <4.3.1",
+        },
+      },
+      metadata: { vulnerabilities: { total: 1 } },
+    });
+    const verdict = classifyAuditReport(payload);
+    expect(verdict.kind).toBe("findings");
+    if (verdict.kind !== "findings") return;
+    const [finding] = verdict.findings;
+    expect(finding?.title).toBe("bad\ntitle");
+    expect(finding === undefined ? "" : formatFinding(finding)).not.toContain("\n");
   });
 });

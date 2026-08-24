@@ -38,6 +38,26 @@
  * its success line says the tree is not clean. `clean` and `tolerated` are
  * different verdicts precisely so that this file cannot conflate them.
  *
+ * ## The flag applies to one branch, and "the gate did not run" is not it (INFRA-015)
+ *
+ * There are two ways to end a run with nothing to classify, and they are not the
+ * same thing:
+ *
+ *   - **`unreachable`** — npm ran, and its payload says the registry did not
+ *     answer. A fact about the network. The flag applies here.
+ *   - **`unusable`** — npm never ran, was killed, or wrote more than the capture
+ *     buffer holds. A fact about the gate itself. The flag does **not** apply,
+ *     in either caller.
+ *
+ * Before INFRA-015 both arrived at the same branch, so the failure most likely
+ * on a badly broken tree was also the quiet one. `spawnSync` had no `maxBuffer`,
+ * which meant the 1 MiB default: a tree with more than ~1 MiB of advisories got
+ * its stdout truncated, `JSON.parse` threw, the verdict came back `unreachable`,
+ * and pre-commit proceeded — blaming the registry for a truncation, on exactly
+ * the trees with the most findings. `error` was never read either, so npm
+ * missing from `PATH` read the same way. A gate whose failure mode is silence is
+ * a gate that lies.
+ *
  * `scripts/audit-report.ts` holds the verdict logic and the reasoning about why
  * the exit code of `npm audit` is not usable as a signal. This file only spawns,
  * reads the lockfile, prints and sets the exit code.
@@ -47,12 +67,21 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  classifyAuditReport,
+  classifyAuditRun,
   formatExceptionRoute,
   formatFinding,
+  sanitizeRegistryText,
+  type AuditRunFailure,
   type ExpiredException,
   type ToleratedException,
 } from "./audit-report.js";
+
+/** One line naming what broke, so the reader is not left to infer it from a code. */
+const UNUSABLE_HEADLINE: Record<AuditRunFailure, string> = {
+  "spawn-failed": "npm could not be started — is it on PATH, and executable?",
+  "output-overflowed": "npm audit's output was truncated before anything could read it.",
+  terminated: "npm audit was killed before it produced a report.",
+};
 
 /**
  * The flag `.githooks/pre-commit` passes and the CI workflow does not. Spelled
@@ -64,12 +93,24 @@ const TOLERATE_UNREACHABLE = "--tolerate-unreachable-registry";
 const repoRoot = resolve(import.meta.dirname, "..");
 const tolerateUnreachableRegistry = process.argv.slice(2).includes(TOLERATE_UNREACHABLE);
 
+/**
+ * 64 MiB, against `spawnSync`'s 1 MiB default (INFRA-015). This repository's own
+ * clean report is ~1 KB and a report naming every advisory in a large tree is a
+ * few hundred KB, so the number is not a capacity estimate — it is far enough
+ * out that hitting it means something is wrong in a way no audit verdict should
+ * be read past. Raising it does not make overflow safe: `ENOBUFS` is still
+ * consulted, and still fails closed in both callers. It only makes overflow rare
+ * enough to be believable as an alarm.
+ */
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
 // Run from the repo root: one root-level audit covers every workspace, because
 // npm resolves the whole workspace tree into the single root `package-lock.json`.
 const audited = spawnSync("npm", ["audit", "--json"], {
   cwd: repoRoot,
   encoding: "utf8",
   shell: false,
+  maxBuffer: MAX_OUTPUT_BYTES,
 });
 
 /**
@@ -85,9 +126,14 @@ function readLockfile(): unknown {
   }
 }
 
-// `audited.status` is deliberately unused: 1 means "found advisories" *and*
-// "registry unreachable" (see audit-report.ts). The payload is the only signal.
-const verdict = classifyAuditReport(audited.stdout ?? "", { lockfile: readLockfile() });
+/*
+ * A *numeric* `audited.status` is still deliberately unused as a verdict: 1
+ * means "found advisories" *and* "registry unreachable" (see audit-report.ts),
+ * so the payload remains the only signal about the tree. `status === null` is a
+ * different question — it says npm never exited at all, so there is no payload
+ * to have an opinion about. `classifyAuditRun` draws exactly that line.
+ */
+const verdict = classifyAuditRun(audited, { lockfile: readLockfile() });
 
 const RULE_WIDTH = 72;
 const rule = "═".repeat(RULE_WIDTH);
@@ -202,7 +248,7 @@ switch (verdict.kind) {
     for (const line of [
       rule,
       "  THE SUPPLY-CHAIN GATE DID NOT RUN.",
-      `  The npm registry did not answer: ${verdict.reason}`,
+      `  The npm registry did not answer: ${sanitizeRegistryText(verdict.reason)}`,
       "  Your dependencies were NOT checked against any advisory database.",
       ...(tolerateUnreachableRegistry
         ? [
@@ -215,6 +261,34 @@ switch (verdict.kind) {
       process.stderr.write(`audit:check ⚠ ${line}\n`);
     }
     if (!tolerateUnreachableRegistry) process.exitCode = 1;
+    break;
+  }
+
+  /*
+   * The branch the tolerate flag cannot reach. It is spelled out rather than
+   * folded into `unreachable` because the remedy is different in every case, and
+   * because a developer who sees "the registry did not answer" after npm failed
+   * to start will go and check their network.
+   */
+  case "unusable": {
+    for (const line of [
+      rule,
+      "  THE SUPPLY-CHAIN GATE COULD NOT RUN, AND THIS IS NOT A NETWORK PROBLEM.",
+      `  ${UNUSABLE_HEADLINE[verdict.cause]}`,
+      `  ${verdict.reason}`,
+      "  Your dependencies were NOT checked against any advisory database.",
+      "  Failing closed in every caller: --tolerate-unreachable-registry covers an",
+      "  unanswering registry, never a check that did not run. Fix the cause and",
+      `  re-run: npm audit --json | head -c 2000${
+        verdict.cause === "output-overflowed"
+          ? `  # then find out why it exceeded ${String(MAX_OUTPUT_BYTES)} bytes`
+          : ""
+      }`,
+      rule,
+    ]) {
+      process.stderr.write(`audit:check ✗ ${line}\n`);
+    }
+    process.exitCode = 1;
     break;
   }
 }
