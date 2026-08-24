@@ -172,11 +172,20 @@ export const VENDORED_PREFIXES: readonly string[] = ["claude/skills/asd-ste100/"
  * Authored template files that are **not** documents, and must not be given
  * frontmatter to satisfy this loader (AGENT-037).
  *
- * `CLAUDE.md` is the only one. It is read by the agent as instructions at the
+ * `CLAUDE.md` is the first. It is read by the agent as instructions at the
  * start of every session, and it is projected by nothing — it sits at the
  * workspace root, outside every document root, so `classifyPath` returns null
  * for it. Frontmatter there would be eight lines of YAML the agent reads as part
  * of its instructions, asserting a document identity nothing consumes.
+ *
+ * The comment skill's `references/` files are the rest (AGENT-047). They are
+ * skill payload the agent reads on a directed pointer from `SKILL.md` — the
+ * asd-ste100 pattern, authored here instead of vendored — and in an installed
+ * workspace a skill root's shape admits only `SKILL.md`, so nothing projects
+ * them either. A §5 block there would be YAML every directed read pays for
+ * while asserting an identity nothing consumes. What still binds them is the
+ * reference-file sweep in `workspace-template.test.ts`: worked commands, turn
+ * models, traces and heredocs are held to the same rules as a skill body's.
  *
  * `README.md` is deliberately **not** in this list even though nothing projects
  * it either. It carries frontmatter because it is seed *content* — a note a
@@ -184,7 +193,16 @@ export const VENDORED_PREFIXES: readonly string[] = ["claude/skills/asd-ste100/"
  * carries a §5 block. The distinction is who reads the file, not whether the
  * projection indexes it.
  */
-export const NON_DOCUMENT_FILES: readonly string[] = ["CLAUDE.md"];
+export const NON_DOCUMENT_FILES: readonly string[] = [
+  "CLAUDE.md",
+  "claude/skills/comment/references/closure.md",
+  "claude/skills/comment/references/fences.md",
+  "claude/skills/comment/references/forms.md",
+  "claude/skills/comment/references/history.md",
+  "claude/skills/comment/references/inbox-filing.md",
+  "claude/skills/comment/references/skill-genesis.md",
+  "claude/skills/comment/references/worked-examples.md",
+];
 
 /** Whether a template-relative path is inside a {@link VENDORED_PREFIXES} subtree. */
 export function isVendored(relPath: string): boolean {

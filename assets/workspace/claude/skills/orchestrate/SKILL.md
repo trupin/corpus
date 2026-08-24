@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-22T00:00:00Z
+updated: 2026-08-23T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -176,10 +176,12 @@ happens as subagent reports arrive: each time parking returns, record what has f
 then claim again.
 
 `corpus queue idle` exits `0` in every normal case. When its ~8-minute window expires with
-nothing pending it prints `{"idle":true,"reason":"timeout"}` — that is a normal outcome,
+nothing pending it prints `idle — no events (timeout)` — that is a normal outcome,
 not an error: run the steps again from the top. While the queue is halted it parks the full
-window and prints `{"idle":true,"reason":"halted"}` — same response, keep looping. Its only
-flag is `--wait <seconds>` (default `480`); there is no other knob and no other exit to
+window and prints `idle — no events (halted)` — same response, keep looping. When work
+arrives it returns at once and prints one line per pending event, id then type —
+`evt_7c1d9a comment.created` — and that return is the arrival notification step 8 reads. Its
+only flag is `--wait <seconds>` (default `480`); there is no other knob and no other exit to
 handle.
 
 ## Claiming and batching
@@ -579,8 +581,9 @@ Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — 
 the background**, one subagent per event. A subagent inherits nothing, so its prompt
 carries everything: the event id and type, the payload's ids (thread, parent, the
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
-payload directs to), the model you are launching it at, the anchors it should start from, and
-the binding rules below. Its
+payload directs to), the model you are launching it at, and the anchors it should start
+from — plus, **only** where the dispatch runs a procedure from this skill rather than a
+skill of its own, the binding rules below. Its
 report comes back as the task's final message.
 
 **The call's `model` argument is what chooses the runtime, and the prompt chooses
@@ -789,8 +792,13 @@ makes a split worth making rather than merely tolerable. Where the two pull apar
 decides: material a later stage genuinely needs is passed on, and a stage that would
 otherwise have to guess is briefed further rather than left short.
 
-**Every invariant binds inside the subagent**, and the dispatch prompt states them rather
-than assuming them:
+**Every invariant binds inside the subagent, and exactly one document states them to it.**
+A dispatch that names a skill — the comment skill's two routing rows — restates nothing:
+that skill's own *Inherited invariants* section is the copy that binds its subagent, and a
+prompt that repeated them beside it would be a second copy to keep in step, paid again on
+every event. Name the skill and let it speak. A dispatch worked from a section of **this**
+skill — the two reflections — reads no skill of its own, so its prompt is the only road the
+rules have into it: state them there, in full. They are:
 
 - Every mutation goes through the `corpus` CLI — never hand-edit `data/`, `.corpus/`, or
   `.claude/`, never call the HTTP API directly.
@@ -839,8 +847,9 @@ than assuming them:
   with no error anywhere. This is not a corner case for you: the payload you hand over most
   often is a **prompt written for a subagent**, which is markdown and usually contains fenced
   examples of its own. Check the payload before you write the fence and the newline before you
-  close it, every time. The comment skill carries both halves and an example; a subagent that
-  never read it will get this wrong, so it belongs in what you brief them with.
+  close it, every time. The comment skill carries both halves with worked shapes, so its
+  subagents read them there; a reflection subagent never will, and would get this wrong —
+  which is why this bullet rides in a reflection's prompt.
 
 **Queue state never crosses the boundary — the boundary being your lane.** A subagent you
 dispatched to work one of your events never runs `corpus queue claim-all`,
@@ -1430,7 +1439,8 @@ when you can quote the span exactly, because that is what makes it findable, and
 command without `--quote` when the passage is not one span — and it asks with a **form**: a
 fenced block whose info string is
 `form`, last in the turn body, one field per question, asked once. The comment skill's
-**Forms** section is the whole grammar and binds here unchanged. Stop at three documents: past
+**Forms** section, with the `references/forms.md` file it directs a read of, is the whole
+grammar and binds here unchanged. Stop at three documents: past
 that, name what looks affected in the entry on the edited document instead of spraying entries
 and threads, and let the person point at the ones that matter.
 
@@ -1833,7 +1843,7 @@ reason, move on to the next event. If the session dies mid-batch, events stay in
 `.corpus/HALT` is the operator's kill switch, toggled with `corpus queue halt` and
 `corpus queue resume` (the console drawer exposes the same switch). While the sentinel
 exists, `corpus queue claim-all` returns an empty batch and `corpus queue idle` parks its
-full window, exiting with `{"idle":true,"reason":"halted"}`. Events keep enqueuing
+full window, printing `idle — no events (halted)` at exit `0`. Events keep enqueuing
 meanwhile — a halt stops your consumption, never the production — so nothing is lost and
 `resume` makes it all claimable again. The correct halted behavior is to **keep looping
 quietly**: claim-all, empty batch, idle, repeat. Do not exit, do not error, and do not post
@@ -1865,6 +1875,13 @@ applying the comment skill; delegation dilutes none of it. The charter:
   alone.
 - **Misfiled documents are moved** (`corpus doc move`) to where their content says they
   belong.
+- **A folder verb serves a request that named the folder, and it never serves this
+  charter.** `corpus folder archive`, `corpus folder unarchive` and `corpus folder rename`
+  change every document and thread under a path in one commit — proportionate exactly when a
+  person said "this folder", and out of reach of any judgment of yours about what a folder
+  holds. The two bullets above stay per document for that reason: stewardship picks its
+  documents one by one, and whoever picked them has to be able to name each one in the
+  reply. The comment skill carries the working rule at the point the request arrives.
 - **Near-duplicates are merged**: fold the lesser into the better, then archive the emptied
   one.
 - **Overgrown documents are split**: create the new document, connect the two with a
@@ -1989,7 +2006,8 @@ would have vetoed the light tier and that line would read `Opus 5 — judged, co
 
 **Then the step that no command performs.** Launch the subagent in the background — its
 prompt carries `evt_7c1d9a`, `th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the
-anchors to start from, the comment skill, and the binding rules from Delegation. Only once
+anchors to start from, and the comment skill — no restatement of the binding rules, because
+that skill's own *Inherited invariants* section is what binds inside it (Delegation). Only once
 it is out does the next command run, and it runs by itself: `corpus queue idle`, alone,
 never appended to the claim above. Everything the claim printed has been read and acted on
 by the time parking starts, which is the whole of what separates a dispatched batch from a

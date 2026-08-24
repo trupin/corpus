@@ -4,7 +4,7 @@
 agent-runtime
 
 ## Status
-todo
+done
 
 ## Priority
 P2 (nice-to-have)
@@ -37,16 +37,16 @@ three-sentence reply does not need. The cost is a full second copy of guidance
 whose operative half is already present.
 
 ## Acceptance Criteria
-- [ ] Workspace CLAUDE.md states explicitly that its own digest is sufficient
+- [x] Workspace CLAUDE.md states explicitly that its own digest is sufficient
       for ordinary writing, and that the skill body is read only when a person
       invokes it by its triggers or when a rewrite task genuinely needs the
       dictionary-level rules.
-- [ ] The digest in CLAUDE.md is verified to be self-sufficient: the hedge
+- [x] The digest in CLAUDE.md is verified to be self-sufficient: the hedge
       rule and the quotation rule stay in it at full strength (they are the two
       rules the skill calls load-bearing).
-- [ ] The change is text in `assets/workspace/` only. The dev harness's copy
+- [x] The change is text in `assets/workspace/` only. The dev harness's copy
       of this arrangement (root CLAUDE.md) is out of scope.
-- [ ] Before/after measured: contexts that follow the new wording no longer
+- [x] Before/after measured: contexts that follow the new wording no longer
       open the skill on ordinary events (verify by running a loop event and
       capturing reads).
 
@@ -76,17 +76,44 @@ structural rules and the skill body was not read.
 2. Expected: STE-shaped reply; no read of `asd-ste100/SKILL.md` in the transcript
 
 ## E2E Verification Log
-_Filled in by the implementing agent._
 
-### Post-Implementation Verification
-_[Agent fills]_
+_Implementing agent: agent-runtime-dev on **claude-fable-5**, 2026-08-23._
+
+### What shipped
+
+`assets/workspace/CLAUDE.md` only. The opening rule now reads "follows the STE-flavored
+rules below, taken from `.claude/skills/asd-ste100/SKILL.md`" (path kept, obligation
+redirected to the digest), and a new paragraph makes the digest authoritative: **"This
+digest is the rule, not a summary of one you still owe a read"** — the skill body is opened
+in exactly two cases (a person invoked it by its triggers, or the task is itself a rewrite
+needing the dictionary-level rules and the scan checklist) — closing with **"Skipping the
+read never means skipping the rules"**, so the wording cannot be read as licence to skip
+the rules themselves. The two load-bearing exemptions (hedge strength, quotations) are
+untouched and their pins still pass.
+
+### Measured
+
+- `CLAUDE.md`: 661 w / 892 t → 758 w / 1,004 t (+112 t per context, buying the removal of a
+  3,366 t skill read per context — net ≈ −3,254 t/context, ~−107k on the audit's 33-context
+  day).
+- **Live runs** (the criterion's capture): two real `claude -p --model sonnet` subagents
+  worked real queue events in a fresh workspace installed from this template (transcripts
+  `scratchpad/audit/e2e-evt1-transcript.jsonl`, `e2e-evt2-transcript.jsonl`). **Neither
+  context read `asd-ste100/SKILL.md`** — the string appears only in the runtime's
+  slash-command roster line, never in a Read/Bash tool call. Both replies follow the
+  structural rules (active voice, no semicolons in prose, short sentences).
+
+### Guard
+
+New pin in the workspace-CLAUDE.md describe: `makes the digest the rule, and the skill body
+a directed read`, asserting all four sentences above. 486/486 template tests pass.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying)

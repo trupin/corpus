@@ -1,0 +1,63 @@
+# Skill genesis — where a rule goes, and how one is written
+
+The comment skill says what earns codification. This file is the act itself: choosing between
+extending a skill and creating one, the creation mechanics and what the server refuses, and
+the two rules that keep a workspace's guidance coherent. Read it before you create or edit
+any skill.
+
+**Where it goes.**
+
+- **Extend an existing skill when one fits.** Find the skill whose job the pattern belongs to
+  the way you find anything else — `corpus search "<the pattern>" --type skill`, since a
+  skill is indexed like every other document — and edit it, including the comment skill
+  itself, whose subject is exactly how threads are handled. A skill is a document, so it is
+  read and written like one: `corpus doc show <skillDocId>` for its body and its key, then
+  `corpus doc edit <skillDocId> --key <the key that read printed> --from agent` with a
+  heredoc body, keeping **both** frontmatter field sets intact — `name` and `description` for
+  Claude Code, `id`/`type`/`title`/`tags`/`status` for Corpus — so both readers keep seeing
+  it.
+- **Create a genuinely new skill when nothing installed fits**, with
+  `corpus skill create <name> --description "$description" --from agent` and a heredoc body.
+
+**Creating one, in full.** The description is prose a person and another agent both read, and
+it comes out of what somebody kept telling you, so it is built the way a body is — in a
+heredoc, passed by name — and never quoted straight into the flag. Note where the fences sit:
+a heredoc terminator only closes the heredoc on a line of its own with nothing in front of it,
+so an indented copy of this block ends up with the rest of the file inside the description.
+
+```bash
+description=$(cat <<'CORPUS_EOF'
+Run the weekly review over the corpus — what changed, what drifted, what's owed.
+CORPUS_EOF
+)
+corpus skill create weekly-review --description "$description" --from agent <<'CORPUS_EOF'
+# Weekly review
+
+Survey what changed this week, update what drifted, and reply with the findings.
+CORPUS_EOF
+```
+
+The server owns the mechanics; do not pre-check them — know what comes back when one is
+violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
+(anything else is a `400`). A name already installed **or archived** is a `409`; for an
+archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
+create the same skill again under a different name. `--description` is required, not
+decoration: Claude Code discovers a skill
+by its `name` and `description`, so a skill without one is installed but never invoked.
+The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
+written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
+`status` for Corpus — live immediately, findable on the board, and editable like any
+document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
+are cheap and are the ordinary ones: `corpus doc archive` disables a skill that misbehaves
+or that stopped earning its place, and a wording you regret is reverted like any other
+document — read the history, write the old text back with the key (the skill's *Doing the
+work*, and `references/history.md` beside it).
+
+**The conflict rule.** A correction that contradicts an existing skill is an **edit to that
+skill**, never a second skill saying the opposite. Two rules in disagreement is worse than the
+wrong rule, because nothing tells you which one is current.
+
+**Announce it in the reply**, always, naming the skill you changed or created — codified
+behavior the person did not agree to is the one change they cannot see coming, and a genesis
+is a real, immediate write into `.claude/`. Add that a skill change — edit or genesis alike —
+takes effect on the **next** run of the loop, not in the session that is running.

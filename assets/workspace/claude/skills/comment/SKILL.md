@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-12T00:00:00Z
+updated: 2026-08-23T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -35,39 +35,18 @@ your own.
 `parentId` is `null` on a standalone thread. `turnTs` names the turn that woke you — a thread
 can have many, and it is how you tell the new request from the exchange around it.
 
-`form.respond` — a form you raised was answered. Its payload names the thread, the turn that
-carried the form, and what was given for **every** field the form asked:
+`form.respond` — a form you raised was answered. Its payload names the thread, the timestamp
+of the turn that carried the form (`formTs`), and what was given for **every** field the form
+asked. **There is no `parentId` on this payload**: re-derive the parent with
+`corpus thread show <threadId>`, which prints it. Before acting on one, read
+`references/forms.md` — it carries the payload's exact shape and how you resume from it.
 
-```json
-{
-  "threadId": "th_4b8e2c",
-  "formTs": "2026-07-28T09:20:11Z",
-  "answers": [
-    {
-      "question": "Where should this note live?",
-      "kind": "choose one",
-      "option": "finance",
-      "options": null,
-      "text": null
-    },
-    {
-      "question": "Which quarter does the current policy renew in?",
-      "kind": "write",
-      "option": null,
-      "options": null,
-      "text": null
-    }
-  ],
-  "note": null
-}
-```
-
-`formTs` is the timestamp of the turn carrying the answered form. Every field of that form has
-an entry, in the order the form asked them, and a field the person left blank is the entry
-whose three value keys are all `null` — so a question they declined and a question you never
-asked never look the same. `note` is `null` when the answerer added none. **There is no
-`parentId` on this payload**: re-derive the parent with `corpus thread show <threadId>`, which
-prints it.
+This skill keeps its rarely-needed grammars in `references/` files beside it. Such a file is
+part of this skill, not a document in the corpus: read it directly, at the path this text
+names, exactly when this text says to — the retrieval rules below are about the corpus and do
+not apply to it. Four events worked end to end — an anchored comment, a standalone Ask, an
+inbox capture, a `form.respond` continuation — are in `references/worked-examples.md`; read
+the matching one when you are unsure how a whole event plays out.
 
 A person is watching a pending indicator from the moment the event was enqueued. Every path
 through this skill ends in a reply.
@@ -75,7 +54,9 @@ through this skill ends in a reply.
 ## Inherited invariants
 
 These come from the orchestrate skill and are not restated in full here — that skill is the
-authority. Read them as binding, and go there when a detail is missing.
+authority. Read them as binding, and go there when a detail is missing. The dispatch that
+launched you names this skill instead of restating them, so this section is where they reach
+you: there is no second copy in the prompt.
 
 1. **Every mutation goes through the `corpus` CLI.** Workspace files are never hand-edited —
    not with an editor, not with your own file tools, not with shell redirection — and the
@@ -260,7 +241,7 @@ Pick the smallest shape that actually answers the request.
 - **Ask with a form** when the turn's purpose is to get something from the person rather than
   to tell them something — a decision, a preference, a missing fact, a go/no-go before you
   start. Every question you need answered to proceed goes into that **one** form, as fields, in
-  **one** turn. *Forms* below carries the grammar and the batching rule.
+  **one** turn. *Forms* below carries the rules and names the grammar's reference.
 - **Patch the parent** with
   `corpus doc patch <id> --from agent --old '<what it says>' --new '<what it should say>'`
   when the change is one you can quote — a figure that moved, a sentence that is now wrong, a
@@ -278,6 +259,19 @@ Pick the smallest shape that actually answers the request.
   the title built in a heredoc first wherever it carries their words — when the
   answer is durable — a decision, a preference, a fact that a future thread would need. Give
   it a folder, tag it, and reference it from the reply.
+- **Act on a whole folder only where the folder is what the person named.** That boundary is
+  a rule, not a preference, and it decides between two different acts. Where the request
+  names the folder — "archive the finance folder", "rename inbox to triage" — use the folder
+  verb: `corpus folder archive <path>`, `corpus folder unarchive <path>`,
+  `corpus folder rename <from> <to>`, each a bulk act over every document and thread under
+  the path, landing as one commit and printing every document it changed — read that list
+  back, because it names documents the request never mentioned, and state the count in the
+  reply. Where **you** picked the documents — a sweep you proposed, an obsolete note, a
+  misfiled capture — stay per document with `corpus doc archive` and `corpus doc move`: you
+  chose them, so you must be able to name each one, and a folder verb never inherits that
+  judgment. `corpus folder delete` is the user's alone and the CLI refuses it from you at
+  exit `2` — where a person asks for a folder to be deleted, archive it and say that deletion
+  is theirs.
 - **Spawn a subagent** when the work is long enough that a person should not sit on a pending
   indicator waiting for it. **Reply first**, saying what you are doing and that you will come
   back; then hand off. Its prompt carries the task and the anchors it starts from — the ids,
@@ -365,34 +359,10 @@ same command again with the fresh key. That retry is the mechanism working, not 
 report, and it is yours to do here rather than to hand back. Never resend the same body
 unchanged: what came back is somebody's edit, and ignoring it erases it.
 
-**Putting an older version back is this same loop.** There is no revert command and none is
-needed: **a revert is a write whose content came from history**, so it reconciles anchors,
-validates and commits exactly as every other write does. Read the history:
-`corpus doc diff <id>` prints the document's path and its last committed change, and
-`git log --oneline -- <path>` then `git show <sha>:<path>` go further back. Work out the
-content you want back, which is rarely the whole old file — the version you are going back to
-predates everything since, and some of that should stay. Then write it the way the change
-fits: a passage you can quote goes back as a patch — `--old` what the document says now,
-`--new` what it used to say — and only a document that changed wholesale needs
-`corpus doc edit <id> --key <the key that read printed> --from agent`. Either way, say in the
-reply what you put back. Three things decide whether this is a repair or a second act of
-damage:
-
-- **Read from git, never write to it.** `git log`, `git show` and `git diff` are reads. Never
-  `git checkout`, `git restore`, `git revert` or `git commit` — the server is the sole writer
-  and every change you make goes through the CLI, this one included.
-- **Git hands you the whole file; the write takes the body.** Everything down to and
-  including the closing `---` is frontmatter the server owns — id, timestamps, tags,
-  `anchors` — so pasting the file in as a body writes that frontmatter into the document
-  again, as text. Send only what follows it. A patched revert cannot make this mistake: it
-  matches body text and writes body text, so there is no whole file in your hands to paste,
-  which is one more reason to undo a passage as a patch rather than as a body.
-- **The key is what makes a revert safe.** The content came from history, but the key you
-  present names the version you just read, so a revert that would clobber a change made since
-  that read is refused with exit `9` rather than landing on top of it. The age of the content
-  is never the question; what happened after your read is. A patched revert is guarded by the
-  excerpt instead: a passage somebody has since rewritten is not there to match, so it is
-  refused with the count rather than landing on top of their words.
+**Putting an older version back is a write whose content came from history — there is no
+revert command** and none to look for. It is the rarer act, so it has its own briefing: read
+`references/history.md` before you restore anything, a passage or a whole body. It carries
+the reading of git, the frontmatter trap, and what makes a revert safe.
 
 **Someone is editing this — stand aside, do not push through.** When a person has an edit
 session open on the document, the read says so:
@@ -423,35 +393,16 @@ pending indicator that goes quiet reads as the agent hanging.
 
 Quick creation is inbox-first: the composer's Capture, the omnibox and a column's ＋ all land a
 new document in `data/docs/inbox/` and open a whole-document thread asking you to file it. The
-capture's id is the event's `parentId`. File it end to end:
+capture's id is the event's `parentId`. Filing is a procedure with its own briefing: read
+`references/inbox-filing.md` before you file, and follow it end to end — read the capture
+whole, retitle it, expand it, choose its destination by finding its neighbours, move it out of
+`inbox/`, tag it, and reply with what it became.
 
-1. **Read it whole** — `corpus doc show <parentId>`. The pack briefed you on the capture; step
-   3 rewrites its body, which is the escalation earning the full read — and the read is where
-   the key that write presents comes from. One line of text is normal.
-2. **Give it a real title.** "Mortgage rates?" becomes "Mortgage rate assumptions for the 2026
-   refinance". The title is what makes it findable.
-3. **Expand it into something usable.** Add the structure a reader needs: a heading or two, the
-   context the capture assumed, and an open-questions section for what it left dangling.
-   **Expansion adds structure, never content** — do not invent a number, a date, a name or a
-   decision the capture did not contain. When the intent itself is unclear, ask instead of
-   guessing, and leave the document where it is until you have the answer.
-4. **Choose a destination by finding its neighbours.** Search for the documents this capture
-   belongs beside — `corpus search "<what the capture is about>" --limit 5` — then
-   `corpus doc show <id>` on the closest hit, whose path names the folder it lives in, and
-   prefer one that already holds similar documents — an existing `finance/` beats a new
-   `money/` every time. Never go looking through the tree for folder names. When the search
-   comes back with nothing related, the document is a genuine category the corpus does not
-   have yet: name the new folder from its subject. The folder comes into being on the move,
-   so there is no separate step.
-5. **Move it out of `inbox/`** — `corpus doc move <id> --folder finance --from agent`.
-6. **Tag it** — `corpus doc edit <id> --add-tag finance --add-tag housing --from agent`.
-7. **Reply with what it became and where it lives**, naming the document by `[[id]]`.
-
-**When the right home is genuinely ambiguous, leave it in `inbox/` and ask** — with a form, and
-with every question the filing still needs in it: the destination, the tags, the fact the
-capture assumed and did not state. One form finishes the filing; three separate questions
-across three turns finish nothing three times. The document stays in `inbox/` until the answer
-arrives — a wrong filing is harder to notice than an unfiled one.
+Two of its rules bind before the read as well. **Expansion adds structure, never content** —
+never invent a number, a date, a name or a decision the capture did not contain. And when the
+right home is genuinely ambiguous, **leave it in `inbox/` and ask** with one form carrying
+every question the filing still needs — a wrong filing is harder to notice than an unfiled
+one.
 
 ## Reply
 
@@ -504,57 +455,18 @@ Rules:
   the block's raw text, so the fence boundary is exactly what the person gets. This changes
   nothing else you write — prose stays prose, and code you are explaining rather than handing
   over is fenced however the explanation reads best.
-- **A fence closes only on a line that is nothing but backticks.** It ends at the first line
-  that is **nothing but** a backtick run at least as long as the one that opened it. That one
-  sentence is the whole mechanism, and it fails in two directions: a fence opened too narrow
-  closes early, and a fence whose closing run is not alone on its line never closes at all.
-  Both cost the person something, and neither announces itself.
-
-  **Open it wider than anything inside it.** Three backticks around a payload that itself
-  contains a fence closes early — the payload's own ``` line ends your block: one deliverable
-  becomes several, your prose spills out between them, and each copy button hands over a
-  fragment, which defeats the whole point of handing the thing over in one gesture. Before you
-  write the fence, find the **longest backtick run in the payload and open with one more than
-  that**: four around a payload containing three, five around one containing four, and so on.
-  The rule is the count, not the number four. Counting every run rather than only the ones
-  alone on a line is deliberate — a run in the middle of a sentence closes nothing, so the rule
-  is stricter than it strictly needs to be, and being one backtick too wide costs nothing while
-  being one too narrow splits the deliverable. This bites most often on what matters most: a
-  prompt written for another agent, which is itself markdown and routinely contains fenced
-  examples.
-
-  A prompt whose body contains a fence is handed over like this, four backticks outside and
-  three inside:
-
-  `````markdown
-  ````prompt
-  ## Output format
-
-  ```
-  owner | action | topic
-  ```
-
-  **Critical instruction:** answer only in that table.
-  ````
-  `````
-
-  **Close it on a line of its own.** The closing run has to stand alone: write it at the end of
-  the payload's last content line — the last word and the backticks together — and it closes
-  nothing, because that line is not *nothing but* the run. The fence then stays open to the end
-  of the turn, and this is the failure that costs the most while looking like the least. A
-  thread is a sequence of turns delimited by a level-2 heading naming the author and the turn's
-  timestamp, and such a heading **inside a fence is deliberately not a delimiter** — that is
-  exactly what lets a turn quote the thread format without faking a turn. So an unclosed fence
-  swallows every heading after it: the next person's reply stops being a turn of its own and is
-  absorbed into the body of yours. They see your opening sentence, their own message is gone
-  from the conversation, and nothing anywhere reports an error — the same exchange that reads
-  as two turns with the run alone on its line reads as **one** with the run riding the content
-  line. It does not render badly; it makes the next message vanish. So: a newline after the
-  payload's last character, then the closing run by itself, every time.
-
-  Documents written before these rules are **not** repaired retroactively — a deliverable that
-  already split stays split until someone rewrites it. If you are asked why an old snippet
-  renders as several canvases, this is why, and the repair is to re-emit it with a wider fence.
+- **A fence closes only on a line that is nothing but backticks** — the first line that is
+  nothing but a backtick run at least as long as the one that opened it. That one sentence is
+  the whole mechanism, and it fails in two directions, neither of which announces itself.
+  **Open it wider than anything inside**: find the longest backtick run in the payload and
+  open with one more, because a fence opened too narrow closes early at the payload's own
+  fence and the deliverable splits across several canvases. **Close it on a line of its own**:
+  a closing run riding the end of a content line closes nothing, the fence stays open to the end
+  of the turn, and a turn heading inside a fence is deliberately not a delimiter — so every
+  later heading is swallowed and the next person's reply is absorbed into the body of yours,
+  with no error anywhere. Before you write any fence into a turn — a deliverable or an
+  ordinary code block — read `references/fences.md`: it carries the worked widths, the
+  closing shape, and what each failure costs the person.
 - **Close a turn that wrote with a trace line.** When the turn's work changed the corpus, the
   reply's **final line — and only its final line —** is a trace: the arrow `↳ `, a space, then
   a one-line, past-tense report of what the work did, as in
@@ -569,15 +481,6 @@ Rules:
 - **Write like a colleague**, in plain sentences. Say what you did and what you concluded; if
   something is uncertain, say which part and why.
 
-So a prompt prepared for another agent is handed over like this — the sentence introducing it
-above the fence, nothing but the prompt inside it, and the turn's trace line, if the turn
-wrote, still last of all:
-
-```prompt
-Read [[doc_a1b2c3]] and [[doc_7e3a91]], then say in three sentences whether the
-6.4% rate assumption still holds for the 2026 refinance.
-```
-
 ## Engagement and closure
 
 The **server** flips the thread's participation from `requested` to `engaged` on your first
@@ -589,67 +492,14 @@ with the "note only" toggle. So end turns like someone who will be asked again, 
 you consider a matter closed, in words: "that's the whole change — nothing else in the document
 referenced the old figure."
 
-**Resolved is a closed door, not a locked one.** A turn a **person** writes on a resolved
-thread sets it back to `open` in the same write that appends it, and the rule above then
-applies to it unchanged: on a thread you are engaged in, that reply reaches you again with no
-`@agent` needed, and one posted "note only" reopens the conversation without waking you. A turn
-**you** write reopens nothing, so a thread you closed stays closed until a person writes in it.
-That is the whole cost of resolving — one reply restores the conversation — and knowing it is
-what lets you close a settled matter instead of leaving it open in case.
-
-**Close what you asked for and got.** You resolve the thread yourself when all four of these
-hold at once:
-
-1. you asked the person for feedback or information,
-2. they **provided it** — a turn of their own in the thread is the evidence,
-3. you have **used** it, and
-4. nothing in the thread is still waiting on anyone.
-
-Who opened the thread is irrelevant. The commonest shape is one the person started: they ask,
-you need one clarification, they clarify, you finish and close. A settled sub-question inside a
-still-live conversation is closed the same way, on its own.
-
-**Four threads you never close**, each a rule rather than a call:
-
-- **A thread the person never replied to.** An unanswered ask is exactly what the open state is
-  for, and no amount of elapsed time turns silence into an answer.
-- **A thread holding an unanswered form.** It stands in Attention as *awaiting your answer* —
-  an outstanding ask by definition, whatever else in the thread has settled and however many of
-  its other forms came back.
-- **An unfinished piece of your own work.** The thread is open because you owe something, and
-  closing it would be marking your own homework done.
-- **A question the person put to you that you have not yet answered.** Answer it first: a turn
-  that closes without answering is not a closing turn, it is the question going quiet.
-
-Where none of the four applies but you still may not close — the person asked, you answered,
-you needed nothing from them — **suggest resolving** and leave the control with them.
-
-**The resolve rides on the reply that reports the work.** One reply and one resolve for the
-same act, never a resolve with no readable turn attached:
-
-```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
-6.4% it is — applied to the projection in [[doc_a1b2c3]] and to the two figures
-downstream of it. That settles the rate question, so I'm closing this thread.
-Reply here if it turns out not to be settled.
-↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%; resolved this thread
-CORPUS_EOF
-corpus thread resolve th_4b8e2c --from agent
-```
-
-Which of the two commands runs first changes nothing — your own turn never reopens what you
-just closed — but that there **is** a turn changes everything. A bare
-`corpus thread resolve <id> --from agent` adds nothing anyone can read, and the board collapses
-a resolved thread holding nothing unseen: the conversation would fold away without the person
-ever seeing it end. So state the closing in the prose, in words, and name the resolve in the
-trace line as the change to a document that it is. Resolving writes the thread, not the parent,
-and it names its own delta, so it needs no key and nothing about the parent stands in its way —
-neither a person editing it nor a key of yours that has gone stale.
-
-**Resolving cascades nowhere.** A child thread is its own document with its own status: closing
-a subthread leaves its parent open, and closing a parent leaves its children open. Resolve
-exactly the thread whose matter is settled. Resolving one that is already resolved prints
-"already resolved" and changes nothing — not an error, and not worth a second attempt.
+You may close a settled matter yourself. Resolving is
+`corpus thread resolve <id> --from agent`, and **the resolve rides on the reply that reports
+the work** — one reply and one resolve for the same act, never a resolve with no readable turn
+attached, with the closing stated in the prose and named in the trace line. Whether a thread
+is yours to close is a set of rules rather than a call, which is why the act has its own
+briefing: **before you resolve any thread, or suggest resolving one, read
+`references/closure.md`.** It carries the four conditions that must all hold, the four
+threads you never close, what resolving costs, and why it cascades nowhere.
 
 ## Forms
 
@@ -663,101 +513,19 @@ answering it, and the form is the only thing in the system that knows the differ
 
 **Ask the whole batch at once.** Every question you need answered to proceed goes into **one
 form, in one turn**, one field per question — never one question per turn, and never a second
-form while the first is still open. Three questions spread over three turns cost the person
-three interruptions and cost you the job of working out which sentence answered which; asked as
-three fields they come back together, each answer keyed to the question it answers. A form with
-a single field is still right when a single answer is all you need — the rule is "everything
-you need", not "at least three".
-
-**Mark a field optional whenever you can proceed without it.** A field is required unless it
-carries `optional: true`, so every field you leave unmarked is a gate the person has to get
-past before they can submit anything at all. Mark generously: when a form feels like an
-interrogation the fix is more optional fields, never fewer forms and never fewer questions.
-Keep each question short enough to read as a control — one line, not a paragraph — and put the
-detail in the prose above the fence.
-
-**Say in the same turn what you will do with the answers.** The prose above the form is where
-you commit to the work: what you will change, where, and what each answer decides. A form with
-no such sentence asks the person to submit without telling them what they are authorising.
+form while the first is still open. Asked as one batch the answers come back together, each
+keyed to the question it answers. A form with a single field is still right when a single
+answer is all you need — the rule is "everything you need", not "at least three".
 
 **An open question is not a form; it is a reply.** A form is for questions that have answers.
 Anything open-ended — what do you make of this, where is this heading, is it worth doing at all
 — is ordinary prose, and wrapping it in a form is worse than asking it plainly, because it
 demands a submit for something with nothing to submit.
 
-**The grammar.** The form is a fenced block whose info string is `form`, written with
-backticks, and it comes last in the turn body you pass to
-`corpus thread reply <id> --from agent --model <name>` — after the prose, with only a trace
-line after it when the turn also wrote. Written out, the ask is one turn: the sentence that
-commits to the work, then the fence. This one asks for a decision, a selection and a fact, with
-the fact optional:
-
-> I can finish filing this as soon as I know where it belongs and how you want it tagged — I'll
-> move it, tag it, and write the renewal quarter into the document as the answer to the open
-> question it already carries.
-
-```form
-fields:
-  - question: Where should this note live?
-    kind: choose one
-    options:
-      - finance
-      - housing
-      - leave it in inbox for now
-  - question: What should it be tagged?
-    kind: choose any
-    options:
-      - insurance
-      - review
-      - mortgage
-  - question: Which quarter does the current policy renew in?
-    kind: write
-    optional: true
-```
-
-`fields` carries at least one entry. Each `question` is non-empty and **distinct within the
-form** — an answer names its field by the question text, so two fields never ask the same
-thing. `kind` is exactly one of `choose one`, `choose any` and `write`, spelled with the space
-exactly as written here, and there is no fourth kind: `choose one` and `choose any` each carry
-`options` (at least one, each non-empty, all distinct) and the person picks one or picks any
-number; `write` carries no options and takes free text. `optional: true` marks a field the
-person may leave blank, and a field with no `optional` line is required. **At most one form per
-turn** — a form is identified by its turn's timestamp, so several questions are several fields
-of one form, never two forms.
-
-Every `question` and every option is **one line**, and no option is spelled `**Note:**`,
-`_(left blank)_`, or one of this form's own questions wrapped in `**…**`. The answer turn writes
-each question as a bold heading and each chosen option on a line of its own, so a newline or one
-of those spellings would come back as something the person did not say.
-
-Get any of that wrong — a fourth kind, a misspelled key, a repeated option, a question or option
-carrying a newline, YAML that does not parse — and
-**the server refuses the whole turn with a `400`** naming what it could not read. The turn does
-not post at all, so fix the fence and post it again; nothing half-written reaches the thread
-through it. That check is yours alone: it runs on turns **you** append to an existing thread,
-which is where you ask, and a form fence anywhere else — in a turn somebody else wrote, or in
-the first turn of a thread being created — reaches the file unchecked and is then drawn as a
-broken code block instead of as controls, asking a question nobody can answer. Post your form as
-a turn on the thread and read the `201` back. A turn carrying a form is never revised either:
-when you need to ask something else, ask it in a **new** turn rather than rewriting the question
-under the person answering it.
-
-**You never answer a form — not the person's, and not your own.** Answering belongs to the
-person alone, and the server refuses an answer from you.
-
-**The answer comes back as `form.respond`, and it is a continuation, not a new request.** Its
-`answers` list carries one entry per field **of the form**, in the order the form asked them,
-each naming the `question` and its `kind` and carrying exactly one of `option`, `options` or
-`text` — all three `null` when that field was left blank — plus `note`, the free-text remark
-about the ask as a whole. Re-read the thread with `corpus thread show <threadId>`, find the
-form you raised at `formTs`, and resume from exactly there: do the work you had staged, and
-never re-ask, never re-explain from the top, never restart the exchange. Because each answer
-arrives keyed to its question, resuming is a matter of reading the list, not of matching prose
-to intent. Every optional field left blank is a **complete** answer: proceed, and do not go
-back for the optional ones. And when the person writes a prose reply instead of answering, the
-form is still unanswered and its Attention row still stands — answer what they said, ask again
-in a new turn if you still need those answers, and never resolve the thread to make the row go
-away.
+**The grammar, the field kinds, and the answer's shape live in `references/forms.md`.** Read
+it before you write a form fence, and again when a `form.respond` event arrives. Get the
+fence wrong and **the server refuses the whole turn with a `400`** naming what it could not
+read — the turn does not post at all, so nothing half-written reaches the thread through it.
 
 ## Stewardship in service of a thread
 
@@ -804,70 +572,21 @@ describing step by step. **What does not**: a one-off instruction, a fact about 
 content, a decision about a particular document — those are a note in a document, not a rule
 about behavior.
 
-**Where it goes.**
-
-- **Extend an existing skill when one fits.** Find the skill whose job the pattern belongs to
-  the way you find anything else — `corpus search "<the pattern>" --type skill`, since a
-  skill is indexed like every other document — and edit it, including this one, whose
-  subject is exactly how threads are handled. A skill is a document, so it is read and
-  written like one: `corpus doc show <skillDocId>` for its body and its key, then
-  `corpus doc edit <skillDocId> --key <the key that read printed> --from agent` with a
-  heredoc body, keeping **both** frontmatter field sets intact — `name` and `description` for
-  Claude Code, `id`/`type`/`title`/`tags`/`status` for Corpus — so both readers keep seeing
-  it.
-- **Create a genuinely new skill when nothing installed fits**, with
-  `corpus skill create <name> --description "$description" --from agent` and a heredoc body.
-
-**Creating one, in full.** The description is prose a person and another agent both read, and
-it comes out of what somebody kept telling you, so it is built the way a body is — in a
-heredoc, passed by name — and never quoted straight into the flag. Note where the fences sit:
-a heredoc terminator only closes the heredoc on a line of its own with nothing in front of it,
-so an indented copy of this block ends up with the rest of the file inside the description.
-
-```bash
-description=$(cat <<'CORPUS_EOF'
-Run the weekly review over the corpus — what changed, what drifted, what's owed.
-CORPUS_EOF
-)
-corpus skill create weekly-review --description "$description" --from agent <<'CORPUS_EOF'
-# Weekly review
-
-Survey what changed this week, update what drifted, and reply with the findings.
-CORPUS_EOF
-```
-
-The server owns the mechanics; do not pre-check them — know what comes back when one is
-violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
-(anything else is a `400`). A name already installed **or archived** is a `409`; for an
-archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
-create the same skill again under a different name. `--description` is required, not
-decoration: Claude Code discovers a skill
-by its `name` and `description`, so a skill without one is installed but never invoked.
-The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
-written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
-`status` for Corpus — live immediately, findable on the board, and editable like any
-document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
-are cheap and are the ordinary ones: `corpus doc archive` disables a skill that misbehaves
-or that stopped earning its place, and a wording you regret is reverted like any other
-document — read the history, write the old text back with the key (*Doing the work*).
-
-**The conflict rule.** A correction that contradicts an existing skill is an **edit to that
-skill**, never a second skill saying the opposite. Two rules in disagreement is worse than the
-wrong rule, because nothing tells you which one is current.
-
-**Announce it in the reply**, always, naming the skill you changed or created — codified
-behavior the person did not agree to is the one change they cannot see coming, and a genesis
-is a real, immediate write into `.claude/`. Add that a skill change — edit or genesis alike —
-takes effect on the **next** run of the loop, not in the session that is running.
+**Before you create or edit a skill, read `references/skill-genesis.md`.** It carries where a
+rule goes — extending an installed skill against creating a new one — the creation mechanics,
+and what the server refuses. Two of its rules bind hard enough to repeat: a correction that
+contradicts an existing skill is an **edit to that skill**, never a second skill saying the
+opposite. And you **announce it in the reply**, always — edit and genesis alike — naming the
+skill and adding that the change takes effect on the **next** run of the loop, not in the
+session that is running.
 
 ## Edge cases
 
-- **The anchor is orphaned.** The selector no longer resolves; the thread still works and its
-  quote is preserved byte-for-byte. Work from the thread's content, say the anchor drifted if
-  it changes the answer, and never try to repair the `anchors` map by hand.
-- **The parent document was deleted** between the comment and now. Reply in the thread
-  explaining what happened. **Never recreate it** — deletion was the person's decision, and
-  git holds the history.
+- **The anchor is orphaned, or the parent document was deleted.** Both are thread shapes the
+  pack reports, and *Gather context* above says how each is worked. Neither is an error to
+  report, and neither is yours to undo: never try to repair the `anchors` map by hand, and
+  **never recreate it** when the parent is gone — deletion was the person's decision, and git
+  holds the history.
 - **The turn is attachment-only** — an image or a file with no text. The attachment *is* the
   request: read it and answer it.
 - **The turn is note-only.** A note posts no event, so it should never reach you; if one does,
@@ -878,124 +597,6 @@ takes effect on the **next** run of the loop, not in the session that is running
   commented on it. That is the workspace's feedback loop working as designed, not an intrusion:
   edit the skill through the CLI, announce the change prominently, and say that the previous
   wording is one read of the history and one write away if the new one misbehaves — a skill is
-  reverted like any other document (*Doing the work*), by no special command.
+  reverted like any other document (`references/history.md`), by no special command.
 - **Long work handed to a subagent.** Acknowledge immediately; never go silent until the
   handoff comes back.
-
-## Worked examples
-
-**1 — Anchored comment that edits the parent.** The person selected "6.1%" in a mortgage note
-and commented `@agent is this still right?`.
-
-```bash
-corpus thread context th_4b8e2c
-parent doc_a1b2c3 · Mortgage options · Mortgage options › Rates
-
-> 6.1%
-
-## Rates
-
-The working rate assumption is 6.1% as of 2026-05-02, and every projection in
-this document uses it.
-
-# related excerpts
-doc_7e3a91  Refinance plan › Costs  linked  every projection here assumes 6.1% for the whole term
-corpus thread show th_4b8e2c
-corpus job log evt_7c1d9a "briefed on th_4b8e2c from its context pack"
-corpus doc show doc_a1b2c3  # escalation: the patch below quotes this document byte for byte
-The working rate assumption is 6.1% as of 2026-05-02, and every projection in
-this document uses it.
-corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02, and every projection in
-this document uses it.' --new '6.4% as of 2026-07-28. Thirty-year fixed offers currently
-cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
-patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
-key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
-corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
-Not any more — 6.4% is the representative 30-year fixed rate today. Updated the
-assumption and the projection note in [[doc_a1b2c3]]. The anchored sentence is
-the one that changed.
-↳ updated the rate assumption in [[doc_a1b2c3]] from 6.1% to 6.4%
-CORPUS_EOF
-```
-
-**2 — Standalone Ask that gets a title and a document.** `parentId` was `null` and the payload
-carried `"unresolved": ["researcher"]`. The work ran in two stages: a lighter model gathered
-what the corpus already held on the subject, and this session judged it and wrote the answer.
-So the turn names the **deciding** stage and the job log carries both.
-
-```bash
-corpus thread show th_9f21c4
-corpus doc create --type note --title "Espresso extraction troubleshooting" --folder kitchen --tags coffee --from agent <<'CORPUS_EOF'
-# Espresso extraction troubleshooting
-
-Sour and fast means under-extraction: grind finer before changing dose.
-Bitter and slow means the opposite.
-CORPUS_EOF
-title=$(cat <<'CORPUS_EOF'
-Why does my espresso taste sour?
-CORPUS_EOF
-)
-corpus doc edit th_9f21c4 --title "$title" --from agent
-corpus job log evt_5a2b7c "gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"
-corpus thread reply th_9f21c4 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'
-Sour usually means under-extraction — the shot ran too fast. Grind one step
-finer and keep everything else fixed.
-
-`@researcher` isn't defined in this workspace, so I answered this directly. The
-full troubleshooting sequence is durable enough to keep, so I wrote it down in
-[[doc_7e3a91]] and titled this thread.
-↳ created [[doc_7e3a91]] in kitchen/ and titled this thread
-CORPUS_EOF
-```
-
-**3 — Inbox capture, filed end to end.** The payload's `parentId` was the captured document.
-
-```bash
-corpus doc show doc_5c8b2f
-key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa
-corpus doc edit doc_5c8b2f --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --title "Quarterly insurance review" --from agent <<'CORPUS_EOF'
-# Quarterly insurance review
-
-Check the home and auto policies against current replacement costs each quarter.
-
-## Open questions
-
-- Which quarter does the current policy renew in?
-CORPUS_EOF
-corpus search "home and auto insurance policies" --limit 5
-doc_3f9a01  Home policy renewal › Replacement cost  …the home policy's replacement cost was last checked in March…
-doc_c14be7  Auto policy notes › Premiums            …the auto premium rose 8% at the last renewal…
-corpus doc show doc_3f9a01  # its path is data/docs/finance/home-policy-renewal.md — that is the folder
-corpus doc move doc_5c8b2f --folder finance --from agent
-corpus doc edit doc_5c8b2f --add-tag insurance --add-tag review --from agent
-corpus job log evt_2e4f8b "filed [[doc_5c8b2f]] into finance/"
-corpus thread reply th_1a7d33 --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
-Filed this as [[doc_5c8b2f]] — "Quarterly insurance review", now in `finance/`,
-tagged insurance and review. I added the structure and left one open question in
-it: I don't know which quarter the policy renews in.
-↳ retitled, expanded and filed [[doc_5c8b2f]] into finance/, tagged insurance and review
-CORPUS_EOF
-```
-
-Only the first write there carried a key, and that is not an oversight: it replaced the
-body. The move and the two tags name their own deltas, so they merge with anything else that
-touched the document while the filing was under way and need no key at all.
-
-**4 — A `form.respond` continuation.** The three-field form above was answered on `th_6c0a18`:
-`finance` for the destination, `insurance` and `review` for the tags, the renewal quarter left
-blank, and `note: "put it with the mortgage stuff"`. Three answers, one submit, one event.
-
-```bash
-corpus thread show th_6c0a18
-corpus doc move doc_2f7b91 --folder finance --from agent
-corpus doc edit doc_2f7b91 --add-tag insurance --add-tag review --from agent
-corpus job log evt_9b4c02 "form answered — filed [[doc_2f7b91]] into finance/, tagged insurance and review"
-corpus thread reply th_6c0a18 --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
-Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage
-notes, tagged insurance and review. You left the renewal quarter blank, so it
-stays the open question already written into the document. That closes the
-filing I paused on. Nothing else is outstanding here.
-↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review
-CORPUS_EOF
-```

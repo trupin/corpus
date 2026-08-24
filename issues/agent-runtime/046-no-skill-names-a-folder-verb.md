@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -93,10 +93,10 @@ of the safe case is not a rule against the unsafe one.
 
 ## Acceptance Criteria
 
-- [ ] The skills say what an agent may do at folder level, rather than saying nothing
-- [ ] Any folder verb a skill names is verified against a real build before the text ships
-- [ ] The stewardship charter and whatever this issue decides do not contradict each other
-- [ ] `scripts/workspace-template.test.ts` resolves every new invocation
+- [x] The skills say what an agent may do at folder level, rather than saying nothing
+- [x] Any folder verb a skill names is verified against a real build before the text ships
+- [x] The stewardship charter and whatever this issue decides do not contradict each other
+- [x] `scripts/workspace-template.test.ts` resolves every new invocation
 
 ## Testing Strategy
 
@@ -107,4 +107,42 @@ accident.
 
 ## E2E Verification Log
 
-_[Agent fills — state the model]_
+_Implementing agent: agent-runtime-dev on **claude-fable-5**, 2026-08-23._
+
+### What shipped
+
+The decision, written in as a **rule** in the two places the two halves bind:
+
+- `comment/SKILL.md` → *Doing the work* gains the bullet **"Act on a whole folder only where
+  the folder is what the person named."** It names `corpus folder archive|unarchive|rename`
+  for the person-named case, says the bulk act reaches documents the request never mentioned
+  (read the printed list back, state the count in the reply), states the other half — where
+  **you** picked the documents, stay per document, because you chose them and must be able to
+  name each one; a folder verb never inherits that judgment — and keeps `corpus folder
+  delete` the user's, with the archive detour.
+- `orchestrate/SKILL.md` → *Stewardship* gains **"A folder verb serves a request that named
+  the folder, and it never serves this charter,"** so the charter's per-document bullets
+  cannot be read as an invitation to bulk acts. Distinct wording from the comment copy on
+  purpose; the shingle detector stays green with no new STATED_TWICE entry.
+
+### Verified against a real build (CLI 0.20.0, scratch workspace, port 8931/8932)
+
+- `corpus folder archive probe --from agent` → per-document status lines +
+  `archived probe — 1 document`, exit 0. `unarchive` and `rename probe probe2` likewise.
+- `corpus folder delete inbox --from agent` → refused before any request, exit **2**:
+  "deleting a folder is user-only — the agent archives, never deletes", naming
+  `corpus folder archive` — exactly what the skill now says.
+- **Live loop event** (real `claude -p --model sonnet` subagent, transcript
+  `scratchpad/audit/e2e-evt2-transcript.jsonl`): a standalone ask "archive the taxes-2024
+  folder" was worked with **one** `corpus folder archive taxes-2024 --from agent` — no
+  per-document loop — landing as the single commit
+  `folder archive: data/docs/taxes-2024 (2 documents) by agent`, with both documents named
+  in the job log and in the reply.
+
+### Guard
+
+New describe `folder acts are bounded by who named the folder (AGENT-046)` in
+`scripts/workspace-template.test.ts` pins the boundary sentences in both skills (as rules,
+with `wrapped()` so re-wraps do not kill them) and the delete refusal claim; the existing
+template-wide invocation resolver checks every `corpus folder …` spelling against
+`docs/cli.md` with no change. 486/486 tests pass.

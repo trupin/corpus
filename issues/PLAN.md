@@ -1590,11 +1590,11 @@ suite cannot confirm. Both halves stand without it.
 | UI-165 | A column's thread margin cannot be reached by any gesture | todo | P2 | opus | UI-163 |
 | UI-166 | What full screen does to a turn's leading and measure | todo | P2 | opus | UI-156 |
 | INFRA-032 | A tampered generated artifact survives a green local run | todo | P2 | opus | — |
-| AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | todo | P1 | fable | CLI-060 |
+| AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | done | P1 | fable | CLI-060 |
 | CLI-064 | A batch verb needs a decided exit code before it is worth building | todo | P1 | fable | CLI-057, CLI-058 |
-| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | todo | P1 | fable | SHARED-070 |
-| AGENT-048 | The standing style rule is paid twice per context | todo | P2 | opus | SHARED-070 |
-| AGENT-049 | `queue idle` prints a shape the skill does not promise | todo | P2 | opus | SHARED-070 |
+| AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
+| AGENT-048 | The standing style rule is paid twice per context | done | P2 | opus | SHARED-070 |
+| AGENT-049 | `queue idle` prints a shape the skill does not promise | done | P2 | opus | SHARED-070 |
 | SERVER-144 | Retrieval ranks the product's own skills into every pack | todo | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row | todo | P1 | opus | SHARED-070 |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | todo | P1 | opus | — |
