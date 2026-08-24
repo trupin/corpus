@@ -9,11 +9,14 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * carry (SPEC.md §4's edit-acknowledgment rider, `GET /api/docs/{id}/diff`).
  *
  * The event says *that* a user edit session ended, with its commit range and
- * three numbers; it never carries the diff body. The agent triages on the
- * numbers and, when a change looks like it could ripple, spends one call here to
- * find out what it actually was. So the reader of this output is a loop deciding
- * whether to go looking at other documents — not a person admiring a diff — and
- * the rendering is built for that:
+ * three numbers; it never carries the diff body. The agent comes here on **every**
+ * such event, because the numbers cannot tell a correction from a reversal —
+ * `will` becomes `will not` at `+1 -1` exactly as a misspelling does. AGENT-011
+ * drilled it: a substantive edit and a typo fix produced byte-identical payloads
+ * (`1 commit, +2 -2`), so there is no stats-only skip and the skill fetches every
+ * time. What the numbers are for is **sizing** the read, never deciding it. So the
+ * reader of this output is a loop deciding whether to go looking at other
+ * documents — not a person admiring a diff — and the rendering is built for that:
  *
  * 1. **the identity line** — id and path, because the next moves (`corpus search`,
  *    `corpus doc related`, `corpus doc show`) all take one of the two;
@@ -159,18 +162,36 @@ function diffLines(diff: string): readonly string[] {
 
 /**
  * The cut, at the cut. It names what is missing in characters and says what not
- * to conclude — a diff that ends at a hunk boundary looks exactly like a diff
- * that ended, which is why the flag exists — then names the two escalations that
- * exist: a narrower range, or the document as it now stands.
+ * to conclude — a diff that stops cleanly looks exactly like a diff that ended,
+ * which is why the flag exists — then names the two escalations that exist: a
+ * narrower range, or the document as it now stands.
+ *
+ * **It names no boundary, and that is the decision rather than an omission**
+ * (CLI-028). It used to say "cut at a hunk boundary", which was true of the rule
+ * of the day and false of the next one: CONTRACT-032 replaced hunk-dropping with
+ * *the last line boundary at or before the bound*, and kept a fallback that cuts
+ * mid-line for a single line longer than the whole cap. So no fixed adjective is
+ * true of both shapes — and **nothing on the wire says which shape happened**.
+ * `DocDiff` carries `diff`, `truncated` and `totalChars`, so a client that named
+ * the boundary would be inferring the server's rule from a trailing byte and
+ * printing the inference as a fact. That is the class of sentence this notice
+ * exists to prevent, in the one place it can least afford to make it.
+ *
+ * What replaces it is not a vaguer adjective but the **measurement**: how far
+ * short of the whole change this text stops. It is what the reader can act on, it
+ * is already what the size line above the body states in its own form, and it
+ * stays true however the cut is made. The boundary type was never actionable —
+ * nothing in this repository applies the diff, and the escalations are the same
+ * two whichever line the text ended on.
  */
 function cutNotice(result: DocDiffResult): readonly string[] {
   if (!result.truncated) return [];
   const missing = result.totalChars - result.diff.length;
   return [
     "",
-    `# the diff above is cut at a hunk boundary to fit the ${String(DOC_DIFF_MAX_CHARS)}-character ` +
-      `bound: it stops ${plural(missing, "character")} short of the whole change, and the counts ` +
-      "above are for the whole range. Do not read it as the whole change — narrow the range with " +
+    `# the diff above was cut to fit the ${String(DOC_DIFF_MAX_CHARS)}-character bound: it stops ` +
+      `${plural(missing, "character")} short of the whole change, and the counts above are for ` +
+      "the whole range. Do not read it as the whole change — narrow the range with " +
       `--${FROM_FLAG}/--${TO_FLAG}, or read the document as it now stands with: corpus doc show ` +
       result.id,
   ];
@@ -182,10 +203,14 @@ export const diffCommand: WorkspaceCommandSpec = {
   description:
     "Reads `GET /api/docs/{id}/diff` (SPEC.md §4, §9.2) and prints the document's id and path, the " +
     "revision range that was actually read, what changed in numbers, and the unified diff itself.\n\n" +
-    "**This is the follow-up to a `doc.edited` event.** That event announces that a user's edit " +
-    "session ended and carries the session's commit range and its change stats — never the diff " +
-    "body. The agent triages on the stats and comes here when the change looks like it could " +
-    "ripple into other documents. The event's `from` and `to` are passed through **verbatim** as " +
+    "**This is the follow-up to a `doc.edited` event, and it is made on every one of them.** " +
+    "That event announces that a user's edit session ended and carries the session's commit range " +
+    "and its change stats — never the diff body. **The stats size this read, they never decide " +
+    "it.** A substantive edit and a typo fix can produce the same numbers — `will` becomes `will " +
+    "not` at `+1 -1` exactly as a misspelling does, and a drill produced two byte-identical " +
+    "payloads (`1 commit, +2 -2`) for exactly that pair — so there is no stats-only skip, and the " +
+    "diff is the only thing that says which change happened. The event's `from` and `to` are " +
+    "passed through **verbatim** as " +
     `\`--${FROM_FLAG}\` and \`--${TO_FLAG}\`` +
     " — including the empty-tree sha an event carries for a document's **first** change, which " +
     "diffs as wholly added. That is any document's first commit, not only one made by the " +
@@ -203,11 +228,14 @@ export const diffCommand: WorkspaceCommandSpec = {
     "changed in that session_. The resolved shas are printed back on their own line, " +
     "unabbreviated, so the same range can be pinned again later.\n\n" +
     `**The diff is bounded and the cut is stated twice.** At most ${String(DOC_DIFF_MAX_CHARS)} ` +
-    "characters come back; a larger change is truncated at a hunk boundary — so what arrives is " +
-    "still a valid diff — never refused. The size line always says how much of the diff is shown " +
-    "(`showing 16000 of 61200 characters`), and a `#` notice after the body says the text was cut " +
-    "and how much is missing. Acting on half a change while believing it whole is the one failure " +
-    "this verb can cause, so it is said before the body and again where the body stops.\n\n" +
+    "characters come back, and a larger change is cut from the end rather than refused. The size " +
+    "line always says how much of the diff is shown (`showing 16000 of 61200 characters`), and a " +
+    "`#` notice after the body says the text was cut and how far short of the whole change it " +
+    "stops. Neither names **where** the cut fell, deliberately: the rule is the server's and it " +
+    "has already moved once, the response carries no field saying which cut happened, and what " +
+    "the reader acts on is how much is missing rather than which line it ended on. Acting on half " +
+    "a change while believing it whole is the one failure this verb can cause, so it is said " +
+    "before the body and again where the body stops.\n\n" +
     "**Nothing normal here is an error.** A range in which this document did not change prints " +
     "one line and exits 0; a document with no committed history — never committed, or a workspace " +
     "with no version control (SPEC.md §11) — prints that and exits 0.\n\n" +

@@ -276,7 +276,7 @@ never auto-merged. The audience for that report is the agent.
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
 | SHARED-013 | Diff truncation is line-aligned, not hunk-aligned (SIGNED 2026-08-05, applied to §9.2) | done | P2 | SERVER-058 |
 | CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | done | P2 | SHARED-013 |
-| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SHARED-013 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | done | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 

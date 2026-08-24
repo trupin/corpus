@@ -233,13 +233,23 @@ describe("corpus doc diff — the answers that are not failures", () => {
 });
 
 describe("corpus doc diff — truncation", () => {
-  const cut = (): DocDiff =>
+  const cut = (body: string = HUNK): DocDiff =>
     diff({
-      diff: HUNK,
+      diff: body,
       truncated: true,
       totalChars: 61200,
       stats: { commits: 1, insertions: 900, deletions: 900 },
     });
+
+  /**
+   * The two shapes `truncateDiff` can produce (CONTRACT-032). The first is the
+   * ordinary one — the last line boundary at or before the bound, which is also
+   * every hunk boundary. The second is its fallback, taken when a single line is
+   * longer than the whole cap: a hard cut mid-line. Both arrive here as the same
+   * three fields, which is the whole reason the notice names no boundary.
+   */
+  const AT_LINE_BOUNDARY = HUNK;
+  const MID_LINE = "@@ -1,3 +1,4 @@\n-30-year fixed at 6.1%.\n+30-year fixed at 6.4";
 
   it("states the scale before the body, in the slot the whole case uses too", async () => {
     const stub = await startStubServer(jsonResponder(200, cut()));
@@ -260,12 +270,45 @@ describe("corpus doc diff — truncation", () => {
 
     const notice = harness.stdout().trimEnd().split("\n").at(-1) ?? "";
     expect(notice.startsWith("# ")).toBe(true);
-    expect(notice).toContain("cut at a hunk boundary");
+    expect(notice).toContain("was cut to fit");
     expect(notice).toContain(`${String(DOC_DIFF_MAX_CHARS)}-character`);
     expect(notice).toContain(`stops ${String(61200 - HUNK.length)} characters short`);
     expect(notice).toContain("Do not read it as the whole change");
     expect(notice).toContain("--from-rev/--to-rev");
     expect(notice).toContain("corpus doc show doc_a1b2c3");
+  });
+
+  it.each([
+    ["a cut at a line boundary", AT_LINE_BOUNDARY],
+    ["a cut mid-line, the fallback shape", MID_LINE],
+  ])("says the same true thing about %s", async (_shape, body) => {
+    const stub = await startStubServer(jsonResponder(200, cut(body)));
+    const harness = stubContext(stub, { args: { id: "doc_a1b2c3" } });
+
+    await runDocDiff(harness.context);
+
+    const notice = harness.stdout().trimEnd().split("\n").at(-1) ?? "";
+    // The measurement moves with the body, because it is a measurement.
+    expect(notice).toContain(`stops ${String(61200 - body.length)} characters short`);
+    expect(notice).toContain("Do not read it as the whole change");
+  });
+
+  it("names no boundary, because nothing on the wire says which cut happened", async () => {
+    // CLI-028. `DocDiff` carries `diff`, `truncated` and `totalChars` and no
+    // fourth field, so any boundary word here would be the CLI inferring the
+    // server's rule from a trailing byte — and the rule has already moved once
+    // (CONTRACT-032), which is how "hunk boundary" became false without a single
+    // line of this file changing. Asserted for both shapes so a future adjective
+    // cannot be true of one of them and slip through.
+    for (const body of [AT_LINE_BOUNDARY, MID_LINE]) {
+      const stub = await startStubServer(jsonResponder(200, cut(body)));
+      const harness = stubContext(stub, { args: { id: "doc_a1b2c3" } });
+
+      await runDocDiff(harness.context);
+
+      const notice = harness.stdout().trimEnd().split("\n").at(-1) ?? "";
+      expect(notice).not.toMatch(/hunk|line boundary/i);
+    }
   });
 
   it("keeps the notice on one line, so a caller reading the last line gets all of it", async () => {
@@ -383,9 +426,27 @@ describe("the doc diff command spec", () => {
   it("documents the properties the agent depends on", () => {
     expect(diffCommand.description).toContain("verbatim");
     expect(diffCommand.description).toContain("doc.edited");
-    expect(diffCommand.description).toContain("truncated at a hunk boundary");
+    expect(diffCommand.description).toContain("cut from the end rather than refused");
     expect(diffCommand.description).toContain("exits 0");
     expect(diffCommand.flags[0]?.description).toContain("global flag");
+  });
+
+  it("describes the loop the skill actually runs — a read on every event, not a triage", () => {
+    // AGENT-011: there is no safe stats-only skip, and the skill was rewritten to
+    // fetch every time. The prose said the agent "triages on the stats and comes
+    // here when the change looks like it could ripple", which narrowed the loop
+    // to one the skill does not run. Pinned so it cannot narrow again.
+    expect(diffCommand.description).toContain("every one of them");
+    expect(diffCommand.description).toContain("never decide it");
+    expect(diffCommand.description).not.toContain("triages on the stats");
+  });
+
+  it("does not name where the diff was cut, in either of the two prose slots", () => {
+    // CLI-028, same reason as the notice itself: the truncation rule is the
+    // server's, it has moved once already, and the response carries no field
+    // naming the boundary. What the help states is the measurement.
+    expect(diffCommand.description).not.toContain("hunk boundary");
+    expect(diffCommand.description).toContain("how far short of the whole change it stops");
   });
 
   it("states the default base SERVER-113 actually implements, in both places it is described", () => {
