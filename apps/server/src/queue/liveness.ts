@@ -103,9 +103,20 @@ export interface LanePresence {
    *
    * Set at the park and again at the release — a release is the last instant the
    * listener was observed parked — and frozen in between. So on a live lane it
-   * is never older than one park (the contract's 480 s bound), which is what
-   * keeps `now − since` an honest age of the evidence and keeps the server's
-   * `live` from ever being one a client would expire.
+   * is never older than **one park**, which is what keeps `now − since` an
+   * honest age of the evidence and keeps the server's `live` from ever being one
+   * a client would expire.
+   *
+   * **The magnitude is named, not copied** (SERVER-120). This sentence used to
+   * spell the bound out in seconds, and the figure is genuinely useful — a
+   * reader needs to know whether the staleness they are warned about is seconds
+   * or hours, which is why "delete the number" was not the answer here. But it
+   * was a third copy of a number the contract chooses, and the two above it had
+   * already gone stale once (CONTRACT-060). One park is bounded by
+   * `MAX_IDLE_TIMEOUT_SECONDS`, which is one hop away and is always the current
+   * value, so naming it keeps the magnitude available without keeping a copy
+   * that can be wrong. That is the rule this file now follows in three places:
+   * state the property, name the constant, restate no number.
    */
   readonly since: string | null;
 }
