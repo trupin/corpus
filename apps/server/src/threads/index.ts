@@ -31,6 +31,7 @@ export type { TurnTextSubject } from "./fences.js";
 export {
   FORM_ANSWER_LABEL,
   answerThreadForm,
+  assertWritableForm,
   formAnswerBody,
   formCommitSubject,
   formRespondPayload,

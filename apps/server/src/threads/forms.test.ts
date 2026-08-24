@@ -7,7 +7,7 @@
 // declared statuses (`201 / 400 / 401 / 403 / 404 / 409`) are each provoked;
 // nothing else is ever accepted as an answer.
 
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { QueryKey } from "@corpus/contract";
@@ -822,6 +822,63 @@ describe("a malformed form is refused at `POST /api/threads/{id}/turns`", () => 
       expect(payload.message).toContain("line 3");
     }
   });
+});
+
+/**
+ * SERVER-070. `POST /api/threads` is the *other* door onto a thread's first
+ * turn, and it accepted bytes the turn-append route refused — so the same form
+ * was legal or illegal depending on which door it arrived through. That
+ * asymmetry is what a later reader "simplifies" in whichever direction they meet
+ * first, which is why it is closed rather than left as a narrowed hole.
+ *
+ * One implementation (`assertWritableForm`), called from every door, so the two
+ * cannot agree today and drift tomorrow.
+ */
+describe("a malformed form is refused at `POST /api/threads` too (SERVER-070)", () => {
+  const create = async (body: string, author = "agent"): Promise<Response> =>
+    ws.post("/api/threads", { title: "Ask", body }, { "x-corpus-author": author });
+
+  it.each([
+    ["two fields asking the same question", '```form\nfields:\n  - question: "Q"\n    kind: "write"\n  - question: "Q"\n    kind: "write"\n```\n'], // prettier-ignore
+    ["a choose-one listing a duplicate option", '```form\nfields:\n  - question: "Q"\n    kind: "choose one"\n    options:\n      - "a"\n      - "a"\n```\n'], // prettier-ignore
+    ["a fourth kind", '```form\nfields:\n  - question: "Q"\n    kind: "pick a date"\n```\n'],
+    ["a `write` field carrying options", '```form\nfields:\n  - question: "Q"\n    kind: "write"\n    options:\n      - "a"\n```\n'], // prettier-ignore
+    ["YAML that does not parse", "```form\nprompt: [unclosed\n```\n"],
+  ])("refuses %s with 400, the turn route's status and message shape", async (_label, body) => {
+    const response = await create(body);
+    const payload = (await response.json()) as { code: string; message: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.code).toBe("bad_request");
+    expect(payload.message).toContain("form");
+  });
+
+  it("refuses before a byte is written, so no thread is left behind", async () => {
+    const threads = (): string[] => readdirSync(join(ws.root, "data", "threads"));
+    const before = threads();
+    await create("```form\nprompt: [unclosed\n```\n");
+    expect(threads()).toEqual(before);
+  });
+
+  it("accepts a well-formed form, in both spellings", async () => {
+    expect((await create(formTurn())).status).toBe(201);
+    expect((await create(richFormTurn())).status).toBe(201);
+  });
+
+  it("leaves a first turn with no form fence alone", async () => {
+    expect((await create("Just a note about ```formula``` blocks.\n")).status).toBe(201);
+  });
+
+  it("does not police a person's first turn, which is quoting rather than asking", async () => {
+    // The distinction `assertWritableForm` already draws, and the one this issue
+    // required be preserved on the new door: §6 makes a form something an agent
+    // asks, so a person pasting a broken fence is writing ordinary content.
+    expect((await create("```form\nprompt: [unclosed\n```\n", "user")).status).toBe(201);
+  });
+
+  // The third door — `POST /api/capture`, whose text becomes the filing thread's
+  // first turn — is multipart-only, so its half of this rule is pinned beside its
+  // own fixture in `capture/capture.test.ts`.
 });
 
 describe("the `form.respond` event (SPEC.md §7)", () => {
