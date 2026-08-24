@@ -562,6 +562,26 @@ export type RevealGaveUp =
   /** {@link REVEAL_WAIT_MS} passed and the surface never finished arriving. */
   | "unresolved";
 
+/**
+ * What the reader **reports**, which is one word wider than what the search
+ * concluded (UI-144).
+ *
+ * {@link revealPatience} sees a surface and nothing else, so its whole vocabulary
+ * is "the words are not here" and "nothing arrived in time". A **deleted**
+ * document reaches the first of those honestly — the `.reader-gone` card marks
+ * itself arrived, so the search settles in ~350 ms instead of spending four
+ * seconds in the tone kept for failures — and then the notice built from it says
+ * the quote is no longer *on this document*, when there is no document for it to
+ * be on. The card beside it carries the truth, which is why this was a NIT and
+ * not a defect.
+ *
+ * So the third word is added where the fact lives. `useReaderSurface` holds
+ * `ReaderDoc.isMissing`, the same flag that draws the card, and it is the only
+ * thing in the chain that can tell a missing document from a surviving one.
+ * `revealPatience` keeps its two answers exactly as they were.
+ */
+export type RevealMiss = RevealGaveUp | "gone";
+
 export interface RevealLook {
   /** The surface changed since the last look, so searching it again is worth it. */
   readonly search: boolean;
@@ -635,21 +655,36 @@ export function revealPatience(): (surface: RevealSurface, elapsedMs: number) =>
 const NOTICE_QUOTE_MAX = 48;
 
 /**
- * What the reader is told when a reveal gives up (UI-140).
+ * What the reader is told when a reveal gives up (UI-140, third case UI-144).
  *
  * **Giving up is not silent.** A person who asked to be taken somewhere and was
  * not is owed an account of it, and until this existed the only trace was a
- * document sitting at its top for no stated reason. The two reasons are two
- * different messages because they are two different facts about the workspace:
- * `absent` says the document moved on, which is ordinary and is information;
- * `unresolved` says this session could not render the document in time, which is
- * a fault and is worth the error tone that marks the console.
+ * document sitting at its top for no stated reason. The three reasons are three
+ * different messages because they are three different facts about the workspace:
+ *
+ * - `absent` — the document is here and the quote is not. Ordinary, and
+ *   information: something edited it away. Info tone.
+ * - `gone` — there is **no document**. Also a settled fact about the workspace
+ *   rather than a session fault, so it keeps the info tone — but it may not
+ *   borrow `absent`'s sentence, which says the quote left a document that is
+ *   still there. Saying "no longer on this document" about a document that was
+ *   deleted names the wrong absence (UI-144).
+ * - `unresolved` — this session could not render the document in time. A fault,
+ *   and worth the error tone that marks the console.
+ *
+ * `gone` outranks the other two rather than being a variant of `absent`: a
+ * deleted document also cannot finish loading, so a reveal that reached the
+ * ceiling against one would otherwise blame a load that was never going to
+ * happen.
  */
-export function revealMissNotice(target: RevealTarget, reason: RevealGaveUp): ToastNotice {
+export function revealMissNotice(target: RevealTarget, reason: RevealMiss): ToastNotice {
   // A conversation has no quote to repeat — its id is a key, not a name — so it is
   // named by what it is rather than misquoted by what it is called.
   const what =
     target.kind === "thread" ? "that conversation" : `“${clipped(collapse(target.exact))}”`;
+  if (reason === "gone") {
+    return { tone: "info", message: `Could not show ${what} — this document was deleted.` };
+  }
   return reason === "absent"
     ? { tone: "info", message: `${capitalised(what)} is no longer on this document.` }
     : {

@@ -27,12 +27,12 @@ afterEach(() => {
   for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
-function readerDoc(docId: string, body: string, threads?: ThreadState): ReaderDoc {
+function readerDoc(docId: string, body: string, threads?: ThreadState, missing = false): ReaderDoc {
   return {
     docId,
-    doc: docFixture({ frontmatter: { id: docId, title: docId }, body }),
+    doc: missing ? undefined : docFixture({ frontmatter: { id: docId, title: docId }, body }),
     isPending: false,
-    isMissing: false,
+    isMissing: missing,
     error: null,
     isArchived: false,
     isThread: false,
@@ -64,6 +64,12 @@ interface SurfaceProps {
    * The ordinary case is a rendered body, so that is the default.
    */
   readonly arrived?: boolean | undefined;
+  /**
+   * Whether the document is **gone** — `ReaderDoc.isMissing`, the flag `DocView`
+   * draws its `.reader-gone` card from. The card carries the settled marker, so
+   * a deleted document is a surface that arrived and holds no quote (UI-144).
+   */
+  readonly missing?: boolean | undefined;
 }
 
 /** The surface with a body the reveal can actually find its words in. */
@@ -74,9 +80,10 @@ function Surface({
   onRevealed,
   threads,
   arrived = true,
+  missing = false,
 }: SurfaceProps): ReactElement {
   const surface = useReaderSurface({
-    reader: readerDoc(docId, text, threads),
+    reader: readerDoc(docId, text, threads, missing),
     restoreY: 0,
     // What both hosts pass: one value per navigation entry.
     navToken: `${docId}#0`,
@@ -257,6 +264,40 @@ describe("a reveal into a body that was already on screen", () => {
     expect(toast?.getAttribute("data-tone")).toBe("info");
     expect(toast?.querySelector(".msg")?.textContent).toContain("no longer on this document");
     expect(toast?.querySelector(".msg")?.textContent).not.toContain("did not finish loading");
+  });
+
+  /**
+   * UI-144, on the warm-open path UI-140's fix opened up. The `.reader-gone`
+   * card marks itself arrived, so a reveal into a **deleted** document settles
+   * in the ordinary way and in the ordinary tone — and then had to be told
+   * whose absence it was reporting.
+   */
+  it("names the deleted document rather than saying the quote moved", async () => {
+    const revealed = vi.fn();
+    render(
+      <ToastProvider>
+        <Surface
+          docId="doc_a"
+          text="This document no longer exists"
+          reveal={BUY}
+          onRevealed={revealed}
+          missing
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(flashes()).toBe(0);
+    const toast = document.querySelector(".toast");
+    // Still information and not a fault: deletion is a settled fact about the
+    // workspace, exactly as UI-140 decided.
+    expect(toast?.getAttribute("data-tone")).toBe("info");
+    const message = toast?.querySelector(".msg")?.textContent;
+    expect(message).toContain("this document was deleted");
+    expect(message).not.toContain("no longer on this document");
+    expect(message).not.toContain("did not finish loading");
   });
 
   it("still draws the flash when the words are on that body", async () => {

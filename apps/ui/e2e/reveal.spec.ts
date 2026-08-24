@@ -366,6 +366,74 @@ test.describe("an open that names an item", () => {
   });
 });
 
+/**
+ * **A reveal into a document that is not there names the right absence** —
+ * UI-144, the surviving half of PR #54's re-review.
+ *
+ * UI-140 extended the settled marker to the `.reader-gone` card, so a reveal
+ * into a deleted document concludes in ~350 ms and in the information tone,
+ * instead of spending four seconds and then blaming a load. That was right. What
+ * it then said was *"…is no longer on this document"* — and there is no
+ * document; the card beside the toast says so.
+ *
+ * The document is **absent from the corpus**, so the reader's own fetch 404s and
+ * `ReaderDoc.isMissing` is set — which is the same state a deletion in another
+ * tab leaves behind, and the only state this page can reach without one.
+ */
+test.describe("an open that names an item on a document that is gone", () => {
+  test("says the document was deleted rather than that the quote moved", async ({ page }) => {
+    // Seeded against a document the corpus does not hold: the reader gets a
+    // `404` and draws its "no longer exists" card, which carries the settled
+    // marker the reveal reads.
+    await stubCorpus(page, [VIEW]);
+    await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
+    await page.addInitScript(
+      ([columnId, docId, boardId, pending]) => {
+        window.localStorage.setItem(
+          "corpus.board",
+          JSON.stringify({
+            version: 4,
+            board: boardId,
+            boards: {
+              [boardId]: {
+                seq: 1,
+                strip: [
+                  {
+                    kind: "query",
+                    view: columnId,
+                    scroll: 0,
+                    nav: [{ docId, scrollY: 0, reveal: pending }],
+                  },
+                ],
+              },
+            },
+          }),
+        );
+      },
+      [
+        VIEW.id,
+        "doc_deleted",
+        STUB_BOARD_ID,
+        { kind: "item", exact: "Book the passport appointment" },
+      ] as const,
+    );
+    await page.goto("/");
+
+    // The card is the truth this toast has to agree with.
+    await expect(page.locator(".reader-gone")).toBeVisible();
+
+    const toast = page.locator(".toast");
+    await expect(toast).toBeVisible();
+    // Information, not a fault: deletion is a settled fact about the workspace.
+    await expect(toast).toHaveAttribute("data-tone", "info");
+    const message = toast.locator(".msg");
+    await expect(message).toContainText("Book the passport appointment");
+    await expect(message).toContainText("this document was deleted");
+    await expect(message).not.toContainText("no longer on this document");
+    await expect(message).not.toContainText("did not finish loading");
+  });
+});
+
 test.describe("an open that names a thread", () => {
   test("expands and flashes the thread, through the 💬 jump that already existed", async ({
     page,

@@ -160,6 +160,17 @@ export function useReaderSurface({
   notify.current = toast;
 
   const hasContent = reader.doc !== undefined || reader.isMissing || reader.error !== null;
+  /**
+   * Whether there is a document at all — read through a ref for the reason every
+   * other reading in this hook is: the reveal's search outlives the render that
+   * started it, and it asks this question when it gives up rather than when it
+   * begins (UI-144).
+   *
+   * It is the same flag `DocView` draws the `.reader-gone` card from, so the
+   * sentence the reveal raises and the card behind it cannot disagree.
+   */
+  const missing = useRef(reader.isMissing);
+  missing.current = reader.isMissing;
 
   /**
    * Restoration, in a layout effect so the position is never painted wrong first.
@@ -383,10 +394,20 @@ export function useReaderSurface({
             },
           };
 
-    /** Spends the instruction, and says so when nothing was reached. */
+    /**
+     * Spends the instruction, and says so when nothing was reached.
+     *
+     * **A deleted document names its own absence** (UI-144). The search sees a
+     * surface and can only report that the words are not on it; whether there is
+     * a document behind that surface is this hook's fact, and it is read at the
+     * moment of giving up rather than at the start, because the document can be
+     * deleted while the reveal is still looking.
+     */
     const settle = (gaveUp: RevealGaveUp | null): void => {
       if (revealSearch.current === search) revealSearch.current = null;
-      if (gaveUp !== null) notify.current(revealMissNotice(reveal, gaveUp));
+      if (gaveUp !== null) {
+        notify.current(revealMissNotice(reveal, missing.current ? "gone" : gaveUp));
+      }
       revealedCallback.current?.();
     };
 
