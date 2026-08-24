@@ -563,24 +563,33 @@ export type RevealGaveUp =
   | "unresolved";
 
 /**
- * What the reader **reports**, which is one word wider than what the search
- * concluded (UI-144).
+ * What the reader **reports**, which is two words wider than what the search
+ * concluded (UI-144, UI-170).
  *
  * {@link revealPatience} sees a surface and nothing else, so its whole vocabulary
- * is "the words are not here" and "nothing arrived in time". A **deleted**
- * document reaches the first of those honestly — the `.reader-gone` card marks
- * itself arrived, so the search settles in ~350 ms instead of spending four
- * seconds in the tone kept for failures — and then the notice built from it says
- * the quote is no longer *on this document*, when there is no document for it to
- * be on. The card beside it carries the truth, which is why this was a NIT and
- * not a defect.
+ * is "the words are not here" and "nothing arrived in time". Two of `DocView`'s
+ * terminal cards reach the first of those honestly — both mark themselves
+ * arrived, so the search settles in ~350 ms instead of spending four seconds in
+ * the tone kept for failures — and then the notice built from it says the quote
+ * is no longer *on this document*, which describes neither:
  *
- * So the third word is added where the fact lives. `useReaderSurface` holds
- * `ReaderDoc.isMissing`, the same flag that draws the card, and it is the only
- * thing in the chain that can tell a missing document from a surviving one.
- * `revealPatience` keeps its two answers exactly as they were.
+ * - a **deleted** document, where there is no document for the quote to be on
+ *   (UI-144);
+ * - a document whose **read failed**, where the anchor may be perfectly sound
+ *   and the reader is told it is gone (UI-170).
+ *
+ * So the extra words are added where the facts live. `useReaderSurface` holds
+ * `ReaderDoc.isMissing` and `ReaderDoc.error`, the same two flags that draw the
+ * two cards, and they are the only things in the chain that can tell a missing
+ * document from an unreadable one from a surviving one. `revealPatience` keeps
+ * its two answers exactly as they were.
+ *
+ * **`unreadable` is a fourth member and not a re-use of `gone`.** A deleted
+ * document and an unreadable one are different facts about the workspace: the
+ * first is settled and the second is about this attempt, and collapsing them
+ * would rebuild the defect UI-144 closed one state over.
  */
-export type RevealMiss = RevealGaveUp | "gone";
+export type RevealMiss = RevealGaveUp | "gone" | "unreadable";
 
 export interface RevealLook {
   /** The surface changed since the last look, so searching it again is worth it. */
@@ -655,12 +664,13 @@ export function revealPatience(): (surface: RevealSurface, elapsedMs: number) =>
 const NOTICE_QUOTE_MAX = 48;
 
 /**
- * What the reader is told when a reveal gives up (UI-140, third case UI-144).
+ * What the reader is told when a reveal gives up (UI-140, third case UI-144,
+ * fourth UI-170).
  *
  * **Giving up is not silent.** A person who asked to be taken somewhere and was
  * not is owed an account of it, and until this existed the only trace was a
- * document sitting at its top for no stated reason. The three reasons are three
- * different messages because they are three different facts about the workspace:
+ * document sitting at its top for no stated reason. The four reasons are four
+ * different messages because they are four different facts:
  *
  * - `absent` — the document is here and the quote is not. Ordinary, and
  *   information: something edited it away. Info tone.
@@ -669,28 +679,43 @@ const NOTICE_QUOTE_MAX = 48;
  *   borrow `absent`'s sentence, which says the quote left a document that is
  *   still there. Saying "no longer on this document" about a document that was
  *   deleted names the wrong absence (UI-144).
+ * - `unreadable` — the document **exists** and this read of it failed: offline,
+ *   a 500, a refusal. The anchor may be perfectly sound, so `absent`'s sentence
+ *   is wrong here for the opposite reason it is wrong for `gone` — it reports a
+ *   drift that nothing has evidence of (UI-170). A fault of this attempt rather
+ *   than a fact about the workspace, so it takes the error tone, and it is
+ *   worded as an account of *this* attempt: a retry that succeeds reveals
+ *   normally, and nothing here claims otherwise.
  * - `unresolved` — this session could not render the document in time. A fault,
  *   and worth the error tone that marks the console.
  *
- * `gone` outranks the other two rather than being a variant of `absent`: a
- * deleted document also cannot finish loading, so a reveal that reached the
- * ceiling against one would otherwise blame a load that was never going to
- * happen.
+ * `gone` outranks the rest rather than being a variant of `absent`: a deleted
+ * document also cannot finish loading, so a reveal that reached the ceiling
+ * against one would otherwise blame a load that was never going to happen.
+ * `unreadable` ranks under `gone` and over the search's own two answers, for the
+ * same reason — a document that could not be read cannot be searched either.
  */
 export function revealMissNotice(target: RevealTarget, reason: RevealMiss): ToastNotice {
   // A conversation has no quote to repeat — its id is a key, not a name — so it is
   // named by what it is rather than misquoted by what it is called.
   const what =
     target.kind === "thread" ? "that conversation" : `“${clipped(collapse(target.exact))}”`;
-  if (reason === "gone") {
-    return { tone: "info", message: `Could not show ${what} — this document was deleted.` };
-  }
-  return reason === "absent"
-    ? { tone: "info", message: `${capitalised(what)} is no longer on this document.` }
-    : {
+  switch (reason) {
+    case "gone":
+      return { tone: "info", message: `Could not show ${what} — this document was deleted.` };
+    case "unreadable":
+      return {
+        tone: "error",
+        message: `Could not show ${what} — this document could not be read.`,
+      };
+    case "absent":
+      return { tone: "info", message: `${capitalised(what)} is no longer on this document.` };
+    case "unresolved":
+      return {
         tone: "error",
         message: `Could not show ${what} — the document did not finish loading.`,
       };
+  }
 }
 
 /** A quote too long for a toast, cut where it stops being read anyway. */

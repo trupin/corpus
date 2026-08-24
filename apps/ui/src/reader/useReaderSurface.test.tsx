@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { RevealTarget } from "@corpus/kit";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { type ReactElement } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../shell/Toasts";
 import { docFixture, threadRowFixture } from "../testing/readerFixture";
@@ -27,13 +27,22 @@ afterEach(() => {
   for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
-function readerDoc(docId: string, body: string, threads?: ThreadState, missing = false): ReaderDoc {
+function readerDoc(
+  docId: string,
+  body: string,
+  threads?: ThreadState,
+  missing = false,
+  readFailed = false,
+): ReaderDoc {
   return {
     docId,
-    doc: missing ? undefined : docFixture({ frontmatter: { id: docId, title: docId }, body }),
+    doc:
+      missing || readFailed
+        ? undefined
+        : docFixture({ frontmatter: { id: docId, title: docId }, body }),
     isPending: false,
     isMissing: missing,
-    error: null,
+    error: readFailed ? new Error("connection refused") : null,
     isArchived: false,
     isThread: false,
     thread: undefined,
@@ -70,6 +79,13 @@ interface SurfaceProps {
    * a deleted document is a surface that arrived and holds no quote (UI-144).
    */
   readonly missing?: boolean | undefined;
+  /**
+   * Whether reading the document **failed** — `ReaderDoc.error`, the flag
+   * `DocView` draws its `.reader-error` card from. That card carries the settled
+   * marker too, so an unreadable document is also a surface that arrived and
+   * holds no quote — and it is a different fact from a deleted one (UI-170).
+   */
+  readonly readFailed?: boolean | undefined;
 }
 
 /** The surface with a body the reveal can actually find its words in. */
@@ -81,9 +97,10 @@ function Surface({
   threads,
   arrived = true,
   missing = false,
+  readFailed = false,
 }: SurfaceProps): ReactElement {
   const surface = useReaderSurface({
-    reader: readerDoc(docId, text, threads, missing),
+    reader: readerDoc(docId, text, threads, missing, readFailed),
     restoreY: 0,
     // What both hosts pass: one value per navigation entry.
     navToken: `${docId}#0`,
@@ -92,7 +109,13 @@ function Surface({
     onRevealed: onRevealed ?? (() => undefined),
   });
   return (
-    <div ref={surface.scrollRef} className="reader-scroll">
+    // `data-flash-thread` is the hook's `flashThread` made observable. The real
+    // hosts pass it down as a prop to `DocView`; a test needs it on the DOM.
+    <div
+      ref={surface.scrollRef}
+      className="reader-scroll"
+      data-flash-thread={surface.flashThread ?? ""}
+    >
       <p {...(arrived ? { [REVEAL_SETTLED_ATTRIBUTE]: "" } : {})}>{text}</p>
     </div>
   );
@@ -300,6 +323,69 @@ describe("a reveal into a body that was already on screen", () => {
     expect(message).not.toContain("did not finish loading");
   });
 
+  /**
+   * UI-170 — the same defect one state over. `DocView`'s `.reader-error` card
+   * also declares itself arrived, so a reveal into a document whose **read
+   * failed** settled in the ordinary way and was then told the quote is "no
+   * longer on this document" — a drifted anchor, reported about a document that
+   * may be perfectly intact and simply could not be fetched.
+   */
+  it("names the failed read rather than saying the quote moved", async () => {
+    const revealed = vi.fn();
+    render(
+      <ToastProvider>
+        <Surface
+          docId="doc_a"
+          text="This document could not be read"
+          reveal={BUY}
+          onRevealed={revealed}
+          readFailed
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    expect(flashes()).toBe(0);
+    const toast = document.querySelector(".toast");
+    // A fault of this attempt, not a settled fact about the workspace — the
+    // same tone `unresolved` takes, and for the same reason.
+    expect(toast?.getAttribute("data-tone")).toBe("error");
+    const message = toast?.querySelector(".msg")?.textContent;
+    expect(message).toContain("this document could not be read");
+    expect(message).not.toContain("no longer on this document");
+    expect(message).not.toContain("was deleted");
+    expect(message).not.toContain("did not finish loading");
+  });
+
+  /**
+   * The two facts are not one. A deleted document keeps its own sentence and its
+   * info tone even though a deleted document is also, trivially, one that could
+   * not be read — which is what stops the fourth member being folded into the
+   * third the next time somebody tidies this up.
+   */
+  it("keeps the deleted wording when the document is both gone and unread", async () => {
+    render(
+      <ToastProvider>
+        <Surface
+          docId="doc_a"
+          text="This document no longer exists"
+          reveal={BUY}
+          missing
+          readFailed
+        />
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".toast")).not.toBeNull();
+    });
+    const toast = document.querySelector(".toast");
+    expect(toast?.getAttribute("data-tone")).toBe("info");
+    expect(toast?.querySelector(".msg")?.textContent).toContain("this document was deleted");
+  });
+
   it("still draws the flash when the words are on that body", async () => {
     const revealed = vi.fn();
     render(
@@ -391,5 +477,103 @@ describe("a reveal that names a conversation the list has not answered for yet",
       expect(revealed).toHaveBeenCalledTimes(1);
     });
     expect(document.querySelector(".toast .msg")?.textContent).toContain("That conversation");
+  });
+});
+
+/**
+ * UI-046 — **dev-only, and it was a real drop.**
+ *
+ * `npm run dev` renders under `StrictMode`, which invokes every effect twice on
+ * mount. Two of this hook's effects meet there. The first clears the flash on a
+ * document change; the second honours the reveal and lights one. The order is
+ * right — the clear is declared above the honour, so within one pass the flash
+ * survives — but a **replay** runs the clear again after the honour, and the
+ * reveal's one-shot guard (`revealed.current === reveal`) correctly refuses to
+ * fire a second time. The expansion the reveal asked for was left with no flash
+ * on it, so nothing on screen said where the reader had been taken.
+ *
+ * **Only with the conversation list already answered**, which is the ordinary
+ * case for the two producers: `ThreadCard`'s "open the parent at this thread"
+ * (the parent is warm, the card was rendered from it) and a persisted nav entry
+ * restoring a `{kind:"thread"}` reveal against a cache a reload has refilled. A
+ * cold list makes the honour land on a later frame, after both replays, and the
+ * flash survives by luck.
+ *
+ * The fix keys the clear on the **transition** rather than on the value: a
+ * document it has already cleared for is not cleared again, so a replayed effect
+ * is a no-op and the one-shot guard is untouched.
+ */
+describe("a thread reveal under StrictMode, with the list already answered", () => {
+  const THREAD_REVEAL: RevealTarget = { kind: "thread", threadId: "th_1" };
+
+  function flashed(): string {
+    return document.querySelector(".reader-scroll")?.getAttribute("data-flash-thread") ?? "";
+  }
+
+  it("keeps the flash the reveal lit, through the replayed effects", async () => {
+    const revealed = vi.fn();
+    render(
+      <StrictMode>
+        <Surface
+          docId="doc_a"
+          text="Buy milk"
+          reveal={THREAD_REVEAL}
+          onRevealed={revealed}
+          threads={{ settled: true, ids: ["th_1"] }}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(revealed).toHaveBeenCalledTimes(1);
+    });
+    // The conversation the reader asked to be taken to, still pointed at.
+    expect(flashed()).toBe("th_1");
+  });
+
+  /**
+   * The one-shot property is what the fix must not buy this with (UI-037). A
+   * navigation away clears the flash, and coming back does **not** re-light it:
+   * the instruction was spent, and the clear still runs on a real transition.
+   */
+  it("still clears the flash when the reader navigates, and does not re-fire", async () => {
+    const revealed = vi.fn();
+    const view = render(
+      <StrictMode>
+        <Surface
+          docId="doc_a"
+          text="Buy milk"
+          reveal={THREAD_REVEAL}
+          onRevealed={revealed}
+          threads={{ settled: true, ids: ["th_1"] }}
+        />
+      </StrictMode>,
+    );
+    await waitFor(() => {
+      expect(flashed()).toBe("th_1");
+    });
+
+    // Following a ref: another document, and no instruction about where to land.
+    view.rerender(
+      <StrictMode>
+        <Surface docId="doc_b" text="Sell bread" threads={{ settled: true, ids: [] }} />
+      </StrictMode>,
+    );
+    expect(flashed()).toBe("");
+
+    // Back onto the first, with the instruction already spent.
+    view.rerender(
+      <StrictMode>
+        <Surface
+          docId="doc_a"
+          text="Buy milk"
+          reveal={THREAD_REVEAL}
+          onRevealed={revealed}
+          threads={{ settled: true, ids: ["th_1"] }}
+        />
+      </StrictMode>,
+    );
+    expect(flashed()).toBe("");
+    expect(revealed).toHaveBeenCalledTimes(1);
   });
 });

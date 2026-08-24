@@ -121,10 +121,31 @@ export function blockedOnDetailLabel(blocker: BlockedOn): string {
  * as `design/index.html` shows it (`started 09:12`) — a console is read in the
  * session it is describing, so the date would be noise.
  */
-export function jobStartedLabel(started: string): string {
-  const at = new Date(started);
-  if (Number.isNaN(at.getTime())) return started;
+export function jobClockTime(instant: string): string {
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return instant;
   return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * `started 09:12`, or `queued 09:12` for a job that has not spoken.
+ *
+ * **Which instant is on the line follows which one the job has** (CONTRACT-029).
+ * `Job.started` is the first log line and is null until there is one, so a row
+ * that is `pending` — or claimed and still silent — has no start time to show.
+ * The old line printed one anyway, because `started` used to carry the enqueue
+ * instant while the job was queued and the first line's instant afterwards. Two
+ * meanings in one field is what that issue was filed about, so this reads the
+ * two fields the wire now separates and **says which one it is showing**: a
+ * clock labelled `started` on a job that never started is the same lie in a
+ * shorter form.
+ *
+ * `enqueued` is always known, so there is no third case and no blank.
+ */
+export function jobClockLabel(job: Pick<Job, "enqueued" | "started">): string {
+  return job.started === null
+    ? `queued ${jobClockTime(job.enqueued)}`
+    : `started ${jobClockTime(job.started)}`;
 }
 
 /**

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { Thread } from "@corpus/contract";
 import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -77,10 +78,11 @@ function wire(options: { readonly eventId?: string | null; readonly status?: num
               tags: [],
               agent: "requested",
               resident: null,
+              unread: false,
               turns: [],
               created: "2026-07-28T10:00:00Z",
               updated: "2026-07-28T10:00:00Z",
-            },
+            } satisfies Thread,
             anchorId: null,
             eventId,
             warnings: [],

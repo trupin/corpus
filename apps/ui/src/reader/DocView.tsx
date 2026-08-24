@@ -1,12 +1,8 @@
-import type { Doc, DocRow } from "@corpus/contract";
+import type { Doc } from "@corpus/contract";
 import {
   docWeightScope,
-  hasSeenMark,
-  isPendingTurn,
   MarkdownView,
-  THREAD_DOC_TYPE,
   useDoc,
-  useDocs,
   type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
@@ -65,51 +61,37 @@ import type { ReaderDoc } from "./useReaderDoc";
  */
 
 /**
- * Whether a thread that **is** the open document holds a turn nobody has seen —
- * and, where this reader cannot tell, saying so (PR #25 re-review, MAJOR).
+ * Whether a thread that **is** the open document holds a turn nobody has seen.
  *
  * §10's interlock — "a conversation carrying a turn you have not seen is never
  * collapsed by the rule" — is the clause that stops the by-rule fold becoming a
  * way to lose messages, so this placement has to answer it truthfully rather
- * than assume. Three answers, from two sources:
+ * than assume. **`Thread.unread` is the server's answer** (CONTRACT-036), and it
+ * is the same comparison `DocRow.unread` publishes, so a thread cannot disagree
+ * with its own row.
  *
- * - **The thread's own row** is the server's answer, and the one every other
- *   placement reads (`summaryFromRow`). A thread opened as a document is handed
- *   no row, so it is looked up in its parent's thread list — the same
- *   `useDocs({parent, type: thread})` the reader that opened it already issued,
- *   under the same cache key.
- * - **What this browser has displayed**, when there is no row to find: a
- *   standalone thread has no parent to list (`useCompose` creates one on every
- *   Ask from the global composer), and a thread past the first page of a busy
- *   parent is not in the answer. `hasSeenMark` is the kit's record of the
- *   `POST …/seen` **this tab** sent for a `(thread, last turn)` pair. It is a
- *   module-level `Map` with a page session's lifetime, while read state is the
- *   server's and "survives browser changes" (§7) — so it can confirm a read and
- *   can never deny one.
+ * **What this replaced, and the bug that went with it.** There used to be no
+ * field, so this asked two other sources: the thread's row, looked up in its
+ * parent's `useDocs({parent, type: thread})` list, and — where there was no row
+ * to find — `hasSeenMark`, the kit's record of the `POST …/seen` *this tab*
+ * sent. A standalone thread has no parent to list, so it always fell to the
+ * mark, and the mark is a module-level `Map` with a page session's lifetime
+ * while read state is the server's and "survives browser changes" (§7). It could
+ * confirm a read and could never deny one, so it answered `read` or `unknown`,
+ * and `unknown` stands the by-rule fold down. The behaviour that left: **a
+ * resolved standalone thread opened expanded on its first visit after every
+ * reload**, however long ago it was read, against §6's "collapsed by default
+ * wherever it is shown". For that placement it was collapsed by default only
+ * from the second visit of a browser session.
  *
- * That asymmetry is the whole change here. The mark answers `read`; its absence
- * used to answer `unread`, which is this tab reporting a conversation the server
- * knows was read as carrying something unseen — and `ThreadPanel` latches a
- * placement, so a resolved standalone thread opened after a reload was placed
- * expanded every time, forever, against §6. Its absence now answers `unknown`,
- * the rule stands down rather than being fed a guess, and the placement is the
- * same one §10's interlock would have chosen — but for a reason the code can
- * defend. A field on the thread resource deletes this branch outright:
- * `issues/contract/036-thread-unread-field.md`.
- *
- * A conversation with no confirmed turn cannot be unread: there is nothing to
- * have read, exactly as `useMarkSeenOnce` treats it, and that is knowledge
- * rather than a guess.
+ * A conversation with no turns at all still cannot be unread — there is nothing
+ * to have read — but that is now the server's arithmetic rather than this
+ * function's, and {@link readStateOf} carries the in-flight case: a read that
+ * has not landed answers `unknown`, and {@link DocView} does not place the
+ * conversation until it has.
  */
-export function openThreadReadState(
-  threadId: string,
-  thread: ReaderDoc["thread"],
-  row: DocRow | undefined,
-): ThreadReadState {
-  if (row !== undefined) return readStateOf(row.unread);
-  const lastConfirmedTs = thread?.turns.findLast((turn) => !isPendingTurn(turn))?.ts;
-  if (lastConfirmedTs === undefined) return "read";
-  return hasSeenMark(threadId, lastConfirmedTs) ? "read" : "unknown";
+export function openThreadReadState(thread: ReaderDoc["thread"]): ThreadReadState {
+  return readStateOf(thread?.unread);
 }
 
 /**
@@ -200,20 +182,6 @@ export function DocView({
     reader.isThread ? (reader.thread?.parent ?? undefined) : undefined,
   );
   /**
-   * The thread list this document's own row would be in, if it has one.
-   *
-   * For a thread with a parent that is the parent's list — the very query the
-   * reader showing that parent issues, so this shares its cache entry rather
-   * than adding a request. For everything else it is *this* document's own
-   * thread list, which `useReaderDoc` has already fetched: the same key again,
-   * and a list in which the document itself can never appear, so the lookup
-   * below correctly finds nothing. That is what keeps the hook unconditional
-   * without ever spending a request on a question this reader is not asking.
-   */
-  const rowScope = reader.isThread ? (reader.thread?.parent ?? reader.docId) : reader.docId;
-  const scopeThreads = useDocs({ parent: rowScope, type: THREAD_DOC_TYPE });
-  const openThreadRow = scopeThreads.data?.items.find((row) => row.id === reader.docId);
-  /**
    * Whether this reader yet knows how to **place** the conversation it opened.
    *
    * The rule decides the state a conversation is placed in, once, and a fold
@@ -224,8 +192,14 @@ export function DocView({
    * have to be in hand *before* the panel mounts, or a resolved conversation is
    * placed open whenever its row is a beat slower than its turns and stays that
    * way. Nothing paints until what it would paint is known.
+   *
+   * One read, not two, since CONTRACT-036: both facts are fields of the
+   * conversation itself. This used to also wait on the parent's thread list,
+   * because that list was where {@link openThreadReadState} went looking for a
+   * row — and a standalone thread has no parent, so for the placement that was
+   * actually wrong the list could never answer at all.
    */
-  const placementKnown = !reader.threadPending && !scopeThreads.isPending;
+  const placementKnown = !reader.threadPending;
   /**
    * Whether this reader hosts the anchor layer — the editable body, and the only
    * branch below that puts conversations at their anchors.
@@ -528,7 +502,7 @@ export function DocView({
                     reader.docId,
                     reader.thread,
                     openThreadParent.data,
-                    openThreadReadState(reader.docId, reader.thread, openThreadRow),
+                    openThreadReadState(reader.thread),
                   )}
                   host="standalone"
                   onOpenDoc={onNavigate}

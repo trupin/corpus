@@ -496,10 +496,12 @@ describe("Reader", () => {
           ]}
         />,
       );
+      // Same wait, and for the same reason: the expansion is the rule's, the
+      // flash is the reveal's, and only the second one says the reveal ran.
       await waitFor(() => {
-        expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
+        expect(container.querySelector(".thread-card.flash")).not.toBeNull();
       });
-      expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+      expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
       // One mechanism: a thread reveal draws no box of its own.
       expect(flashes()).toBe(0);
     });
@@ -538,10 +540,18 @@ describe("Reader", () => {
         { docId: "th_rate", scrollY: 0 },
         { docId: "doc_m", scrollY: 0, reveal: { kind: "thread", threadId: "th_rate" } },
       ]);
+      /*
+       * The **flash** is what waits, not the expansion. `th_rate` is `open`, so
+       * the rule leaves it expanded from the first paint and a wait on
+       * `.thread-slot.expanded` returns before the reveal has run at all. The
+       * reveal climbs a ladder — it re-looks each frame until the parent's
+       * thread list lands (`revealPatience`) — so the condition to wait on is
+       * the one the reveal actually produces.
+       */
       await waitFor(() => {
-        expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
+        expect(container.querySelector(".thread-card.flash")).not.toBeNull();
       });
-      expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+      expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
       // Honoured once: Back onto this entry is an ordinary restoration.
       await waitFor(() => {
         expect(stacks.at(-1)?.at(-1)).toEqual({ docId: "doc_m", scrollY: 0 });

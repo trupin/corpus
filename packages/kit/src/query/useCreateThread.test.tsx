@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { Thread } from "@corpus/contract";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness } from "../testing/index.js";
@@ -18,8 +19,9 @@ const THREAD = {
   anchor: null,
   agent: "requested",
   resident: null,
+  unread: false,
   turns: [],
-};
+} satisfies Thread;
 
 function transport(eventId: string | null): {
   readonly fetch: typeof globalThis.fetch;

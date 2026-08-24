@@ -6,9 +6,9 @@ import { useToast } from "../shell/Toasts";
 import {
   blockedOn,
   blockedOnDetailLabel,
+  jobClockLabel,
   jobDotClass,
   jobLabel,
-  jobStartedLabel,
 } from "./consoleModel";
 import { JobLog } from "./JobLog";
 
@@ -48,7 +48,7 @@ export function JobDetail({ job, enabled }: JobDetailProps): ReactElement {
   }
 
   const canOpen = job.originId !== null;
-  const meta = `${job.status} · started ${jobStartedLabel(job.started)} · ${job.eventId}`;
+  const meta = `${job.status} · ${jobClockLabel(job)} · ${job.eventId}`;
   const blocker = blockedOn(job);
 
   /*

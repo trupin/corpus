@@ -193,6 +193,11 @@ export function threadFixture(overrides: Partial<Thread> = {}): Thread {
     anchor: null,
     agent: "none",
     resident: null,
+    // The server's answer to §10's interlock, not a derivation of it
+    // (CONTRACT-036). A fixture thread is read unless a test says otherwise,
+    // which is what lets a placement test name the unread case explicitly
+    // instead of inheriting it.
+    unread: false,
     turns: [],
     ...overrides,
   };
@@ -668,7 +673,11 @@ export function jobFixture(overrides: Partial<Job> = {}): Job {
     eventId: "evt_1",
     type: "comment.created",
     status: "pending",
-    started: "2026-07-01T10:05:00.000Z",
+    // Three instants, each meaning one thing (CONTRACT-029). The default row is
+    // `pending`, and a pending job has written no log line, so `started` is
+    // null — the enqueue instant is the one that is always known.
+    enqueued: "2026-07-01T10:05:00.000Z",
+    started: null,
     updated: "2026-07-01T10:05:00.000Z",
     lastLine: null,
     originId: null,

@@ -511,7 +511,7 @@ describe("the pending indicator", () => {
 
   /** The queue event a thread's ask enqueued, as `GET /api/jobs` shows it. */
   const askJob = (overrides: Partial<Job> = {}): Job =>
-    jobFixture({ originId: "th_a", started: ASKED_AT, ...overrides });
+    jobFixture({ originId: "th_a", enqueued: ASKED_AT, ...overrides });
 
   it("stays quiet after a note-only turn, whatever the thread's agent field says", async () => {
     // `agent: engaged` and a user turn last — the exact shape a "note only" reply
@@ -553,6 +553,37 @@ describe("the pending indicator", () => {
     });
     // Measured from the turn that asked, not from the note that followed it.
     expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  /**
+   * The clock does not restart when the agent begins talking (CONTRACT-029).
+   *
+   * This is what `agentWaitSince` used to buy with a heuristic — bounding
+   * `Job.started` by the newest turn that was not newer than it — because
+   * `started` carried the enqueue instant while the job was queued and the first
+   * log line's instant afterwards. The wire now separates the two, so the
+   * indicator reads `enqueued` and a job that sat fifteen minutes before saying
+   * anything still reports a fifteen-minute wait. Falsify by having
+   * `ThreadCard` pass `outstanding.job.started`: this expectation goes to the
+   * log line's instant.
+   */
+  it("does not restart the wait when the job writes its first log line", async () => {
+    const spoke = "2026-07-01T10:20:00.000Z";
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never] },
+          { jobs: [askJob({ status: "in-progress", started: spoke, updated: spoke })] },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    const since = container.querySelector(".working")?.getAttribute("data-working-since");
+    expect(since).toBe(ASKED_AT);
+    expect(since).not.toBe(spoke);
   });
 
   /**

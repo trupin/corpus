@@ -171,6 +171,20 @@ export function useReaderSurface({
    */
   const missing = useRef(reader.isMissing);
   missing.current = reader.isMissing;
+  /**
+   * Whether this read of the document **failed** — offline, a 500, a refusal —
+   * as distinct from the document not being there (UI-170).
+   *
+   * Read through a ref for the same reason {@link missing} is, and it is the same
+   * flag `DocView` draws its `.reader-error` card from. That card also declares
+   * itself arrived, so a reveal into it settles fast and truthfully concludes
+   * "the words are not on this surface" — which, turned into a sentence, said
+   * the quote had drifted off a document that is intact. The anchor may be
+   * perfectly sound; the read is what failed, and this is the only thing in the
+   * chain that knows the difference.
+   */
+  const unreadable = useRef(reader.error !== null);
+  unreadable.current = reader.error !== null;
 
   /**
    * Restoration, in a layout effect so the position is never painted wrong first.
@@ -219,14 +233,31 @@ export function useReaderSurface({
     state.applied = element.scrollTop;
   });
 
-  /*
+  /**
    * A new document clears the flash and nothing else.
    *
    * It used to clear the folds too, which is exactly what SPEC.md §10 now
    * forbids: a fold survives navigating away and back. The flash does not — it
    * is a 1.2 s pointer at one conversation on the document being left.
+   *
+   * **Keyed on the transition, not on the value** (UI-046). `[reader.docId]` is
+   * the right dependency and was the wrong condition: `StrictMode` invokes every
+   * effect twice on mount, so this ran *again after* the reveal below had lit a
+   * flash, and the reveal's one-shot guard (`revealed.current === reveal`)
+   * correctly refused to fire a second time. The flash was gone and the
+   * expansion sat there with nothing pointing at it — in `npm run dev` only, and
+   * only when the conversation list was already answered, which is the ordinary
+   * case for both of the reveal's producers.
+   *
+   * The ref remembers which document the flash was last cleared *for*, so a
+   * replay is a no-op and a real navigation is not. It starts on the mounting
+   * document because there is no flash on a fresh mount to clear, which is what
+   * makes "already cleared for this one" true rather than a shortcut.
    */
+  const flashCleared = useRef(reader.docId);
   useEffect(() => {
+    if (flashCleared.current === reader.docId) return;
+    flashCleared.current = reader.docId;
     setFlash(null);
   }, [reader.docId]);
 
@@ -397,16 +428,23 @@ export function useReaderSurface({
     /**
      * Spends the instruction, and says so when nothing was reached.
      *
-     * **A deleted document names its own absence** (UI-144). The search sees a
-     * surface and can only report that the words are not on it; whether there is
-     * a document behind that surface is this hook's fact, and it is read at the
-     * moment of giving up rather than at the start, because the document can be
-     * deleted while the reveal is still looking.
+     * **A deleted document names its own absence** (UI-144), **and a document
+     * that could not be read names its own** (UI-170). The search sees a surface
+     * and can only report that the words are not on it; whether there is a
+     * document behind that surface, and whether reading it worked, are this
+     * hook's facts. Both are read at the moment of giving up rather than at the
+     * start, because a document can be deleted — or a read can fail — while the
+     * reveal is still looking.
+     *
+     * Precedence: gone, then unreadable, then whatever the search concluded. A
+     * document that is not there and one that could not be read can neither of
+     * them be searched, so the search's verdict about them is not evidence.
      */
     const settle = (gaveUp: RevealGaveUp | null): void => {
       if (revealSearch.current === search) revealSearch.current = null;
       if (gaveUp !== null) {
-        notify.current(revealMissNotice(reveal, missing.current ? "gone" : gaveUp));
+        const reason = missing.current ? "gone" : unreadable.current ? "unreadable" : gaveUp;
+        notify.current(revealMissNotice(reveal, reason));
       }
       revealedCallback.current?.();
     };

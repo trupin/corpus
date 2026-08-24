@@ -597,7 +597,13 @@ export interface StubJob {
   /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
   readonly status: QueueEventStatus;
   /** When the event was enqueued — what the pending indicator counts from. */
-  readonly started: string;
+  readonly enqueued: string;
+  /**
+   * When the job first wrote a log line, or `null` for one that has written none
+   * (CONTRACT-029). Omitted means null: a seeded job is silent unless a spec
+   * says otherwise, which is the state a `pending` row is actually in.
+   */
+  readonly started?: string | null;
   readonly updated?: string;
   readonly lastLine?: string | null;
   /** The document or thread the event originated from. */
@@ -648,6 +654,21 @@ export interface StubOptions {
     readonly lastDigest?: string | null;
     readonly quiet?: number;
   };
+  /**
+   * What `POST …/archive` and `POST …/unarchive` report on §11's warning channel
+   * (UI-106).
+   *
+   * Seeded because it is not derivable here: the effect these warnings describe
+   * is a **folder move on disk** — §7 makes a skill's location its enablement,
+   * so archiving a folder disables every `SKILL.md` nested under it — and this
+   * suite has no workspace and no disk. What a browser can testify to is the
+   * half that is the UI's: which tone the toast wears, and whether the person is
+   * told which document was carried. The disk half stays the real-app drill's.
+   *
+   * Reported on both directions, since `carried_skill` arises on archive and
+   * `carried_reconciliation` on unarchive.
+   */
+  readonly archiveWarnings?: readonly Warning[];
 }
 
 /** The clock a stub reports unless a spec moves it — after every seeded write. */
@@ -1303,8 +1324,9 @@ export async function stubCorpus(
     eventId: job.eventId,
     type: job.type,
     status: job.status,
-    started: job.started,
-    updated: job.updated ?? job.started,
+    enqueued: job.enqueued,
+    started: job.started ?? null,
+    updated: job.updated ?? job.enqueued,
     lastLine: job.lastLine ?? null,
     originId: job.originId ?? null,
     originTitle: job.originId === undefined ? null : (store.get(job.originId ?? "")?.title ?? null),
@@ -1577,7 +1599,16 @@ export async function stubCorpus(
         origin === null
           ? matching.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS)
           : matching;
-      return json(route, { jobs: answer.map(asJob) } satisfies JobList);
+      /*
+       * `total` counts the matches before `recent` cut them, and `truncated`
+       * says whether it cut — the contract publishes both rather than leaving a
+       * windowed answer to read as a complete one.
+       */
+      return json(route, {
+        jobs: answer.map(asJob),
+        total: matching.length,
+        truncated: answer.length < matching.length,
+      } satisfies JobList);
     }
 
     /*
@@ -1604,7 +1635,7 @@ export async function stubCorpus(
       const lines =
         job.lastLine === undefined || job.lastLine === null
           ? []
-          : [{ ts: job.updated ?? job.started, line: job.lastLine }];
+          : [{ ts: job.updated ?? job.started ?? job.enqueued, line: job.lastLine }];
       const cursor = Number(url.searchParams.get("cursor") ?? "0");
       const from = Number.isFinite(cursor) && cursor > 0 ? cursor : 0;
       return json(route, {
@@ -2110,6 +2141,8 @@ export async function stubCorpus(
             anchor: selector === undefined ? null : anchorId,
             agent: thread.agent,
             resident: null,
+            // A conversation you just wrote holds nothing you have not seen.
+            unread: false,
             turns: [firstTurn],
           },
           anchorId: selector === undefined ? null : anchorId,
@@ -2712,6 +2745,13 @@ export async function stubCorpus(
         anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
         agent: doc.agent,
         resident: null,
+        /*
+         * The store's own flag, not a constant (CONTRACT-036). The seen route
+         * clears it and this read reports it, so a conversation read in one page
+         * session is still read after a reload — which is the whole of what
+         * `DocView` used to guess at with a module-level `Map`.
+         */
+        unread: doc.unread,
         // `turnsOf`, not the bare body parser: this is the read every thread
         // surface goes through, and it is where a turn learns which model wrote
         // it (SPEC.md §10).
@@ -2859,7 +2899,11 @@ export async function stubCorpus(
         // only way a spec can catch the board disagreeing with it.
         subject.status = verb === "archive" ? "archived" : "resolved";
         stampUpdated(subject);
-        return json(route, { doc: asDoc(subject), warnings: [] } satisfies DocMutationResponse);
+        return json(route, {
+          doc: asDoc(subject),
+          // §11's channel, seeded — see `StubOptions.archiveWarnings`.
+          warnings: [...(options.archiveWarnings ?? [])],
+        } satisfies DocMutationResponse);
       }
       const id = decodeURIComponent(rest);
       if (method === "DELETE") {

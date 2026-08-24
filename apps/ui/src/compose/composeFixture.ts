@@ -1,4 +1,4 @@
-import type { AgentLane, AgentRoster } from "@corpus/contract";
+import type { AgentLane, AgentRoster, Thread } from "@corpus/contract";
 import { unknownRecipientBody } from "../testing/serverRefusals";
 /**
  * A recording transport for the composer's suites.
@@ -178,10 +178,12 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
             status: "open",
             tags: [],
             agent: "requested",
+            resident: null,
+            unread: false,
             turns: [],
             created: "2026-07-28T10:00:00Z",
             updated: "2026-07-28T10:00:00Z",
-          },
+          } satisfies Thread,
           anchorId: null,
           eventId,
           warnings,

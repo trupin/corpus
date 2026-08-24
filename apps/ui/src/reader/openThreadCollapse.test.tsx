@@ -101,7 +101,14 @@ function wire(id: string, { parent, status = "open", unread = false }: Scenario)
         };
   return readerTransport({
     docs: [threadDoc(id), PARENT_DOC],
-    threads: [threadFixture({ id, parent, status, turns: TURNS })],
+    /*
+     * `unread` on the conversation as well as on the row, and the same value on
+     * both: the contract makes them the same comparison (CONTRACT-036), so a
+     * fixture where they disagreed would be testing a wire that cannot happen.
+     * The placement reads the conversation's — the row is here for the surfaces
+     * that list it.
+     */
+    threads: [threadFixture({ id, parent, status, unread, turns: TURNS })],
     rows: {
       ...rows,
       [threadsSearch(id)]: [],
@@ -224,19 +231,49 @@ describe("resolving a thread while it is the open document", () => {
   });
 
   /**
-   * A standalone thread has no parent to list, so there is no row to read
-   * `unread` off. The fallback is what this browser has displayed
-   * (`hasSeenMark`): before that the answer is **unknown** and the rule stands
-   * down, so it is placed open; once displayed, the answer is `read` and the
-   * resolve folds it.
+   * **The reload case, and the bug UI-169 closes.**
+   *
+   * A standalone thread has no parent to list, so there was no row to read
+   * `unread` off and the placement fell back to `hasSeenMark` — a module-level
+   * `Map` with a page session's lifetime. A fresh page has an empty one, so the
+   * answer was `unknown`, the rule stood down, and a resolved standalone thread
+   * opened **expanded** on its first visit after every reload however long ago
+   * it was read. `resetSeenMarks()` in `afterEach` is that empty map: this test
+   * renders into one, which is exactly the state a reload leaves behind.
+   *
+   * Falsify by restoring the fallback — the placement goes back to `unknown` and
+   * this expectation flips to `false`.
    */
-  it("collapses a standalone thread too, once the reader has been shown it", async () => {
+  it("is placed collapsed on a fresh page, with nothing in this session's seen marks", async () => {
+    const transport = wire("th_solo", { parent: null, status: "resolved" });
+    render(open("th_solo", transport));
+    await placed("th_solo");
+    // Before any mark this page could have sent — the server's answer alone.
+    expect(transport.of("POST", "/api/threads/th_solo/seen")).toHaveLength(0);
+    expect(isFolded("th_solo")).toBe(true);
+  });
+
+  /**
+   * The interlock still wins for a standalone thread: a resolved conversation
+   * holding an unseen turn is not folded by the rule (§10). Same placement, same
+   * source, opposite answer — which is what makes the test above a fact about
+   * the wire rather than about a constant.
+   */
+  it("is left open when a standalone thread holds a turn nobody has seen", async () => {
+    render(open("th_solo", wire("th_solo", { parent: null, status: "resolved", unread: true })));
+    await placed("th_solo");
+    expect(isFolded("th_solo")).toBe(false);
+  });
+
+  /**
+   * And the status change still re-asserts the rule where the reader can watch
+   * it happen — the standalone half of §10's "resolving a conversation collapses
+   * it even while it is open on screen".
+   */
+  it("collapses a standalone thread when it is resolved on screen", async () => {
     const transport = wire("th_solo", { parent: null });
     render(open("th_solo", transport));
     await placed("th_solo");
-    await waitFor(() => {
-      expect(transport.of("POST", "/api/threads/th_solo/seen")).toHaveLength(1);
-    });
     expect(isFolded("th_solo")).toBe(false);
 
     fireEvent.click(document.querySelector('[data-resolve="th_solo"]') as HTMLElement);
@@ -247,43 +284,33 @@ describe("resolving a thread while it is the open document", () => {
 });
 
 /**
- * PR #25 re-review, MAJOR — **the fallback no longer claims to know.**
+ * UI-169 — **the placement reads a field instead of guessing at one.**
  *
  * Read state is the server's (SPEC.md §7: `.corpus/seen.json`, and it "survives
- * browser changes"). Where this placement has no row it used to answer the
- * interlock with `!hasSeenMark(…)` — a module-level `Map` with a page session's
- * lifetime, reporting a conversation the server knows was read as carrying
- * something unseen. It reached the same placement §10's interlock would have
- * chosen, by asserting a fact it did not have; the honest answer is that it does
- * not know, and the rule stands down on that rather than on a guess.
+ * browser changes"), and `Thread.unread` is where it reaches this placement
+ * (CONTRACT-036). Two earlier sources are gone with it: the parent's thread list,
+ * which a standalone thread never appears in, and `hasSeenMark`, a module-level
+ * `Map` that could confirm a read and could never deny one.
  *
- * The mark can confirm a read and can never deny one, which is the whole of the
- * asymmetry below. A field on the thread resource deletes this branch:
- * `issues/contract/036-thread-unread-field.md`.
+ * `unknown` stays in the type and keeps its meaning — a read still in flight —
+ * and {@link DocView} declines to place the conversation until it lands, so the
+ * rule is never applied to it.
  */
 describe("what a thread opened as a document knows about its read state", () => {
-  const thread = threadFixture({ id: "th_x", parent: PARENT, turns: TURNS });
+  const thread = (unread: boolean) => threadFixture({ id: "th_x", unread, turns: TURNS });
 
-  it("reads the row when there is one, including its null", () => {
-    const row = (unread: boolean | null) =>
-      threadRowFixture({ id: "th_x", parent: PARENT, unread, turnCount: TURNS.length });
-    expect(openThreadReadState("th_x", thread, row(true))).toBe("unread");
-    expect(openThreadReadState("th_x", thread, row(false))).toBe("read");
-    expect(openThreadReadState("th_x", thread, row(null))).toBe("unknown");
+  it("reads the conversation's own field, both ways", () => {
+    expect(openThreadReadState(thread(true))).toBe("unread");
+    expect(openThreadReadState(thread(false))).toBe("read");
   });
 
-  it("answers `unknown` with no row and no mark, rather than guessing unread", () => {
-    // The reviewer's case: a standalone thread, read long ago on the server, in
-    // a browser that has not displayed it since the page loaded.
-    expect(openThreadReadState("th_x", thread, undefined)).toBe("unknown");
-  });
-
-  it("answers `read` for a conversation with nothing in it to have read", () => {
-    // Not a guess: `useMarkSeenOnce` never marks a turnless thread either,
-    // because there is nothing to record.
-    expect(openThreadReadState("th_x", threadFixture({ id: "th_x", turns: [] }), undefined)).toBe(
-      "read",
-    );
-    expect(openThreadReadState("th_x", undefined, undefined)).toBe("read");
+  /*
+   * Not a placement the rule ever sees — `placementKnown` gates on the same
+   * read — but the honest answer for a conversation that has not arrived is that
+   * nothing is known about it, and it is what stops a fold being decided on a
+   * `undefined` treated as false.
+   */
+  it("answers `unknown` while the conversation has not landed", () => {
+    expect(openThreadReadState(undefined)).toBe("unknown");
   });
 });
