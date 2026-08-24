@@ -33,7 +33,13 @@ const VIEW: StubRow = {
   // Wide enough that a capped body would leave a visible gutter, and well
   // inside `MAX_COLUMN_WIDTH`. Before the rider a column this size drew 517px
   // of prose and ~380px of nothing — the defect the rider deletes.
-  extra: { width: 900 },
+  //
+  // **And deliberately below the margin threshold** (UI-165): a column earns
+  // the margin from 880px of width, and the margin takes 330px out of the body
+  // it is measured against. Every test here but the margin one is about the
+  // body filling the *whole* column, so the fixture stays on the near side of
+  // that line and the one test that wants the margin drags across it.
+  extra: { width: 820 },
 };
 
 /** The same view at the shipped default width, for the "wider by default" claim. */
@@ -209,7 +215,7 @@ test.describe("the document body, in a column", () => {
     // …and so is everything measured with it — the title above the body, and
     // the panels below it, line up at the same edge.
     expect(Math.abs((await widthOf(page, ".reader .title-grow")) - room)).toBeLessThan(1.5);
-    expect(await widthOf(page, ".col.reading")).toBe(900);
+    expect(await widthOf(page, ".col.reading")).toBe(820);
 
     // No second gesture exists: nothing inside the column sizes text
     // independently of the column.
@@ -257,25 +263,65 @@ test.describe("the document body, in a column", () => {
   });
 
   /**
-   * The margin case: with anchored threads in the margin the body fills the
-   * room **left by** the margin — the `minmax(0, 1fr)` track of the
-   * `.reader-scroll.with-margin` grid, not the whole box and not less.
+   * The margin case, **reached by the only gesture there is** — the column's
+   * own edge (UI-165, user decision 2026-08-23).
    *
-   * **The class is applied by hand here, and that is stated rather than
-   * hidden.** Margin mode in a column requires `.doc-main` to measure at least
-   * `MARGIN_MIN_WIDTH` (1100px), and `MAX_COLUMN_WIDTH` is 960 — no gesture in
-   * the app reaches the state today. The stylesheet keeps the rule because the
-   * seam is real (`useAnchorLayer` toggles this exact class), so what is worth
-   * pinning is the geometry the stylesheet answers when it fires: the body's
-   * track is what the body fills.
+   * This test used to add `.with-margin` by hand and said so, because
+   * `MARGIN_MIN_WIDTH` was 1100 measured on `.doc-main` against a 960px
+   * `MAX_COLUMN_WIDTH`: §10's "wide layouts" clause was unreachable in a column
+   * at every width, and the only thing left to pin was the stylesheet's
+   * geometry. The threshold came down to 850 measured on the **host**, so the
+   * gesture exists now and the class is never touched here.
+   *
+   * Three claims, in one drag:
+   *
+   * 1. Below the threshold the conversation sits at its anchor, in the body.
+   * 2. Dragging the edge past it moves the conversation to the margin, and the
+   *    body fills the `minmax(0, 1fr)` track the margin leaves — not the whole
+   *    box and not less, which is the rider's rule under a two-column grid.
+   * 3. Dragging back returns it to the anchor. The placement follows the edge
+   *    in both directions, and it **settles**: a threshold measured on
+   *    `.doc-main` instead would toggle the class forever, because the margin's
+   *    330px comes out of the box being measured (62 mutations in 1500ms,
+   *    measured — see `MARGIN_MIN_WIDTH`).
    */
-  test("fills the track the margin leaves, when the margin grid is up", async ({ page }) => {
+  test("earns the margin by dragging its edge, and fills the track the margin leaves", async ({
+    page,
+  }) => {
     await openNote(page);
-    await page.locator(".reader .reader-scroll").evaluate((element) => {
-      element.classList.add("with-margin");
-    });
-    // One atomic read: the class is still up, and the body's box is the track's.
-    const geometry = await page.locator(".reader .reader-scroll").evaluate((element) => {
+    await page.locator(".reader .anchor-hl").waitFor();
+
+    const scroll = page.locator(".reader .reader-scroll");
+    const inTheBody = page.locator('.reader .doc-main [data-anchor-slot="th_1"]');
+    const inTheMargin = page.locator('.reader .focus-margin > [data-thread-panel="th_1"]');
+
+    // 820px of column: below the line, and the conversation is at its anchor.
+    await expect(scroll).not.toHaveClass(/with-margin/);
+    await expect(inTheBody).toHaveCount(1);
+    await expect(inTheMargin).toHaveCount(0);
+
+    const dragEdge = async (dx: number): Promise<void> => {
+      const resizer = page.locator(".col.reading .col-resizer");
+      const box = await resizer.boundingBox();
+      if (box === null) throw new Error("the column resizer has no box");
+      await page.mouse.move(box.x + 3, box.y + 40);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 3 + dx, box.y + 40, { steps: 12 });
+      await page.mouse.up();
+    };
+
+    // Out to the stop. `MAX_COLUMN_WIDTH` is 960 and the threshold is 880, so
+    // this is a width a pointer can actually reach.
+    await dragEdge(400);
+    await expect(page.locator(".col.reading")).toHaveCSS("width", "960px");
+    await expect(scroll).toHaveClass(/with-margin/);
+    await expect(inTheMargin).toHaveCount(1);
+    // …and the anchor's own slot in the body is gone with it: one conversation,
+    // one placement (SPEC.md §10).
+    await expect(page.locator(".reader .doc-main [data-anchor-slot]")).toHaveCount(0);
+
+    // One atomic read: the class is up, and the body's box is the track's.
+    const geometry = await scroll.evaluate((element) => {
       const style = getComputedStyle(element);
       const content =
         element.clientWidth -
@@ -291,6 +337,50 @@ test.describe("the document body, in a column", () => {
     expect(geometry.withMargin).toBe(true);
     expect(geometry.track).toBeGreaterThan(320);
     expect(Math.abs(geometry.body - geometry.track)).toBeLessThan(1.5);
+
+    // The card the drag just created is level with the highlight it belongs to
+    // — the same claim the focus-mode test below makes across its own resize,
+    // now that a column can hold a margin at all.
+    const offsets = await scroll.evaluate((element) => {
+      const main = element.querySelector(".doc-main");
+      const origin = main?.getBoundingClientRect().top ?? 0;
+      const anchor = main?.querySelector('.anchor-hl[data-thread="th_1"]') ?? null;
+      const placed = element.querySelector('.focus-margin > [data-thread-panel="th_1"]');
+      return {
+        anchorTop: anchor === null ? null : Math.round(anchor.getBoundingClientRect().top - origin),
+        cardTop: placed === null ? null : Math.round(placed.getBoundingClientRect().top - origin),
+      };
+    });
+    expect(offsets.anchorTop).not.toBeNull();
+    expect(offsets.cardTop).toBe(offsets.anchorTop);
+
+    // It settles. A threshold read off the shrinking box would be flipping the
+    // class dozens of times a second right here, and every measurement above
+    // would still have passed on whichever frame it happened to catch.
+    const mutations = await scroll.evaluate(
+      async (element) =>
+        new Promise<number>((resolve) => {
+          let count = 0;
+          const observer = new MutationObserver(() => {
+            count += 1;
+          });
+          observer.observe(element, { attributes: true, attributeFilter: ["class"] });
+          setTimeout(() => {
+            observer.disconnect();
+            resolve(count);
+          }, 600);
+        }),
+    );
+    expect(mutations, "the margin class is still toggling after the drag").toBe(0);
+
+    // Back in: the conversation returns to its anchor, and the body takes the
+    // whole box again.
+    await dragEdge(-300);
+    await expect(scroll).not.toHaveClass(/with-margin/);
+    await expect(inTheBody).toHaveCount(1);
+    await expect(inTheMargin).toHaveCount(0);
+    const room = await columnRoom(page);
+    expect(Math.abs((await widthOf(page, `.reader ${BODY}`)) - room)).toBeLessThan(1.5);
   });
 
   /**
@@ -410,7 +500,7 @@ test.describe("the document body's width, in full screen", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator(".focus.open")).toHaveCount(0);
     expect(Math.round(await widthOf(page, `.reader ${BODY}`))).toBe(columnBody);
-    await expect(page.locator(".col.reading")).toHaveCSS("width", "900px");
+    await expect(page.locator(".col.reading")).toHaveCSS("width", "820px");
 
     // Direction two: drag the column's edge. Full screen does not move.
     const resizer = page.locator(".col.reading .col-resizer");
@@ -468,7 +558,7 @@ test.describe("the document body's width, in full screen", () => {
     expect(await corpus.of("PUT")).toHaveLength(0);
     // …and the column's own width is untouched: the two are different gestures.
     await page.keyboard.press("Escape");
-    await expect(page.locator(".col.reading")).toHaveCSS("width", "900px");
+    await expect(page.locator(".col.reading")).toHaveCSS("width", "820px");
   });
 
   /**

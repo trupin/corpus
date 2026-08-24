@@ -230,8 +230,43 @@
   outline: none;
 }
 
+/*
+ * ── A turn is a conversation, on every surface ────────────────────────────
+ *
+ * UI-166, user decision 2026-08-23: *"A conversation reads the same in a column
+ * and in full screen, differing only in the room it has."*
+ *
+ * `Turn.tsx` puts `doc-body` beside `turn-markdown`, so every rule written for
+ * **document prose** reaches a **conversation** — and `.focus .doc-body` weighs
+ * two classes, which `Reader.css`'s one-class `.turn-markdown` cannot answer.
+ * A turn therefore arrived in full screen re-typeset by a selector nobody
+ * pointed at it: 13.5px against the column's 12.5px, and 1.7 leading against
+ * 1.5 (measured, 1600×900, before this rule). `design/index.html` has the
+ * opposite opinion and always did — its `.turn-body` is sans, carries no
+ * `doc-body`, and takes the card's own 12.5px in focus mode as in a column.
+ *
+ * The fix is this rule, which **names turns**, rather than a specificity war
+ * with `.focus .doc-body` or the removal of `doc-body` from `Turn.tsx` — the
+ * class is what gives a turn its markdown styling in the first place, all of
+ * `markdown.css`, and only these two declarations were ever unwanted.
+ *
+ * **`max-width` is deliberately not here.** `.focus .doc-body` puts
+ * `var(--doc-measure, 66ch)` on a turn, which resolves to 561.23px against a
+ * turn that measures 487.6px inside its card — so it does not bind, on either
+ * surface, in a card or in a thread opened as a document (all four measured,
+ * UI-166's log). Declaring `max-width: none` here would change nothing on
+ * screen while looking like a fix, which is worse than leaving the dead
+ * declaration where it is.
+ *
+ * **`.thread-conversation` is deliberately not here either.** Full screen does
+ * give the conversation *container* 16.5px, and that is not typography — it is
+ * the measure: `66ch` of 16.5px sans is the 685.94px `.doc-width-rail` matches
+ * so the drag handle sits on the body's own edge (`doc-width.spec.ts`). Every
+ * child of that container sets its own size, so the number reaches no text.
+ */
 .focus .turn-markdown {
-  font-size: 13.5px;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .focus .thread-card,

@@ -1587,8 +1587,8 @@ suite cannot confirm. Both halves stand without it.
 | UI-168 | A resident's weight cannot be chosen from the app at all | done | P0 | opus | — |
 | CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces | done | P1 | opus | — |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands | done | P1 | fable | — |
-| UI-165 | A column's thread margin cannot be reached by any gesture | todo | P2 | opus | UI-163 |
-| UI-166 | What full screen does to a turn's leading and measure | todo | P2 | opus | UI-156 |
+| UI-165 | A column's thread margin cannot be reached by any gesture | done | P2 | opus | UI-163 |
+| UI-166 | What full screen does to a turn's leading and measure | done | P2 | opus | UI-156 |
 | INFRA-032 | A tampered generated artifact survives a green local run | done | P2 | opus | — |
 | SERVER-147 | A designation is written without its identity | done | P1 | opus | CONTRACT-071 |
 | AGENT-050 | A listener does not check which designation it serves | todo | P1 | fable | CONTRACT-071, SERVER-147 |

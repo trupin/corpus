@@ -13,6 +13,7 @@ import { useIsEditing } from "../editor/editingRegistry";
 import { editorBody } from "../editor/editorBody.js";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
+import { MARGIN_COLUMN_RESERVE } from "../reader/docWidth";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { readStateOf } from "../thread/threadCollapse";
 import { restoredRecipient, type CommentRestore } from "./CommentPopover";
@@ -61,8 +62,77 @@ import { traceOfBody, traceOfDoc, type DocumentTrace } from "./traceCache";
  * over the wrong sentence — the one failure mode worse than no highlight.
  */
 
-/** Above this width a column reader is wide enough for margin cards. */
-export const MARGIN_MIN_WIDTH = 1100;
+/**
+ * The narrowest body the margin may leave behind: `62ch` of the shipped 15px
+ * serif, which is `.doc-body`'s own default measure in `@corpus/kit`'s
+ * `markdown.css`. Measured at 517.3px in Chromium (the rail reads 66ch of the
+ * 16.5px serif as 605.65px, so a `ch` is 0.5562 × the size), and rounded down.
+ *
+ * The rule it states: **the margin may take the room the document does not
+ * need, and never the room the document does.** Below this a column would be
+ * giving a conversation a column of its own at the cost of the prose it is
+ * about.
+ */
+const MARGIN_BODY_MIN = 520;
+
+/**
+ * The room a reader needs before its anchored conversations move to the margin
+ * (SPEC.md §10 — *"in focus mode and wide layouts, threads sit Docs-style in
+ * the right margin"*).
+ *
+ * **Measured on the host — the box the `.with-margin` grid is applied to — and
+ * never on `.doc-main`.** That is a correctness condition, not a preference.
+ * The margin's 330px comes *out of* `.doc-main`: a threshold read off
+ * `.doc-main` is a threshold the margin itself falsifies, so the class turns on,
+ * the body shrinks below the threshold, the class turns off, and the reader
+ * flickers forever. Measured live at a 900px column with the old `.doc-main`
+ * reading and a lowered constant: **62 class mutations in 1500ms**, settling on
+ * no margin at all (UI-165's log).
+ *
+ * The host's box is read border-box (`getBoundingClientRect`) less its own
+ * padding and border, so a scrollbar appearing inside it does not move the
+ * threshold either — the same flicker, one pixel wide, arriving by a different
+ * route.
+ *
+ * **Why 850 and not 1100** (UI-165, user decision 2026-08-23). `MAX_COLUMN_WIDTH`
+ * is 960 and a column's host content is its width less 30px, so 1100 was a
+ * threshold no drag could reach: §10's "wide layouts" clause was dead in a
+ * column at every width, and UI-163 could only prove the margin's geometry by
+ * applying the class by hand. 850 is {@link MARGIN_BODY_MIN} plus the margin's
+ * own {@link MARGIN_COLUMN_RESERVE}, so a column earns its margin from about
+ * 880px of width up to the 960px stop, and at the stop the body keeps ~600px.
+ *
+ * The cost is the user's, stated and accepted: a column at its widest reads
+ * narrower than full screen's default measure once the margin takes its 330px.
+ */
+export const MARGIN_MIN_WIDTH = MARGIN_BODY_MIN + MARGIN_COLUMN_RESERVE;
+
+/** A length off `getComputedStyle`, or 0 — jsdom answers `""` for all of them. */
+function cssPx(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * The element the `.with-margin` grid belongs to: focus mode's inner column, or
+ * the column reader's scroller. Both effects below resolve it through here, so
+ * the box that is *measured* and the box the class is *applied to* can never be
+ * two different elements.
+ */
+function marginHost(main: HTMLElement): Element | null {
+  return main.closest(".focus-inner") ?? main.parentElement;
+}
+
+/** The host's content box, read so that a scrollbar inside it changes nothing. */
+function marginRoom(host: Element): number {
+  const style = getComputedStyle(host);
+  const inset =
+    cssPx(style.paddingLeft) +
+    cssPx(style.paddingRight) +
+    cssPx(style.borderLeftWidth) +
+    cssPx(style.borderRightWidth);
+  return host.getBoundingClientRect().width - inset;
+}
 
 /** What a selection that cannot become an anchor is told (UI-068). */
 export const REFUSAL_NOTICE: Record<SelectionRefusal, string> = {
@@ -633,19 +703,25 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   useEffect(() => {
     const element = mainRef.current;
-    if (element === null || !editable) {
+    const host = element === null ? null : marginHost(element);
+    if (element === null || host === null || !editable) {
       setMarginMode(false);
       return undefined;
     }
-    // Focus mode is always wide enough; a column has to be measured.
-    const inFocus = element.closest(".focus-inner") !== null;
+    // Focus mode is always wide enough, and needs no observer to say so; a
+    // column has to be measured, and it is the **host** that is measured — see
+    // `MARGIN_MIN_WIDTH`, which will not survive being read off `.doc-main`.
+    if (element.closest(".focus-inner") !== null) {
+      setMarginMode(anchoredCount > 0);
+      return undefined;
+    }
     const decide = (): void => {
-      setMarginMode(anchoredCount > 0 && (inFocus || element.clientWidth >= MARGIN_MIN_WIDTH));
+      setMarginMode(anchoredCount > 0 && marginRoom(host) >= MARGIN_MIN_WIDTH);
     };
     decide();
     if (typeof ResizeObserver !== "function") return undefined;
     const observer = new ResizeObserver(decide);
-    observer.observe(element);
+    observer.observe(host);
     return () => {
       observer.disconnect();
     };
@@ -659,7 +735,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    */
   useEffect(() => {
     const element = mainRef.current;
-    const host = element?.closest(".focus-inner") ?? element?.parentElement ?? null;
+    const host = element === null ? null : marginHost(element);
     if (host === null) return undefined;
     host.classList.toggle("with-margin", marginMode);
     return () => {

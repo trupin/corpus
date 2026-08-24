@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P2 (nice-to-have)
@@ -89,15 +89,19 @@ it is the trade the margin always implied.
 
 ## Acceptance Criteria
 
-- [ ] The choice is made and written down, with the two rejected options and why
-      each lost.
-- [ ] If the answer changes a constant, a column can reach the margin **by
+- [x] The choice is made and written down, with the two rejected options and why
+      each lost. — "Decided by the user, 2026-08-23" above.
+- [x] If the answer changes a constant, a column can reach the margin **by
       dragging its edge**, and an e2e test proves it without touching the
-      stylesheet.
-- [ ] If the answer changes §10, the amendment is drafted, read back to the user,
-      and signed before it is applied.
-- [ ] UI-163's e2e spec stops reaching past a gesture, or says permanently why it
-      must.
+      stylesheet. — `doc-width.spec.ts` › "earns the margin by dragging its
+      edge, and fills the track the margin leaves". It drags
+      `.col.reading .col-resizer` and touches no stylesheet.
+- [x] If the answer changes §10, the amendment is drafted, read back to the user,
+      and signed before it is applied. — **n/a**: option 3 was rejected, so §10
+      is unchanged. The code moved to meet the text already signed.
+- [x] UI-163's e2e spec stops reaching past a gesture, or says permanently why it
+      must. — the `classList.add("with-margin")` call and the paragraph
+      explaining it are gone, replaced by the drag.
 
 ## Technical Design
 
@@ -139,18 +143,152 @@ watch the assertion flip.
 
 ## E2E Verification Log
 
+Implemented by **ui-dev on opus** (`claude-opus-5[1m]`), 2026-08-23, branch
+`phase-44-reach-and-size`. Every number below is `getBoundingClientRect` or
+`clientWidth` off a real Chromium page driven by Playwright against the Vite dev
+server on `CORPUS_UI_PORT=5399`, viewport 1600×900.
+
 ### Reproduction (bugs only)
-_[Agent fills]_
+
+A column reader holding one anchored conversation, opened with "Open here" so it
+takes the column's own width, at four widths. `withMargin` reads
+`.reader-scroll.classList`; `mainClient` is `.doc-main.clientWidth`, the number
+the old threshold was compared against.
+
+| column width | `.reader-scroll` content | `.doc-main` | `with-margin` | cards in margin |
+| --- | --- | --- | --- | --- |
+| 336 (default) | 306 | 306 | **false** | 0 |
+| 700 | 670 | 670 | **false** | 0 |
+| 900 | 870 | 870 | **false** | 0 |
+| 960 (`MAX_COLUMN_WIDTH`) | 930 | 930 | **false** | 0 |
+
+And by the gesture itself: from a 500px column, one pointer drag on
+`.col.reading .col-resizer` out past the stop.
+
+    BEFORE DRAG :: {"colWidth":500,"content":470,"withMargin":false,"cardsInMargin":0}
+    AFTER  DRAG :: {"colWidth":960,"content":930,"withMargin":false,"cardsInMargin":0}
+
+The drag reaches the stop and the margin never appears. `MARGIN_MIN_WIDTH` was
+1100 against a `.doc-main` that maxes out at 930 — the gap is 170px, and no
+gesture closes it. Confirmed as reported.
+
+### A defect found while fixing it — the naive change flaps forever
+
+Lowering the constant alone does **not** work, and this is why the fix is
+structural rather than one number. The threshold was read off `.doc-main`, and
+the margin's 330px comes *out of* `.doc-main`. So the moment the class goes on,
+the measured box drops below the threshold that turned it on.
+
+Measured: `MARGIN_MIN_WIDTH = 600`, still read off `.doc-main`, at a 900px
+column, counting `class` attribute mutations on `.reader-scroll` with a
+`MutationObserver`:
+
+    FLAP :: class mutations in 1500ms = 62
+    FLAP GEOMETRY :: {"colWidth":900,"content":870,"withMargin":false,"cardsInMargin":0}
+
+41 toggles a second, forever, settling on no margin at all. A user would see a
+flickering reader, not a margin.
+
+The threshold therefore moved to the **host** — the box the `.with-margin` grid
+is applied to, `.reader-scroll` in a column and `.focus-inner` in focus mode —
+whose width does not change when the grid comes up. It is read border-box
+(`getBoundingClientRect().width` less padding and border) so that a scrollbar
+appearing inside the host cannot move it either. `marginHost()` is now the one
+resolver for both effects, so the box that is measured and the box the class
+lands on can never be two different elements.
 
 ### Post-Implementation Verification
-_[Agent fills]_
+
+`MARGIN_MIN_WIDTH` is now `MARGIN_BODY_MIN (520) + MARGIN_COLUMN_RESERVE (330)`
+= **850**, measured on the host. 520 is `62ch` of the shipped 15px serif —
+`.doc-body`'s own default measure — so the rule reads: the margin may take the
+room the document does not need, never the room it does.
+
+Same four columns, after:
+
+| column width | host content | `.doc-main` | `with-margin` | body | margin box | cards in margin |
+| --- | --- | --- | --- | --- | --- | --- |
+| 336 | 306 | 306 | false | 306 | — | 0 |
+| 700 | 670 | 670 | false | 670 | — | 0 |
+| 900 | 870 | **540** | **true** | 540 | 300 | **1** |
+| 960 | 930 | **600** | **true** | 600 | 300 | **1** |
+
+The crossover, measured to the pixel — host content is the column's width less
+30px (2px of column border, 28px of `.reader-scroll` padding):
+
+| column width | host content | `with-margin` |
+| --- | --- | --- |
+| 860 | 830 | false |
+| 875 | 845 | false |
+| 878 | 848 | false |
+| **880** | **850** | **true** — body lands on exactly 520 |
+| 882 | 852 | true |
+
+**By the gesture** — from 820px, one drag out to the stop and one drag back:
+
+- Before: `with-margin` absent, `[data-anchor-slot="th_1"]` present in
+  `.doc-main`, `.focus-margin` absent.
+- After +400: `.col.reading` is `960px`, `with-margin` present,
+  `.focus-margin > [data-thread-panel="th_1"]` present, and **no**
+  `[data-anchor-slot]` left in the body — one conversation, one placement.
+- Body 600px against a track of 600px (|Δ| < 1.5), so the body fills the track
+  the margin leaves rather than the whole box.
+- The card is level with its highlight: `cardTop === anchorTop`, measured from
+  `.doc-main`'s own top.
+- **It settles**: 0 class mutations in 600ms after the drag.
+- After −300: `with-margin` gone, the slot back in the body, the body back to
+  the whole room.
+
+**The card stays level with its highlight across a resize** — the constraint
+this issue had to keep. `doc-width.spec.ts`'s focus-mode test drags the width
+handle +120 (a >150px body change) and re-asserts `cardTop === anchorTop`, the
+margin still 300px wide, and the margin still inside the scroller. Green.
+
+**The stylesheet is no longer touched by any test.** `doc-width.spec.ts`'s
+margin test used to `classList.add("with-margin")` by hand and said so; it now
+drags `.col.reading .col-resizer` and asserts what the app decides.
+
+### Falsification
+
+Both halves of the change were reverted in place and the test watched.
+
+1. `MARGIN_MIN_WIDTH` back to `1100` (host-measured) →
+   `earns the margin by dragging its edge` **fails**:
+   `expect(locator).toHaveClass(/with-margin/)` received `"reader-scroll"`.
+2. Threshold left at 850 but read off `element.clientWidth` (`.doc-main`) again
+   → the same test **fails** the same way: the flapping class is off on the
+   frame the assertion catches.
+3. `.focus .turn-markdown` reverted (UI-166's change, same session) → this
+   file's tests stay green, so the two changes are independent.
+
+### Suites run
+
+- `playwright doc-width.spec.ts cascade-order.spec.ts --workers=1` — **19
+  passed** (4.5m).
+- `playwright collapse.spec.ts anchor-layer.spec.ts turn-model.spec.ts
+  anchors.spec.ts --workers=1` — **50 passed** (6.7m). These are every other
+  spec that asserts on `.with-margin` or on a turn's placement. All of them use
+  default-width (336px) columns, so none crosses the new threshold.
+- `vitest run apps/ui packages/kit` — 4678 passed, 2 failed, both in
+  `apps/ui/src/main.test.tsx`. **Pre-existing and load-sensitive, not this
+  change**: on the committed tree the same file fails at 5040ms against a 5000ms
+  budget, and on this tree with `--testTimeout=30000` both tests pass in 7.4s
+  and 1.2s. Flagged to the orchestrator; it belongs with INFRA-020.
+- `eslint apps/ui packages/kit` clean, `prettier --check` clean, `tsc --noEmit`
+  clean in both workspaces.
+
+### Left for the orchestrator
+
+`MAX_COLUMN_WIDTH` (960) and the threshold (880 of column width) leave an 80px
+band in which a column has a margin. That is the direct consequence of choosing
+option 1 over option 2, and it is stated rather than widened.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
