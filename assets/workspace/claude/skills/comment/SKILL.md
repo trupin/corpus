@@ -91,26 +91,32 @@ state, and it is stated there alone.**
 
 ## Gather context
 
-**Start from the briefing.** One command tells you what the conversation is about and what
-else in the corpus bears on it:
+**Start from the briefing.** Two reads tell you what the conversation is about, what else in
+the corpus bears on it, and what was asked. Neither wants the other's answer, so they go as
+one invocation:
 
 ```bash
-corpus thread context th_4b8e2c
+corpus batch <<'CORPUS_EOF'
+[["thread","context","th_4b8e2c"],["thread","show","th_4b8e2c"]]
+CORPUS_EOF
 ```
 
 That is the default context for every event that reaches this skill, and it is the first thing
-you run. The **context pack** it prints comes in reading order: the parent block — the anchored
-quote with the **whole enclosing section** around it, or a whole-document thread's title and
-opening content, or nothing at all when the thread stands alone — then the excerpts most
-related to this conversation from elsewhere in the corpus, one line each (id, heading path,
+you run. **What a batch is, and when a run may go as one, is the orchestrate skill's to state,
+and it is stated there alone.**
+
+`corpus thread context` prints the **context pack**, in reading order: the parent block — the
+anchored quote with the **whole enclosing section** around it, or a whole-document thread's
+title and opening content, or nothing at all when the thread stands alone — then the excerpts
+most related to this conversation from elsewhere in the corpus, one line each (id, heading path,
 relation, excerpt, and never a body), then a `#` note when the parent text was cut to fit or
 the ranking was degraded. The pack is bounded, so briefing yourself costs about the same on a
 corpus of fifty documents and one of fifty thousand.
 
-Then read the conversation itself. `corpus thread show <threadId>` prints every turn, oldest
-first: the request is the turn at `turnTs`, and the turns before it are the context you must
-not contradict. **Those two reads are the whole default.** Stop there when you can restate the
-request in your own words and point at the text it is about.
+The second read is the conversation itself. `corpus thread show <threadId>` prints every turn,
+oldest first: the request is the turn at `turnTs`, and the turns before it are the context you
+must not contradict. **Those two reads are the whole default.** Stop there when you can restate
+the request in your own words and point at the text it is about.
 
 Two rules still govern where any read comes from, pack or no pack:
 
@@ -480,6 +486,27 @@ Rules:
   restating the question, no apologising.
 - **Write like a colleague**, in plain sentences. Say what you did and what you concluded; if
   something is uncertain, say which part and why.
+
+**The reply is the last of a run, so send the run as one invocation.** The write, the job-log
+line recording it and the reply are all settled before any of them goes: you wrote the reply
+out of what you had already read, not out of what the write prints. So they are one batch
+rather than three, and the person waits about a second less for the same work.
+
+```bash
+corpus batch --from agent <<'CORPUS_EOF'
+[["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
+ ["job","log","evt_7c1d9a","edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"],
+ ["thread","reply","th_4b8e2c","--model","claude-sonnet-4-5","-m","6.4% is more representative for a 30-year fixed today. Updated the assumption in [[doc_a1b2c3]].\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+CORPUS_EOF
+```
+
+Two things bound that, both about the reply rather than the writes. **Read what the report says
+each entry did before you take your own turn at its word**: the reply posts whether or not the
+write above it landed, so a refused patch leaves a turn claiming a change nobody made. Post a
+second turn naming what did not land and do the write again — a wrong turn left standing costs
+the person more than two turns do. And **a run never shortens a reply.** Where the body carries
+a fenced deliverable, or is long for one JSON string, the reply stays its own heredoc and the
+batch is the writes in front of it. One invocation is not worth a turn cut to fit an array.
 
 ## Engagement and closure
 

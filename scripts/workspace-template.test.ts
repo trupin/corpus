@@ -724,6 +724,7 @@ describe("skills", () => {
         "purpose",
         "invariants",
         "command's help",
+        "one invocation",
         "the loop",
         "claiming",
         "routing",
@@ -1797,7 +1798,11 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(18);
+    // 19 since AGENT-051 added *Several commands in one invocation*, beside
+    // *Reading a command's help*: both are conventions for talking to the CLI
+    // at all rather than rules about one verb, and both are single-owner rules
+    // the other skills point at.
+    expect(sections.size).toBe(19);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -3324,7 +3329,51 @@ describe("orchestrate skill body", () => {
       expect(flat).toMatch(/run the same command with \*\*no `--since` at all\*\*/);
       expect(flat).toMatch(/\*\*Read a document only when its list line is not enough\.\*\*/);
       expect(flat).toMatch(/\*\*Your own writes are not new work\.\*\*/);
-      expect(flat).toMatch(/carries `lastActor` on every row/);
+      expect(flat).toMatch(/`lastActor` on every row is what tells the two apart/);
+    });
+
+    /**
+     * AGENT-051 — CLI-065 shipped `--fields` and named this listing as the one
+     * caller that would collect it: measured on a 20-document window, 203.6
+     * tokens a row whole against 59.6 for the nine fields the paragraphs below
+     * the command actually read. The pin has two halves, and the second is the
+     * one that matters. **The projection must not drop a field the section goes
+     * on to read** — a missing field is simply absent from the row, with no
+     * error anywhere, so a saving taken by naming one field fewer than the
+     * prose reads is a bug that looks like a saving. So the field list is
+     * derived from the section's own sentences here, not spelled by hand.
+     */
+    it("asks the window read for the fields it goes on to read, and no others", () => {
+      const command = /corpus doc list --since \S+ ([^\n]*)/.exec(section)?.[1] ?? "";
+      expect(command, "the window read no longer names --json").toContain("--json");
+      const fields = (/--fields (\S+)/.exec(command)?.[1] ?? "").split(",");
+      expect(fields.length, "the window read asks for whole rows again").toBeGreaterThan(1);
+
+      // What the section says it reads off a row, each keyed to the sentence
+      // that reads it. A sentence rewritten to read something new fails here
+      // until the projection is widened to carry it.
+      const readsFromARow: readonly (readonly [string, RegExp])[] = [
+        ["id", /`corpus doc show <id>` is the deliberate second act/],
+        ["title", /The row carries the title/],
+        ["type", /the row carries[^.]*the\s+type/i],
+        ["path", /the folder \(its `path`\)/],
+        ["status", /the stage, the status/],
+        ["stage", /the stage, the status/],
+        ["tags", /the tags, the stage/],
+        ["excerpt", /the status and an excerpt/],
+        ["lastActor", /`lastActor` on every row is what tells the two apart/],
+      ];
+      for (const [field, sentence] of readsFromARow) {
+        expect(flat, `the section no longer reads ${field}`).toMatch(sentence);
+        expect(fields, `the projection drops ${field}, which the section reads`).toContain(field);
+      }
+      expect(
+        fields.filter((field) => !readsFromARow.some(([name]) => name === field)),
+        "the projection pays for a field no sentence in the section reads",
+      ).toEqual([]);
+      // The human tally line is gone under `--json`, so the section has to name
+      // what replaced it or the second page is never fetched.
+      expect(flat).toMatch(/the `page` object beside\s+the items says so/);
     });
 
     it("says a failure leaves the clock, and an ask is never doubled", () => {
@@ -6289,6 +6338,257 @@ describe("profile skill body", () => {
 });
 
 /**
+ * AGENT-051 — `corpus batch` shipped in v0.21.0 (CLI-064) and nothing invoked
+ * it. Measured on the comment skill's own worked event, its seven commands cost
+ * seven process starts, and the same seven sent as three invocations run 3.6×
+ * faster. What is pinned here is not the saving, which is CLI-064's, but the
+ * three ways a skill can take it and be wrong:
+ *
+ * - **A batch entry is invisible to `cli command references`.** That sweep sees
+ *   lines beginning with `corpus`, and an entry is a JSON array inside a
+ *   heredoc, so a verb or a flag that does not exist would sail past it. Every
+ *   entry is resolved against `docs/cli.md` here instead.
+ * - **Nothing threads a result from one entry into the next**, and a skill that
+ *   assumed otherwise fails in a shape the per-command report makes look like
+ *   an ordinary success. CLI-064's own first run hit it: the batch held a read
+ *   and the patch that quoted it, and the patch matched nothing.
+ * - **A batch is not a transaction.** §4's commit window may fold its writes
+ *   into one git commit anyway, so a skill that saw that and inferred atomicity
+ *   would be relying on timing. The owner says so in as many words.
+ *
+ * The dependency pin is a net rather than a proof, in the same sense as the
+ * single-owner detectors below: it knows two producers whose output a later
+ * entry would plainly want — a read that prints a key and the text to quote,
+ * and a creation that prints an id — and it does not know a third. Widen it the
+ * day a skill finds one.
+ */
+describe("a run of commands as one invocation (AGENT-051)", () => {
+  const surface = readCliDoc();
+
+  interface BatchBlock {
+    readonly label: string;
+    /** The flags on the `corpus batch` invocation itself. */
+    readonly invocation: string;
+    readonly entries: readonly (readonly string[])[];
+  }
+
+  /** Every `corpus batch <<'CORPUS_EOF' … CORPUS_EOF` block in the template tree. */
+  const batchBlocks = (label: string, source: string): BatchBlock[] =>
+    [...source.matchAll(/corpus batch([^\n]*)<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g)].map(
+      (match) => {
+        const payload = match[2] ?? "";
+        let entries: unknown;
+        try {
+          entries = JSON.parse(payload);
+        } catch (cause) {
+          throw new Error(`${label}: a batch payload is not JSON\n${payload}`, { cause });
+        }
+        if (
+          !Array.isArray(entries) ||
+          entries.some(
+            (entry) => !Array.isArray(entry) || entry.some((word) => typeof word !== "string"),
+          )
+        ) {
+          throw new Error(`${label}: a batch payload is not an array of argv arrays`);
+        }
+        return { label, invocation: match[1] ?? "", entries: entries as string[][] };
+      },
+    );
+
+  const allBlocks: readonly BatchBlock[] = templateFiles
+    .filter((file) => file.endsWith(".md"))
+    .flatMap((relPath) => batchBlocks(relPath, readTemplateFile(relPath)));
+
+  const verbOf = (entry: readonly string[]): string =>
+    normalizeInvocation([...entry], surface) ?? entry.join(" ");
+
+  it("ships batches at all, in both loop skills that make a run of calls", () => {
+    // Anti-vacuity: every pin below is over `allBlocks`, so an empty list would
+    // make the whole describe pass while nothing collected CLI-064's saving.
+    expect(allBlocks.length, "no skill sends a run of commands as one").toBeGreaterThan(4);
+    const files = new Set(allBlocks.map(({ label }) => label));
+    expect([...files]).toContain("claude/skills/orchestrate/SKILL.md");
+    expect([...files]).toContain("claude/skills/comment/SKILL.md");
+    expect([...files]).toContain("claude/skills/comment/references/worked-examples.md");
+  });
+
+  it("resolves every batch entry against docs/cli.md, which the `corpus …` sweep cannot see", () => {
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        const command = verbOf(entry);
+        expect(
+          surface.commands.has(command) || surface.topics.has(command),
+          `${label}: batch entry \`${entry.join(" ")}\` is not a command docs/cli.md documents`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("puts nothing in an entry that the batch invocation owns", () => {
+    // Each of these refuses the whole array at exit 2, before anything runs.
+    const invocationFlags = [
+      "--json",
+      "--help",
+      "-h",
+      "--version",
+      "--no-color",
+      "--verbose",
+      "--workspace",
+    ];
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        for (const flag of invocationFlags) {
+          expect(
+            entry,
+            `${label}: \`${flag}\` belongs to the invocation, not to an entry`,
+          ).not.toContain(flag);
+        }
+        expect(
+          ["batch", "init", "upgrade"],
+          `${label}: \`${entry[0] ?? ""}\` may not be a batch entry`,
+        ).not.toContain(entry[0]);
+      }
+    }
+  });
+
+  it("never parks inside a batch", () => {
+    // `corpus queue idle` holds the array for its whole ~8-minute window, and
+    // *The loop* already forbids chaining it to the claim. An array is a chain.
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        expect(verbOf(entry), `${label}: a batch that parks is a loop that stops`).not.toBe(
+          "queue idle",
+        );
+      }
+    }
+  });
+
+  /**
+   * The dependency rule, mechanically. Two producers, each with the consumer
+   * whose input it would have been:
+   *
+   * - `doc show` prints the **key** a whole-body write presents and the bytes a
+   *   patch quotes, so no `--key` and no `--old` may sit in the same array.
+   * - `doc create` prints the **id** a reply refers to, so no `[[…]]` ref may.
+   */
+  const dependsOnAnEarlierEntry = ({ entries }: BatchBlock): string[] => {
+    const offences: string[] = [];
+    entries.forEach((entry, index) => {
+      const before = entries.slice(0, index);
+      const producedAKey = before.some((earlier) => verbOf(earlier) === "doc show");
+      const producedAnId = before.some((earlier) => verbOf(earlier) === "doc create");
+      if (producedAKey && entry.some((word) => word === "--key" || word === "--old")) {
+        offences.push(
+          `entry ${index + 1} wants the key or the text an earlier \`doc show\` printed`,
+        );
+      }
+      if (producedAnId && entry.some((word) => word.includes("[["))) {
+        offences.push(`entry ${index + 1} names a ref an earlier \`doc create\` printed`);
+      }
+    });
+    return offences;
+  };
+
+  it("threads no entry's output into another entry's input", () => {
+    for (const block of allBlocks) {
+      expect(dependsOnAnEarlierEntry(block), block.label).toEqual([]);
+    }
+  });
+
+  it("reports the dependency it is looking for, and says which one it misses", () => {
+    // The claim above, executable — CLI-064's own first run, which put a read
+    // and the patch quoting it in one array and got `patch_no_match`.
+    const shipped: BatchBlock = {
+      label: "cli-064's first run",
+      invocation: " ",
+      entries: [
+        ["doc", "show", "doc_a1b2c3"],
+        ["doc", "patch", "doc_a1b2c3", "--old", "6.1%", "--new", "6.4%"],
+      ],
+    };
+    expect(dependsOnAnEarlierEntry(shipped), "the pin would have passed over it").not.toEqual([]);
+    // And the gap, stated out loud rather than left to be discovered: a second
+    // whole-body write in one array wants the key the first one printed, and
+    // nothing here knows that. If somebody teaches the pin, this fails and the
+    // docblock's admission gets corrected with it.
+    const twoBodies: BatchBlock = {
+      label: "two whole-body writes in one array",
+      invocation: " ",
+      entries: [
+        ["doc", "edit", "doc_a1b2c3", "--key", "abc", "-m", "first"],
+        ["doc", "edit", "doc_a1b2c3", "--key", "def", "-m", "second"],
+      ],
+    };
+    expect(
+      dependsOnAnEarlierEntry(twoBodies),
+      "the pin now catches a case the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("states who is acting once, on the invocation", () => {
+    // CLI-064: `--from` on the batch applies to every entry, and an entry's own
+    // wins over it. So a mutating array says it once and no entry repeats it.
+    for (const { label, invocation, entries } of allBlocks) {
+      const mutates = entries.some((entry) =>
+        /^(doc (?:patch|edit|create|move|archive|unarchive)|thread (?:reply|create|resolve)|job log)$/.test(
+          verbOf(entry),
+        ),
+      );
+      if (!mutates) continue;
+      expect(invocation, `${label}: a batch that writes does not say who is acting`).toContain(
+        "--from agent",
+      );
+      for (const entry of entries) {
+        expect(
+          entry,
+          `${label}: an entry repeats the \`--from\` the invocation already carries`,
+        ).not.toContain("--from");
+      }
+    }
+  });
+
+  it("says a batch is not a transaction, where the rule lives", () => {
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+    expect(orchestrate).toMatch(
+      /\*\*A batch is not a transaction, and nothing in it rolls back\.\*\*/,
+    );
+    expect(orchestrate).toMatch(/reading it\s+as atomicity/);
+    expect(orchestrate).toMatch(/\*\*So read the report, never the exit code alone\.\*\*/);
+    expect(orchestrate).toMatch(/reported as \*\*never\s+run\*\*/);
+    // CLI-066, measured against the packaged binary: a heredoc and a pipe are
+    // read, and a socket — which is what `spawnSync({ input })` gives a child —
+    // is refused at exit 2 with nothing sent. A skill that said "a pipe is
+    // refused" would send somebody looking for a defect that is not there.
+    expect(orchestrate).toMatch(/arrives on a heredoc or a pipe\*\*, which are the two transports/);
+    expect(orchestrate).toMatch(/A\s+socket is never one/);
+  });
+
+  it("collects the saving where the comment skill's calls actually are", () => {
+    const body = documentAt("claude/skills/comment/SKILL.md").body;
+    const blocks = batchBlocks("comment", body);
+    // The opening reads: two commands, one invocation, the all-reads shape.
+    const opening = blocks.find(({ entries }) =>
+      entries.every((entry) => verbOf(entry).startsWith("thread ")),
+    );
+    expect(opening?.entries.map(verbOf), "the two opening reads are still two invocations").toEqual(
+      ["thread context", "thread show"],
+    );
+    // The write tail: the write, the log line and the reply.
+    const tail = blocks.find(({ entries }) =>
+      entries.some((entry) => verbOf(entry) === "thread reply"),
+    );
+    expect(tail?.entries.map(verbOf), "the write tail is still three invocations").toEqual([
+      "doc patch",
+      "job log",
+      "thread reply",
+    ]);
+    // And the two rules that bound it, both about the reply rather than the writes.
+    expect(body).toMatch(/before you take your own turn at its word/);
+    expect(body).toMatch(/\*\*a run never\s+shortens a reply\.\*\*/);
+  });
+});
+
+/**
  * AGENT-032 — the class rather than the instance.
  *
  * Four review findings in three passes have come from one rule written into two
@@ -6626,6 +6926,16 @@ describe("one rule, one skill", () => {
   const HELP_WHOLE_REGISTER =
     /\b(?:whole|full) (?:help|text|register|form|description|prose)\b|\bthe prose\b|\bworked examples?\b/i;
 
+  // AGENT-051. The compound invocation. The naming half is deliberately loose —
+  // `batch` is also what both loop skills call a claimed set of events, and
+  // `array` is ordinary — because the **explaining** half is what makes the
+  // pair specific: none of those phrases turns up in prose about the event
+  // batch. Measured over the four skills as they stand: 6 sentences in
+  // `orchestrate`, 0 in each of the others.
+  const BATCH_MECHANISM = /\bbatch\b|\barray\b/i;
+  const BATCH_EXPLAINED =
+    /not a transaction|rolls? back|atomicity|never\s+run\b|exit `?11`?|owns stdin|fixed before the first|wins over|no shell reads/i;
+
   const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
     {
       rule: "how a second listener finds out it is second",
@@ -6807,6 +7117,43 @@ describe("one rule, one skill", () => {
         },
       ],
     },
+    {
+      // AGENT-051. `corpus batch` is the third convention about talking to the
+      // CLI at all rather than about one verb, after the help register and the
+      // shell rule, and it goes to the same owner for the same reason. What a
+      // consumer needs out of it is the outcome — *send this run as one* — and
+      // the shape of the array at its own call site. What it may not do is give
+      // a second account of the constraints, because those are what a rewrite
+      // gets subtly wrong: an entry cannot read another's output, the array is
+      // not a transaction, and the report rather than the exit code says what
+      // happened.
+      //
+      // The detector wants a sentence that names the mechanism and **explains**
+      // it. Naming a batch alone is what a call site does, so `comment` stays
+      // off the pin while it says *send the run as one* and *read what the
+      // report says each entry did* — the outcomes it relies on. The word
+      // `report` is deliberately absent from the explaining vocabulary for that
+      // reason: a consumer has to be able to tell an agent to read one.
+      //
+      // Net, not proof, in the same sense as the rules above: a restatement
+      // that avoids the vocabulary — *"a command in the array cannot see what
+      // the one above it printed"* — states the rule and matches nothing here,
+      // and the test below says so out loud.
+      rule: "how a run of commands goes as one invocation",
+      owner: "orchestrate",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => BATCH_MECHANISM.test(sentence) && BATCH_EXPLAINED.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**What a batch is, and when a run may go as one, is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -6900,6 +7247,37 @@ describe("one rule, one skill", () => {
     expect(
       writing?.restatements(
         "Create the persona document, then set the two fields Claude Code reads.",
+      ) ?? ["unchecked"],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches a second account of the batch, and says which paraphrase it misses", () => {
+    // AGENT-051. The failure this guards is a second skill acquiring its own
+    // account of the constraints — which is how one of them would come to say
+    // that a batch's writes land together, on the strength of §4's window
+    // folding them into one commit. The three below are the shapes such an
+    // account is written in.
+    const compound = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a run of commands"),
+    );
+    expect(compound, "the compound invocation is no longer registered").toBeDefined();
+    const caught = [
+      "Remember that a batch is not a transaction: a write that landed stays landed.",
+      "The array is fixed before the first command runs, so nothing can read what the one above it printed.",
+      "An entry may not carry `--from`, or rather its own wins over the batch's.",
+    ];
+    for (const sentence of caught) {
+      expect(
+        compound?.restatements(sentence) ?? [],
+        `a second account of the batch now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    // The gap the docblock admits: an account that names neither the mechanism
+    // by one of its two words nor a constraint by one of its phrases.
+    expect(
+      compound?.restatements(
+        "A command sent together with others cannot see what the one above it printed.",
       ) ?? ["unchecked"],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
     ).toEqual([]);

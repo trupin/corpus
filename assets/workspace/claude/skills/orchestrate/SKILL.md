@@ -124,6 +124,67 @@ names the command that prints the whole text. So **start brief, and go on when t
 does not answer you** — never the other way round, and never on the theory that a verb you
 have not used today owes you the tutorial.
 
+## Several commands in one invocation
+
+**Every `corpus` invocation pays its startup before it does any work, so a run of commands
+costs more in process starts than in the work itself.** `corpus batch` takes a JSON array of
+argv on stdin — each entry exactly the words you would have given `corpus`, without the word
+`corpus` — runs them in order inside one process, and reports what each one did.
+
+```bash
+corpus batch --from agent <<'CORPUS_EOF'
+[["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
+ ["job","log","evt_7c1d9a","edited doc_a1b2c3 — rate assumption 6.1% to 6.4%"],
+ ["thread","reply","th_4b8e2c","--model","claude-opus-4-1","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+CORPUS_EOF
+```
+
+**One condition decides whether a run may go this way: no entry may need what an earlier entry
+printed.** The array is fixed before the first command runs and nothing threads a result from
+one entry into the next, so a key a read would have handed you, an id a creation would have
+returned, a passage a read would have given you to quote — none of those exist yet when you
+write the array. A run that needs one is two invocations, and the second of them may itself be
+a batch. Treat that as a hazard rather than a caution: nothing refuses such an array, the
+entry that needed the missing value fails on its own, and every entry around it still
+succeeds, so the shape of the report looks much like a good one.
+
+**A batch is not a transaction, and nothing in it rolls back.** Every command that succeeded
+stays done, whatever fails after it. The server gathers a party's writes into one commit while
+its window is open, so several of a batch's writes may well land in one git commit — measured,
+three of them did. That is timing, and reading it as atomicity is how a half-applied change
+gets reported to somebody as a whole one.
+
+**So read the report, never the exit code alone.** Exit `0` says every command ran and
+succeeded. Anything else is exit `11`, which says only that something went wrong. A failure
+about one command — a missing id, a stale key, a refused patch — costs that command alone and
+the entries after it still run. A failure about the run — the server unreachable, the token
+rejected — ends the batch where it happens, and every remaining entry is reported as **never
+run** rather than as failed, because each would have failed the same way.
+
+Four things about the grammar, each a refusal when you get it wrong:
+
+- **`--from agent` goes on the batch, once.** It applies to every entry, and an entry's own
+  `--from` wins over it. That is invariant 2 satisfied at the invocation rather than weakened:
+  one statement of who is acting, covering everything the invocation does.
+- **The batch owns stdin, so an entry cannot take a body from there.** A body rides as a `-m`
+  value inside the entry, a JSON string with `\n` for its line breaks. No shell reads those
+  tokens at all, so somebody's words arrive intact without the construction *Writing a
+  document* requires of a flag.
+- **The array itself arrives on a heredoc or a pipe**, which are the two transports read. A
+  socket is never one: `spawn`, `exec` and a harness handing a child its input all give one,
+  and the array is then refused at exit `2` before a byte of it is read. Anything driving this
+  loop from a script has to hand the array over one of the two that are read.
+- **An entry may not carry `--json`, `--help`, `--version`, `--no-color`, `--verbose` or
+  `--workspace`** — those belong to the invocation — and may not be `batch` itself or
+  `corpus init`. Each refuses the whole array at exit `2`, before anything runs, as do an
+  empty array and one of more than two hundred commands.
+
+**Three things are never entries.** `corpus queue idle` parks, and an array holds for the whole
+park exactly as a shell would — *The loop* forbids chaining it to the claim, and an array is a
+chain. Dispatch is not a command at all, so nothing can carry it. And the claim stays its own
+invocation: under `corpus batch --json` its payload comes back as `null` rather than as the
+batch you are owed, which is a silent loss of the one thing step 4 exists to read.
+
 ## The loop
 
 **This is a procedure, not a script**, and the difference is the difference between the loop
@@ -1423,6 +1484,21 @@ already holding. `--references doc_a1b2c3` narrows a search to the documents tha
 at it. Both verbs print ids, heading paths and snippets; open a body with
 `corpus doc show <id>` only where a snippet restates the old claim, and open at most three.
 
+**Those lookups are one invocation, not four.** You know every query before you run any of
+them — they come from the diff, and no lookup here reads another's answer — so this is the
+shape *Several commands in one invocation* is for, at its cheapest and safest:
+
+```bash
+corpus batch <<'CORPUS_EOF'
+[["doc","related","doc_a1b2c3","--limit","5"],
+ ["search","6.1%","--limit","5"],
+ ["search","rate assumption","--references","doc_a1b2c3","--limit","5"]]
+CORPUS_EOF
+```
+
+The reads you then decide on — the at most three `corpus doc show` calls — go the same way,
+in one more invocation, because you have chosen all three ids before you open any of them.
+
 **4 — Update, log, or ask, and lean to logging.** Three outcomes, and only the third one is a
 thread. **Update** another document when the correction is mechanical and entailed — the same
 fact, stated the same way, now wrong, with exactly one way to write the new one: the rate this
@@ -1622,26 +1698,38 @@ timestamp and nothing else — no document list, no diff, no summary. One comman
 window:
 
 ```bash
-corpus doc list --since 2026-08-21T09:00:00Z
+corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,type,title,path,status,stage,tags,excerpt,lastActor
 ```
 
 `since` is `null` for a corpus nobody has reflected on yet. That means **everything**, so run
 the same command with **no `--since` at all** rather than with an empty value. The list
 excludes archived documents by default, which is the right default here: an archived document
-has been put away rather than left waiting. The list is paginated and its last line says so —
-read the next page with `--offset` when the window is wider than one page.
+has been put away rather than left waiting. The list is paginated and the `page` object beside
+the items says so — read the next page with `--offset` when the window is wider than one page.
+
+**`--fields` names the nine the paragraphs below read, and asking for the row whole is the
+expensive mistake here.** A full `--json` row carries around thirty-five fields — every
+excerpt, every last-turn preview, every board key — and measured on a twenty-document window
+it costs 203.6 tokens a row against 59.6 for the nine named above. A five-hundred-document
+window is the difference between reading a novel and reading a page. Name a field the moment
+one of these paragraphs starts reading it, and drop one the moment none of them does: a field
+the projection omits is simply absent from the row, with no error anywhere, so the list is
+what these paragraphs need and nothing else. `--fields` needs `--json`, and a name no row
+carries is a usage error listing the real ones before any request is sent.
 
 **Read a document only when its list line is not enough.** The row carries the title, the
-type, the folder, the tags, the stage, the status and an excerpt, and for a great many changes
-that is the whole story. `corpus doc show <id>` is the deliberate second act, taken on the few
-ids that earned it, and `corpus doc diff <id>` shows what moved in one of them without the
-document around it. A reflection that reads every document in its window has turned a cheap
-act into an expensive one and learned very little more.
+type, the folder (its `path`), the tags, the stage, the status and an excerpt, and for a great
+many changes that is the whole story. `corpus doc show <id>` is the deliberate second act,
+taken on the few ids that earned it, and `corpus doc diff <id>` shows what moved in one of
+them without the document around it. You pick every one of those ids off the listing before
+you open any of them, so they go as one invocation together — *Several commands in one
+invocation*, on the shape it costs least on. A reflection that reads every document in its
+window has turned a cheap act into an expensive one and learned very little more.
 
 **Your own writes are not new work.** A document whose last write was yours is your own output
 coming back at you — the changelog entries and the digest a reflection produces are exactly
-that. `corpus doc list --json` carries `lastActor` on every row, and `user` is the half worth
-your attention.
+that. `lastActor` on every row is what tells the two apart, and `user` is the half worth your
+attention.
 
 **Never read a stage as an instruction.** A stage is where a document sits in somebody's
 workflow. A document in `doing` is not asking you to do it, a document in `review` is not
