@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -88,7 +88,77 @@ array; a server test that a query at exactly the cap reports the cut.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+### Implemented on
+
+opus.
+
+### Shape chosen: option 1, `total` + `truncated` on `JobList`
+
+Option 2 — extending CONTRACT-030's window-dropping from `originId` to `status` —
+was rejected, and the reason is terminal statuses: `?status=processed` over a
+long-lived corpus is every job that ever finished, which is precisely what the
+window exists to protect the caller from, and no caller asks that as a predicate.
+A field that says "there is more" costs one count and makes every caller of the
+route better off, the unfiltered console included.
+
+The binding criterion is met literally: the words are `InProgressSet`'s and
+`DocDiff`'s. `Object.keys(JobListSchema.shape)` is `["jobs", "total",
+"truncated"]`, and a test asserts `InProgressSet` carries the same pair, so a
+third spelling cannot be introduced quietly.
+
+### Semantics published
+
+- `total` — how many jobs matched **this query's filters** before `recent`
+  bounded the page. Equal to `jobs.length` whenever `truncated` is false. It
+  answers *how much did I not see*, never *how many jobs exist*.
+- `truncated` — true when `recent` cut the list. **Always false when `originId`
+  is given**, because CONTRACT-030 drops the window for that query and answers it
+  completely.
+
+Both **required**: an absent flag is indistinguishable from `false`, which is the
+silent-incompleteness failure they exist to prevent. Asserted in
+`schemas/job.test.ts`.
+
+### The overclaim, corrected
+
+`MAX_IN_PROGRESS_REPORTED`'s docblock said the complete inventory is one
+documented route away *"so the cap never puts anything out of reach"*, and
+`InProgressSet.total` said *"the cap bounds this report, never the caller's
+reach"*. Both are now accurate: that route **windows too** (`recent`, at most
+200), and what the pointer buys is a larger page that reports its own bound
+rather than an unbounded one. The route description says the same thing at the
+operation level.
+
+### Baseline on a real server
+
+Port **8838**. `GET /api/jobs?recent=2` returned a body whose only top-level key
+was `jobs` — no `total`, no `truncated`. That is the silent cut.
+
+### The published document after the change
+
+```
+JobList.required = ['jobs','total','truncated']
+PASS 035 total      "before `recent` bounded"
+PASS 035 truncated  "Always false when `originId` is given"
+```
+
+### Handoff — server
+
+`apps/server/src/jobs/routes.ts:29` currently answers
+`c.json({ jobs: jobs.list(recent, { originId, status }) }, 200)`. It needs the
+count over the **same** `WHERE` the list was selected with — a second
+`SELECT COUNT(*)` sharing `ORIGIN_ID_SQL` and the status predicate, with no
+`LIMIT` — and `truncated: jobs.length < total`. With `originId` given the window
+is not applied, so `total === jobs.length` and `truncated` is false by
+construction. A server test should query at exactly the cap and assert the cut is
+reported. This is the second of the three intended compile errors in `apps/server`
+(`src/jobs/routes.ts(27,40)`).
+
+### Gates
+
+`vitest run packages/contract` — 2972 tests, exit 0, including five new
+assertions in `schemas/job.test.ts`. Typecheck, ESLint, Prettier clean.
+`openapi.json` and `schema.generated.ts` regenerated.
 
 ## Completion Checklist (domain agent)
 

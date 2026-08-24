@@ -361,6 +361,16 @@ function residentFor(
  * a name and a document id and no status; the `docId` names the document, so a
  * reader that cares can see what state it is in.
  *
+ * **Re-asked and upheld** (CONTRACT-054, 2026-08-24). CLI-043 carried an
+ * acceptance criterion requiring `corpus thread designate` to warn about it, and
+ * could not meet it. The criterion was retired rather than deferred: archiving
+ * changes nothing about a persona — the contract publishes that an archived
+ * `agent-def` under that root *"resolves exactly as before, and is still
+ * designatable"* — so a warning would call a fully supported act suspect, and
+ * §11's `warnings` is about whether the write was recorded rather than about
+ * which document the caller named. Nothing here changes; the decision is
+ * recorded so the next reader does not re-open it by default.
+ *
  * **Every call enqueues `resident.designated`, including one that writes
  * nothing.** Designating the resident a thread already has leaves the file
  * untouched — the state asked for is the state that holds, and stamping

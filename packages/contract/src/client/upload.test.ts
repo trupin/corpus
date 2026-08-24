@@ -103,6 +103,7 @@ function createServer() {
           anchor: validated.selector ? "anc_k4f7" : null,
           agent: "none" as const,
           resident: null,
+          unread: false,
           turns: [],
         },
         anchorId: validated.selector ? "anc_k4f7" : null,

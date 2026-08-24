@@ -352,6 +352,18 @@ export const LaneOriginSchema = openapi(
  * therefore has to be named by where it sits, which is what the first sentence
  * does.
  *
+ * **What it must not claim is that the two grains always agree** (CONTRACT-053,
+ * found by SERVER-112 implementing both sides). CONTRACT-045 wrote *"`live` is
+ * true exactly when some lane of `GET /api/agents` is live"*, and a listener
+ * parked on a lane whose resident was released is a real state in which that is
+ * false: the row is gone at once, the park is held for up to one grace window,
+ * and the aggregate reports live because somebody genuinely is. The primary fact
+ * is the parked request — §7 defines presence as that and nothing else — so the
+ * aggregate defines itself directly and the divergence is stated on the
+ * component, where a caller comparing the two will meet it. `presence()` in
+ * `apps/server/src/queue/liveness.ts` is the implementation and reasons it out
+ * at length. No behaviour changed here.
+ *
  * **The grace window is applied server-side, before this is answered**, and that
  * is the one thing about it a client must not re-decide. §7 leaves the window's
  * length open but guarantees it is longer than a rearm gap, because a healthy
@@ -363,8 +375,9 @@ export const presenceLiveField = z
   .boolean()
   .describe(
     "**Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster " +
-      "row, on any lane at all where it sits on the queue status. The two are the same " +
-      "observation at two grains and never disagree. Presence is the parked scoped `idle` and " +
+      "row, on any lane at all where it sits on the queue status. One observation at two grains, " +
+      "and `AgentPresence` names the one window in which the two grains legitimately differ. " +
+      "Presence is the parked scoped `idle` and " +
       "nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that " +
       "stops parking stops being present whether it exited cleanly, crashed or was killed. **The " +
       "grace window is already applied**: a listener between parks is still live, since a healthy " +
@@ -416,11 +429,21 @@ export const AgentPresenceSchema = openapi(
       "Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is " +
       "reaped, and nothing new is asked of the agent, which is why it can be reported without a " +
       "heartbeat protocol.\n\n" +
-      "Where this sits on `QueueStatus` it is the roster's own liveness **aggregated over every " +
-      "lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` " +
-      "is the most recent of their instants. One notion of presence reported at two grains, so " +
-      "the console strip and the recipient picker can never disagree about whether anybody is " +
-      "listening. **It says whether an agent is present, never how many are**: one parked agent " +
+      "Where this sits on `QueueStatus` it measures the workspace **directly**: `live` is true " +
+      "exactly when some listener is holding a parked scoped `idle`, and `since` is the most " +
+      "recent instant among the lanes that are live — or, when none is, the most recent instant " +
+      "any lane has ever supplied, so *last parked 10m ago* stays distinguishable from *none has " +
+      "parked since the server started*. It is defined by the parked request, not by another " +
+      "endpoint's rows.\n\n" +
+      "**It can therefore read `live` while `GET /api/agents` lists no live lane** — briefly, and " +
+      "both answers correct. A roster row exists while a thread has a resident, and releasing " +
+      "that resident (or resolving the thread, which releases it too) removes the row at once. " +
+      "The listener parked on that lane does not go with it: it is still holding an `idle`, and " +
+      "it keeps holding it until it returns or lapses, up to one grace window. Presence is the " +
+      "parked request (SPEC.md §7), so this reports live for that window while the roster, which " +
+      "reports designated lanes, reports none. It resolves itself when that listener stops. A " +
+      "caller that must not watch two numbers disagree should read one of them.\n\n" +
+      "**It says whether an agent is present, never how many are**: one parked agent " +
       "and two are both `live`, and a count belongs to the roster, which has a row per lane to " +
       "put it on. Read it rather than deriving idleness from the queue counts beside it — an " +
       "empty queue means nobody asked for anything, not that somebody is waiting to be asked.",

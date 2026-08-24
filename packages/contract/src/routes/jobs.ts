@@ -40,7 +40,10 @@ export const listJobs = createRoute({
     "list and is ignored once `originId` is given — because a predicate about one document " +
     "cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly " +
     'how a deferred job\'s "working…" row used to vanish while its reply was still coming ' +
-    "(CONTRACT-030).",
+    "(CONTRACT-030). **Either way the response says whether it is complete**: `total` counts " +
+    "everything the query matched and `truncated` says whether `recent` cut it, so a windowed " +
+    "answer can never be mistaken for a whole one (CONTRACT-035). With `originId` given the " +
+    "window is not applied at all, so `truncated` is false and `total` equals the array's length.",
   request: { query: JobsQuerySchema },
   responses: {
     200: jsonContent(JobListSchema, "Console rows, most recent first."),

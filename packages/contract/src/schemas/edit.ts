@@ -385,6 +385,31 @@ export const DocDiffQuerySchema = z.object({
  * whole change and has not will act on the half it saw. `totalChars` makes the
  * statement quantitative, so the caller knows the scale of what it is missing
  * rather than only that something is missing.
+ *
+ * **The cut rule published here is SPEC.md §9.2's, and it was not** (CONTRACT-032,
+ * escalated from SERVER-058). §9.2's signed sentence — *"Truncation drops whole
+ * hunks while it can and then cuts the straddling hunk at a line boundary, so the
+ * bound is spent on content rather than on alignment"* — has stood since the
+ * rider of 2026-08-05. `truncated` published something narrower: whole hunks
+ * only, with one exception for a hunk larger than the **whole** bound. The gap
+ * between the two is the ordinary edit shape, because a save re-stamps
+ * `updated:` and git emits a tiny frontmatter hunk before the body hunk: with the
+ * body hunk under the bound but past the budget left for it, the narrow rule
+ * drops it whole and answers with the timestamp alone. Measured on the real
+ * route at **401 characters of an allowed 16 000**, and at 231 of 16 000 for a
+ * diff totalling 21 001.
+ *
+ * The cost of §9.2's rule is stated rather than glossed: the last hunk of a
+ * truncated diff may be a prefix of itself, so its header's line counts describe
+ * more lines than follow it. That is what `truncated: true` is for, and no
+ * consumer in this repository applies a diff — the CLI prints it and the agent
+ * reads it.
+ *
+ * **`apps/server/src/edit/diff.ts`'s `truncateDiff` implements the narrow rule
+ * and has to follow this.** Under §9.2's rule the function collapses to "the last
+ * line boundary at or before the bound", because every hunk boundary is also a
+ * line boundary — which is exactly why SERVER-058 could not make the change
+ * without one here first.
  */
 export const DocDiffSchema = openapi(
   z.object({
@@ -428,13 +453,18 @@ export const DocDiffSchema = openapi(
     truncated: z
       .boolean()
       .describe(
-        "`true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. The cut is **hunk-aligned**: whole " +
-          "hunks are dropped from the end so that what is returned is always a valid unified diff " +
-          "a person or a tool can read, rather than a fragment ending mid-line. A single hunk " +
-          "larger than the whole bound is the one exception — it is cut at a line boundary, never " +
-          "mid-line. Stated rather than silent (the rule the context pack's own `truncated` sets): " +
-          "an agent acting on half a change while believing it saw all of it is the failure this " +
-          "flag exists to prevent, and `stats` plus `totalChars` say how much is missing.",
+        "`true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. **Whole hunks are kept while they " +
+          "fit, and the hunk that straddles the bound is then cut at a line boundary** " +
+          "(SPEC.md §9.2), so the bound is spent on content rather than on alignment: a change " +
+          "whose body hunk lands just under the cap comes back as that change, not as the " +
+          "`updated:` frontmatter hunk in front of it. The cut is never mid-line and never mid " +
+          "hunk-header, so what is returned is always something a reader can read — **but the " +
+          "last hunk of a truncated diff may be a prefix of itself**, and its header's line counts " +
+          "then describe more lines than follow. Read it, do not apply it: `truncated` is the flag " +
+          "that says which you have. Stated rather than silent (the rule the context pack's own " +
+          "`truncated` sets): an agent acting on half a change while believing it saw all of it " +
+          "is the failure this flag exists to prevent, and `stats` plus `totalChars` say how much " +
+          "is missing.",
       ),
     totalChars: z
       .number()

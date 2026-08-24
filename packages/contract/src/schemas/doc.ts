@@ -212,6 +212,13 @@ const CREATE_TITLE_DESCRIPTION =
  * `DOCUMENT_ROOTS` outside `data/` is a `400` here rather than a destination.
  * That refusal is stated rather than left out, because it is the question a
  * caller arrives with after reading create's field.
+ *
+ * **The source half is deliberately not here** (CONTRACT-065). A move is
+ * refused by where the document already sits — `assertMovable` in
+ * `apps/server/src/docs/move.ts` — and that is a fact about the document, not
+ * about this field. It lives on the route, with a pointer from the last
+ * sentence, because CONTRACT-064's lesson is that one rule stated in two places
+ * drifts.
  */
 const MOVE_FOLDER_DESCRIPTION =
   "Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the " +
@@ -222,7 +229,8 @@ const MOVE_FOLDER_DESCRIPTION =
   "adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — " +
   "filing a document into such a root is part of creating it, not of moving it. The filename " +
   "does not change, so a destination that already holds a file of that name is a `400` and never " +
-  "an overwrite.";
+  "an overwrite. **This is the destination alone**: whether the document may be moved at all " +
+  "depends on where it already sits, and `POST /api/docs/{id}/move` states that rule.";
 
 /**
  * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27; extended to

@@ -8,7 +8,11 @@
 // the same statement, which is also what guarantees the filter and the reason
 // chip can never disagree.
 
-import { NEEDS_REASONS, type NeedsReason } from "@corpus/contract";
+import {
+  NEEDS_REASONS,
+  NON_TERMINAL_QUEUE_EVENT_STATUSES,
+  type NeedsReason,
+} from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 import { atOrBeyondSql } from "./staleness.js";
 
@@ -62,8 +66,16 @@ export function isThreadUnread(db: ProjectionDb, threadId: string, mark: string)
  * live with it"), so the reading is spelled out per caller. This is the server's,
  * and it is the same three the two UI callers pass as
  * `?status=pending,in-progress,deferred`.
+ *
+ * **The list itself is the contract's** (CONTRACT-073). This name stays, because
+ * "outstanding" is what *this* file concludes from §7's state machine and the
+ * SQL below reads better for it — but the three strings were a second copy of a
+ * list `packages/kit` also held, in two packages that cannot import each other,
+ * and a copy of a rule is how the server and a client come to disagree about it
+ * with both suites green. The contract owns which states are non-terminal; each
+ * caller keeps its own word for the conclusion.
  */
-export const OUTSTANDING_EVENT_STATUSES = ["pending", "in-progress", "deferred"] as const;
+export const OUTSTANDING_EVENT_STATUSES = NON_TERMINAL_QUEUE_EVENT_STATUSES;
 
 const OUTSTANDING_EVENT_STATUS_LIST = OUTSTANDING_EVENT_STATUSES.map(
   (status) => `'${status}'`,

@@ -179,92 +179,45 @@ export interface BoundedDiff {
 }
 
 /**
- * Cut a unified diff down to `max` characters at a **hunk** boundary, so what
- * comes back is still a diff rather than a fragment ending mid-line.
+ * Cut a unified diff down to `max` characters at a **line** boundary — which is
+ * SPEC.md §9.2's rule read literally: *"Truncation drops whole hunks while it can
+ * and then cuts the straddling hunk at a line boundary, so the bound is spent on
+ * content rather than on alignment."*
  *
- * A line beginning `@@` at column zero is a hunk header and nothing else: every
- * content line in a unified diff is prefixed by a space, `+` or `-`, so a
- * document line that itself starts with `@@` arrives here as ` @@…` or `+@@…`.
+ * Those are one operation, not two. Every hunk boundary is also a line boundary,
+ * so "the last line boundary at or before `max`" keeps every hunk that fits whole
+ * and then keeps as much of the straddling one as the budget allows. There is no
+ * hunk scan here any more, and none is needed: a document line that merely looks
+ * like a header (`+@@ careful @@`) is content either way, because the cut never
+ * asks what a line *is*.
  *
- * **A hunk-aligned cut must keep at least one whole hunk**, which is why the
- * *first* hunk's header is not a candidate boundary. It is a boundary
- * arithmetically — the preamble alone is a syntactically well-formed diff — but
- * it carries none of the change, and a caller allowed 16 000 characters that
- * receives 166 of file headers has been told nothing. Measured on a real server
- * before this rule existed: a 500-paragraph rewrite arrives from git as one
- * 64 000-character hunk, whose only boundary is that first header.
+ * **What this replaced, and why it had to be a contract change first**
+ * (CONTRACT-032, from SERVER-058). The previous rule dropped whole hunks and cut
+ * inside one only when that single hunk was larger than the **whole** bound. A
+ * hunk smaller than the bound but larger than the budget left where it sits was
+ * dropped whole, and the answer was then whatever preceded it. That is the
+ * ordinary edit shape rather than a corner: a save re-stamps `updated:`, so git
+ * emits a tiny frontmatter hunk and then one body hunk carrying the change.
+ * Measured on the real route at **401 characters of an allowed 16 000**, and at
+ * **231 of 16 000** for a diff totalling 21 001. `DocDiffSchema.truncated`
+ * published the narrow rule, so widening it here would have contradicted the
+ * contract — which is why SERVER-058 waived the case on the record instead of
+ * fixing it, and why the fix begins in `packages/contract`.
  *
- * **A hunk larger than the whole bound is cut *inside*, at a line boundary** —
- * the exception the contract itself publishes on `DocDiff.truncated`, applied
- * wherever that hunk sits rather than only when it is the first. This is the
- * SERVER-058 case, and it is the *ordinary* edit shape: a save re-stamps
- * `updated:`, so git emits a tiny frontmatter hunk and then one body hunk
- * carrying the whole change. Dropping that body hunk whole leaves the only
- * admissible hunk boundary at the frontmatter — measured on a real server as
- * **401 characters of an allowed 16 000**, a well-formed diff saying a timestamp
- * changed and nothing else, which is a worse answer than a long one. Cutting
- * inside it is not a loss of alignment either: no cut anywhere can show a hunk
- * bigger than the whole budget, so the alternative to a prefix of it is nothing
- * of it.
+ * **What it costs, stated rather than glossed.** The last hunk of a truncated
+ * diff may be a prefix of itself, so its header's line counts describe more lines
+ * than follow it. `truncated: true` is what says so, `totalChars` says by how
+ * much, and nothing in this repository applies a diff — the CLI prints it and the
+ * agent reads it. What is never given up is readability: the cut is never
+ * mid-line and therefore never mid hunk-header.
  *
- * **A hunk that would fit the bound, but not the budget left where it sits, is
- * still dropped whole — and that can cost nearly all of the budget.** The answer
- * is then the boundary itself: `cut` characters of `max`, of which `max - cut`
- * goes unspent. SERVER-058's own shape reaches the worst of it — a 231-character
- * frontmatter hunk followed by a body hunk of 15 770 returns **231 of 16 000**,
- * the reported symptom verbatim, for a body hunk one character *under* the bound
- * rather than over it (PR #22 review, measured on this function). Nor is it
- * confined to diffs that barely overrun: with a third hunk after it the same
- * input totals 21 001 and still answers 231.
- *
- * That is left standing, deliberately, because within the published contract
- * there is no better answer for that input. "Keep whole hunks, then a line-prefix
- * of the next" is *exactly* the degenerate `max(hunk, line)` rule described
- * below, and `DocDiffSchema.truncated` promises the narrower thing: "whole hunks
- * are dropped from the end. A single hunk larger than the whole bound is the one
- * exception." Widening the exception to a hunk larger than the *remaining* budget
- * would abolish hunk alignment and contradict that sentence — a contract change,
- * not a change here.
- *
- * What bounds the damage is that the waste and its likelihood are the same
- * number. The poor answer needs the straddling hunk's size to fall in
- * `(max - cut, max]` — a window exactly `cut` wide — so answering with 231
- * characters requires a body hunk within 231 characters of the cap, while a cut
- * at 8 231 is easy to land on and wastes less than half the budget. The largest
- * waste is the rarest, and every hunk that does come back is complete.
- *
- * With no admissible hunk boundary at all — one hunk bigger than the bound, a
- * second hunk starting past it, or a preamble larger than the whole cap — the
- * fallback is the same line boundary.
- *
- * Note that `max(hunk boundary, line boundary)` — the shape first proposed — is
- * *not* what this does, because it is degenerate: every hunk boundary is also a
- * line boundary, so the last line boundary ≤ cap is never smaller than the last
- * hunk boundary ≤ cap and the maximum is always the line one. That rule would
- * abolish hunk alignment entirely, cutting mid-hunk even where whole hunks fit,
- * and contradict the published contract text rather than apply its exception.
+ * With no line boundary at or before the bound at all — a single line longer than
+ * the whole cap — the fallback is a hard cut at `max`, because returning nothing
+ * would be worse than returning a long line's beginning.
  */
 export function truncateDiff(text: string, max: number = DOC_DIFF_MAX_CHARS): BoundedDiff {
   const totalChars = text.length;
   if (totalChars <= max) return { diff: text, truncated: false, totalChars };
-
-  const hunks: number[] = [];
-  let offset = 0;
-  for (const line of text.split("\n")) {
-    if (line.startsWith("@@")) hunks.push(offset);
-    offset += line.length + 1;
-  }
-  // `hunks[0]` ends the preamble and begins the first hunk; a cut there would
-  // return a diff with no hunks in it. Everything after it keeps at least one.
-  const boundaries = hunks.slice(1);
-  const index = boundaries.findLastIndex((start) => start <= max);
-  const cut = boundaries[index];
-  if (cut !== undefined && cut > 0) {
-    // The hunk this cut would drop runs from the boundary to the next header, or
-    // to the end of the diff when it is the last one.
-    const dropped = (boundaries[index + 1] ?? totalChars) - cut;
-    if (dropped <= max) return { diff: text.slice(0, cut), truncated: true, totalChars };
-  }
 
   const newline = text.lastIndexOf("\n", max - 1);
   const diff = newline === -1 ? text.slice(0, max) : text.slice(0, newline + 1);

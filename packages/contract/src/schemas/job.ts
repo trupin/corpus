@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
 import {
   CORE_QUEUE_EVENT_TYPES,
+  NON_TERMINAL_QUEUE_EVENT_STATUSES,
   QUEUE_EVENT_STATUSES,
   QueueEventStatusSchema,
   type QueueEventStatus,
@@ -13,6 +14,29 @@ import { openapi } from "./openapi-metadata.js";
  * Every queue event is a job; the console renders one row per job with its live
  * log stream (SPEC.md §7). Full log lines stay in `.corpus/jobs/<eventId>.jsonl`
  * and are fetched over HTTP — SSE only announces that the log grew.
+ *
+ * **Three instants, each meaning one thing** (CONTRACT-029). `started` used to
+ * mean two: the server published the event's `created` while the job was queued
+ * and the first log line's timestamp afterwards (`toJob`'s
+ * `row.started ?? row.created`, `apps/server/src/jobs/project.ts`), so a job that
+ * waited ten minutes had its elapsed clock **reset** the moment the agent began
+ * talking. UI-058 worked around it by bounding the value with the thread's newest
+ * turn, which is a heuristic standing in for a field.
+ *
+ * **The field is redefined, not merely joined by a sibling**, and that is the
+ * decision this schema records. Adding `enqueued` alone would have left `started`
+ * still meaning two instants, and left every consumer deriving "has it begun?"
+ * from `started === enqueued` — a comparison that is wrong for any job whose
+ * first line lands in the same second as its enqueue. So `enqueued` is the
+ * enqueue instant, always known, and `started` is the first log line alone,
+ * **nullable**, null while the job has not spoken. Nothing new is computed for
+ * either: `events.created` and `jobs.started` are two existing columns, and
+ * `jobs.started` is already NULL for exactly the jobs that read null here.
+ *
+ * The cost is that `started` is a **breaking** change for a reader rather than
+ * only for a constructor — `apps/ui` reads it in two places. That is deliberate:
+ * both of those places were reading the overloaded value, so a compile error is
+ * the correct way for them to learn the value changed.
  */
 export const JobSchema = openapi(
   z.object({
@@ -29,8 +53,28 @@ export const JobSchema = openapi(
           "what it is running on (SPEC.md §10).",
       ),
     status: QueueEventStatusSchema,
-    started: IsoDateTimeSchema,
-    updated: IsoDateTimeSchema,
+    enqueued: IsoDateTimeSchema.describe(
+      "**When this event entered the queue** (SPEC.md §7) — the `created` instant of the queue " +
+        "event that is this job. Written once and never moved, whatever the job goes on to do. " +
+        "This is what an elapsed-time display counts from: a job that sat `pending` for ten " +
+        "minutes and then began talking has been waited on for ten minutes, and nothing here " +
+        "resets when it starts.",
+    ),
+    started: IsoDateTimeSchema.nullable().describe(
+      "**When the job first wrote a log line**, and null until it writes one — a job that is " +
+        "`pending`, and one that has been claimed but is still silent, both read null. Written " +
+        "once and never moved: later lines advance `updated`, not this. It is deliberately not " +
+        "the enqueue instant with another name (`enqueued` is that, and it is always known), " +
+        "because a field that means *enqueued* while queued and *first spoke* afterwards silently " +
+        "changes meaning partway through a job's life — which is what CONTRACT-029 was filed " +
+        "about. Null is the honest answer for work that has not been observed yet.",
+    ),
+    updated: IsoDateTimeSchema.describe(
+      "**The most recent log line's instant**, falling back to `enqueued` for a job that has " +
+        "written none. This is what `GET /api/jobs` orders by, most recent first. A `deferred` " +
+        "job stops advancing it while it waits (SPEC.md §7), which is how one falls out of a " +
+        "windowed list — see that route's `recent`.",
+    ),
     lastLine: z
       .string()
       .nullable()
@@ -167,13 +211,63 @@ export const JobsQuerySchema = z.object({
       "Deliberately a general set rather than a named `outstanding` shorthand: which statuses " +
       "count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's " +
       "reading into the wire would make every other caller live with it. The two callers that " +
-      "ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal " +
+      `ask the outstanding question pass \`${NON_TERMINAL_QUEUE_EVENT_STATUSES.join(",")}\` — the three non-terminal ` +
       "states, `deferred` included, since a job waiting on somebody's editing is still owed.",
   }),
 });
 
+/**
+ * The jobs a query matched, and **whether that is all of them** (CONTRACT-035).
+ *
+ * `JobList` used to carry `jobs` alone, which made it the only truncating
+ * surface on this wire that cut silently — `InProgressSet` reports `total` and
+ * `truncated`, `DocDiff` reports `totalChars` and `truncated`, and both of them
+ * point *here* as the route that puts the complete set within reach. It windows
+ * too: `recent` defaults to 50 and caps at {@link MAX_RECENT_JOBS}, and the
+ * status filter is a `WHERE` applied before the `LIMIT`, so a status-only query
+ * is bounded at 200 rather than unbounded. Reach went from 20 to 200, not to
+ * everything, and nothing on the response said so.
+ *
+ * **Option 1 of the issue's two, deliberately.** The alternative was to extend
+ * CONTRACT-030's window-dropping from `originId` to `status`, on the argument
+ * that a predicate must be answered completely or not at all. It is the wrong
+ * one for a *terminal* status: `?status=processed` over a long-lived corpus is
+ * every job that ever finished, which is precisely what the window exists to
+ * protect the caller from, and no caller asks that question as a predicate. A
+ * field that says "there is more" costs one count and makes every caller of the
+ * route better off, including the unfiltered console.
+ *
+ * **The vocabulary is `total` + `truncated` and not a third spelling.** Three
+ * surfaces truncate on this wire and a caller that learns the pair once should
+ * not have to learn it again — which is the whole reason `DocDiff` spells its
+ * count `totalChars` rather than inventing a second flag name.
+ */
 export const JobListSchema = openapi(
-  z.object({ jobs: z.array(JobSchema).describe("Console rows, most recent first.") }),
+  z.object({
+    jobs: z.array(JobSchema).describe("Console rows, most recent first."),
+    total: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "**How many jobs matched this query in total**, before `recent` bounded the page — equal " +
+          "to `jobs.length` whenever `truncated` is false. Counted over the same filters the " +
+          "array was selected with, so it answers *how much did I not see* and never *how many " +
+          "jobs exist*. It is the `showing N of M` a windowed list owes its reader, spelled as " +
+          "`InProgressSet.total` spells it.",
+      ),
+    truncated: z
+      .boolean()
+      .describe(
+        "True when `recent` cut the list — `total` is then greater than `jobs.length`. Stated " +
+          "rather than left to be derived (the rule `DocDiff.truncated` sets and " +
+          "`InProgressSet.truncated` follows): a windowed answer reads exactly like a complete " +
+          "one, and the direction it fails in is silent — a job past the cut is " +
+          "indistinguishable from no job, which reads as *nothing outstanding*. **Always false " +
+          "when `originId` is given**, because that query drops the window and is answered " +
+          "completely (CONTRACT-030; see `recent`).",
+      ),
+  }),
   "JobList",
 );
 

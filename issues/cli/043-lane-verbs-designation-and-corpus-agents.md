@@ -30,7 +30,7 @@ since, and the one-line summary — the same read the composer's droplist consum
 
 ## Acceptance Criteria
 - [x] `--thread` on `idle`/`claim-all` (`apps/cli/src/commands/queue/idle.ts:83-140`, `claim-all.ts:28-53`): shape-validated `th_` prefix, passed as `scope`; output identical in structure to unscoped (a scoped empty batch prints the same empty-events payload)
-- [x] `corpus thread designate <id> --agent <name>`: renders the resolved `{name, docId}` on success; renders the server's 409 (not standalone), 404 (no such agent-def), 403 (agent actor) reasons verbatim; ~~warns inline when the response carries `status: "archived"`~~ — **not implemented, see Unresolved**: the designation response carries no archived signal, by the server's explicit decision
+- [x] `corpus thread designate <id> --agent <name>`: renders the resolved `{name, docId}` on success; renders the server's 409 (not standalone), 404 (no such agent-def), 403 (agent actor) reasons verbatim; ~~warns inline when the response carries `status: "archived"`~~ — **retired, not deferred** (CONTRACT-054, 2026-08-24): designating an archived `agent-def` is not an anomaly worth warning about, so the criterion was wrong rather than unmet. See Unresolved
 - [x] `corpus thread release <id>`: idempotent, prints what was released or that nothing was
 - [x] `corpus agents`: human mode one row per lane — `orchestrator · live · parked 2m — idle` / `th_4b8e2c "Q3 planning" · researcher · live · reading the mortgage docs` / `… · waiting for a listener`; `--json` carries the roster verbatim
 - [x] `corpus thread show <id>` prints the resident line when designated
@@ -412,6 +412,32 @@ re-deriving something the server chose not to publish, and making the CLI a seco
 truth about the persona's state. **Not implemented; escalated.** The fix, if wanted, is a
 contract + server change (a §11 warning on the designation, or a status on `Resident`), owned by
 contract-dev / server-dev.
+
+**Adjudicated 2026-08-24 (CONTRACT-054, contract-dev): the criterion is retired, not deferred.**
+The question CONTRACT-054 had to answer first was whether designating an archived agent-def is
+something a person should be warned about, and the answer is no:
+
+1. **Archiving an agent-def changes nothing about the persona.** `ResidentSchema.docId` publishes
+   it in so many words — _"an archived `agent-def` still under that root resolves exactly as
+   before, and is still designatable"_ — so a warning would tell a person their correct,
+   fully-supported act was suspect. A contract cannot say both.
+2. **Archiving is an organisational act, not a deprecation** (SPEC.md §7: _"a reversible
+   organizational act, never a deletion"_). Designation is user-only state on a standalone
+   thread. A person who archived a definition and then named it has done two deliberate things,
+   and the second one is the one the tool was asked to do.
+3. **§11's `warnings` is about the write, not about the caller's judgement.** It carries a
+   rejected auto-commit or a workspace with no git. A warning about which document a request
+   named would set a precedent that every write editorialises about the documents it mentions,
+   and there is no principled stopping point after the first one.
+4. **The cheap-looking fix is not cheap.** `Resident` is consumed by four domains and appears in
+   roughly fifty fixture literals (CONTRACT-071 measured it), and a status on it would contradict
+   `docId`'s published sentence that _"archived-ness is not carried on a `Resident` at all — it is
+   the document's own `status`, on the document this id names, for the caller that cares."_
+
+What a person keeps is the ability to look: `docId` names the document, and its own `status` is
+one ordinary read away for any surface that decides it wants to show it. No follow-up CLI issue
+is filed, and `apps/server/src/threads/resident.ts`'s comment stands — it already gives this
+reasoning and does not contradict the behaviour.
 
 **Separate, pre-existing, and out of scope here**: `corpus queue status` never renders
 `QueueStatus.agent` (CONTRACT-045) in human mode, and its `--json` example in the registry omits

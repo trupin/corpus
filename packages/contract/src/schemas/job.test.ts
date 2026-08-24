@@ -12,12 +12,13 @@ import {
   JobsQuerySchema,
   MAX_RECENT_JOBS,
 } from "./job.js";
-import { CORE_QUEUE_EVENT_TYPES, QueueEventSchema } from "./queue.js";
+import { CORE_QUEUE_EVENT_TYPES, InProgressSetSchema, QueueEventSchema } from "./queue.js";
 
 const job = {
   eventId: "evt_7c1d",
   type: "comment.created",
   status: "in-progress",
+  enqueued: "2026-07-19T10:05:00Z",
   started: "2026-07-19T10:05:02Z",
   updated: "2026-07-19T10:05:40Z",
   lastLine: "reading doc_a1b2c3",
@@ -32,9 +33,47 @@ describe("Job", () => {
     expect(JobSchema.parse(job)).toEqual(job);
   });
 
+  /**
+   * CONTRACT-029. A silent job reads `started: null` and `updated` back at its
+   * enqueue instant — it has not spoken, and the row says so rather than
+   * borrowing `enqueued` under another name.
+   */
   it("round-trips a job that has not logged yet and has no origin", () => {
-    const fresh = { ...job, lastLine: null, originId: null, originTitle: null };
+    const fresh = {
+      ...job,
+      started: null,
+      updated: job.enqueued,
+      lastLine: null,
+      originId: null,
+      originTitle: null,
+    };
     expect(JobSchema.parse(fresh)).toEqual(fresh);
+  });
+
+  /**
+   * The two instants are separate fields and neither is optional: `enqueued` is
+   * always known, `started` is null until the job speaks. Falsify by deleting
+   * `enqueued` from `JobSchema`.
+   */
+  it("keeps the enqueue instant and the first-log instant apart", () => {
+    expect(JobSchema.safeParse({ ...job, enqueued: undefined }).success).toBe(false);
+    expect(JobSchema.safeParse({ ...job, enqueued: null }).success).toBe(false);
+    expect(JobSchema.safeParse({ ...job, started: undefined }).success).toBe(false);
+    expect(JobSchema.parse({ ...job, started: null }).started).toBeNull();
+    expect(JobSchema.parse(job).enqueued).toBe("2026-07-19T10:05:00Z");
+  });
+
+  /**
+   * The overloaded reading is what CONTRACT-029 deleted, so the published prose
+   * has to say which instant each field is — a reader who only reads the type
+   * sees two identical `date-time`s.
+   */
+  it("describes each instant as one instant", () => {
+    const shape = JobSchema.shape;
+    expect(shape.enqueued.meta()?.description).toContain("entered the queue");
+    expect(shape.started.meta()?.description).toContain("first wrote a log line");
+    expect(shape.started.meta()?.description).toContain("null until it writes one");
+    expect(shape.updated.meta()?.description).toContain("most recent log line");
   });
 
   /**
@@ -201,11 +240,47 @@ describe("JobsQuery", () => {
 
 describe("JobList", () => {
   it("round-trips the console's master list", () => {
-    expect(JobListSchema.parse({ jobs: [job] })).toEqual({ jobs: [job] });
+    const list = { jobs: [job], total: 1, truncated: false };
+    expect(JobListSchema.parse(list)).toEqual(list);
   });
 
   it("round-trips an idle workspace with no jobs yet", () => {
-    expect(JobListSchema.parse({ jobs: [] })).toEqual({ jobs: [] });
+    const list = { jobs: [], total: 0, truncated: false };
+    expect(JobListSchema.parse(list)).toEqual(list);
+  });
+
+  /**
+   * CONTRACT-035. `JobList` was the only truncating surface on this wire that
+   * cut silently, and it is the one the other two point at as the escape hatch.
+   * Both fields are **required**: an absent flag is indistinguishable from
+   * `false`, which is the silent-incompleteness failure they exist to prevent.
+   */
+  it("cannot report a page without saying whether it is the whole answer", () => {
+    expect(JobListSchema.safeParse({ jobs: [job] }).success).toBe(false);
+    expect(JobListSchema.safeParse({ jobs: [job], total: 1 }).success).toBe(false);
+    expect(JobListSchema.safeParse({ jobs: [job], truncated: false }).success).toBe(false);
+  });
+
+  it("carries a total larger than the page it returned", () => {
+    const windowed = JobListSchema.parse({ jobs: [job], total: 137, truncated: true });
+    expect(windowed.total).toBe(137);
+    expect(windowed.truncated).toBe(true);
+  });
+
+  /**
+   * The binding acceptance criterion: the words are `InProgressSet`'s and
+   * `DocDiff`'s, not a third spelling. Falsify by renaming either field.
+   */
+  it("spells the pair the way the two surfaces that already solve this spell it", () => {
+    expect(Object.keys(JobListSchema.shape)).toEqual(["jobs", "total", "truncated"]);
+    expect(Object.keys(InProgressSetSchema.shape)).toContain("total");
+    expect(Object.keys(InProgressSetSchema.shape)).toContain("truncated");
+  });
+
+  it("says which query is answered completely, so `truncated` is readable", () => {
+    const description = JobListSchema.shape.truncated.meta()?.description ?? "";
+    expect(description).toContain("Always false when `originId` is given");
+    expect(JobListSchema.shape.total.meta()?.description).toContain("before `recent` bounded");
   });
 });
 

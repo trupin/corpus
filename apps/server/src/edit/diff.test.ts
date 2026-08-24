@@ -74,27 +74,27 @@ describe("truncateDiff", () => {
     expect(truncateDiff(text, 49).truncated).toBe(true);
   });
 
-  it("drops whole hunks from the end, so the answer is still a valid diff", () => {
+  it("keeps whole hunks while they fit, then cuts inside the one that straddles the bound", () => {
     const text = diffWith(4, 4);
-    const bounded = truncateDiff(text, Math.floor(text.length / 2));
+    const max = Math.floor(text.length / 2);
+    const bounded = truncateDiff(text, max);
 
     expect(bounded.truncated).toBe(true);
     expect(bounded.totalChars).toBe(text.length);
-    expect(bounded.diff.length).toBeLessThanOrEqual(Math.floor(text.length / 2));
-    // The preamble survives and the cut lands *between* hunks: what comes back
-    // ends with a complete hunk, never half of one.
+    expect(bounded.diff.length).toBeLessThanOrEqual(max);
+    // A prefix of git's own output, ending on a line boundary: readable.
+    expect(text.startsWith(bounded.diff)).toBe(true);
     expect(bounded.diff.startsWith("diff --git a/data/docs/n.md")).toBe(true);
     expect(bounded.diff.endsWith("\n")).toBe(true);
-    expect(text.startsWith(bounded.diff)).toBe(true);
-    const kept = [...bounded.diff.matchAll(/^@@/gm)].length;
-    expect(kept).toBeGreaterThan(0);
-    expect(kept).toBeLessThan(4);
-    // Every line of the last kept hunk is present: the character after the cut
-    // begins a hunk header.
-    expect(text.slice(bounded.diff.length).startsWith("@@")).toBe(true);
+    // Every hunk before the straddling one is complete, and the straddling one
+    // is present rather than dropped — which is what spends the budget.
+    expect([...bounded.diff.matchAll(/^@@/gm)].length).toBeGreaterThan(0);
+    // The budget is spent to within one line of the bound.
+    const nextNewline = text.indexOf("\n", bounded.diff.length);
+    expect(nextNewline).toBeGreaterThan(max - 1);
   });
 
-  it("cuts a single over-sized hunk at a line boundary — the contract's one exception", () => {
+  it("cuts a single over-sized hunk at a line boundary", () => {
     const text = diffWith(1, 400);
     const bounded = truncateDiff(text, 500);
 
@@ -113,11 +113,11 @@ describe("truncateDiff", () => {
     expect(bounded).toEqual({ diff: "@".repeat(50), truncated: true, totalChars: 200 });
   });
 
-  it("never cuts at the *first* hunk header, which would answer with no change at all", () => {
+  it("never answers with the preamble alone when a large hunk follows it", () => {
     // A brand-new file arrives from git as one enormous hunk behind a five-line
     // preamble. Cutting at that hunk's header is arithmetically hunk-aligned and
     // returns 166 characters of file headers where 16000 were allowed —
-    // measured on a real server, and the reason this rule exists.
+    // measured on a real server, and one of the two shapes CONTRACT-032 closes.
     const preamble = [
       "diff --git a/n.md b/n.md",
       "new file mode 100644",
@@ -180,31 +180,12 @@ describe("truncateDiff", () => {
     }
   });
 
-  it("still drops a straddling hunk whole when that hunk could have fitted the bound", () => {
-    // The distinction the rule turns on. Here the hunk at the cut is smaller
-    // than the whole budget, so dropping it costs less than its own size and
-    // what comes back has every hunk complete — the answer hunk alignment is
-    // for. Contrast the case above, where no cut anywhere could show the hunk.
-    const text = diffWith(6, 12);
-    const hunkSize = (text.length - text.indexOf("@@")) / 6;
-    const max = Math.floor(text.length * 0.7);
-    const bounded = truncateDiff(text, max);
-
-    expect(bounded.truncated).toBe(true);
-    expect(bounded.diff.length).toBeLessThanOrEqual(max);
-    // Cut at a header, so the dropped hunk is dropped entire...
-    expect(text.slice(bounded.diff.length).startsWith("@@")).toBe(true);
-    // ...and the unspent budget is bounded by that one hunk's size.
-    expect(max - bounded.diff.length).toBeLessThan(hunkSize);
-  });
-
-  it("spends only the first boundary when the body hunk lands just under the bound — the known notch", () => {
-    // The gap PR #22's review found in SERVER-058, pinned rather than fixed: a
-    // body hunk *within* the bound but past the budget left for it is dropped
-    // whole, so the answer is the frontmatter hunk alone. Closing it means
-    // widening `DocDiffSchema.truncated`'s published exception — a contract
-    // change — because "whole hunks from the end, one exception for a hunk
-    // larger than the whole bound" admits no better answer for this input.
+  it("closes the notch: a body hunk just under the bound is no longer dropped whole", () => {
+    // CONTRACT-032. This input used to answer with the preamble and nothing
+    // else, because the body hunk fitted the bound but not the budget left
+    // where it sat — a body hunk within `preamble.length` characters of the cap.
+    // Measured on the real route at 401 of 16 000, and at 231 of 16 000 for a
+    // diff totalling 21 001. SPEC.md §9.2's rule spends the budget instead.
     const max = 16_000;
     const preamble = [
       "diff --git a/data/docs/n.md b/data/docs/n.md",
@@ -226,29 +207,31 @@ describe("truncateDiff", () => {
 
     const notch = truncateDiff(preamble + bodyHunk, max);
     expect(notch.truncated).toBe(true);
-    expect(notch.diff).toBe(preamble);
-    expect(notch.diff).not.toContain(bodyHeader);
-    // The waste is real, and it is exactly the width of the window that produces
-    // it: a body hunk within `preamble.length` characters of the cap.
-    expect(max - notch.diff.length).toBeGreaterThan(max - preamble.length - 1);
+    expect(notch.diff).not.toBe(preamble);
+    expect(notch.diff).toContain(bodyHeader);
+    expect(notch.diff).toContain("+a rewritten paragraph of prose");
+    // Within one line of the bound, rather than within one line of the preamble.
+    expect(notch.diff.length).toBeGreaterThan(max - line.length);
+    expect(notch.diff.length).toBeLessThanOrEqual(max);
+    expect(notch.diff.endsWith("\n")).toBe(true);
 
-    // Either side of that window the answer is good, which is what makes the
-    // notch tolerable. One character smaller and nothing is dropped at all…
+    // Either side of the old notch the answer is unchanged. One character
+    // smaller and nothing is dropped at all…
     const under = truncateDiff(preamble + body(max - preamble.length), max);
     expect(under.truncated).toBe(false);
     expect(under.diff).toContain(bodyHeader);
-    // …and one line larger than the bound and the over-sized-hunk rule cuts
-    // inside it, spending the budget.
+    // …and one line larger than the bound the cut lands inside the hunk, as it
+    // always did.
     const over = truncateDiff(preamble + body(max + line.length), max);
     expect(over.truncated).toBe(true);
     expect(over.diff.length).toBeGreaterThan(max - line.length);
     expect(over.diff).toContain("+a rewritten paragraph of prose");
   });
 
-  it("keeps a whole hunk that exactly fills the bound, and cuts inside one that overruns it", () => {
-    // The rule's own boundary: `dropped <= max` keeps, `dropped > max` cuts. A
-    // hunk of exactly `max` is still dropped whole — the contract's exception is
-    // for a hunk *larger* than the bound.
+  it("spends the budget on a trailing hunk of exactly the bound, rather than dropping it", () => {
+    // The old rule turned on `dropped <= max`, so a trailing hunk measuring
+    // exactly the bound was dropped whole and the answer was the lead alone.
+    // There is no such notch left: the cut is the last line boundary either way.
     const lead = ["diff --git a/n.md b/n.md", "@@ -1,1 +1,2 @@", "+lead"].join("\n");
     const tailHeader = "@@ -9,1 +10,40 @@";
     const line = "+padding line that is thirty-nine\n";
@@ -256,20 +239,23 @@ describe("truncateDiff", () => {
     const text = `${lead}\n${tail}`;
     const tailStart = text.indexOf(tailHeader);
 
-    // `max` set so the trailing hunk measures exactly the bound: dropped whole.
     const exact = truncateDiff(text, tail.length);
-    expect(exact.diff).toBe(`${lead}\n`);
+    expect(exact.truncated).toBe(true);
+    expect(exact.diff.length).toBeGreaterThan(tailStart);
+    expect(exact.diff).toContain(tailHeader);
 
-    // One character less of budget and the same hunk overruns it: cut inside.
+    // One character less of budget: the same answer to within one line.
     const overrun = truncateDiff(text, tail.length - 1);
     expect(overrun.diff.length).toBeGreaterThan(tailStart);
     expect(overrun.diff).toContain(tailHeader);
     expect(overrun.diff.endsWith("\n")).toBe(true);
   });
 
-  it("treats a document line that starts with @@ as content, not as a hunk header", () => {
+  it("cannot mistake a document line starting with @@ for a hunk header", () => {
     // In a unified diff every content line carries a ` `, `+` or `-` prefix, so
-    // a markdown line reading `@@ careful @@` arrives as `+@@ careful @@`.
+    // a markdown line reading `@@ careful @@` arrives as `+@@ careful @@`. Under
+    // a line cut the question never arises — kept as a regression pin, because
+    // the hazard returns the moment anyone reintroduces a hunk scan here.
     const first = ["diff --git a/n.md b/n.md", "@@ -1,2 +1,3 @@", "+@@ careful @@", "+tail"].join(
       "\n",
     );
@@ -278,9 +264,11 @@ describe("truncateDiff", () => {
 
     const bounded = truncateDiff(text, text.length - 5);
     expect(bounded.truncated).toBe(true);
-    // The cut lands at the *real* second hunk header, not at the content line
-    // that merely looks like one.
-    expect(bounded.diff).toBe(`${first}\n`);
     expect(bounded.diff).toContain("+@@ careful @@");
+    expect(bounded.diff).toContain("+tail");
+    // Cut at the last line boundary inside the bound, never mid-line.
+    expect(bounded.diff.endsWith("\n")).toBe(true);
+    expect(text.startsWith(bounded.diff)).toBe(true);
+    expect(bounded.diff.length).toBeLessThanOrEqual(text.length - 5);
   });
 });

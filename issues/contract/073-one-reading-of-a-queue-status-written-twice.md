@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -72,4 +72,78 @@ A test asserting the derived lists equal what each side used to hold, so the
 change is provably behaviour-preserving.
 
 ## E2E Verification Log
-_[Agent fills — state the model]_
+
+### Implemented on
+
+opus.
+
+### Decision 1 — the name is `NON_TERMINAL_QUEUE_EVENT_STATUSES`
+
+"Outstanding" is the word both call sites use, and both keep it: the server's
+export stays `OUTSTANDING_EVENT_STATUSES` and the kit's stays
+`OUTSTANDING_JOB_STATUSES`, each now an alias. What moves into the contract is
+the narrower fact. Terminality is a property of §7's state machine;
+*outstanding* is what a caller concludes from it — which is the same distinction
+`JobsQuerySchema.status` draws when it refuses to publish an `outstanding`
+shorthand on the wire. Exporting the conclusion under the wire's own vocabulary
+would have half-published the thing that field deliberately does not publish.
+
+### Decision 2 — enumerated, not derived
+
+Both lists come from a `Record<QueueEventStatus, "terminal" | "non-terminal">`
+keyed by the union. A seventh status is therefore a **compile error** in that
+record until somebody classifies it, rather than being silently classified
+non-terminal by a complement. That is the safer failure, and it is the wrong
+direction to guess in: a caller polling a non-terminal set waits forever on a
+state that never leaves it. `TERMINAL_QUEUE_EVENT_STATUSES` falls out of the same
+record, and a runtime test asserts the two partition `QUEUE_EVENT_STATUSES`
+exactly.
+
+### Decision 3 — the two uses are the same *set*, and the answer is yes
+
+Asked before the lists were merged. The two ask different **questions**: the
+server's is a SQL `IN` list inside `AWAITING_AGENT_SQL` (does an unsettled event
+name this thread?), the kit's is a `?status=` filter plus a client-side predicate
+over the answer. The **set** is identical — `["pending", "in-progress",
+"deferred"]` in both, with the same reading of `deferred` (claimed work parked
+while a person edits, returning to `pending` by itself, so the reply is still
+coming). Work is owed exactly while the event has not settled, whichever surface
+asks. Merging them is therefore right, and the test pins the exact three strings
+each side used to hold so the move is provably behaviour-preserving.
+
+### A third copy, found while doing it
+
+`JobsQuerySchema.status`'s description wrote the same three strings out by hand
+(*"the two callers … pass `pending,in-progress,deferred`"*). It is now
+`NON_TERMINAL_QUEUE_EVENT_STATUSES.join(",")`. The published bytes are unchanged
+— verified below — so this is a de-duplication, not a wire change.
+
+### `openapi.json` is unchanged in substance
+
+Nothing new is published. Verified against the generated document:
+
+```
+JSON.stringify(buildOpenApiDocument()) does not contain "NON_TERMINAL"
+JSON.stringify(buildOpenApiDocument()) does not contain "nonTerminal"
+```
+
+and, fetched from the **running** server on port 8838, the `status` parameter's
+description still reads `` `pending,in-progress,deferred` `` verbatim — PASS.
+
+### Consumers
+
+- `apps/server/src/docs/needs.ts`: `export const OUTSTANDING_EVENT_STATUSES =
+  NON_TERMINAL_QUEUE_EVENT_STATUSES;`
+- `packages/kit/src/query/useOutstandingJobs.ts`: `export const
+  OUTSTANDING_JOB_STATUSES: readonly QueueEventStatus[] =
+  NON_TERMINAL_QUEUE_EVENT_STATUSES;`
+
+Neither keeps a literal. Both docblocks record why the name stayed local.
+
+### Gates
+
+`vitest run packages/contract` — 2972 tests, exit 0, including the four new
+assertions in `schemas/queue.test.ts`. `npm run typecheck -w packages/kit` —
+exit 0. `apps/server` typecheck reports no error from this change (its three
+errors are CONTRACT-029/035/036's forcing functions). ESLint and Prettier clean.
+

@@ -863,7 +863,7 @@ export interface paths {
         put?: never;
         /**
          * Move a document to another folder
-         * @description Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. **A move names its own delta and presents no key** (SPEC.md §7): it rewrites the path, not the content, so it invalidates nobody's key and overwrites nothing.
+         * @description Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. **A move names its own delta and presents no key** (SPEC.md §7): it rewrites the path, not the content, so it invalidates nobody's key and overwrites nothing. **Only a document already under `data/docs/` can be moved**, and its source is checked before the destination is resolved, so a document that can never move says so rather than complaining about the folder. A `type: thread` document is flat at `data/threads/<id>.md` (SPEC.md §4) — its filename is its id, so there is nowhere to move it to — and the `400` reads *threads are flat under data/threads/ and cannot be moved*. A document under any other root — an `agent-def` in `.claude/agents/`, a skill under `.claude/skills/` — reads *<path> is not under data/docs/ and cannot be moved*. That holds in both directions, since `folder` reaches no root either: this route never takes a document out of a SPEC.md §7 root and never files one into it. **A persona written to the wrong place is repaired by creating it in `.claude/agents/`** (`POST /api/docs`, whose `folder` may name a root), not by moving the misfiled one.
          */
         post: {
             parameters: {
@@ -1824,7 +1824,7 @@ export interface paths {
         };
         /**
          * Read a thread with its turns
-         * @description Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2).
+         * @description Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2). **The response answers read state itself**: `unread` is the same comparison `DocRow.unread` makes, against the same server-side mark, so a reader that reached this conversation without a list row — a standalone thread, or one past the first page of a busy parent — does not have to guess. SPEC.md §10 makes read state an input to a placement and not only to a badge (CONTRACT-036).
          */
         get: {
             parameters: {
@@ -2925,7 +2925,7 @@ export interface paths {
         };
         /**
          * Whether an agent is there, halted state, and per-status event counts
-         * @description What the console strip reads (SPEC.md §10): the counts describe the work, and `agent` describes the worker. **`agent` is the roster's own liveness aggregated** — the same observation `GET /api/agents` reports per lane, so the strip and the recipient picker cannot disagree about whether anybody is listening — and it is here so that `idle` can be a claim with evidence behind it rather than the else-branch of the counts. An empty queue means nobody asked for anything; it has never meant somebody is waiting to be asked.
+         * @description What the console strip reads (SPEC.md §10): the counts describe the work, and `agent` describes the worker. **`agent` is true exactly while some listener is holding a parked scoped `idle`** — SPEC.md §7's definition of presence, measured here directly rather than read off another endpoint's rows — and it is here so that `idle` can be a claim with evidence behind it rather than the else-branch of the counts. It is the same observation `GET /api/agents` reports per lane, at the workspace's grain: the two normally agree, and `AgentPresence` states the one window in which they legitimately do not. An empty queue means nobody asked for anything; it has never meant somebody is waiting to be asked.
          */
         get: {
             parameters: {
@@ -3759,7 +3759,7 @@ export interface paths {
         };
         /**
          * Recent jobs for the console, or the jobs outstanding on one document
-         * @description Two questions on one route. **Unfiltered** it is the console's master list: one row per queue event with its status and last log line (SPEC.md §7, §10), most recently touched first, and `originId` links each row back to the document or thread it came from. **Filtered by `originId` (and usually `status`)** it is a predicate about a single document — *is the agent still working here?* — which SPEC.md §8's pending row and the board row's agent dot both need. That answer is **complete** — `recent` bounds the console list and is ignored once `originId` is given — because a predicate about one document cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly how a deferred job's "working…" row used to vanish while its reply was still coming (CONTRACT-030).
+         * @description Two questions on one route. **Unfiltered** it is the console's master list: one row per queue event with its status and last log line (SPEC.md §7, §10), most recently touched first, and `originId` links each row back to the document or thread it came from. **Filtered by `originId` (and usually `status`)** it is a predicate about a single document — *is the agent still working here?* — which SPEC.md §8's pending row and the board row's agent dot both need. That answer is **complete** — `recent` bounds the console list and is ignored once `originId` is given — because a predicate about one document cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly how a deferred job's "working…" row used to vanish while its reply was still coming (CONTRACT-030). **Either way the response says whether it is complete**: `total` counts everything the query matched and `truncated` says whether `recent` cut it, so a windowed answer can never be mistaken for a whole one (CONTRACT-035). With `originId` given the window is not applied at all, so `truncated` is false and `total` equals the array's length.
          */
         get: {
             parameters: {
@@ -5316,7 +5316,7 @@ export interface components {
             stats: components["schemas"]["DocChangeStats"];
             /** @description The unified diff of this document's file across the range, at most 16000 characters (`DOC_DIFF_MAX_CHARS`). Path-scoped, so commits in the range that touched other documents contribute nothing. Plain text, rendered as-is and never interpreted — a diff of a markdown document contains markdown, and a client that renders it would be rendering the user's document instead of showing the change to it. Empty when nothing changed in the range, which is a legitimate answer. */
             diff: string;
-            /** @description `true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. The cut is **hunk-aligned**: whole hunks are dropped from the end so that what is returned is always a valid unified diff a person or a tool can read, rather than a fragment ending mid-line. A single hunk larger than the whole bound is the one exception — it is cut at a line boundary, never mid-line. Stated rather than silent (the rule the context pack's own `truncated` sets): an agent acting on half a change while believing it saw all of it is the failure this flag exists to prevent, and `stats` plus `totalChars` say how much is missing. */
+            /** @description `true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. **Whole hunks are kept while they fit, and the hunk that straddles the bound is then cut at a line boundary** (SPEC.md §9.2), so the bound is spent on content rather than on alignment: a change whose body hunk lands just under the cap comes back as that change, not as the `updated:` frontmatter hunk in front of it. The cut is never mid-line and never mid hunk-header, so what is returned is always something a reader can read — **but the last hunk of a truncated diff may be a prefix of itself**, and its header's line counts then describe more lines than follow. Read it, do not apply it: `truncated` is the flag that says which you have. Stated rather than silent (the rule the context pack's own `truncated` sets): an agent acting on half a change while believing it saw all of it is the failure this flag exists to prevent, and `stats` plus `totalChars` say how much is missing. */
             truncated: boolean;
             /** @description Length in characters of the **full** diff before truncation; equal to `diff`'s length whenever `truncated` is false. Lets a caller report the scale of what it did not get (`showing 16000 of 42311 characters`) and decide whether to narrow the range and ask again. */
             totalChars: number;
@@ -5479,7 +5479,7 @@ export interface components {
              * @example evt_a1b2c3d4
              */
             job?: string;
-            /** @description Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). **Required, and it has no default**: a move names where the document is going. Nothing here is inbox-first — that is creation's rule (`POST /api/docs`, SPEC.md §10), and a document being moved already has a folder. Every destination is under `data/docs/`: a move carries no type, and each document root SPEC.md §7 adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — filing a document into such a root is part of creating it, not of moving it. The filename does not change, so a destination that already holds a file of that name is a `400` and never an overwrite. */
+            /** @description Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). **Required, and it has no default**: a move names where the document is going. Nothing here is inbox-first — that is creation's rule (`POST /api/docs`, SPEC.md §10), and a document being moved already has a folder. Every destination is under `data/docs/`: a move carries no type, and each document root SPEC.md §7 adds alongside `data/` holds exactly one type, so naming one (`.claude/agents`) is a `400` — filing a document into such a root is part of creating it, not of moving it. The filename does not change, so a destination that already holds a file of that name is a `400` and never an overwrite. **This is the destination alone**: whether the document may be moved at all depends on where it already sits, and `POST /api/docs/{id}/move` states that rule. */
             folder: string;
         };
         JobOnlyRequest: {
@@ -5713,6 +5713,8 @@ export interface components {
             agent: "none" | "requested" | "engaged";
             /** @description The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8). */
             resident: components["schemas"]["Resident"] | null;
+            /** @description **Whether this thread holds a turn you have not seen** (SPEC.md §7) — `DocRow.unread` for the thread you are reading, the same comparison against the same server-side mark in `.corpus/seen.json`, so the two agree by construction. Required and **never null**: this resource is only ever a thread, so there is no *null on non-threads* case to spell, and `false` means nothing is unseen rather than *unknown*. A thread with no turns reads `false` — there is nothing to have read. A partial read reads `true`, the same as the row and the same as the `unread` the mark itself reported (`MarkSeenResult`). It is here because SPEC.md §10's interlock makes read state an input to a **placement** — a conversation carrying an unseen turn is never collapsed by §6's rule — and a standalone thread has no list row a reader could take the answer from. */
+            unread: boolean;
             turns: components["schemas"]["Turn"][];
         };
         Resident: {
@@ -6245,7 +6247,7 @@ export interface components {
             lane: "orchestrator" | string;
             /** @description The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8). */
             resident: components["schemas"]["Resident"] | null;
-            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
+            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. One observation at two grains, and `AgentPresence` names the one window in which the two grains legitimately differ. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
             live: boolean;
             /**
              * Format: date-time
@@ -6282,10 +6284,14 @@ export interface components {
         /**
          * @description **Whether an agent is there, and the observation behind the answer** (SPEC.md §7, §10). Presence is the parked scoped `idle` and nothing else — nothing is registered, nothing is reaped, and nothing new is asked of the agent, which is why it can be reported without a heartbeat protocol.
          *
-         *     Where this sits on `QueueStatus` it is the roster's own liveness **aggregated over every lane**: `live` is true exactly when some lane of `GET /api/agents` is live, and `since` is the most recent of their instants. One notion of presence reported at two grains, so the console strip and the recipient picker can never disagree about whether anybody is listening. **It says whether an agent is present, never how many are**: one parked agent and two are both `live`, and a count belongs to the roster, which has a row per lane to put it on. Read it rather than deriving idleness from the queue counts beside it — an empty queue means nobody asked for anything, not that somebody is waiting to be asked.
+         *     Where this sits on `QueueStatus` it measures the workspace **directly**: `live` is true exactly when some listener is holding a parked scoped `idle`, and `since` is the most recent instant among the lanes that are live — or, when none is, the most recent instant any lane has ever supplied, so *last parked 10m ago* stays distinguishable from *none has parked since the server started*. It is defined by the parked request, not by another endpoint's rows.
+         *
+         *     **It can therefore read `live` while `GET /api/agents` lists no live lane** — briefly, and both answers correct. A roster row exists while a thread has a resident, and releasing that resident (or resolving the thread, which releases it too) removes the row at once. The listener parked on that lane does not go with it: it is still holding an `idle`, and it keeps holding it until it returns or lapses, up to one grace window. Presence is the parked request (SPEC.md §7), so this reports live for that window while the roster, which reports designated lanes, reports none. It resolves itself when that listener stops. A caller that must not watch two numbers disagree should read one of them.
+         *
+         *     **It says whether an agent is present, never how many are**: one parked agent and two are both `live`, and a count belongs to the roster, which has a row per lane to put it on. Read it rather than deriving idleness from the queue counts beside it — an empty queue means nobody asked for anything, not that somebody is waiting to be asked.
          */
         AgentPresence: {
-            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. The two are the same observation at two grains and never disagree. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
+            /** @description **Whether a listener is parked** (SPEC.md §7) — on this lane where this sits on a roster row, on any lane at all where it sits on the queue status. One observation at two grains, and `AgentPresence` names the one window in which the two grains legitimately differ. Presence is the parked scoped `idle` and nothing else: there is no heartbeat, no registration and nothing to reap, so an agent that stops parking stops being present whether it exited cleanly, crashed or was killed. **The grace window is already applied**: a listener between parks is still live, since a healthy one un-parks for a moment every time it re-arms. False is therefore an ordinary, recoverable state and not an error — past that window a lane's pending events fall back to the orchestrator at claim time, so the work is done more slowly and never silently not done. */
             live: boolean;
             /**
              * Format: date-time
@@ -6327,7 +6333,7 @@ export interface components {
         InProgressSet: {
             /** @description The held events, most recently claimed first, capped at 20. **Disjoint from the events just claimed** — an event cannot be in both, since a claim moves it out of `pending/` and this list is read from `in-progress/` as it stood beforehand. When the cap bites, the newest are kept: those are the ones this session can still account for, and the ancient ones are `reap-stale`'s job. */
             events: components["schemas"]["InProgressEvent"][];
-            /** @description How many events the server holds `in-progress` **in total**, equal to `events.length` whenever `truncated` is false. It is the "and N more" the cap owes the caller: subtract the list's length to get it. For the complete set past 20, ask `GET /api/jobs?status=in-progress` — the cap bounds this report, never the caller's reach. */
+            /** @description How many events the server holds `in-progress` **in total**, equal to `events.length` whenever `truncated` is false. It is the "and N more" the cap owes the caller: subtract the list's length to get it. For more than 20 of them, ask `GET /api/jobs?status=in-progress`, which pages up to 200 and reports its own `total` and `truncated` — so this cap bounds this report, and the route it points at windows without hiding it. */
             total: number;
             /** @description True when the cap cut the list — `total` is then greater than `events.length`. Stated rather than left to be derived (the rule `DocDiff.truncated` sets): this is the flag that stops a capped list from reading as a complete one, and a caller must not have to compute the one fact that keeps it honest. */
             truncated: boolean;
@@ -6421,6 +6427,10 @@ export interface components {
         JobList: {
             /** @description Console rows, most recent first. */
             jobs: components["schemas"]["Job"][];
+            /** @description **How many jobs matched this query in total**, before `recent` bounded the page — equal to `jobs.length` whenever `truncated` is false. Counted over the same filters the array was selected with, so it answers *how much did I not see* and never *how many jobs exist*. It is the `showing N of M` a windowed list owes its reader, spelled as `InProgressSet.total` spells it. */
+            total: number;
+            /** @description True when `recent` cut the list — `total` is then greater than `jobs.length`. Stated rather than left to be derived (the rule `DocDiff.truncated` sets and `InProgressSet.truncated` follows): a windowed answer reads exactly like a complete one, and the direction it fails in is silent — a job past the cut is indistinguishable from no job, which reads as *nothing outstanding*. **Always false when `originId` is given**, because that query drops the window and is answered completely (CONTRACT-030; see `recent`). */
+            truncated: boolean;
         };
         Job: {
             /**
@@ -6437,11 +6447,19 @@ export interface components {
             status: "pending" | "in-progress" | "deferred" | "processed" | "failed" | "abandoned";
             /**
              * Format: date-time
+             * @description **When this event entered the queue** (SPEC.md §7) — the `created` instant of the queue event that is this job. Written once and never moved, whatever the job goes on to do. This is what an elapsed-time display counts from: a job that sat `pending` for ten minutes and then began talking has been waited on for ten minutes, and nothing here resets when it starts.
              * @example 2026-07-19T10:05:00Z
              */
-            started: string;
+            enqueued: string;
             /**
              * Format: date-time
+             * @description **When the job first wrote a log line**, and null until it writes one — a job that is `pending`, and one that has been claimed but is still silent, both read null. Written once and never moved: later lines advance `updated`, not this. It is deliberately not the enqueue instant with another name (`enqueued` is that, and it is always known), because a field that means *enqueued* while queued and *first spoke* afterwards silently changes meaning partway through a job's life — which is what CONTRACT-029 was filed about. Null is the honest answer for work that has not been observed yet.
+             * @example 2026-07-19T10:05:00Z
+             */
+            started: string | null;
+            /**
+             * Format: date-time
+             * @description **The most recent log line's instant**, falling back to `enqueued` for a job that has written none. This is what `GET /api/jobs` orders by, most recent first. A `deferred` job stops advancing it while it waits (SPEC.md §7), which is how one falls out of a windowed list — see that route's `recent`.
              * @example 2026-07-19T10:05:00Z
              */
             updated: string;

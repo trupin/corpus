@@ -275,7 +275,7 @@ never auto-merged. The audience for that report is the agent.
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
 | SHARED-013 | Diff truncation is line-aligned, not hunk-aligned (SIGNED 2026-08-05, applied to §9.2) | done | P2 | SERVER-058 |
-| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SHARED-013 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | done | P2 | SHARED-013 |
 | CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
@@ -430,7 +430,7 @@ belongs to the same fix wave.
 | UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | done | P2 | SHARED-022, CONTRACT-039, SERVER-069, AGENT-015 |
 | AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | done | P2 | SHARED-022 |
 | PLUGINS-014 | The todos composer offers no weight control (PR #35 review) | closed | P2 | UI-082 |
-| CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
+| CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | done | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
@@ -469,8 +469,8 @@ belongs to the same fix wave.
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §11 warning-channel decision | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable — needs a one-line SPEC amendment signed | blocked | P2 | — |
-| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
-| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
+| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | done | P2 | — |
+| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | done | P2 | CLI-031 |
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
 | SERVER-084 | Count the unanswered forms on a row, from the query that already finds them | done | P1 | CONTRACT-040 |
 | SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | done | P2 | SERVER-068, CONTRACT-038 |
@@ -741,9 +741,9 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | SERVER-115 | Six emitters never name `["agents"]`, and this release is what makes them bite | done | P0 | CONTRACT-055 |
 | CONTRACT-052 | The diff route's published description tells API consumers the wrong default base | done | P1 | SERVER-113 |
 | CLI-045 | `corpus doc diff --help` describes the old default base | done | P2 | SERVER-113 |
-| CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | todo | P2 | SERVER-112 |
+| CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | done | P2 | SERVER-112 |
 | CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
-| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | todo | P2 | — |
+| CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
 | CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
@@ -806,7 +806,7 @@ ones their own files carry.
 | SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
 | SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
 | SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
-| CONTRACT-029 | `Job.started` means two different instants | todo | P2 | — |
+| CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
@@ -1016,7 +1016,7 @@ uncertain.
 | --- | --- | --- | --- | --- |
 | CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
-| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
+| CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
 | SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
@@ -1235,7 +1235,7 @@ left in a report.
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
 | UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
 | CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
-| CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | todo | P2 | — |
+| CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | done | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
 | UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |
 | SHARED-062 | A todo list's `due` is its items, and a hand-written date does not survive (SIGNED 2026-08-22, applied) | done | P0 | — |

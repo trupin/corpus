@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -164,15 +164,114 @@ projection tests.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+### Implemented on
 
-### Reproduction (bugs only)
+opus. **Contract half only**, as instructed — the server population and the UI
+consumption are handed off below and were deliberately not implemented.
 
-_[Agent fills]_
+### Reproduction, on a real server
 
-### Post-Implementation Verification
+Port **8838**, real workspace, `corpus` from source. Thread `th_j7xzwa3j` read
+through `GET /api/threads/{id}` before the change:
 
-_[Agent fills]_
+```
+Thread carries `unread`? False
+keys: id, title, created, updated, status, tags, parent, anchor, agent,
+      resident, turns
+```
+
+Nothing on the resource answers read state and nothing on it could derive the
+answer: no mark, no per-turn seen flag. That is the gap.
+
+### What the contract now carries
+
+`ThreadSchema` gains `unread: boolean` — **required, non-nullable**, positioned
+before `turns`. From the generated document:
+
+```
+Thread.required = ['id','title','created','updated','status','tags','parent',
+                   'anchor','agent','resident','unread','turns']
+Thread.properties.unread.type = "boolean"
+DocRow.properties.unread.type = ["boolean","null"]   # unchanged
+```
+
+The asymmetry is the point and is asserted: `DocRow.unread` is nullable because a
+row may be a document, this resource is only ever a thread, so `false` means
+*nothing unseen* and never *unknown*.
+
+The description ties itself to `DocRow.unread` **by name** rather than restating
+the comparison — the way `DocRow.unreadThreads` already ties itself to the
+per-thread flag — and states the two edge cases the criteria name: a thread with
+no turns reads `false`, a partial read reads `true` like the row and like
+`MarkSeenResult.unread`. The route description says the same at the operation
+level, since an OpenAPI reader meets the operation first.
+
+### Tests
+
+`packages/contract/src/schemas/thread.test.ts` — required, rejects a missing key,
+rejects `null`, rejects a string; and the description names `DocRow.unread`.
+`packages/contract/src/openapi.test.ts` — a CONTRACT-036 block against the
+**generated** component: published and required, typed `boolean`, **not**
+`["boolean","null"]` while `DocRow`'s still is, the description's three
+load-bearing phrases, and the route's sentence.
+
+### Handoff — server (`apps/server`)
+
+`apps/server/src/threads/read.ts:203` builds the `Thread` and is the one place to
+change; it is the third of the three intended compile errors in `apps/server`.
+
+- **The field**: `unread: boolean` on the `Thread` this function returns.
+- **What to compute it from**: the projection's existing comparison, **not a
+  second one**. `apps/server/src/docs/needs.ts` already owns it as
+  `unreadSql(mark)` — `t.last_ts IS NOT NULL AND t.last_ts > COALESCE(<mark>,
+  '')` — and exports `isThreadUnread(db, threadId, mark)`, which is exactly this
+  predicate against a bound mark. Call that with the thread's own id and the mark
+  from `.corpus/seen.json`, the same mark `DocRow.unread` and
+  `MarkSeenResult.unread` are computed against. A thread with no turns has
+  `last_ts IS NULL` and therefore reads `false` with no special case.
+- **Do not** re-derive it from the turns array in the response: the row, the mark
+  result and the thread must agree by construction, and three call sites of one
+  SQL fragment is how that is guaranteed today.
+- Tests belong beside the existing `DocRow.unread` projection tests: no turns →
+  `false`; a mark at the last turn → `false`; a `lastSeenTs` naming an earlier
+  turn → `true`, agreeing with the `MarkSeenResult` the mark itself returned.
+
+### Handoff — UI (`apps/ui`)
+
+`apps/ui/src/reader/DocView.tsx`, `openThreadReadState`:
+
+- **Replace the whole derivation with `readStateOf(thread.unread)`.** The field
+  is required and non-nullable, so there is no `"unknown"` to produce here any
+  more.
+- **What goes with it**: the `hasSeenMark(threadId, lastTurnTs)` fallback and its
+  import, the `useDocs({parent, type: thread})` row lookup that fed the first
+  branch, and the `"unknown"` branch itself. The reason the fallback existed —
+  a browser-lifetime `Map` that can confirm a read and never deny one — is
+  exactly what the field removes.
+- **What stays**: `ThreadReadState` itself. `summaryFromAnchor` still has no
+  answer to give, and the depth-clamped and row-less anchored placements still
+  rely on it.
+- **The behaviour to verify**: a **resolved standalone thread** (the board's
+  global composer creates one on every Ask, `parent: null`) must be placed
+  **collapsed** on the first visit after a reload, which is what it does not do
+  today. Then post a turn to it from the CLI, reload, and it must be placed
+  **expanded** — SPEC.md §10's interlock, answered by the server rather than by
+  the browser.
+- `apps/ui/src/testing/readerFixture.ts` and any `Thread` literal in the UI's
+  tests need `unread`.
+
+Note for whoever picks these up: `apps/ui`'s typecheck is **not** trustworthy
+from a fresh worktree without `packages/kit/dist` — it silently resolves
+`@corpus/*` to the main checkout and reports green.
+
+### Gates
+
+`vitest run packages/contract` — 2972 tests, exit 0. `npm run typecheck -w
+packages/contract` — exit 0 (four contract-owned fixtures updated:
+`schemas/thread.test.ts`, `client/upload.test.ts`,
+`client/request-defaults.test.ts`, `routes/index.test.ts`,
+`routes/thread-create.test.ts`). ESLint and Prettier clean. `openapi.json` and
+`schema.generated.ts` regenerated.
 
 ## Completion Checklist (domain agent)
 

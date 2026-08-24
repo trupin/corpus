@@ -1,4 +1,9 @@
-import { MAX_RECENT_JOBS, type Job, type QueueEventStatus } from "@corpus/contract";
+import {
+  MAX_RECENT_JOBS,
+  NON_TERMINAL_QUEUE_EVENT_STATUSES,
+  type Job,
+  type QueueEventStatus,
+} from "@corpus/contract";
 import { useJobs } from "./useJobs.js";
 
 /**
@@ -49,12 +54,16 @@ import { useJobs } from "./useJobs.js";
  * still coming.
  * `processed`, `failed` and `abandoned` are terminal: nothing more arrives
  * without someone asking again.
+ *
+ * **The list itself is the contract's** (CONTRACT-073). These three strings were
+ * also written out in `apps/server`'s `OUTSTANDING_EVENT_STATUSES`, in a package
+ * this one cannot import and which cannot import this one, so the two were one
+ * reading of §7 kept in two places with each suite asserting its own copy. The
+ * name stays local because "outstanding" is this module's conclusion rather than
+ * a fact about the state machine.
  */
-export const OUTSTANDING_JOB_STATUSES: readonly QueueEventStatus[] = [
-  "pending",
-  "in-progress",
-  "deferred",
-];
+export const OUTSTANDING_JOB_STATUSES: readonly QueueEventStatus[] =
+  NON_TERMINAL_QUEUE_EVENT_STATUSES;
 
 /**
  * The same three states as the `status` query parameter spells them. Derived

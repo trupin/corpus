@@ -37,6 +37,12 @@ const EventIdParamSchema = z.object({
  * it to be guessed from the counts. That is why a `["queue"]` frame is owed on
  * a presence change as well as on a queue transition (`../query-keys.ts`): a
  * status the strip never refetches is a pill that never notices the agent left.
+ *
+ * **`agent` is not defined as the roster's rows** (CONTRACT-053). It was, and
+ * SERVER-112 found the window where that reading is false: a listener parked on
+ * a lane whose resident was released holds its `idle` for up to one grace window
+ * after the roster row is gone. The parked request is what §7 calls presence, so
+ * this field states that and `AgentPresence` carries the divergence.
  */
 export const getQueueStatus = createRoute({
   method: "get",
@@ -45,10 +51,12 @@ export const getQueueStatus = createRoute({
   summary: "Whether an agent is there, halted state, and per-status event counts",
   description:
     "What the console strip reads (SPEC.md §10): the counts describe the work, and `agent` " +
-    "describes the worker. **`agent` is the roster's own liveness aggregated** — the same " +
-    "observation `GET /api/agents` reports per lane, so the strip and the recipient picker " +
-    "cannot disagree about whether anybody is listening — and it is here so that `idle` can be " +
-    "a claim with evidence behind it rather than the else-branch of the counts. An empty queue " +
+    "describes the worker. **`agent` is true exactly while some listener is holding a parked " +
+    "scoped `idle`** — SPEC.md §7's definition of presence, measured here directly rather than " +
+    "read off another endpoint's rows — and it is here so that `idle` can be a claim with " +
+    "evidence behind it rather than the else-branch of the counts. It is the same observation " +
+    "`GET /api/agents` reports per lane, at the workspace's grain: the two normally agree, and " +
+    "`AgentPresence` states the one window in which they legitimately do not. An empty queue " +
     "means nobody asked for anything; it has never meant somebody is waiting to be asked.",
   responses: {
     200: jsonContent(QueueStatusSchema, "Agent presence, current queue depth and halt state."),

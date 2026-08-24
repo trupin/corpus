@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -108,7 +108,82 @@ reverting the clause and running that test alone.
 
 ## E2E Verification Log
 
-_[Agent fills]_
+### Implemented on
+
+opus.
+
+### Decision
+
+**Prose alone, and the source rule lives on the route.** Allowing an off-root
+document to be moved *into* its root is a real feature and a bigger question than
+this issue, so it is not attempted here — and the refusal itself is right, since
+`.claude/` is Claude Code's tree. `MoveDocRequest.folder` keeps the destination
+grammar and gains one pointer sentence; the source rule has one home, per
+CONTRACT-064's lesson that a rule stated twice drifts.
+
+### Real refusals, captured before the prose was believed
+
+Throwaway workspace, real server on port **8838** (not 8765, not 5173),
+`corpus` run from source.
+
+```
+$ corpus doc create --type agent-def --title "Analyst" --json
+doc_icnvgtcs .claude/agents/analyst.md
+
+$ corpus doc move doc_icnvgtcs --folder inbox --json
+{"error":{"code":"bad_request","message":"400 bad_request: this document's location is fixed",
+ "details":[{"path":"id","message":".claude/agents/analyst.md is not under data/docs/ and cannot be moved"}]}}
+
+$ corpus doc move th_pmi46y2p --folder inbox --json
+{"error":{"code":"bad_request","message":"400 bad_request: this document's location is fixed",
+ "details":[{"path":"id","message":"threads are flat under data/threads/ and cannot be moved"}]}}
+
+$ corpus doc create --type agent-def --title "Old Analyst" --folder inbox --json   # the misfiled persona
+doc_fhvn53ju  data/docs/inbox/old-analyst.md
+$ corpus doc move doc_fhvn53ju --folder ".claude/agents" --json
+{"error":{"code":"bad_request","message":"400 bad_request: that root holds one kind of document, and this is not it", ...}}
+```
+
+Both directions are refused, which is why the new text says so in both
+directions and points at `POST /api/docs` as the repair.
+
+### The published description now predicts them
+
+Fetched from the **running** server, not from the file on disk:
+
+```
+$ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8838/api/openapi.json
+PASS 065 route: source rule            ("Only a document already under `data/docs/` can be moved")
+PASS 065 route: thread refusal         ("threads are flat under data/threads/ and cannot be moved")
+PASS 065 route: off-root refusal       ("is not under data/docs/ and cannot be moved")
+PASS 065 field: destination-only pointer ("This is the destination alone")
+```
+
+Both refusal messages are quoted **verbatim** from `assertMovable`
+(`apps/server/src/docs/move.ts`), so the contract and the server cannot come to
+two accounts of one rule.
+
+### Tests and falsification
+
+Five new assertions in `packages/contract/src/openapi.test.ts`, written against
+the generated document. Falsified by replacing the source clause with `"XX "` and
+running the file alone:
+
+```
+$ vitest run -t "CONTRACT-065" packages/contract/src/openapi.test.ts ; echo $?
+× names the source restriction on the route
+Tests  1 failed | 4 passed | 551 skipped
+1
+```
+
+Clause restored, all five pass. `openapi.json` and `schema.generated.ts`
+regenerated with `npm run generate -w packages/contract`; neither hand-edited.
+
+### Gates
+
+`vitest run packages/contract` — 70 files, 2972 tests, exit 0.
+`npm run typecheck -w packages/contract` — exit 0. ESLint and Prettier clean.
+Server stopped, port 8838 free, no stray processes.
 
 ## Completion Checklist (domain agent)
 
