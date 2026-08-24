@@ -221,7 +221,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | done | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
-| UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |
+| UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | done | P2 | UI-031 |
 | PLUGINS-008 | Legacy frontmatter-items todo renders a silently empty body (dogfood 2026-08-02) | done | P1 | PLUGINS-005 |
 | PLUGINS-009 | Todo item rows: right-click quick actions — toggle, comment, open thread (dogfood) | done | P2 | PLUGINS-005, PLUGINS-003 |
 | PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | done | P2 | PLUGINS-005, UI-037 |
@@ -232,7 +232,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-039 | Column query editor: autocomplete + syntax help (dogfood) | done | P2 | — |
 | SERVER-051 | Embed worker emits SSE invalidations for index status (§10 pill rider) | done | P1 | — |
 | UI-045 | Kit surface for plugin menus, selectors, mutations (PLUGINS-009 debt; selector-drift hazard) | closed | P1 | PLUGINS-009 |
-| UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | todo | P2 | — |
+| UI-046 | Dev-only: StrictMode drops thread reveals on cached docs (PLUGINS-009 finding) | done | P2 | — |
 | UI-040 | Console strip: semantic-index pill with live progress (§10 rider, signed) | done | P1 | SERVER-051 |
 | UI-041 | Copy button on fenced blocks in rendered turns (§10 canvas rider, signed) | done | P1 | — |
 | AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | done | P2 | — |
@@ -411,7 +411,7 @@ belongs to the same fix wave.
 | SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
 | SERVER-089 | `rollback.test.ts` fails in CI at a git object the fixture should have — **blocks PR #41** | done | P0 | — |
 | CLI-037 | Corpus maintains the workspace's git; git no longer maintains it in the background (SERVER-089) | done | P0 | SERVER-089 |
-| UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
+| UI-106 | A carried effect is not an error, and the UI renders every warning as one | done | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
@@ -435,7 +435,7 @@ belongs to the same fix wave.
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
-| UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
+| UI-080 | Ten e2e sites send a key straight after click() with no focus wait | done | P2 | — |
 | SERVER-065 | Three projection readers swallow a failed `readdir` silently | done | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
@@ -1646,6 +1646,6 @@ user, not work).
 | CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | done | P1 | opus | SERVER-144 |
 | CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
 | SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
-| UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | todo | P1 | opus | SERVER-148 |
-| UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | todo | P2 | opus | UI-144 |
+| UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
+| UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
 | SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |

@@ -325,3 +325,60 @@ It was checked as a possible regression before being called load. UI-165 changed
 when a column earns a thread margin, and a viewport assertion on a revealed
 conversation is exactly what that could disturb — so it was run in isolation and
 then in a second full suite before the release moved on. Neither reproduced it.
+
+## Three UI instances closed, and what generalises (2026-08-24, ui-dev, v0.22.0)
+
+**Not closing this issue.** UI-080, UI-033 and UI-046 were the three UI issues
+this file's *"make it deterministic — wait on the condition, not on a duration"*
+rule pointed at. All three are done. What they establish is a sharper form of the
+criterion at the foot of the summary, and the sharpening is the part worth
+keeping.
+
+**None of the three was a load flake, and two of them were product defects.**
+
+- **UI-033** — a test that failed on an idle machine, every run, once the width
+  transition it raced was waited out. The cause was an **event order** in the
+  product: Chromium dispatches a movement's boundary events before its
+  `mousemove`, and the board activated on `mouseover` while releasing a keyboard
+  latch on `mousemove` — so the first movement's activation was dropped by the
+  latch that same movement released. The spec had been stabilised earlier with an
+  honest two-move gesture, which is exactly the shape of a fix written **around**
+  a defect rather than over it. The rule that catches this: *a stabilisation that
+  changes the gesture rather than the wait is a bug report.*
+- **UI-046** — dev-only, and it never failed at all, because nothing asserted the
+  thing that was dropped. `comments-tab.spec.ts` said "expanded and flashing" in
+  its own comment and asserted only the expansion. A green suite was proving half
+  of what its author believed. The rule: *a claim in a test's prose that the test
+  does not assert is an untested claim, and the prose is where to look for them.*
+- **UI-080** — genuinely test-side, and the one that fits this file's original
+  description. But its sites did **not** fail under load; they failed silently and
+  passed. An unfocused `Ctrl/Cmd+A` selects the page rather than the editor body,
+  and the copy that follows carries the page's chrome onto the clipboard while the
+  assertion — "both flavours are present" — stays true. Forcing the condition (a
+  `blur()` between the click and the key) reproduced it byte for byte on an idle
+  machine.
+
+**The generalisation for this issue's criterion.** *A test that fails without
+contention is not load-sensitive* was the tell recorded here after SERVER-060.
+The three above add its neighbour: **a test that has never failed is not evidence
+either.** Two of these three defects were invisible to the suite — one because
+the assertion was too loose to notice a wrong result, one because the assertion
+was missing. Where a wait is being considered, the cheap discriminator is to
+**force the condition the wait would hide** — blur the surface, park the pointer,
+render under `StrictMode` — and see what the suite says. If it still passes, the
+suite is not watching, and adding the wait would make that permanent.
+
+**A grep-check or ESLint rule over `click()`-then-`keyboard` was considered and
+declined**, and the reason belongs here rather than in UI-080. That sweep produced
+**four** sites that are correct as they stand — three document-level hotkeys where
+no element needs focus, one right-click whose key is aimed at a menu — each
+carrying prose that a rule cannot read. A rule suppressed at a quarter of its hits
+teaches people to suppress it. If infra-dev wants the guard, the honest shape is a
+check that requires *any* awaited assertion between the click and the key, not
+`toBeFocused()` specifically, so a justified site satisfies it by carrying the
+condition it actually needs.
+
+**Load measurement taken while closing them**, on the machine this file keeps
+notes about: `clipboard`, `autocomplete-keys`, `turn-breaks` and `context-menu` at
+`--workers=4 --repeat-each=10` — **500 passed in 5.1 min**, zero flaky. Full
+Playwright suite at `--workers=2`: **640 passed**, twice, on two different trees.

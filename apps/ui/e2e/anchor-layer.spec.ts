@@ -303,6 +303,61 @@ test.describe("closing full screen with the pointer parked over another column",
     await page.mouse.move(lane, (moved?.y ?? 0) + 120);
     await expect(neighbour).toHaveClass(/kactive/);
   });
+
+  /**
+   * UI-033 — **one move, not two.**
+   *
+   * The two-move gesture above is honest about what a hand does and was the
+   * right way to stop the spec flaking, but it was written around a defect
+   * rather than over it: the *first* real movement after `hold()` had its
+   * activation dropped. Chromium dispatches a movement's boundary events before
+   * its `mousemove`, so `onMouseOver` was evaluated while the latch was still
+   * armed, and the `mousemove` that disarmed it carried no activation of its
+   * own. The column adopted the board on the next **element-boundary crossing**,
+   * which is why the pointer had to leave and re-enter something. That
+   * contradicts the rule `useActiveColumn` documents in as many words: the latch
+   * is "released by the same real `mousemove`".
+   *
+   * Benign in a busy layout, where real motion crosses a boundary within a few
+   * pixels. Not benign inside one uniform region — an empty `.col-list`, a large
+   * `.row-excerpt`, the board background — where a pointer can travel a long way
+   * with the column still inactive. That is the UI-022 "wiggle the mouse"
+   * complaint, one layer down.
+   *
+   * Measured after the transition has stopped, so nothing can slide under the
+   * resting cursor and supply a crossing the gesture did not make. Falsify by
+   * taking `capture: true` off the release listener, or `onMouseMove` off the
+   * column: this goes red and the two-move test above stays green.
+   */
+  test("adopts the board on the very first movement, with no second crossing", async ({ page }) => {
+    await openNote(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
+    const origin = page.locator('.pcol[data-col="path:1:0"]');
+    const neighbour = page.locator('.col[data-col="doc_view_threads"]');
+    await expect(origin).toHaveClass(/kactive/);
+
+    await page.locator('.reader[data-reader-doc="doc_note"] [data-expand]').click();
+    await expect(page.locator(".focus.open")).toHaveCount(1);
+
+    const parked = await neighbour.boundingBox();
+    await page.mouse.move(
+      (parked?.x ?? 0) + (parked?.width ?? 0) / 2,
+      (parked?.y ?? 0) + (parked?.height ?? 0) / 2,
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".focus.open")).toHaveCount(0);
+    await settle(page);
+    // The latch did its job: the close handed nothing over.
+    await expect(origin).toHaveClass(/kactive/);
+
+    // Everything has stopped moving, so the only crossing available is the one
+    // this gesture makes.
+    await stopped(neighbour);
+    const moved = await neighbour.boundingBox();
+    await page.mouse.move((moved?.x ?? 0) + (moved?.width ?? 0) / 2, (moved?.y ?? 0) + 60);
+
+    await expect(neighbour).toHaveClass(/kactive/);
+    await expect(origin).not.toHaveClass(/kactive/);
+  });
 });
 
 test.describe("an anchor whose quote has left the body", () => {

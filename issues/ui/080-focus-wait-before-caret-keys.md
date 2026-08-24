@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41).** Two references to
 `apps/ui/e2e/todos-menu.spec.ts` are removed — the file is deleted with the
@@ -173,21 +173,21 @@ its arithmetic.
 
 ## Acceptance Criteria
 
-- [ ] Every site in Class A and Class B either carries a condition-shaped wait
+- [x] Every site in Class A and Class B either carries a condition-shaped wait
       before its first key, or carries a **written justification** at the site
       saying why it is safe — an undocumented omission is what produced this issue
-- [ ] A2–A6 are fixed unconditionally. They are silent-corruption sites, which is
+- [x] A2–A6 are fixed unconditionally. They are silent-corruption sites, which is
       the criterion the two already-fixed sites met
-- [ ] A1 is fixed in the shared helper, so the whole file inherits the fix
-- [ ] The fix is the **established pattern** — `await expect(<locator>).toBeFocused()`
+- [x] A1 is fixed in the shared helper, so the whole file inherits the fix
+- [x] The fix is the **established pattern** — `await expect(<locator>).toBeFocused()`
       — not a new one, and not a `waitForTimeout`
-- [ ] No `waitForTimeout`, no raised expect timeout, and no `waitFor()` on mere
+- [x] No `waitForTimeout`, no raised expect timeout, and no `waitFor()` on mere
       attachment (which is what A1 already has and which does not close the race)
-- [ ] The four global-hotkey sites are explicitly **decided**: fixed with an
+- [x] The four global-hotkey sites are explicitly **decided**: fixed with an
       appropriate condition (the shape `board.spec.ts:90-93` already uses), or
       excluded with a comment saying why
-- [ ] Every file touched still passes at default workers and under deliberate load
-- [ ] The reproduction is re-run at one site as proof the mechanism is understood:
+- [x] Every file touched still passes at default workers and under deliberate load
+- [x] The reproduction is re-run at one site as proof the mechanism is understood:
       blur between click and key, observe the corrupted output, restore
 
 ## Technical Design
@@ -282,24 +282,142 @@ The subject is the test suite, so verification is measurement:
 _Filled in by the implementing agent as proof-of-work. State which model the
 implementing agent ran on ("implemented on: opus | fable")._
 
-### Reproduction (bugs only)
+**Implemented on: opus** (Opus 5, 1M context), 2026-08-24.
 
-_[Agent fills: the blur reproduction at a named site, exact observed output,
-whether it failed or silently passed wrong.]_
+### Reproduction — A2, `clipboard.spec.ts`'s `copyWholeBody`
 
-### Post-Implementation Verification
+A blur inserted between the `click()` and the first key:
 
-_[Agent fills: per-file before/after pass counts under identical load, the
-decision taken on the four global-hotkey sites and why, and any site left unfixed
-with its written justification.]_
+```ts
+await page.locator(".reader .ProseMirror").click();
+await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); });
+await page.keyboard.press("ControlOrMeta+a");
+await page.keyboard.press("ControlOrMeta+c");
+```
+
+```
+✓ 1  copying out of the document view › puts both flavors on the clipboard
+✘ 2  › the rich flavor carries the structure an external editor needs
+✘ 3  › the plain flavor is the document's markdown, not a stripped dump
+✘ 4  › a [[ref]] leaves as its title, with no doc id and no link to nowhere
+```
+
+Observed, verbatim:
+
+```
+Expected substring: "<h2>Findings</h2>"
+Received string:    "<header class=\"topbar\" style=\"box-sizing: border-box;…
+
+Expected substring: "- second **bold** bullet"
+Received string:    "Corpus
+```
+
+The unfocused `Ctrl/Cmd+A` selected the **whole page** rather than the editor
+body, and the copy carried the page's chrome — the topbar, the word "Corpus" —
+onto both clipboard flavours. **Test 1 passed.** It asserts only that both
+flavours are present, so a wrong scope reads exactly like a correct copy. That is
+the silent half the issue's triage predicted for A2–A6, confirmed rather than
+argued.
+
+### Post-implementation verification — the same blur, re-inserted
+
+```
+✘ 1  › puts both flavors on the clipboard (6.2s)
+✘ 2  › the rich flavor carries the structure an external editor needs
+✘ 3  › the plain flavor is the document's markdown, not a stripped dump
+✘ 4  › a [[ref]] leaves as its title, with no doc id and no link to nowhere
+
+Error: expect(locator).toBeFocused() failed
+Expected: focused   Received: inactive
+> 182 |   await expect(page.locator(".reader .ProseMirror")).toBeFocused();
+```
+
+All four now fail **at the focus assertion, naming the real condition**, test 1
+included — the one that used to pass with the wrong content. That is the whole
+point of the fix. Blur removed.
+
+### What was applied
+
+One line per site, the established pattern only — `await
+expect(<locator>).toBeFocused()`. No `waitForTimeout`, no raised timeout, no
+`waitFor()` on attachment.
+
+| # | Site | Condition |
+| --- | --- | --- |
+| A1 | `autocomplete-keys.spec.ts`, in `openEditor` | editor root focused — the whole file inherits it |
+| A2 | `clipboard.spec.ts`, `copyWholeBody` | editor root focused |
+| A3 | `clipboard.spec.ts`, `copyViaContextMenu` | clicks an `h1`, waits on the **root** |
+| A4 | `clipboard.spec.ts`, `pasteHtml` | editor root focused |
+| A5 | `clipboard.spec.ts`, plain-markdown paste | editor root focused |
+| A6 | `clipboard.spec.ts`, right-click paste | clicks an `h1`, waits on the root |
+| A7 | `turn-breaks.spec.ts` | the `[data-composer]` textarea focused |
+| B1 | `context-menu.spec.ts`, the `Enter`/`NumpadEnter` loop | menu visible |
+| B2 | `context-menu.spec.ts`, the `Escape` half | menu visible |
+| B3 | `context-menu.spec.ts`, the `Space` half | menu visible **and the first item focused** |
+
+A1's existing `waitFor()` proved attachment, not focus, and was left in place
+beside the new wait rather than replaced — the two say different things.
+
+B3 gets the stronger condition deliberately: `Space` activates whatever is
+focused, so a lost `ArrowDown` activates the **wrong entry**, and a menu's roving
+focus arrives after it is drawn. B1 and B2 take visibility, which is what their
+own guarded siblings in the same file use, and both fail loudly on the next line.
+
+A7 fails loudly by construction. The wait was still added, because it buys a
+*named* failure — "the composer never took focus" — instead of a value mismatch
+two lines later. That reason is written at the site.
+
+### The four global-hotkey sites — decided
+
+**One was misclassified and is fixed.** `board.spec.ts`'s ghost-column `Escape`
+is not a global hotkey: that key has to reach the **picker the click opens**, and
+the picker is drawn asynchronously. It now carries the shape this file's own
+guarded sibling already uses, `await expect(page.locator(".ac-menu.open"))
+.toBeVisible()`.
+
+**Three are excluded, with the justification at the first site and pointers at
+the other two.** `compose-keyboard.spec.ts`'s three `.topbar` clicks precede `c`
+and `?`, which are document-level hotkeys: they need no particular element
+focused, they need the *previous* focus released, and the click does that
+synchronously on mousedown before `click()` resolves. `toBeFocused()` is the
+wrong instrument — there is nothing this click is waiting to become focused — and
+all three fail loudly, since a `c` that reached the old surface types a letter
+instead of opening the dialog.
+
+### Load
+
+Before-numbers are the deterministic reproduction above rather than a flake
+count: none of these sites failed spontaneously in my runs, and the mechanism was
+proven by forcing the blur instead. That is the stronger evidence and it is what
+the acceptance criterion asks to be stated rather than dressed up as a measured
+improvement.
+
+After, all four riskiest files at once:
+
+```
+--workers=4 --repeat-each=10 clipboard.spec.ts autocomplete-keys.spec.ts \
+  turn-breaks.spec.ts context-menu.spec.ts
+500 passed (5.1m)
+```
+
+Every touched file at default workers: `82 passed (1.5m)`. Full suite,
+`--workers=2`: **640 passed, 0 failed** (9.1 min).
+
+### The guard against a third round
+
+Not built. The Technical Design offers it as optional, and it must not fire on
+the justified sites — of which this round produced four, each with prose that a
+lint rule cannot read. A rule that has to be suppressed at a quarter of its hits
+teaches people to suppress it. Recorded for INFRA-020 rather than guessed at
+here.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

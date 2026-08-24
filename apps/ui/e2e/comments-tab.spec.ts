@@ -235,6 +235,18 @@ test.describe("the list", () => {
       page.locator(`${READER} [data-thread-panel="th_anchored"] .thread-card`),
     ).toBeVisible();
     await expect(page.locator(`${READER} .anchor-hl[data-thread="th_anchored"]`)).toHaveCount(1);
+    /*
+     * **And flashing** — the half this test named and never asserted (UI-046).
+     * This is the reveal's warm path: the reader is already on the document, so
+     * its conversation list is answered and the honour lands in the same commit
+     * the instruction arrives on. `StrictMode` — which the dev server this suite
+     * runs against does render under — then replayed the flash-clearing effect
+     * *after* that honour, and the reveal's one-shot guard refused to fire again.
+     * The conversation expanded with nothing pointing at it.
+     */
+    await expect(
+      page.locator(`${READER} [data-thread-panel="th_anchored"] .thread-card.flash`),
+    ).toHaveCount(1);
   });
 
   test("offers a detached row its way back, and offers it to nobody else", async ({ page }) => {

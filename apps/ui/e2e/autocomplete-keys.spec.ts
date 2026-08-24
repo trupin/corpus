@@ -158,6 +158,16 @@ test.describe("the document editor's `[[` menu", () => {
     await page.locator('.row[data-row-doc="doc_note"]').click();
     await page.locator(".reader .ProseMirror").waitFor();
     await page.locator(".reader .ProseMirror").click();
+    /*
+     * The whole file inherits this wait, because every test enters through here
+     * (UI-080). `waitFor()` above proves the element is **attached**, which does
+     * not close the race: `click()` resolves when the mouse events land, not when
+     * the target takes focus, and `Ctrl/Cmd+End` on an unfocused page is a scroll
+     * rather than a caret move. It fails silently — the caret stays wherever the
+     * mousedown left it, and the next keystroke types there, mid-word. Waiting on
+     * the condition, not on a duration (`soft-wrap.spec.ts`'s `caretIn`).
+     */
+    await expect(page.locator(".reader .ProseMirror")).toBeFocused();
     await page.keyboard.press("ControlOrMeta+End");
   }
 

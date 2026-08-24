@@ -119,6 +119,9 @@ async function stubThread(page: Page): Promise<void> {
         anchor: null,
         agent: "engaged",
         resident: null,
+        // The server's answer to §10's interlock, published rather than derived
+        // (CONTRACT-036).
+        unread: false,
         turns: [
           { author: "agent", ts: "2026-07-01T09:05:00.000Z", body: AGENT_TURN, model: null },
           ...appended,
@@ -154,6 +157,13 @@ test.describe("a newline in a turn", () => {
 
     const composer = page.locator('[data-composer="th_breaks"]');
     await composer.click();
+    /*
+     * This one fails loudly — a dropped prefix shows up as a value mismatch two
+     * lines down — so the wait buys a *named* failure rather than a silent one:
+     * "the composer never took focus" instead of "the value was not what you
+     * expected". Same one-line pattern as every other site (UI-080).
+     */
+    await expect(composer).toBeFocused();
     await page.keyboard.type(REPLY_FIRST);
     await page.keyboard.press("Enter");
     await page.keyboard.type(REPLY_SECOND);

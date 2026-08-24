@@ -58,7 +58,7 @@ const QUEUED_EVENT = {
   eventId: "evt_ask",
   type: "comment.created",
   status: "pending" as const,
-  started: ASKED_AT,
+  enqueued: ASKED_AT,
   originId: "th_ask",
 };
 
@@ -187,7 +187,7 @@ test.describe("a request the agent parked on somebody's editing", () => {
     eventId: "evt_ask",
     type: "comment.created",
     status: "deferred" as const,
-    started: ASKED_AT,
+    enqueued: ASKED_AT,
     originId: "th_ask",
     blockedOn: "doc_policy",
   };

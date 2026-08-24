@@ -333,7 +333,8 @@ test.describe("the master-detail body", () => {
       eventId: "evt_e2e",
       type: "comment.created",
       status: "failed",
-      started: "2026-07-27T09:12:00Z",
+      enqueued: "2026-07-27T09:12:00Z",
+      started: "2026-07-27T09:12:04Z",
       updated: "2026-07-27T09:12:09Z",
       lastLine: "the agent exited 1",
       originId: null,
@@ -345,7 +346,8 @@ test.describe("the master-detail body", () => {
       const url = new URL(route.request().url());
       const body = (payload: unknown, status = 200): Promise<void> =>
         route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
-      if (url.pathname === "/api/jobs") return body({ jobs: [failedJob] } satisfies JobList);
+      if (url.pathname === "/api/jobs")
+        return body({ jobs: [failedJob], total: 1, truncated: false } satisfies JobList);
       if (url.pathname.endsWith("/retry")) {
         // Still on the wire when the menu goes: the teardown this pins.
         await new Promise((resolve) => setTimeout(resolve, 300));
