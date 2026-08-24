@@ -55,6 +55,16 @@ governs how much the machine is allowed to run.
       lanes simply lapsing to the orchestrator, which is already the defined
       behaviour for an absent resident and may be the right answer for free
 
+## Signed 2026-08-24 — parked listeners do not count
+
+§7's parallelism rule now says it outright: **a parked listener does not count
+against the subagent bound.** The bound counts work in flight, never attention
+held.
+
+This ratifies the reading AGENT-026 had to take to write the skill at all. The
+spec was silent, the decision was recorded in the skill rather than hidden, and
+it now lives in the spec rather than in an implementation's prose.
+
 ## Acceptance Criteria
 
 - [ ] Drafted amendment text quoted to the user **verbatim** and signed before

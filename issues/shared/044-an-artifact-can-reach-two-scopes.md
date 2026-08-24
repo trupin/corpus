@@ -184,6 +184,25 @@ below should now be drafted to **record parent-first**, not to decide it.
       asked in"* generalises — the summons carve-out may be one instance of a
       rule that should cover every cross-scope write
 
+## Signed 2026-08-24 — the parent chain decides, and I had it backwards
+
+§7's guarantee is now true: **where two routes reach different scopes, the
+parent chain decides.** Origin decides only where no parent chain reaches a
+designated thread.
+
+**The orchestrator proposed origin and the code corrected it.** The question put
+to the user suggested origin would win, "since it is the stamped fact". Reading
+`apps/server/src/queue/scope.ts` before drafting showed the walk has always gone
+**parent branch first, both edges** — so a rider naming origin would have
+promised something the code does not do, which is the failure this whole
+exercise exists to prevent.
+
+On the merits the code is also right: a conversation belongs to the resident who
+owns it, and a message written into it by an agent working another scope does
+not carry it away. So the amendment moves the spec to the code rather than the
+code to the spec, and **no server change is needed** — which the user's chosen
+option had allowed for.
+
 ## Acceptance Criteria
 
 - [ ] Drafted amendment text quoted to the user **verbatim**, one rider, and

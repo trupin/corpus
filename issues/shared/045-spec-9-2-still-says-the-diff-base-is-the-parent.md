@@ -56,6 +56,18 @@ because the reason is the thing that will stop it drifting back: the parent of a
 window commit is not this document's history, it is whoever else's document
 happened to be saved in the same window.
 
+## Signed 2026-08-24 — §9.2 amended to match §4
+
+§9.2's `from` default now reads **the previous commit that touched the
+document**, with a sentence saying why it differs from `to`'s parent in ordinary
+use rather than at an edge: §4's window is party-scoped, so a commit's parent is
+routinely a different party's commit over a different document.
+
+The 2026-08-05 rider's signature stands and the amendment is dated beside it, so
+a reader can see that the sentence was true when written and that §4 falsified
+it five days later. **The code already followed §4**, so this moved only the
+spec.
+
 ## Acceptance Criteria
 
 - [ ] Drafted amendment text quoted to the user **verbatim** and signed before
