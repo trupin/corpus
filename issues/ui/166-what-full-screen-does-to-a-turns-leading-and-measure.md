@@ -280,12 +280,54 @@ green.
 - `playwright turn-model.spec.ts collapse.spec.ts anchor-layer.spec.ts
   anchors.spec.ts --workers=1` — **50 passed** (6.7m). `turn-model.spec.ts` is
   the other spec that reads a turn on both surfaces and in the margin.
-- `vitest run apps/ui packages/kit` — 4678 passed; the 2 failures are
-  `apps/ui/src/main.test.tsx` timing out at its 5s budget, **pre-existing and
-  load-sensitive** (it fails the same way on the committed tree, and passes on
-  this tree with `--testTimeout=30000`). Not this change; belongs with INFRA-020.
+- `vitest run apps/ui packages/kit` — first run: 4678 passed, 2 failed, both in
+  `apps/ui/src/main.test.tsx` timing out at vitest's 5000ms default. Reported as
+  pre-existing, then **measured and fixed** — see below. Re-run after the fix:
+  **242 files, 4680 tests, all green, exit 0**.
 - `eslint` clean, `prettier --check` clean, `tsc --noEmit` clean in both
   workspaces.
+
+### `main.test.tsx` was over budget, not unlucky — sized to the measurement
+
+I first reported this as a pre-existing load flake. My own numbers said otherwise:
+**5040ms on the committed tree against a 5000ms budget** is over budget. The
+orchestrator asked for it to be closed out here, so it was measured rather than
+waited on.
+
+Eight sampled runs, in two contexts, with the one-minute load average recorded:
+
+| context | load | mounts the shell | fails loudly |
+| --- | --- | --- | --- |
+| `vitest run apps/ui` (A) | 3.7 | 4248ms | 2012ms |
+| `vitest run apps/ui` (B) | 3.4 | 6745ms | 4435ms |
+| `vitest run apps/ui` (C) | 4.2 | 5485ms | **7610ms** |
+| `vitest run apps/ui packages/kit` (D) | 3.6 | 3531ms | 910ms |
+| file alone ×5 | 4.4–6.3 | 3596–4534ms | 224–412ms |
+| file alone, cold after `npm run build` | — | **7385ms** | 1177ms |
+
+**The spread is the finding.** One test ranges 224ms to 7610ms — 34× — and its
+two in-suite extremes are 3.8× apart at *falling* load, so this is worker
+scheduling and transform-cache warmth rather than a busy machine. Load is
+recorded anyway, and every figure was taken on a laptop shared with other
+agents, so the isolated minima over-state the at-rest cost if anything.
+
+**The fix**: `ENTRY_POINT_BUDGET_MS = 20_000`, applied to those two tests only —
+not to the file, not to the config. 20000 is 2.6× the observed maximum, which is
+the margin the measured spread itself asks for. The table lives beside the
+constant in `apps/ui/src/main.test.tsx`, so the next person can see why the
+number is that number.
+
+**A narrower import was checked and rejected**, which is INFRA-020's first
+remedy. "fails loudly" does drag the whole app graph in to assert a three-line
+`#root` guard, and extracting that guard into its own module would make it
+nearly free. But a helper's own test passes just as well when nobody calls the
+helper, so the extraction would stop proving the thing the test exists for —
+that **`main.tsx`** refuses to mount into nothing. And it would not remove the
+budget: "mounts the shell" has to evaluate the real entry point, and that is the
+7385ms half. Nothing else in the repo imports `main.tsx`.
+
+Confirmed by re-running the exact command that failed, with no timeout override:
+242 files, 4680 tests, exit 0.
 
 ### Nothing needs a decision
 

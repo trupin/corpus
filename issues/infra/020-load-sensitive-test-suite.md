@@ -278,3 +278,29 @@ The standing instruction stands and is evidently not enough on its own: **captur
 every run to a file**. A summary line that scrolls is a summary line that cannot
 be read twice. Where a suite is being run repeatedly to chase a flake,
 `--reporter=verbose` into a file is the only form that survives.
+
+## What was actually inflating every measurement (2026-08-24)
+
+**Five orphaned vitest workers, ppid 1, running two hours ten minutes each** —
+pids 33081, 33219, 39589, 42251, 57590 — holding roughly 15% CPU and 400 MB
+apiece. Their parents were long gone, so they reported to nobody and no agent's
+own cleanup could reach them.
+
+They were found by an agent that recorded them and **declined to kill them**,
+because it only sweeps pids it recorded itself. That is the right rule for an
+agent and the wrong outcome for the machine, so the orchestrator killed them
+after confirming each was `node (vitest N)` with ppid 1 and that neither of the
+user's server pids was among them.
+
+**This is very likely a contributing cause of this issue's own instances.** Every
+timing taken today — the CLI's 5 s git budget, the server's disjoint timeout
+sets, this file's own entry-point measurements — was taken with most of a core
+and 2 GB missing. Those readings are conservative, which is the right direction
+for a budget to be wrong in, but the flakes attributed to "other agents' load"
+were partly attributable to load nobody was running.
+
+**The orchestrator's sweep missed them, twice.** `ps | grep -Ei 'vitest|…'`
+returned nothing on two attempts earlier in the session, because the shell proxy
+had filtered the output down to the lines matching the port query. The lesson is
+not "sweep more often" — it is that **a sweep returning nothing must be verified
+rather than believed**, by naming pids directly or by disabling the proxy.
