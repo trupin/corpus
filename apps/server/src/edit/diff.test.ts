@@ -107,10 +107,45 @@ describe("truncateDiff", () => {
     }
   });
 
-  it("falls back to a hard cut when there is no line boundary at all", () => {
+  it("returns nothing rather than a mid-line prefix when no line boundary fits", () => {
+    // SERVER-149. SPEC.md §9.2's rider of 2026-08-05 is unconditional — "The cut
+    // is never mid-line, and never mid hunk-header: a truncated diff is always
+    // something a reader can read" — and this function used to keep an escape
+    // from it, cutting at `max` when `lastIndexOf` found no newline. The route
+    // cannot produce such an input (git's own `diff --git` header carries a
+    // newline at index 90), so this is the direct cover the case has.
     const text = "@".repeat(200);
     const bounded = truncateDiff(text, 50);
-    expect(bounded).toEqual({ diff: "@".repeat(50), truncated: true, totalChars: 200 });
+
+    expect(bounded).toEqual({ diff: "", truncated: true, totalChars: 200 });
+    // Nothing mid-line came back, and nothing can read the empty answer as a
+    // complete one: `truncated` says it was cut and `totalChars` says by how much.
+    expect(bounded.diff).not.toBe(text.slice(0, 50));
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.totalChars).toBe(text.length);
+  });
+
+  it("keeps only whole lines when the first boundary sits past the bound", () => {
+    // The same rule one step less extreme: a boundary exists, but not at or
+    // before the bound, so it is no more available than none at all.
+    const text = `${"@".repeat(200)}\n${"x".repeat(10)}\n`;
+    const bounded = truncateDiff(text, 100);
+
+    expect(bounded.diff).toBe("");
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.totalChars).toBe(text.length);
+
+    // One character past that boundary and the whole first line comes back whole.
+    const wider = truncateDiff(text, 201);
+    expect(wider.diff).toBe(`${"@".repeat(200)}\n`);
+    expect(wider.truncated).toBe(true);
+  });
+
+  it("never returns more characters than the bound, even at zero", () => {
+    // A leading newline is the one shape that could overrun a zero bound, since
+    // `lastIndexOf` clamps a negative search start to index 0.
+    const bounded = truncateDiff("\nleading newline\n", 0);
+    expect(bounded).toEqual({ diff: "", truncated: true, totalChars: 17 });
   });
 
   it("never answers with the preamble alone when a large hunk follows it", () => {

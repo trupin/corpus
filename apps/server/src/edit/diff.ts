@@ -211,16 +211,33 @@ export interface BoundedDiff {
  * agent reads it. What is never given up is readability: the cut is never
  * mid-line and therefore never mid hunk-header.
  *
- * With no line boundary at or before the bound at all — a single line longer than
- * the whole cap — the fallback is a hard cut at `max`, because returning nothing
- * would be worse than returning a long line's beginning.
+ * **With no line boundary at or before the bound at all, the answer is empty**
+ * (SERVER-149). The boundary rule permits nothing, so nothing is what comes back
+ * — `truncated: true` and `totalChars` still say, quantitatively, that a whole
+ * diff is being withheld, so no caller can read the empty string as "nothing
+ * changed". This function used to cut at `max` here instead, which is a mid-line
+ * cut, and §9.2's rider forbids one without exception: *"The cut is never
+ * mid-line, and never mid hunk-header: a truncated diff is always something a
+ * reader can read."* A mid-line prefix of a diff is not readable as a diff, which
+ * is the reason the rider gives for its own rule.
+ *
+ * The case is unreachable through `GET /api/docs/{id}/diff`, and only by
+ * accident: the first newline of a real `git diff` falls at index 90, inside the
+ * `diff --git a/… b/…` header, so a bound of {@link DOC_DIFF_MAX_CHARS} always
+ * has a boundary behind it. That is a property of git's output format rather than
+ * anything this codebase guarantees, so the rule is obeyed here rather than
+ * assumed away. Nothing reachable is lost by obeying it, and the sentence is
+ * signed.
  */
 export function truncateDiff(text: string, max: number = DOC_DIFF_MAX_CHARS): BoundedDiff {
   const totalChars = text.length;
   if (totalChars <= max) return { diff: text, truncated: false, totalChars };
 
-  const newline = text.lastIndexOf("\n", max - 1);
-  const diff = newline === -1 ? text.slice(0, max) : text.slice(0, newline + 1);
+  // `lastIndexOf` clamps a negative `fromIndex` to 0 rather than searching
+  // nothing, so a leading newline would answer a bound of zero with one
+  // character. A non-positive bound admits no boundary, and says so here.
+  const newline = max > 0 ? text.lastIndexOf("\n", max - 1) : -1;
+  const diff = newline === -1 ? "" : text.slice(0, newline + 1);
   return { diff, truncated: true, totalChars };
 }
 

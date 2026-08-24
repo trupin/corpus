@@ -242,11 +242,14 @@ describe("corpus doc diff — truncation", () => {
     });
 
   /**
-   * The two shapes `truncateDiff` can produce (CONTRACT-032). The first is the
-   * ordinary one — the last line boundary at or before the bound, which is also
-   * every hunk boundary. The second is its fallback, taken when a single line is
-   * longer than the whole cap: a hard cut mid-line. Both arrive here as the same
-   * three fields, which is the whole reason the notice names no boundary.
+   * Two payload shapes a stub can hand this formatter, not two shapes the server
+   * produces. `truncateDiff` cuts only at a line boundary since SERVER-149 —
+   * where none fits, it answers the empty string rather than a mid-line prefix,
+   * because SPEC.md §9.2's signed rider says the cut is never mid-line.
+   *
+   * The mid-line fixture stays anyway. Both shapes arrive here as the same three
+   * fields, and the formatter must not read a boundary out of a trailing byte —
+   * which is the whole reason the notice names no boundary (CLI-028).
    */
   const AT_LINE_BOUNDARY = HUNK;
   const MID_LINE = "@@ -1,3 +1,4 @@\n-30-year fixed at 6.1%.\n+30-year fixed at 6.4";
