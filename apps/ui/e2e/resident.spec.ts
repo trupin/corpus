@@ -180,6 +180,30 @@ async function menuActs(page: Page): Promise<readonly (string | null)[]> {
     .evaluateAll((items) => items.map((item) => item.getAttribute("data-act")));
 }
 
+/**
+ * What the conversation runs at **now**, read back off its own menu.
+ *
+ * The menu is where a designation's level is reported, deliberately — the board
+ * badge names *who* and the composer's line names *at what* (the orchestrator's
+ * decision, 2026-08-23; the measurement is in UI-168). An untouched menu seeds
+ * its radio set from `Resident.weight`, so the checked row is this page's read of
+ * what the last designation actually landed — a round trip, not an echo of the
+ * click that made it.
+ *
+ * Opens and closes the menu, so it is safe to call between acts.
+ */
+async function residentLevel(page: Page): Promise<string | null> {
+  await openFromTrigger(page);
+  const checked = page
+    .getByRole("menu")
+    .locator('[data-act^="resident-weight-"][aria-checked=true]');
+  await checked.first().waitFor();
+  const act = await checked.first().getAttribute("data-act");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  return act === null ? null : act.replace("resident-weight-", "");
+}
+
 const posted = async (corpus: StubCorpus): Promise<readonly unknown[]> =>
   (await corpus.of("POST", "/api/threads/th_solo/resident")).map((call) => call.body);
 
@@ -738,8 +762,12 @@ test.describe("choosing what the resident runs at", () => {
 
     // The whole issue, on the wire.
     await expect.poll(async () => posted(corpus)).toEqual([{ weight: "heavy" }]);
-    // …and reported back, so the choice is not invisible once made.
-    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Heavy or judgment-laden");
+    // The badge follows, naming **who** — and saying nothing about the level.
+    await expect(page.locator(BADGE)).toBeVisible();
+    await expect(page.locator(BADGE)).not.toContainText("Heavy or judgment-laden");
+    // …and the level is reported where the choice is made, read back off the
+    // designation rather than off the click that made it.
+    expect(await residentLevel(page)).toBe("heavy");
   });
 
   /**
@@ -757,8 +785,9 @@ test.describe("choosing what the resident runs at", () => {
 
     await expect.poll(async () => posted(corpus)).toEqual([{}]);
     await expect.poll(async () => Object.keys((await posted(corpus))[0] as object)).toEqual([]);
-    // …and the badge says who chose, rather than leaving a blank.
-    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("weight set at launch");
+    // …and the menu comes back standing on the launcher's row, which is what
+    // `Resident.weight: null` means read back.
+    expect(await residentLevel(page)).toBe("launch");
   });
 
   /**
@@ -774,10 +803,10 @@ test.describe("choosing what the resident runs at", () => {
     await openFromTrigger(page);
     await page.getByRole("menu").locator('[data-act="resident-weight-light"]').click();
     await page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]').click();
-    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Small and mechanical");
+    await expect(page.locator(BADGE)).toBeVisible();
 
-    // Reopening shows what the resident runs at now — the menu is the third
-    // surface that reports the choice, beside the badge and the composer.
+    // Reopening shows what the resident runs at now — the menu is where the
+    // level is reported, and where it is changed.
     await openFromTrigger(page);
     await expect(
       page.getByRole("menu").locator('[data-act="resident-weight-light"]'),
@@ -794,20 +823,20 @@ test.describe("choosing what the resident runs at", () => {
     await expect(again).toContainText("Re-designate researcher");
     await again.click();
 
-    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("Heavy or judgment-laden");
     await expect
       .poll(async () => posted(corpus))
       .toEqual([
         { name: "researcher", weight: "light" },
         { name: "researcher", weight: "heavy" },
       ]);
+    expect(await residentLevel(page)).toBe("heavy");
 
     // Back to the launcher's choice, which is a real write: it clears the level.
     await openFromTrigger(page);
     await page.getByRole("menu").locator('[data-act="resident-weight-launch"]').click();
     await page.getByRole("menu").locator('[data-act="resident-designate-doc_researcher"]').click();
-    await expect(page.locator(`${BADGE} .t-resident-weight`)).toHaveText("weight set at launch");
     await expect.poll(async () => (await posted(corpus)).at(-1)).toEqual({ name: "researcher" });
+    expect(await residentLevel(page)).toBe("launch");
   });
 
   /**

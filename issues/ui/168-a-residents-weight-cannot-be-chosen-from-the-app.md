@@ -69,8 +69,11 @@ offers no way to.
       makes the field optional so that absence means what it meant before the
       field existed — the launcher decides. A picker with no "leave it to the
       launcher" option would make every UI designation opinionated.
-- [x] The weight a resident was designated at is **shown** wherever the resident
-      is shown. `Resident.weight` was put on the response rather than left
+- [x] The weight a resident was designated at is **shown** — at the point of
+      change (the conversation's menu), the point of use (the composer's line and
+      popover) and in the roster (the console's Residents tab). **Not** on the
+      board badge: built, measured at ~164px of permanent reservation, and
+      reverted on the orchestrator's decision (2026-08-23). See the log. `Resident.weight` was put on the response rather than left
       write-only for exactly this reason: _"a surface that shows who is resident
       must show what it runs at, or the choice is invisible once made."_ Check
       the board badge, the composer's recipient row and the thread panel, and
@@ -200,12 +203,15 @@ Measured in a real browser after designating `researcher` at `heavy`:
 | composer's address **line** | **already did** | `researcher will answer · Heavy or judgment-laden` |
 | composer's address **popover** | **already did** | `researcher works at Heavy or judgment-laden — a weight set here would govern only what researcher hands off` |
 | console **Residents** pane | **already did** | `laneWeightLabel` / `laneRowTitle`, `LaneList` + `LaneScope` |
-| **board / thread-panel badge** | **did not** | now `researcher · Heavy or judgment-laden · no listener yet`, `data-resident-weight="heavy"` |
-| thread **menu** | **did not** | now the checked radio row |
+| thread **menu** | **did not** | now the checked radio row, seeded from `Resident.weight` |
+| **board / thread-panel badge** | did not, and **still does not** | built, measured, taken out again — see the decision below |
 | composer's recipient **lane rows** | did not, and still does not | `['agent', 'researcher']` — the rows answer *who*; the line and the sentence beside them answer *at what*. Left alone deliberately. |
 
-A resident with `weight: null` reads `weight set at launch` — the composer's own
-`LAUNCH_WEIGHT_CLAUSE` — never a blank.
+So the choice is reported at the **point of change** (the conversation's own
+menu), the **point of use** (the composer's line and its popover) and in the
+**roster** (the console's Residents tab). A resident with `weight: null` reads
+`weight set at launch` on each of them — the composer's own
+`LAUNCH_WEIGHT_CLAUSE`, never a blank.
 
 #### `RESIDENT_WEIGHT_BOUNDARY`: read, and deliberately not restated
 
@@ -278,19 +284,30 @@ agent is told to do; the single repo-wide run is the orchestrator's at harvest.
 `apps/server` and `apps/cli` are red on typecheck for a reason that is not this
 work — see the `designationId` note in UI-168.
 
-#### A regression the badge caused, measured and fixed
+#### The badge does not report the weight — built, measured, reverted
 
-Adding the clause to the badge broke
-`e2e/address-geometry.spec.ts`'s *"the weight clause arriving late moves neither
-the line nor Send"*: the reply composer's line and its Send button both moved
-**26px down** while somebody could already be typing in it.
+The first cut put the clause on the board badge, because the acceptance
+criterion above says *"wherever the resident is shown"*. It was taken out again
+on the orchestrator's decision (2026-08-23), and the number is why.
 
-The cause is the one `console.css` documents. The roster names the level **key**;
-the words are the workspace's own and need `useWeightLevels`'s `?type=skill` scan
-plus a `useDoc` for the body, so `weightLabel` renders the bare key until both
-land — and the label arriving widened the badge enough to wrap `.t-head`.
+**It broke a geometry test first.** `e2e/address-geometry.spec.ts`'s *"the weight
+clause arriving late moves neither the line nor Send"* went red: the reply
+composer's line and its Send button both moved **26px down**, under somebody who
+could already be typing. The cause is the one `console.css` documents — the
+roster names the level **key**, while the words are the workspace's own and need
+`useWeightLevels`'s `?type=skill` scan plus a `useDoc` for the body, so
+`weightLabel` renders the bare key until both land and the label arriving widened
+the badge enough to wrap `.t-head`.
 
-Measured in a real browser, a 410px card at 1280×720, `.t-head`'s height:
+That is fixable, and was fixed: `console.css`'s `.lane-weight` pattern, which
+that file names as the one *"the next late-arriving value copies"* and lists this
+badge among the sites that should reach for it — a fixed `width` in `ch`,
+ellipsis, whole value on the `title`. **26ch**, the console's 24ch against the
+same vocabulary plus 2ch for the `· ` lead this clause carries inside its box.
+`address-geometry.spec.ts` went 24/24.
+
+**The measurement is what decided against keeping it.** A real browser, a 410px
+card at 1280×720, `.t-head`'s height with elements hidden one at a time:
 
 | what is drawn | height |
 | --- | --- |
@@ -299,29 +316,44 @@ Measured in a real browser, a 410px card at 1280×720, `.t-head`'s height:
 | the weight clause **and** the `⋯` hidden | 50.8px |
 | the whole badge hidden | 24.8px |
 
-Two readings, and both matter. **UI-167's `⋯` costs zero height** — the negative
-block margins it shares with the fold do exactly what they were written for.
-**The weight clause costs a whole wrapped row**, and before the fix it appeared
-late.
+Two readings. **UI-167's `⋯` costs zero height** — the negative block margins it
+shares with the fold do exactly what they were written for. **The weight clause
+costs a whole wrapped row**: ~164px reserved, permanently, on every conversation
+with a resident, in a head that is `flex-wrap: wrap` — while the composer's
+address line a few lines below the same card already reads `researcher will
+answer · Heavy or judgment-laden`. Room spent twice for one fact.
 
-The fix is `console.css`'s `.lane-weight` pattern, which that file names as the
-one *"the next late-arriving value copies"* and lists this badge among the sites
-that should reach for it: a fixed `width` in `ch`, ellipsis, whole value on the
-`title`. **26ch** — the console's 24ch against the same vocabulary, plus 2ch for
-the `· ` lead this clause carries inside its box and the console's row does not.
-`address-geometry.spec.ts` is 24/24 after it.
+**The rejected alternative is the one that was built**: keep the 26ch
+reservation and accept the row. It satisfies the criterion literally, it is
+stable, and it is what the code did for one afternoon. It loses because the
+criterion's *purpose* — quoted from the contract, *"a surface that shows who is
+resident must show what it runs at, or the choice is invisible once made"* — is
+already met three times over: at the **point of change** (the conversation's own
+menu, which seeds its radio set from `Resident.weight`), at the **point of use**
+(the composer's address line and its popover), and in the **roster** (the
+console's Residents tab, whose `.lane-weight` is a row with the width to hold
+it). The choice is not invisible, so the fourth and most space-constrained
+surface is not earning its 164px.
 
-**One tradeoff worth the orchestrator's eye.** The reservation is ~164px, and on
-a card narrow enough it takes a row of the head to itself — permanently, on every
-conversation with a resident. The head is `flex-wrap: wrap` by design, so that is
-the head behaving as built, and the row is now the same height before and after
-the answer arrives. But the same card already states the weight a few lines lower
-in the composer's address line (`researcher will answer · Heavy or
-judgment-laden`), so this is the second statement of it on one card. It is here
-because the acceptance criterion asks for it *wherever the resident is shown*, and
-because `Resident.weight` was put on the response for that reason. If the density
-is judged the worse trade, it is one CSS rule to drop and the measurement above is
-what the decision needs.
+The split that survives is the one this issue already applied to the composer's
+recipient rows, one level out: **the badge answers _who_, the line answers _at
+what_.**
+
+**What the revert removed**: the `.t-resident-weight` span and its CSS, the
+`data-resident-weight-key` attribute, the weight clause on the badge's `title`
+(left off rather than hidden there — a hover is not an answer to *where is this
+shown*), and `ResidentBadge`'s `useWeightLevels` / `laneWeightLabel` reads. The
+`.lane-weight` reservation in `console.css` is untouched; it was always the
+console's and the console still needs it.
+
+**It did not disturb the 26px fix.** Removing the clause removes what the
+reservation was reserving for, so `address-geometry.spec.ts` passes because the
+late-arriving value is no longer on that surface at all — 24/24, re-run after the
+revert. Nothing about `console.css` or the composer was unpicked.
+
+`ThreadPanel.test.tsx` pins the decision in both directions, so it cannot drift
+back silently: the badge names the profile and carries the level neither in its
+text nor on its `title`, **and** the menu on the same card reports it checked.
 
 #### A level the guidance stopped declaring
 

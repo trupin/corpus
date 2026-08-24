@@ -1,11 +1,6 @@
 /** @vitest-environment jsdom */
 import type { AgentLane, DocRow } from "@corpus/contract";
-import {
-  GENERAL_RESIDENT_LABEL,
-  LAUNCH_WEIGHT_CLAUSE,
-  MISSING_PROFILE_NOTE,
-  resetSeenMarks,
-} from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, MISSING_PROFILE_NOTE, resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -1140,11 +1135,24 @@ describe("choosing what the resident runs at", () => {
   });
 
   /**
-   * The badge is the surface UI-168's acceptance names: *"a surface that shows
-   * who is resident must show what it runs at, or the choice is invisible once
-   * made."* It shows the declared **label**, from the workspace's own table.
+   * **The badge names who, and not at what** — the decision taken after UI-168's
+   * first cut put the weight here and the measurement was read (orchestrator,
+   * 2026-08-23).
+   *
+   * The clause needs the reserved box `console.css` documents, ~164px, because
+   * it arrives on a second round trip and carries the workspace's own words. In
+   * a head that is `flex-wrap: wrap` that is a row of its own on a narrow card,
+   * permanently, on every conversation with a resident — while the composer's
+   * address line a few lines below already states the same value.
+   *
+   * The criterion it was built for is that the choice must not be invisible once
+   * made, and it is not: the conversation's **own menu** reports it, on the same
+   * card, which is where the choice is made and re-made. That is what this
+   * asserts, both halves together — a badge that grew the clause back would fail
+   * the first half, and a menu that stopped reporting it would fail the second
+   * and take the justification with it.
    */
-  it("reports on the badge what the resident was designated at", async () => {
+  it("names who is resident on the badge, and leaves what it runs at to the menu", async () => {
     const wiring = weightWiring(THREE_LEVELS);
     const transport = readerTransport({
       lanes: [
@@ -1168,47 +1176,26 @@ describe("choosing what the resident runs at", () => {
     });
     render(<Slots transport={transport} rows={[standalone()]} />);
 
-    await waitFor(() => {
-      expect(panel("th_solo")?.querySelector(".t-resident-weight")?.textContent).toBe(
-        "Heavy or judgment-laden",
-      );
-    });
-    expect(
-      panel("th_solo")?.querySelector<HTMLElement>(".t-resident")?.dataset["residentWeightKey"],
-    ).toBe("heavy");
-  });
+    const badge = async (): Promise<HTMLElement> => {
+      await waitFor(() => {
+        expect(panel("th_solo")?.querySelector(".t-resident")).not.toBeNull();
+      });
+      return panel("th_solo")?.querySelector<HTMLElement>(".t-resident") as HTMLElement;
+    };
 
-  /**
-   * A resident designated before this shipped reads `weight: null`, which is the
-   * launcher's choice and not a missing value — so the badge says so in the
-   * composer's own words rather than leaving a blank.
-   */
-  it("says the launcher chose, for a resident designated at no level", async () => {
-    const transport = readerTransport({
-      lanes: [
-        {
-          lane: "th_solo",
-          resident: {
-            name: "researcher",
-            docId: "doc_agentdef",
-            weight: null,
-            designationId: null,
-          },
-          live: false,
-          since: null,
-          summary: null,
-          origin: { id: "th_solo", title: "Q3 planning" },
-        },
-      ],
-      threads: [threadFixture({ id: "th_solo", parent: null, turns: TURNS.slice(0, 1) })],
-      rows: { "?limit=50&type=agent-def": [] },
-    });
-    render(<Slots transport={transport} rows={[standalone()]} />);
+    // Who: the profile, and whether it is there.
+    expect((await badge()).textContent).toContain("researcher");
+    // At what: not here, and not hidden on the title either.
+    expect((await badge()).querySelector(".t-resident-weight")).toBeNull();
+    expect((await badge()).textContent).not.toContain("Heavy or judgment-laden");
+    expect((await badge()).getAttribute("title")).not.toContain("Heavy or judgment-laden");
 
+    // …and the menu on this very card is where it is reported.
+    openMenu();
     await waitFor(() => {
-      expect(panel("th_solo")?.querySelector(".t-resident-weight")?.textContent).toBe(
-        LAUNCH_WEIGHT_CLAUSE,
-      );
+      expect(
+        document.querySelector('[data-act="resident-weight-heavy"]')?.getAttribute("aria-checked"),
+      ).toBe("true");
     });
   });
 });

@@ -1,6 +1,5 @@
-import { GENERAL_RESIDENT_LABEL, LaneDot, useLaneRow, useWeightLevels } from "@corpus/kit";
+import { GENERAL_RESIDENT_LABEL, LaneDot, useLaneRow } from "@corpus/kit";
 import type { ReactElement } from "react";
-import { laneWeightLabel } from "../console/residentsModel";
 import { useNowTick } from "./useNowTick";
 
 /**
@@ -57,22 +56,32 @@ import { useNowTick } from "./useNowTick";
  * as *no resident* — there is one, and the dot beside it says whether it is
  * there.
  *
- * ## …and what it runs at (UI-168)
+ * ## What it deliberately does **not** say: the weight (UI-168)
  *
- * `Resident.weight` was put on the *response* rather than left write-only for
- * one stated reason: *"a surface that shows who is resident must show what it
- * runs at, or the choice is invisible once made."* This is that surface, and
- * until UI-168 it was the one that did not — the composer's address line already
- * said it, and the board badge, which is where a person looks at a conversation,
- * said nothing.
+ * This badge answers *who is resident*, and the composer's line one gesture
+ * below answers *at what*. UI-168 built the weight clause here and it was taken
+ * out again, on the measurement rather than on taste — recorded so nobody adds
+ * it back without the number.
  *
- * The wording is the console's own {@link laneWeightLabel}, not a second
- * derivation beside it — the same reason the name, the note and the line all
- * come from `laneRow`. It carries three answers this badge would otherwise have
- * had to re-derive: a recorded level through the workspace's declared table, a
- * `null` said in the composer's words rather than left blank (a designation made
- * before this shipped chose nothing, and *the launcher chose* is a real outcome),
- * and **silence** for a lane with no designation to read a level from.
+ * The value arrives on a second round trip (`useWeightLevels` scans
+ * `?type=skill` and then reads the body), and it is the workspace's own words,
+ * so it needs the reserved box `console.css` documents: **~164px, 26ch**. In a
+ * head that is `flex-wrap: wrap` that took a row of its own on a narrow card,
+ * permanently, on every conversation with a resident — while the composer's
+ * address line a few lines down already reads `researcher will answer · Heavy or
+ * judgment-laden`. Room spent twice for one fact.
+ *
+ * The criterion it was built for is that *the choice must not be invisible once
+ * made*, and it is not: it is at the **point of change** (the conversation's own
+ * menu, `residentActions.ts`), the **point of use** (the composer's address line
+ * and its popover), and in the **roster** (the console's Residents tab, whose
+ * `.lane-weight` is a row with the width to hold it). Three surfaces, none of
+ * them this one — which is the same split that keeps the weight off the
+ * composer's recipient *rows*.
+ *
+ * Left out of the `title` too, rather than hidden there: a hover is not an
+ * answer to "where is this shown", and a badge whose tooltip carries a fact its
+ * face does not is the half-state this decision exists to avoid.
  */
 
 export interface ResidentBadgeProps {
@@ -83,25 +92,10 @@ export interface ResidentBadgeProps {
 export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | null {
   const now = useNowTick();
   const row = useLaneRow(threadId, new Date(now));
-  /*
-   * The declaration, for turning the recorded **key** into the label a person
-   * picked by. Read unconditionally, before the early return: it is the same
-   * cached pair of queries every composer's weight control already holds, so it
-   * costs this badge no request, and a hook cannot sit behind a branch.
-   */
-  const levels = useWeightLevels();
   if (row === undefined) return null;
 
   const general = row.kind === "general";
   const label = general ? GENERAL_RESIDENT_LABEL : row.name;
-  const weight = laneWeightLabel(row, levels);
-  /*
-   * Composed exactly as the console's `laneRowTitle` composes a lane row's: the
-   * three clauses about *who and whether* joined by ` — `, and the weight added
-   * after them with the ` · ` the composer's address line uses between a
-   * recipient and its level. One lane, one sentence, on every surface.
-   */
-  const statement = [label, row.note, row.line].filter((part) => part !== "").join(" — ");
 
   return (
     <span
@@ -110,19 +104,12 @@ export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | 
       data-resident-liveness={row.liveness}
       data-resident-kind={row.kind}
       /*
-       * The recorded **key**, beside the label the badge draws — deliberately
-       * not `data-resident-weight`, which the composer's address popover already
-       * uses for a `ResidentWeight.kind`. Two meanings on one attribute name is
-       * how an unscoped selector starts matching the wrong surface.
-       */
-      data-resident-weight-key={row.weight ?? ""}
-      /*
        * The line is beside the name *and* on the title, rather than only on the
        * title: §10 wants what a lapse means readable without a pointer, and a
        * hover is not available to a keyboard at all. The title repeats it for
        * the truncated case, where the line is elided by width.
        */
-      title={weight === "" ? statement : `${statement} · ${weight}`}
+      title={[label, row.note, row.line].filter((part) => part !== "").join(" — ")}
     >
       <LaneDot liveness={row.liveness} />
       <span className={general ? "t-resident-kind" : "t-resident-name"}>{label}</span>
@@ -134,13 +121,6 @@ export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | 
        * and whether they are there.
        */}
       {row.note === "" ? null : <span className="t-resident-note">{row.note}</span>}
-      {/*
-       * What it runs at, between who it is and whether it is there — the order
-       * the console's own lane row draws it in (`LaneList`: name, mark, weight,
-       * liveness), so the two surfaces are scanned the same way. Empty only for
-       * a lane with no designation, which this badge does not draw at all.
-       */}
-      {weight === "" ? null : <span className="t-resident-weight">{weight}</span>}
       {row.line === "" ? null : <span className="t-resident-line">{row.line}</span>}
     </span>
   );
