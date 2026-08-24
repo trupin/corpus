@@ -6,7 +6,7 @@ shared (SPEC amendment — requires user sign-off)
 
 ## Status
 
-todo
+done
 
 ## Priority
 

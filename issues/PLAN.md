@@ -831,19 +831,20 @@ through.
 | --- | --- | --- | --- | --- |
 | INFRA-028 | Running the e2e suite beside a live workspace server silently tests the wrong thing | done | P1 | — |
 | UI-114 | `⇧F10` does not open the todo item menu, and the e2e spec that says so is red | done | P1 | — |
-| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | todo | P1 | — |
-| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | todo | P1 | SERVER-113 |
-| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | todo | P2 | — |
+| SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | done | P1 | — |
+| SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | done | P1 | SERVER-113 |
+| SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | done | P2 | — |
 | UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
 had to pick a precedence between an artifact's own `origin` and its `parent`
 chain when the two reach different designated scopes, and §7 states a guarantee
 ("an artifact belongs to at most one scope") whose stated reason — origin is
-single-valued — covers only one of the two routes into a scope. The code took
-origin-first and ships that way; what needs a signed rider is the spec sentence
-that made both readings look correct. It needs user sign-off, so it cannot ride
-in v0.10.0 unattended.
+single-valued — covers only one of the two routes into a scope. The rider was
+signed on 2026-08-24 and §7 now says the parent chain decides, which is what
+`apps/server/src/queue/scope.ts` has always done — the walk tries the parent
+branch first and takes both edges. My own note above recorded origin-first, and
+that was wrong. All three riders in this table are signed and applied.
 
 ### Phase 31 — the anchored patch reaches the skills (2026-08-12)
 
@@ -1605,3 +1606,34 @@ suite cannot confirm. Both halves stand without it.
 | AGENT-051 | The skills collect what the CLI now saves (CLI-064, CLI-065 reports) | done | P1 | opus | CLI-064, CLI-065 |
 | CLI-068 | `queue claim-all` inside a batch loses its payload, silently (AGENT-051 finding) | done | P0 | opus | CLI-064 |
 | AGENT-052 | The prohibition on batching a claim is lifted (CLI-068 follow-up) | done | P2 | opus | CLI-068 |
+
+## Phase 45 — The product stops saying things that are not so (2026-08-24, v0.22.0 scope)
+
+A debt release with one sentence behind it. Every issue in it is the product
+telling a reader something untrue: prose that describes behaviour the code
+stopped having, a contract that declares less than the route returns, an error
+that reaches the log and not the response, help that misdescribes its own flags,
+a mockup still drawing UI we deleted, and tests that fail without naming why.
+
+**The issues keep their existing phase rows.** `scripts/check-issues.ts` allows
+exactly one PLAN row per id, so a release that gathers old issues records itself
+here in prose rather than restating thirty-five rows. The scope is:
+
+- **The product describes itself wrongly** — CONTRACT-029, CONTRACT-032,
+  CONTRACT-034, CONTRACT-035, CONTRACT-036, CONTRACT-053, CONTRACT-054,
+  CONTRACT-065, CONTRACT-073, CLI-028, CLI-052, SERVER-120, SERVER-126,
+  SHARED-054, UI-141
+- **Failures that disappear** — SERVER-065, SERVER-067, SERVER-070, SERVER-132,
+  UI-106, CLI-024, CLI-039, CLI-041
+- **The suite stops lying about why it failed** — INFRA-020 and its instances
+  SERVER-053, UI-033, UI-046, UI-080, plus INFRA-015
+- **Surfaces that misreport** — UI-115, UI-124, UI-138, UI-143, UI-144
+- **SERVER-144 returns**, on the rider signed 2026-08-24 and without the
+  `template` exclusion that was never signed
+
+Left out deliberately: SHARED-011 and UI-101 (features, each its own release),
+SERVER-050 + UI-035 and INFRA-026 + CLI-034 (feature arcs, and the only two
+blocked issues in the tracker), UI-083 (its own issue says rewrite, not patch),
+UI-060, CONTRACT-056, CONTRACT-057, SERVER-101 and SERVER-106 (the last two
+would need a fifth signed rider in one day), and AGENT-043 (a question for the
+user, not work).
