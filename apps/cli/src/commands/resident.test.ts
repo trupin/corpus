@@ -17,9 +17,9 @@ import { showCommand } from "./thread/show.js";
  * contract's three states three (SPEC.md §7, rider SHARED-048).
  */
 
-const GENERAL = { name: null, docId: null, weight: null };
-const PROFILED = { name: "researcher", docId: "doc_r1", weight: null };
-const ORPHANED = { name: "researcher", docId: null, weight: null };
+const GENERAL = { name: null, docId: null, weight: null, designationId: "des_a" };
+const PROFILED = { name: "researcher", docId: "doc_r1", weight: null, designationId: "des_b" };
+const ORPHANED = { name: "researcher", docId: null, weight: null, designationId: "des_c" };
 
 describe("residentLabel", () => {
   it("renders each of the three states the contract publishes", () => {
@@ -39,9 +39,14 @@ describe("residentLabel", () => {
     for (const resident of [GENERAL, PROFILED, ORPHANED]) {
       expect(ResidentSchema.safeParse(resident).success).toBe(true);
     }
-    expect(ResidentSchema.safeParse({ name: null, docId: "doc_r1", weight: null }).success).toBe(
-      false,
-    );
+    expect(
+      ResidentSchema.safeParse({
+        name: null,
+        docId: "doc_r1",
+        weight: null,
+        designationId: "des_d",
+      }).success,
+    ).toBe(false);
   });
 
   it("never puts the general resident where a profile name goes", () => {

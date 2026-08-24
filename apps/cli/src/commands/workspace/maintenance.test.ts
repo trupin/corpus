@@ -104,19 +104,60 @@ describe("the maintenance settings", () => {
     for (const [name] of MAINTENANCE_SETTINGS) expect(local).toContain(`${name}=`);
   });
 
-  it("stops git repacking the repository behind us across a run of commits", async () => {
-    const root = await makeRepository();
-    await ensureMaintenanceSettings(root);
+  /**
+   * **An explicit budget, sized to a measurement** (CLI-068, INFRA-020's third
+   * instance). This is the most expensive test in the file by a wide margin:
+   * a real `git init`, **60 sequential real commits**, and a `git fsck --full`
+   * over the result. Measured on this machine, with the load average recorded
+   * for each shape:
+   *
+   * | shape | load | ms |
+   * | --- | --- | --- |
+   * | alone, `-t` filtered, 5 runs | 7.8–8.9 | 2056 · 2107 · 2304 · 2387 · 2480 |
+   * | inside this file, 8 runs | 7.3–16.3 | 1605 · 1878 · 2107 · 2184 · 2370 · 3158 · 3197 · 3278 |
+   * | inside the whole `apps/cli` suite, 2 runs | 11–16 | 2901 · 3483 |
+   * | inside a full run beside another agent's | — | **timed out at 5000** |
+   *
+   * So it costs **32–70% of vitest's 5 s default**, median ~45%, against
+   * INFRA-020's proposed rule that a test needing >20% of its timeout idle will
+   * flake under the gate. The cheapest run ever seen is still over that rule,
+   * so the timeout that prompted this was not pure load.
+   *
+   * **The spread is itself the diagnosis.** The same shape ranges 1605–3278 ms
+   * at effectively the same reported load, because the cost here is 60
+   * sequential `git commit`s: fsync and directory churn, which contend
+   * machine-wide and are invisible to a CPU load average. A budget must cover
+   * the bad end of that spread, not its middle.
+   *
+   * 20 s is ~9× the median in the shape the gate runs it and ~6× the worst run
+   * observed, which clears a machine several times more contended than any seen
+   * here while still failing fast if the commit loop stops making progress.
+   * Sized to this test and **not raised across the board** — every other test in
+   * this file keeps the default, and each builds at most a handful of commits.
+   *
+   * The real remedy is INFRA-020's second criterion, *make the work cheaper*,
+   * and it does not apply here: the 60 is load-bearing. Git 2.54's
+   * geometric-repack task was measured firing at the 41st commit through the
+   * product, so the count cannot drop far below that without the test ceasing
+   * to prove the thing it names.
+   */
+  it(
+    "stops git repacking the repository behind us across a run of commits",
+    { timeout: 20_000 },
+    async () => {
+      const root = await makeRepository();
+      await ensureMaintenanceSettings(root);
 
-    // Well past the point at which git 2.54's geometric-repack task fires on an
-    // unconfigured repository — measured through the product at the 41st commit.
-    await commits(root, 60);
+      // Well past the point at which git 2.54's geometric-repack task fires on an
+      // unconfigured repository — measured through the product at the 41st commit.
+      await commits(root, 60);
 
-    const objects = await readRepositoryObjects(root);
-    expect(objects.packs).toBe(0);
-    expect(objects.loose).toBeGreaterThan(100);
-    expect(await git(root, "fsck", "--full")).toBe("");
-  });
+      const objects = await readRepositoryObjects(root);
+      expect(objects.packs).toBe(0);
+      expect(objects.loose).toBeGreaterThan(100);
+      expect(await git(root, "fsck", "--full")).toBe("");
+    },
+  );
 });
 
 describe("reading the object store", () => {

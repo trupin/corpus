@@ -27,11 +27,12 @@
 // so a bare mapping under `resident:` stays whatever it already meant to the
 // workspace that wrote it.
 //
-// **`weight` is the one key whose absence is legal** (SERVER-129). Every
-// designation written before §7's weight rider has no such key, and none is what
-// "no level was chosen" has always looked like on disk, so the stored shape
-// takes an absent `weight` and the wire shape reports `null` for it. See
-// `withStoredWeight`.
+// **`weight` and `designationId` are the keys whose absence is legal**
+// (SERVER-129, SERVER-147). Every designation written before §7's weight rider
+// has no `weight`, and every designation written before CONTRACT-071 has no
+// `designationId`; in both cases absence is what "none" has always looked like
+// on disk, so the stored shape takes the key as missing and the wire shape
+// reports `null` for it. See `withStoredWeight` and `withStoredDesignationId`.
 
 import { ResidentSchema, type Resident } from "@corpus/contract";
 
@@ -52,13 +53,25 @@ import { ResidentSchema, type Resident } from "@corpus/contract";
  * what a weight may be. A mapping that *does* carry the key — including
  * `weight:` with no value, which YAML reads as null — passes through untouched.
  */
-const withStoredWeight = (value: unknown): unknown =>
-  typeof value === "object" &&
-  value !== null &&
-  !Array.isArray(value) &&
-  !Object.hasOwn(value, "weight")
-    ? { ...value, weight: null }
+const withStoredKey = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null && !Array.isArray(value) && !Object.hasOwn(value, key)
+    ? { ...value, [key]: null }
     : value;
+
+const withStoredWeight = (value: unknown): unknown => withStoredKey(value, "weight");
+
+/**
+ * The `designationId` key as the *stored* shape spells it: **absent when the
+ * designation predates CONTRACT-071** (SERVER-147).
+ *
+ * Exactly {@link withStoredWeight}'s case, for exactly its reason, and the
+ * duplication is why both now go through one helper. The wire field is required
+ * and nullable so no consumer has to guard a missing key; a file has one
+ * spelling of absence, and every designation written before this field existed
+ * spells it by not being there. Those are the designations in every workspace on
+ * disk today, and none of them may become unreadable.
+ */
+const withStoredDesignationId = (value: unknown): unknown => withStoredKey(value, "designationId");
 
 /**
  * The resident stored on a frontmatter mapping, or `null`.
@@ -81,9 +94,14 @@ const withStoredWeight = (value: unknown): unknown =>
  * §7's weight rider forbids.
  */
 export const residentOrNull = (value: unknown): Resident | null => {
-  const parsed = ResidentSchema.safeParse(withStoredWeight(value));
+  const parsed = ResidentSchema.safeParse(withStoredDesignationId(withStoredWeight(value)));
   return parsed.success
-    ? { name: parsed.data.name, docId: parsed.data.docId, weight: parsed.data.weight }
+    ? {
+        name: parsed.data.name,
+        docId: parsed.data.docId,
+        weight: parsed.data.weight,
+        designationId: parsed.data.designationId,
+      }
     : null;
 };
 
@@ -101,6 +119,13 @@ export const residentToStored = (resident: Resident): Record<string, unknown> =>
   name: resident.name,
   docId: resident.docId,
   ...(resident.weight === null ? {} : { weight: resident.weight }),
+  // `designationId` is spread in for the same reason and with one difference:
+  // every designation this server writes from now on *has* one, so the absent
+  // case here is only ever a caller handing over a resident that carries none —
+  // a release's `null`, or a hand-written block. Writing `designationId: null`
+  // would still be a second spelling of the nothing an absent key already means
+  // in every file on disk today (SERVER-147).
+  ...(resident.designationId === null ? {} : { designationId: resident.designationId }),
 });
 
 /**

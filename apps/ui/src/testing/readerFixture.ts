@@ -519,8 +519,8 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
         designated.set(
           id,
           name === undefined
-            ? { name: null, docId: null, weight: null }
-            : { name, docId: "doc_agentdef", weight: null },
+            ? { name: null, docId: null, weight: null, designationId: null }
+            : { name, docId: "doc_agentdef", weight: null, designationId: null },
         );
         return json({
           thread: { ...(threadSummary(id, false) as object), resident: designated.get(id) },

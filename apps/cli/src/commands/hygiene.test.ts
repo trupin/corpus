@@ -98,6 +98,9 @@ const STDIN_OWNER = "input.ts";
 
 const STDIN_REFERENCE = /\bprocess\s*\.\s*stdin\b/;
 
+/** `out.json`, `context.out.json`, `output.json` — the output mode, read. */
+const MODE_READ = /\bout(?:put)?\s*\.\s*json\b/;
+
 /**
  * The guarded modules permitted to reach the read-only staged-git helper, and
  * the only capability admitted through these prefixes at all. Exhaustive on
@@ -219,6 +222,11 @@ function heredocViolations(modules: readonly Module[]): readonly string[] {
         return TERMINATOR_LINE.test(line) ? [...openers, `${where} closes one with EOF`] : openers;
       }),
   );
+}
+
+/** Every module that reads the output mode, so the inventory can be pinned. */
+function modeReaders(modules: readonly Module[]): readonly string[] {
+  return modules.filter((module) => MODE_READ.test(module.code)).map((module) => module.path);
 }
 
 function stdinViolations(modules: readonly Module[]): readonly string[] {
@@ -354,6 +362,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
     expect(modules.map((module) => module.path)).toEqual([
       "age.ts",
       "agents.ts",
+      "batch.ts",
       "board/index.ts",
       "board/order.ts",
       "columns.ts",
@@ -466,6 +475,58 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "/** Never reads process.stdin. */\nexport const note = 'process.stdin is off limits';\n",
     );
     expect(stdinViolations([documented])).toEqual([]);
+  });
+});
+
+/**
+ * CLI-068. `corpus batch` runs each command through a nested output, so a
+ * command that reads `out.json` runs in a mode it did not set. That was
+ * harmless until the nested output reported the wrong one: `queue claim-all`
+ * took its human branch inside `corpus batch --json`, wrote the claim to the
+ * channel a `--json` parent suppresses, and the report said `value: null` for a
+ * command that had just claimed the queue.
+ *
+ * The cause is fixed at the source — the nested output carries the parent's
+ * mode — so nothing here forbids reading it. What this pins is the **list**: a
+ * command that chooses *what* it produces by the mode behaves differently
+ * inside a batch than alone, and the difference is invisible to the type
+ * system. A new one shows up here as a failing diff and gets checked once,
+ * rather than being found by the first caller that batches it.
+ */
+describe("every command that reads the output mode is inventoried", () => {
+  it("finds exactly the modules known to branch on it", async () => {
+    // Whole-source, not commands-only: a helper handed an `Output` would read
+    // the mode from outside `commands/` and escape a narrower scan. `output.ts`
+    // is absent by construction — it names the property rather than reading it
+    // off someone else's output.
+    expect(modeReaders(await modulesUnder(sourceRoot))).toEqual([
+      // `--fields` is a projection of the JSON value, so it requires `--json`.
+      "commands/doc/list.ts",
+      // `--section` writes the section's bytes raw in human mode.
+      "commands/doc/show.ts",
+      // The payload is one JSON line in *both* modes, written with `out.write`
+      // when the mode is human — the site CLI-068 was found at.
+      "commands/queue/claim-all.ts",
+      // Refuses `--follow` under `--json` (it never returns), and prints the
+      // log verbatim in human mode only.
+      "commands/server/logs.ts",
+    ]);
+  });
+
+  it("catches a new one and names the file", () => {
+    const rogue = fabricate(
+      "queue/rogue.ts",
+      "export function rogue(out) { if (out.json) out.emit(x); else out.write(y); }",
+    );
+    expect(modeReaders([rogue])).toEqual(["queue/rogue.ts"]);
+  });
+
+  it("does not mistake prose, or a JSON file path, for a read", () => {
+    const documented = fabricate(
+      "doc/documented.ts",
+      "/** Emits under out.json. */\nconst path = 'openapi.json';\nconst c = \"corpus doc list --json\";\n",
+    );
+    expect(modeReaders([documented])).toEqual([]);
   });
 });
 

@@ -744,7 +744,16 @@ button.fm-chip.on:focus-visible {
  * discoverable: the rule is that the target's extent is visible, not merely
  * present.
  */
-.t-collapse {
+/*
+ * `.t-menu` — the conversation's `⋯` (UI-167) — shares this box exactly.
+ *
+ * Not a resemblance: they are two glyph controls sitting side by side in one
+ * head, and a `⋯` a pixel off the fold's size or hover would read as a different
+ * class of thing. One declaration is also what carries the 26×26 target and the
+ * paint-the-whole-box hover onto the new control without either being restated.
+ */
+.t-collapse,
+.t-menu {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -760,16 +769,28 @@ button.fm-chip.on:focus-visible {
   line-height: 1;
 }
 
-.t-collapse:hover {
+.t-collapse:hover,
+.t-menu:hover {
   color: var(--ink);
   background: var(--surface);
 }
 
-.t-collapse:focus-visible {
+.t-collapse:focus-visible,
+.t-menu:focus-visible {
   color: var(--ink);
   background: var(--surface);
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/*
+ * The same control beside a **collapsed** line, which is not a flex head but a
+ * chip in an inline flow. It keeps the box and takes the baseline alignment the
+ * flow needs, so a 26px target does not push the line's own height around.
+ */
+.thread-slot.collapsed > .t-menu {
+  vertical-align: middle;
+  margin-left: 2px;
 }
 
 .turn {

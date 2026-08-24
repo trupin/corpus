@@ -42,6 +42,15 @@ export interface GitExecOptions {
   /** Extra environment on top of the sanitized base. Used for nothing today; git identity travels as flags. */
   readonly env?: Readonly<Record<string, string>> | undefined;
   readonly timeoutMs?: number | undefined;
+  /**
+   * Written to the command's standard input, which is then closed.
+   *
+   * A `Buffer` rather than only a string, because the one caller is
+   * `git hash-object` recording a file's **observed bytes** (SERVER-142): a
+   * document whose content survived a round trip through a JS string would be a
+   * document whose commit is not byte-for-byte what was on disk.
+   */
+  readonly stdin?: Buffer | string | undefined;
 }
 
 export interface Git {
@@ -63,7 +72,7 @@ export function createGit(root: string): Git {
     root,
     exec(args, options = {}) {
       return new Promise<GitCommandResult>((resolve) => {
-        execFile(
+        const child = execFile(
           "git",
           [...args],
           {
@@ -92,6 +101,15 @@ export function createGit(root: string): Git {
             });
           },
         );
+        if (options.stdin !== undefined && child.stdin !== null) {
+          // git can exit before it has read all of it — a rejected `hash-object`,
+          // a `timeout` kill — and the write then fails with `EPIPE`. That is
+          // reported through the exit code above like every other refusal, so
+          // the stream's own error event must not become an unhandled one and
+          // take the process down.
+          child.stdin.on("error", () => {});
+          child.stdin.end(options.stdin);
+        }
       });
     },
   };

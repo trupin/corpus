@@ -442,8 +442,9 @@ function projectThread(
   db.prepare(
     `INSERT INTO threads
        (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
-        last_ts, resident_designated, resident_name, resident_doc_id, resident_weight)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        last_ts, resident_designated, resident_name, resident_doc_id, resident_weight,
+        resident_designation_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     parentId,
@@ -463,6 +464,9 @@ function projectThread(
     // designation written before §7's weight rider says and what one that chose
     // none says — there is one spelling of it on disk and one here.
     resident?.weight ?? null,
+    // Verbatim too, and NULL for every designation written before CONTRACT-071
+    // (SERVER-147) — the contract's "no id to compare".
+    resident?.designationId ?? null,
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp

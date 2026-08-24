@@ -78,7 +78,12 @@ const HOST: StubRow = {
 
 const LANES: readonly AgentLane[] = [0, 1].map((index) => ({
   lane: `th_lane_${String(index)}`,
-  resident: { name: `designated-${String(index)}`, docId: `doc_${String(index)}`, weight: null },
+  resident: {
+    name: `designated-${String(index)}`,
+    docId: `doc_${String(index)}`,
+    weight: null,
+    designationId: null,
+  },
   live: false,
   since: "2026-08-17T10:00:00.000Z",
   summary: null,

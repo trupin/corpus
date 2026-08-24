@@ -54,6 +54,7 @@
 import type { QueryKey } from "@corpus/contract";
 import type { InvalidationBus } from "../events/bus.js";
 import { INDEX_KEY } from "../events/keys.js";
+import { createIndexAnnouncer, type IndexAnnouncer } from "./announce.js";
 import type { Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/db.js";
 import { writeEmbedding } from "./embeddings.js";
@@ -283,6 +284,14 @@ export interface EmbedWorkerOptions {
    */
   readonly bus?: InvalidationBus | undefined;
   /**
+   * Where every `["index"]` frame this worker sends actually goes (SERVER-116).
+   * Supplied by `worker-attach.ts` so this and `maintenance.ts` share **one**
+   * memo of the index's state word; omitted, the `bus`-only announcer is built
+   * here and behaves exactly as `bus` alone did — which is what every test
+   * constructing a worker with a bare `bus` gets.
+   */
+  readonly announcer?: IndexAnnouncer | undefined;
+  /**
    * Resolves a provider. Called only when the worker has none *and* has work,
    * which is what makes "the model downloads on the first index need, never at
    * boot" true from this end.
@@ -345,6 +354,8 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
   const claimSize = Math.max(batchSize, options.claimSize ?? EMBED_CLAIM_SIZE);
   const maxFailures = Math.max(1, options.maxFailures ?? MAX_CHUNK_FAILURES);
   const now = options.now ?? Date.now;
+  const announcer =
+    options.announcer ?? createIndexAnnouncer({ bus: options.bus, logger: options.logger });
 
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -394,7 +405,7 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
     unannounced = false;
     announcedAt = at;
     announcedCounts = counts;
-    options.bus?.invalidate([INDEX_KEY]);
+    announcer.changed();
   }
 
   /**

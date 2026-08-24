@@ -50,6 +50,9 @@ export function attachEmbedWorker(
     db,
     logger: server.logger,
     bus: server.bus,
+    // SERVER-116. The same announcer `indexMaintenance` publishes through, so
+    // one memo decides whether the index's state word moved.
+    ...(server.indexAnnouncer === undefined ? {} : { announcer: server.indexAnnouncer }),
     resolve: () =>
       resolveEmbeddingProvider({
         settings: server.config.embedding,

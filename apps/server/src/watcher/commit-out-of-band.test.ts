@@ -144,15 +144,60 @@ function watchedOutOfBandCommitter(inner: CommitOutOfBandChanges): WatchedCommit
 }
 
 /**
+ * Holds the out-of-band committer at its **entry**, which is where a commit
+ * waiting on the git lock sits (SERVER-142).
+ *
+ * `entered` resolves the instant `flush()` hands a batch over: the flush has
+ * read the bytes, reconciled them and projected them, and no git process has run
+ * yet. That is the whole of the window this file's SERVER-142 block is about, so
+ * the test decides it rather than timing it — the same lesson SERVER-140 wrote
+ * into `watchedOutOfBandCommitter` above.
+ */
+interface HeldCommitter {
+  readonly wrap: (inner: CommitOutOfBandChanges) => CommitOutOfBandChanges;
+  /** Resolves when the *first* batch reaches the committer. */
+  readonly entered: Promise<void>;
+  /** Lets every held batch through, in the order they arrived. */
+  release(): void;
+}
+
+function heldOutOfBandCommitter(): HeldCommitter {
+  let signalEntered = (): void => {};
+  const entered = new Promise<void>((resolve) => {
+    signalEntered = resolve;
+  });
+  let signalRelease = (): void => {};
+  const held = new Promise<void>((resolve) => {
+    signalRelease = resolve;
+  });
+  return {
+    wrap: (inner) => async (changes) => {
+      signalEntered();
+      await held;
+      await inner(changes);
+    },
+    entered,
+    release: () => {
+      signalRelease();
+    },
+  };
+}
+
+/**
  * Boots as the real server does: repopulate the projection from what the test
  * seeded, then watch — with the same out-of-band committer `app.ts` builds over
  * the server's one git writer.
+ *
+ * `wrap` interposes on that committer, which is how a test holds a person's
+ * commit outstanding; see {@link heldOutOfBandCommitter}.
  */
-async function startWatching(): Promise<void> {
+async function startWatching(
+  wrap: (inner: CommitOutOfBandChanges) => CommitOutOfBandChanges = (inner) => inner,
+): Promise<void> {
   populateFromFiles(db);
   committer = createAutoCommitter({ git: createGit(workspace), logger: silentLogger });
   outOfBand = watchedOutOfBandCommitter(
-    createOutOfBandCommitter({ git: committer, logger: silentLogger }),
+    wrap(createOutOfBandCommitter({ git: committer, logger: silentLogger })),
   );
   watcher = startWatcher({
     db,
@@ -557,6 +602,132 @@ describe("an out-of-band edit is committed for itself (SPEC.md §4, SERVER-090)"
   });
 });
 
+/**
+ * SERVER-142. Everything here is about the gap between **observing** a change and
+ * **committing** it: `flush()` is synchronous and a commit is not, so a person's
+ * commit is handed to a promise chain and runs later. Until this block existed,
+ * what it staged was the working tree as it stood when it *ran*.
+ *
+ * The interleaving is decided, never timed — {@link heldOutOfBandCommitter} holds
+ * the commit at the exact point a commit waiting on the git lock sits.
+ */
+describe("a person's commit records the bytes the flush observed (SPEC.md §4, SERVER-142)", () => {
+  const person = doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nMine.");
+  const server = doc("doc_mortgage", "Mortgage", "Rate is 6.1%.\n\nIts.");
+
+  /** What the server's write path does, in the order `applyOperations` does it. */
+  function serverWrites(relativePath: string, content: string): void {
+    selfWrites.record(abs(relativePath), content);
+    write(relativePath, content);
+  }
+
+  /**
+   * **The first-flush case, and the reason the cheap patch was rejected.** This
+   * is the watcher's *first* commit for the document, so a fix that answered the
+   * race by skipping the commit when the registry says the bytes are the
+   * server's would leave the person's paragraph in no commit at all. A lost
+   * commit is worse than a misattributed one, so the assertions are in that
+   * order: a commit exists, it is the person's, and it holds what the person
+   * wrote.
+   */
+  it("keeps the person's bytes and author when the server writes the path first", async () => {
+    write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+    seedCommit("seed");
+    const held = heldOutOfBandCommitter();
+    await startWatching(held.wrap);
+    const before = git("rev-parse", "HEAD").trim();
+
+    write("data/docs/mortgage.md", person);
+    await held.entered;
+    serverWrites("data/docs/mortgage.md", server);
+    held.release();
+    await watcher?.settled();
+
+    expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+    expect(log()[0]).toBe("user|doc edit: Mortgage (doc_mortgage) by user");
+    const committed = git("show", "HEAD:data/docs/mortgage.md");
+    expect(committed).toContain("Mine.");
+    expect(committed).not.toContain("Its.");
+    // The server's bytes are on disk and uncommitted, which is the truth: the
+    // mutation that wrote them commits them itself, under its own author. The
+    // status is the *worktree* column only (`porcelain` trims the leading blank
+    // index column), which is the other half of the promise — the snapshot's
+    // scratch index left the operator's real one in step with the commit.
+    expect(porcelain()).toBe("M data/docs/mortgage.md");
+  });
+
+  /**
+   * The same race one commit later, so the fold path is covered too: this
+   * person's commit **amends** the window its predecessor opened, and an amend
+   * builds its tree from a different place than a fresh commit does.
+   */
+  it("keeps the person's bytes when the racing commit folds into an open window", async () => {
+    write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+    seedCommit("seed");
+    await startWatching();
+    const before = git("rev-parse", "HEAD").trim();
+
+    write("data/docs/notes.md", doc("doc_notes", "Notes", "First."));
+    await outOfBand.committed("doc_notes");
+
+    // A second committer, held, over the same git writer the first used — so
+    // the window the first commit opened is still open when this one runs.
+    const held = heldOutOfBandCommitter();
+    outOfBand = watchedOutOfBandCommitter(
+      held.wrap(createOutOfBandCommitter({ git: committer, logger: silentLogger })),
+    );
+    await watcher?.close();
+    watcher = startWatcher({
+      db,
+      bus,
+      selfWrites,
+      logger: silentLogger,
+      debounceMs: 25,
+      maxBatchMs: 150,
+      commitOutOfBand: outOfBand.commit,
+    });
+    await watcher.ready;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    write("data/docs/mortgage.md", person);
+    await held.entered;
+    serverWrites("data/docs/mortgage.md", server);
+    held.release();
+    await watcher.settled();
+
+    // One commit, holding both documents: the second save folded into the
+    // window the first opened, and it carried the person's bytes into it.
+    expect(git("rev-list", "--count", `${before}..HEAD`).trim()).toBe("1");
+    const committed = git("show", "HEAD:data/docs/mortgage.md");
+    expect(committed).toContain("Mine.");
+    expect(committed).not.toContain("Its.");
+    expect(git("show", "HEAD:data/docs/notes.md")).toContain("First.");
+  });
+
+  /**
+   * §4's audit trail is about what happened, not about what is still there. A
+   * file removed between the observation and the commit used to turn the
+   * person's edit into a **deletion** carrying the subject `doc edit:` — the
+   * edit itself reached no commit, and the deletion was mislabelled.
+   */
+  it("commits observed bytes that are no longer on disk when the commit runs", async () => {
+    write("data/docs/mortgage.md", doc("doc_mortgage", "Mortgage", "Rate is 6.1%."));
+    seedCommit("seed");
+    const held = heldOutOfBandCommitter();
+    await startWatching(held.wrap);
+
+    write("data/docs/mortgage.md", person);
+    await held.entered;
+    selfWrites.record(abs("data/docs/mortgage.md"), null);
+    unlinkSync(abs("data/docs/mortgage.md"));
+    held.release();
+    await watcher?.settled();
+
+    expect(log()[0]).toBe("user|doc edit: Mortgage (doc_mortgage) by user");
+    expect(git("show", "HEAD:data/docs/mortgage.md")).toContain("Mine.");
+  });
+});
+
 describe("the out-of-band committer's request (SPEC.md §4)", () => {
   const change = {
     docId: "doc_mortgage",
@@ -564,6 +735,9 @@ describe("the out-of-band committer's request (SPEC.md §4)", () => {
     title: "Mortgage",
     type: "note",
     removed: false,
+    snapshot: new Map<string, Buffer | null>([
+      ["data/docs/mortgage.md", Buffer.from("observed", "utf8")],
+    ]),
   } as const;
 
   it("is an ordinary save by `user`: no act, no named set, no opt-out of folding", async () => {
@@ -580,6 +754,8 @@ describe("the out-of-band committer's request (SPEC.md §4)", () => {
     expect(request?.docIds).toBeUndefined();
     expect(request?.squash).toBeUndefined();
     expect(recording.closed).toEqual([]);
+    // SERVER-142: the bytes the flush observed reach git, not the working tree.
+    expect(request?.snapshot).toBe(change.snapshot);
   });
 
   it("carries what reconciliation moved, and nothing when it did not run", async () => {

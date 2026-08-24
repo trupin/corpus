@@ -25,7 +25,7 @@ const NOW = new Date("2026-08-16T12:00:00Z");
 function lane(overrides: Partial<AgentLane> = {}): AgentLane {
   return {
     lane: "th_root",
-    resident: { name: "claims-review", docId: "doc_agent", weight: "heavy" },
+    resident: { name: "claims-review", docId: "doc_agent", weight: "heavy", designationId: null },
     live: true,
     since: NOW.toISOString(),
     summary: "reviewing the draft",
@@ -63,7 +63,9 @@ describe("laneName", () => {
    * between (CONTRACT-061).
    */
   it("names a general resident by the conversation, never by a word for the state", () => {
-    const name = laneName(lane({ resident: { name: null, docId: null, weight: null } }));
+    const name = laneName(
+      lane({ resident: { name: null, docId: null, weight: null, designationId: null } }),
+    );
     expect(name).toBe("The claims conversation");
     expect(name).not.toContain("general");
     expect(name).not.toBe(ORCHESTRATOR_LABEL);
@@ -76,9 +78,11 @@ describe("laneResidentKind", () => {
   });
 
   it("is general when the designation named no profile — §7's ordinary case", () => {
-    expect(laneResidentKind(lane({ resident: { name: null, docId: null, weight: null } }))).toBe(
-      "general",
-    );
+    expect(
+      laneResidentKind(
+        lane({ resident: { name: null, docId: null, weight: null, designationId: null } }),
+      ),
+    ).toBe("general");
   });
 
   it("is profiled when the name still resolves to an agent-def", () => {
@@ -92,7 +96,11 @@ describe("laneResidentKind", () => {
    */
   it("tells a resident whose profile has gone from one that never had a profile", () => {
     expect(
-      laneResidentKind(lane({ resident: { name: "claims-review", docId: null, weight: null } })),
+      laneResidentKind(
+        lane({
+          resident: { name: "claims-review", docId: null, weight: null, designationId: null },
+        }),
+      ),
     ).toBe("profile-gone");
   });
 
@@ -265,7 +273,12 @@ describe("laneRows", () => {
    * identical either way"*.
    */
   it("carries a general resident with no profile and no note", () => {
-    expect(laneRow(lane({ resident: { name: null, docId: null, weight: null } }), NOW)).toEqual({
+    expect(
+      laneRow(
+        lane({ resident: { name: null, docId: null, weight: null, designationId: null } }),
+        NOW,
+      ),
+    ).toEqual({
       lane: "th_root",
       name: "The claims conversation",
       liveness: "live",
@@ -282,7 +295,7 @@ describe("laneRows", () => {
 
   it("reports a profile that has gone, and still names the resident", () => {
     const row = laneRow(
-      lane({ resident: { name: "claims-review", docId: null, weight: null } }),
+      lane({ resident: { name: "claims-review", docId: null, weight: null, designationId: null } }),
       NOW,
     );
     expect(row.kind).toBe("profile-gone");
@@ -304,7 +317,9 @@ describe("laneRows", () => {
    */
   it("carries the document the profile resolves to, beside the name it was designated with", () => {
     const row = laneRow(
-      lane({ resident: { name: "bookkeeper", docId: "doc_bk", weight: null } }),
+      lane({
+        resident: { name: "bookkeeper", docId: "doc_bk", weight: null, designationId: null },
+      }),
       NOW,
     );
     expect(row.profile).toBe("bookkeeper");
@@ -313,11 +328,18 @@ describe("laneRows", () => {
 
   it("has no document for a resident whose profile has gone, and none for a general one", () => {
     expect(
-      laneRow(lane({ resident: { name: "claims-review", docId: null, weight: null } }), NOW)
-        .profileDoc,
+      laneRow(
+        lane({
+          resident: { name: "claims-review", docId: null, weight: null, designationId: null },
+        }),
+        NOW,
+      ).profileDoc,
     ).toBe(null);
     expect(
-      laneRow(lane({ resident: { name: null, docId: null, weight: null } }), NOW).profileDoc,
+      laneRow(
+        lane({ resident: { name: null, docId: null, weight: null, designationId: null } }),
+        NOW,
+      ).profileDoc,
     ).toBe(null);
   });
 });

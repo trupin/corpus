@@ -1,5 +1,5 @@
 import type { DocRow } from "@corpus/contract";
-import { isAddressableTarget, type LaneRow } from "@corpus/kit";
+import { isAddressableTarget, weightLabel, type LaneRow, type WeightLevel } from "@corpus/kit";
 import type { MenuAction } from "../menu/menuModel";
 
 /**
@@ -60,6 +60,38 @@ import type { MenuAction } from "../menu/menuModel";
  * than a passage"* — so a card on a document offers nothing here rather than an
  * item that would earn a `409`. Nothing gates on the actor: designation is
  * user-only and this surface has no other kind of user.
+ *
+ * ## The level the resident runs at, chosen here because there is nowhere else
+ *
+ * SPEC.md §7's rider signed 2026-08-19: *"A resident's weight is set when it is
+ * designated, not per message."* A running agent cannot change what it is
+ * without discarding the conversation it is holding, so the designation is the
+ * **only** place the choice exists — and until UI-168 the app offered it
+ * nowhere, sending no weight on every designation it had ever made.
+ *
+ * **The vocabulary is the workspace's own and is not model names.** A weight is
+ * a level's *key* from the tier table in the workspace's orchestrate skill
+ * (`packages/kit/src/weight/weightLevels.ts`), which is the same set the
+ * composer's address control offers and the same reason §10's signed non-goal —
+ * no model names in the UI — holds by construction here. This module holds no
+ * vocabulary: {@link ResidentActionsInput.levels} arrives from the declaration,
+ * and a workspace that declares none gets **no weight rows at all** and
+ * designates exactly as it did before.
+ *
+ * **Choosing nothing stays the ordinary case.** The rows are a radio set whose
+ * first member is {@link LAUNCHER_WEIGHT_LABEL} — *the launcher decides* — and
+ * it is the one standing until somebody presses another. Nothing chosen sends
+ * no `weight` key, which is what absence means on the wire (CONTRACT-067), so a
+ * person who ignores the rows makes exactly the designation this menu made
+ * before the rows existed.
+ *
+ * **The rows do not restate what a weight governs.** That rule has one wording,
+ * the contract's `RESIDENT_WEIGHT_BOUNDARY`, and it is about a weight stated on
+ * a *message* meeting a resident's lane — a composer's question, answered where
+ * a person reaches for a message weight (`addressModel.ts`'s
+ * `residentWeightSentence`) and not where they choose a designation's level. A
+ * fresh site here would be a fourth restatement of a rule CONTRACT-064 records
+ * drifting across eight.
  */
 
 /** The one field of an agent-def row this needs: what it is invocable as. */
@@ -148,6 +180,63 @@ export const DESIGNATE_LABEL = "Designate a resident";
 
 /** …and the same act on a conversation that already has a profiled resident. */
 export const REPLACE_GENERAL_LABEL = "Replace with a general resident";
+
+/**
+ * …and on a conversation whose resident is **already** general, where the only
+ * thing the act changes is the level.
+ *
+ * "Replace with a general resident" would be false there — nobody is displaced —
+ * and the item is offered at all only because the weight differs (see
+ * {@link residentActions}'s skip). Naming the re-designation is what stops the
+ * menu describing a swap it is not making.
+ */
+export const REDESIGNATE_GENERAL_LABEL = "Re-designate the general resident";
+
+/** The lead every weight row wears, so the set reads as one question. */
+export const WEIGHT_LABEL_LEAD = "Weight —";
+
+/**
+ * The row that means **no level**, and the one standing until somebody presses
+ * another.
+ *
+ * It is an explicit member of the set rather than an unpressed state, because
+ * "the launcher decides" is a real outcome the contract names and reports back
+ * (`Resident.weight` null), not the absence of one. A set whose default could
+ * only be reached by *not* pressing anything would also have no way back once a
+ * level was pressed — and then every designation the app made would be
+ * opinionated, which is the thing this row exists to prevent.
+ */
+export const LAUNCHER_WEIGHT_LABEL = `${WEIGHT_LABEL_LEAD} the launcher decides`;
+
+/** Its second line, in the contract's own terms for a null `Resident.weight`. */
+export const LAUNCHER_WEIGHT_META = "no level is stated, and the launcher says what it chose";
+
+/** …and a level row's, which says what the choice is a property of. */
+export const LEVEL_WEIGHT_META = "the level this resident is designated at";
+
+/**
+ * …and one the guidance has stopped declaring, which is still what will be sent.
+ *
+ * The same sentence the composer's address control puts on such an option
+ * (`WEIGHT_UNKNOWN_TITLE`), for the same reason: the table is the workspace's
+ * own and it can be edited under a standing designation, and substituting a
+ * surviving level would be the menu lying about the request.
+ */
+export const UNDECLARED_WEIGHT_META =
+  "this workspace's guidance no longer declares this level — it is still what the request will state";
+
+/**
+ * How an act's second line reports the level it will send, or says nothing.
+ *
+ * Joined onto the act rather than left to the rows alone: the rows sit below the
+ * acts, so an act that did not name its own level would be describing a
+ * different write from the one it performs. Nothing is appended where nothing is
+ * chosen, which keeps the ordinary designation's wording byte-identical to what
+ * it was before this feature.
+ */
+export function withWeightMeta(meta: string, label: string | undefined): string {
+  return label === undefined ? meta : `${meta} — at ${label}`;
+}
 
 /**
  * Releasing a resident there is no profile to name.
@@ -239,10 +328,82 @@ export interface ResidentActionsInput {
    */
   readonly agents: readonly AgentDefRow[] | undefined;
   readonly pending: boolean;
+  /**
+   * The levels this workspace declares, lightest first (`useWeightLevels`).
+   *
+   * **Empty means no weight rows at all** — never a fallback list. The table is
+   * the workspace's own and can legitimately be absent, unreadable or on an
+   * older template, and a designation must still be possible there.
+   */
+  readonly levels: readonly WeightLevel[];
+  /** The level standing for the *next* designation, or `undefined` for none. */
+  readonly weight: string | undefined;
+  /** States a level, or clears it back to "the launcher decides". */
+  readonly onChooseWeight: (key: string | undefined) => void;
   /** Designate with no profile: §7's general resident. */
-  readonly onDesignateGeneral: () => void;
-  readonly onDesignate: (name: string) => void;
+  readonly onDesignateGeneral: (weight: string | undefined) => void;
+  readonly onDesignate: (name: string, weight: string | undefined) => void;
   readonly onRelease: () => void;
+}
+
+/**
+ * The rows to draw: the declared levels, plus the standing one when the guidance
+ * has stopped declaring it.
+ *
+ * The same rule the composer's `weightOptions` follows, and it matters more here
+ * because the standing choice is read off a **designation** that may be months
+ * old: dropping it would leave a radio set with nothing checked and a resident
+ * whose recorded level the menu refuses to name. Never a level the guidance does
+ * not declare *and* nobody chose.
+ */
+function weightOptions(input: ResidentActionsInput): readonly WeightLevel[] {
+  const { levels, weight } = input;
+  if (weight === undefined || levels.some((level) => level.key === weight)) return levels;
+  return [...levels, { label: weight, key: weight }];
+}
+
+/**
+ * The weight rows — a radio set, or nothing at all.
+ *
+ * `keepOpen` on every one of them: a row states what the *act above* will send,
+ * so a press that closed the menu would take the act away with the choice.
+ */
+function weightActions(input: ResidentActionsInput): readonly MenuAction[] {
+  if (input.levels.length === 0) return [];
+  const rows: MenuAction[] = [
+    {
+      id: "resident-weight-launch",
+      label: LAUNCHER_WEIGHT_LABEL,
+      meta: LAUNCHER_WEIGHT_META,
+      checked: input.weight === undefined,
+      keepOpen: true,
+      disabled: input.pending,
+      run: () => {
+        input.onChooseWeight(undefined);
+      },
+    },
+  ];
+  for (const level of weightOptions(input)) {
+    const declared = input.levels.some((have) => have.key === level.key);
+    rows.push({
+      id: `resident-weight-${level.key}`,
+      // The **label**, which is what the guidance calls the level and what a
+      // person picks by; the key is what travels. Rewording the table reworders
+      // this menu with no code change, and a choice made yesterday still
+      // resolves, because the key survived the rewording. An undeclared one has
+      // no label to show but its own key, which is a true thing to show and not
+      // an invented one.
+      label: `${WEIGHT_LABEL_LEAD} ${level.label}`,
+      meta: declared ? LEVEL_WEIGHT_META : UNDECLARED_WEIGHT_META,
+      checked: input.weight === level.key,
+      keepOpen: true,
+      disabled: input.pending,
+      run: () => {
+        input.onChooseWeight(level.key);
+      },
+    });
+  }
+  return rows;
 }
 
 /**
@@ -250,7 +411,9 @@ export interface ResidentActionsInput {
  *
  * Ordered as the decision is made: release first where there is something to
  * release, since it is one item and the alternative is a list; then the act
- * itself; then the profiles that refine it, in the directory's own order.
+ * itself; then the profiles that refine it, in the directory's own order; then
+ * the level it runs at, which refines it the same way a profile does and so sits
+ * where a refinement sits.
  */
 export function residentActions(input: ResidentActionsInput): readonly MenuAction[] {
   if (input.hasParent) return [];
@@ -259,6 +422,27 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
   if (!input.rosterAnswered) return [];
 
   const { resident, agents } = input;
+  /**
+   * What the acts below will say they send: the declared label, or the key
+   * itself where the guidance stopped declaring it (`weightLabel`'s own
+   * fallback), or nothing at all for "the launcher decides".
+   *
+   * Through the kit's derivation rather than a lookup that could miss, because a
+   * standing choice read off an old designation is exactly the case a lookup
+   * misses — and an act that sent a level while naming none would be describing
+   * a different write from the one it performs.
+   */
+  const level = input.weight === undefined ? undefined : weightLabel(input.levels, input.weight);
+  /**
+   * Would designating again write the same `Resident` this thread already has?
+   *
+   * The comparison the skips below turn on, and it now has a third field.
+   * Omitting the weight **clears** it server-side (`threads/resident.ts`'s
+   * `chosen = weight ?? null`), so `heavy` → nothing is a real change and not a
+   * no-op — which is why this compares `undefined` against `null` as equal and
+   * against a key as different, rather than ignoring an absent choice.
+   */
+  const sameWeight = (input.weight ?? null) === (resident?.weight ?? null);
   const items: MenuAction[] = [];
   if (resident !== undefined) {
     items.push({
@@ -284,22 +468,38 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
       },
     });
   }
-  // The act itself — offered whatever the directory holds, and skipped only
-  // where it would change nothing: §7 makes designation single-valued, so
-  // designating a general resident over a general resident is a write with no
-  // effect, and an item that does nothing is not an action.
-  if (resident?.kind !== "general") {
+  /*
+   * The act itself — offered whatever the directory holds, and skipped only
+   * where it would change nothing: §7 makes designation single-valued, so
+   * designating a general resident over a general resident is a write with no
+   * effect, and an item that does nothing is not an action.
+   *
+   * **A different level is a different state, so it is not that case** (UI-168).
+   * The skip used to be `resident?.kind !== "general"` alone, and with a weight
+   * on the designation that sentence stopped being true: the same general
+   * resident at a new level is a write the server performs and reports
+   * (`threads/resident.ts` — "a different weight is a different state, so it
+   * writes"), so suppressing it would have made the one act this menu exists for
+   * unreachable on precisely the conversation somebody wanted to re-weigh.
+   */
+  const generalIsNoop = resident?.kind === "general" && sameWeight;
+  if (!generalIsNoop) {
     items.push({
       id: "resident-designate-general",
-      label: resident === undefined ? DESIGNATE_LABEL : REPLACE_GENERAL_LABEL,
-      meta: GENERAL_META,
+      label:
+        resident === undefined
+          ? DESIGNATE_LABEL
+          : resident.kind === "general"
+            ? REDESIGNATE_GENERAL_LABEL
+            : REPLACE_GENERAL_LABEL,
+      meta: withWeightMeta(GENERAL_META, level),
       disabled: input.pending,
       run: () => {
-        input.onDesignateGeneral();
+        input.onDesignateGeneral(input.weight);
       },
     });
   }
-  if (agents === undefined) return items;
+  if (agents === undefined) return [...items, ...weightActions(input)];
   if (agents.length === 0) {
     items.push({
       id: "resident-no-profiles",
@@ -310,7 +510,7 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
         /* News, not an offer: the act above is the one that works. */
       },
     });
-    return items;
+    return [...items, ...weightActions(input)];
   }
   for (const agent of agents) {
     /*
@@ -336,19 +536,31 @@ export function residentActions(input: ResidentActionsInput): readonly MenuActio
      * where re-offering is correct: nothing in the workspace answers to that
      * designation any more, so designating this row is a write with an effect,
      * not the no-op the skip exists to suppress.
+     *
+     * **The level joins that question** (UI-168): the same profile at a new
+     * level writes, so only the pair together is the no-op. Where the profile
+     * matches and the level does not, the row stays and says
+     * `Re-designate` — never `Replace with`, which would describe a swap that
+     * displaces somebody when nobody is being displaced.
      */
-    if (agent.id === resident?.profileDoc) continue;
+    const sameProfile = agent.id === resident?.profileDoc;
+    if (sameProfile && sameWeight) continue;
     items.push({
       id: `resident-designate-${agent.id}`,
-      label: resident === undefined ? `Designate ${agent.name}` : `Replace with ${agent.name}`,
-      meta: DESIGNATE_META,
+      label:
+        resident === undefined
+          ? `Designate ${agent.name}`
+          : sameProfile
+            ? `Re-designate ${agent.name}`
+            : `Replace with ${agent.name}`,
+      meta: withWeightMeta(DESIGNATE_META, level),
       disabled: input.pending,
       run: () => {
-        input.onDesignate(agent.name);
+        input.onDesignate(agent.name, input.weight);
       },
     });
   }
-  return items;
+  return [...items, ...weightActions(input)];
 }
 
 /**

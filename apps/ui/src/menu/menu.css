@@ -60,6 +60,39 @@
   color: var(--signal);
 }
 
+/*
+ * ── An item that states a choice (UI-168) ────────────────────────────────
+ *
+ * `MenuAction.checked` makes an item a `menuitemradio`, and `aria-checked`
+ * alone is not the affordance: a person looking at the menu has to be able to
+ * see which one stands, or the set announces a state only a screen reader can
+ * read. So the state is drawn from the same attribute the assistive technology
+ * reads, rather than from a second class the two could disagree about.
+ *
+ * A gutter on **every** row of the set, marked on the one that holds: a `✓`
+ * that appeared and disappeared would shift the labels sideways as the choice
+ * moved, which is the "nothing moves under your cursor" rule one release old.
+ */
+.ctx-menu .ac-item[role="menuitemradio"] {
+  padding-left: 26px;
+  position: relative;
+}
+
+.ctx-menu .ac-item[role="menuitemradio"]::before {
+  content: "✓";
+  position: absolute;
+  left: 9px;
+  top: 7px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--accent-ink);
+  opacity: 0;
+}
+
+.ctx-menu .ac-item[aria-checked="true"]::before {
+  opacity: 1;
+}
+
 .ac-item:focus-visible {
   background: var(--surface-2);
   outline: 2px solid var(--accent);

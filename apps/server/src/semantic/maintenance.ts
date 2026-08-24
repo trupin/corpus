@@ -22,7 +22,7 @@
 
 import type { IndexStatus } from "@corpus/contract";
 import type { InvalidationBus } from "../events/bus.js";
-import { INDEX_KEY } from "../events/keys.js";
+import { createIndexAnnouncer, type IndexAnnouncer } from "./announce.js";
 import type { Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/db.js";
 import { recordedIdentity } from "./embeddings.js";
@@ -56,13 +56,23 @@ export interface IndexMaintenanceOptions {
    * count moving is invisible to a loop that only watches rows.
    */
   readonly bus?: InvalidationBus | undefined;
+  /**
+   * Where those two edges actually go (SERVER-116). Supplied by `app.ts` so the
+   * worker and this share **one** memo of the state word; omitted, the
+   * `bus`-only announcer is built here and behaves exactly as `bus` alone did.
+   */
+  readonly announcer?: IndexAnnouncer | undefined;
 }
 
 export function createIndexMaintenance(options: IndexMaintenanceOptions): IndexMaintenance {
   const { db, semantic, logger } = options;
   let worker: EmbedWorkerHandle | undefined;
 
-  const announce = (): void => options.bus?.invalidate([INDEX_KEY]);
+  const announcer =
+    options.announcer ?? createIndexAnnouncer({ bus: options.bus, logger: options.logger });
+  const announce = (): void => {
+    announcer.changed();
+  };
 
   /**
    * The counts, the recorded identity and the flag, as the wire's five

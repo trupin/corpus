@@ -36,14 +36,24 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * the claim survives a machine whose Chromium normalizes the stack differently —
  * and a token edit moves the assertion with the product rather than against it.
  *
- * **What this file deliberately does not claim.** Full screen still reads a turn
- * a little larger (`FocusMode.css`: `.focus .turn-markdown { font-size: 13.5px }`)
- * and still lends it the body's leading and reading measure, because
- * `.focus .doc-body` weighs two classes and reaches a turn through the `doc-body`
- * class `Turn.tsx` puts beside `turn-markdown`. Those are specificity wins, not
- * order wins: they read the same whichever stylesheet loads first. The claim
- * here is the one the defect broke — **the typeface does not change under the
- * reader** — plus the values `Reader.css` declares for a turn in a column.
+ * **And what full screen does to a turn** (UI-166, user decision 2026-08-23:
+ * *"A conversation reads the same in a column and in full screen, differing only
+ * in the room it has."*). UI-156 measured three differences surviving the import
+ * order and left them, because they are specificity wins rather than order wins:
+ * `.focus .doc-body` weighs two classes and reaches a turn through the
+ * `doc-body` class `Turn.tsx` puts beside `turn-markdown`. Two of them —
+ * `font-size` and `line-height` — are now answered by a rule that names turns,
+ * and the third is not, because it never bound:
+ *
+ * | property | column | full screen, before | after |
+ * | --- | --- | --- | --- |
+ * | font-size | 12.5px | 13.5px | 12.5px |
+ * | line-height | 1.5 | 1.7 | 1.5 |
+ * | max-width | `none` | 561.23px, on a 487.6px turn | unchanged, still dead |
+ *
+ * So this file asserts the two that moved, on both surfaces, and asserts of the
+ * third only that it does not reach the turn's rendered width. `max-width` is
+ * measured rather than read as a string for exactly that reason.
  */
 
 const VIEW: StubRow = {
@@ -148,7 +158,7 @@ test.describe("the kit's stylesheets are the base layer", () => {
     expect(body.fontSize).toBeCloseTo(12.5, 3);
   });
 
-  test("the typeface does not change when the turn enters full screen", async ({ page }) => {
+  test("a turn reads the same in full screen as in a column", async ({ page }) => {
     await openTheConversation(page);
     const inColumn = await typeOf(page, ".col .reader .turn-markdown");
 
@@ -160,8 +170,49 @@ test.describe("the kit's stylesheets are the base layer", () => {
     const { sans } = await stacks(page);
     expect(inFocus.fontFamily, "full screen re-typeset the conversation").toBe(inColumn.fontFamily);
     expect(inFocus.fontFamily).toBe(sans);
-    // And full screen never lets `.focus .doc-body`'s 16.5px reach a turn: the
-    // size a reader sees there is `FocusMode.css`'s own 13.5px.
-    expect(inFocus.fontSize).toBeCloseTo(13.5, 3);
+    // The two that moved with UI-166. Compared to the column rather than to a
+    // literal, because the claim is *the same*, not *this number* — and pinned
+    // to the numbers too, so a change that moved both surfaces together would
+    // still be seen.
+    expect(inFocus.fontSize, "full screen resized the conversation").toBe(inColumn.fontSize);
+    expect(inFocus.fontSize).toBeCloseTo(12.5, 3);
+    expect(
+      inFocus.lineHeight / inFocus.fontSize,
+      "full screen re-led the conversation",
+    ).toBeCloseTo(inColumn.lineHeight / inColumn.fontSize, 2);
+    expect(inFocus.lineHeight / inFocus.fontSize).toBeCloseTo(1.5, 2);
+  });
+
+  /**
+   * The third difference, and the reason it is left alone: `.focus .doc-body`
+   * still puts `var(--doc-measure, 66ch)` on a turn in full screen, and it has
+   * never bound — the card the turn sits in is narrower than the measure, on
+   * every surface UI-166 measured. So the assertion is about the rendered box,
+   * not about the declaration: a `max-width` that binds would show up as a turn
+   * narrower than the room its card gives it.
+   */
+  test("full screen's reading measure does not reach a turn's box", async ({ page }) => {
+    await openTheConversation(page);
+    await page.locator('.reader[data-reader-doc="th_type"] [data-expand]').click();
+    await page.locator(".focus.open .turn-markdown").first().waitFor();
+
+    const boxes = await page
+      .locator(".focus.open .turn-markdown")
+      .first()
+      .evaluate((turn) => {
+        const parent = turn.parentElement;
+        const cs = getComputedStyle(turn);
+        return {
+          maxWidth: Number.parseFloat(cs.maxWidth),
+          turn: turn.getBoundingClientRect().width,
+          room: parent === null ? 0 : parent.getBoundingClientRect().width,
+        };
+      });
+
+    expect(boxes.room).toBeGreaterThan(0);
+    // The turn fills the room it is given…
+    expect(Math.abs(boxes.turn - boxes.room)).toBeLessThan(1.5);
+    // …because the measure is wider than that room and therefore inert.
+    expect(boxes.maxWidth).toBeGreaterThan(boxes.room);
   });
 });

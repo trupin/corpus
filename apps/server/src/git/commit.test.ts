@@ -1806,3 +1806,145 @@ describe("a staged directory folds only when nothing beneath it is orphaned (SER
     expect(r.git("show", `${prior}:${DOC}`)).toBe("before the window");
   });
 });
+
+/**
+ * SERVER-142. A commit whose content is what the caller **observed**, not what
+ * the working tree holds when it runs — see `CommitRequest.snapshot`. Every
+ * test here writes something different to disk than it hands over, because that
+ * divergence is exactly the state the field exists for.
+ */
+describe("a commit that brought its own bytes", () => {
+  const snapshotOf = (path: string, text: string | null): ReadonlyMap<string, Buffer | null> =>
+    new Map([[path, text === null ? null : Buffer.from(text, "utf8")]]);
+
+  const save = (
+    r: Repo,
+    snapshot: ReadonlyMap<string, Buffer | null>,
+    paths: readonly string[] = [...snapshot.keys()],
+  ): Promise<{ kind: string }> =>
+    r.committer.commit({
+      docId: "doc_note01",
+      actor: "user",
+      subject: "doc edit: Note (doc_note01) by user",
+      paths,
+      snapshot,
+    });
+
+  it("commits the observed bytes and leaves the newer ones on disk", async () => {
+    const r = makeRepo("snapshot-observed");
+    r.touch(DOC, "the server's bytes\n");
+
+    expect((await save(r, snapshotOf(DOC, "the person's bytes\n"))).kind).toBe("committed");
+
+    expect(r.git("show", `HEAD:${DOC}`)).toBe("the person's bytes\n");
+    expect(r.git("show", "HEAD", "--format=%an").split("\n")[0]).toBe("user");
+    // The working tree is never touched, and the operator's index is left in
+    // step with the commit — so `git status` reports the newer bytes as an
+    // ordinary unstaged change, which is what they are.
+    expect(r.git("status", "--porcelain", "--", DOC).trim()).toBe(`M ${DOC}`);
+  });
+
+  it("commits observed bytes for a path that is no longer on disk", async () => {
+    const r = makeRepo("snapshot-vanished");
+    // Never written at all: the file the caller read has been deleted since.
+    expect((await save(r, snapshotOf(DOC, "read before it vanished\n"))).kind).toBe("committed");
+    expect(r.git("show", `HEAD:${DOC}`)).toBe("read before it vanished\n");
+  });
+
+  it("commits a removal the snapshot declares even though the file is back", async () => {
+    const r = makeRepo("snapshot-removal");
+    r.touch(DOC, "first\n");
+    await save(r, snapshotOf(DOC, "first\n"));
+
+    r.clock += SQUASH_IDLE_MS;
+    // Observed as gone; recreated before the commit ran.
+    r.touch(DOC, "recreated behind our back\n");
+    expect((await save(r, snapshotOf(DOC, null))).kind).toBe("committed");
+
+    expect(r.git("show", "--name-status", "--format=", "HEAD").trim()).toBe(`D\t${DOC}`);
+  });
+
+  it("folds into the open window, carrying each save's own observed bytes", async () => {
+    const r = makeRepo("snapshot-fold");
+    const other = "data/docs/inbox/other.md";
+    r.touch(DOC, "irrelevant\n");
+    expect((await save(r, snapshotOf(DOC, "note as observed\n"))).kind).toBe("committed");
+
+    r.clock += 100;
+    r.touch(other, "irrelevant\n");
+    expect((await save(r, snapshotOf(other, "other as observed\n"))).kind).toBe("amended");
+
+    // One commit holding both, which is §4's editing session — a snapshot must
+    // not cost the out-of-band path its folding.
+    expect(r.log("%s")).toEqual(["doc edit: Note (doc_note01) by user", "seed"]);
+    expect(r.git("show", `HEAD:${DOC}`)).toBe("note as observed\n");
+    expect(r.git("show", `HEAD:${other}`)).toBe("other as observed\n");
+    expect(r.git("show", "HEAD:seed.txt")).toBe("seed\n");
+  });
+
+  it("never swallows the operator's staged work, as `--only` would not", async () => {
+    const r = makeRepo("snapshot-only");
+    r.touch("operator.txt", "half-finished\n");
+    r.git("add", "--", "operator.txt");
+    r.touch(DOC, "irrelevant\n");
+
+    await save(r, snapshotOf(DOC, "observed\n"));
+
+    expect(r.git("show", "--name-only", "--format=", "HEAD").trim()).toBe(DOC);
+    expect(r.git("status", "--porcelain", "--", "operator.txt").trim()).toBe("A  operator.txt");
+  });
+
+  it("keeps the mode a tracked file already had", async () => {
+    const r = makeRepo("snapshot-mode");
+    const script = "data/docs/inbox/run.sh";
+    r.touch(script, "#!/bin/sh\n");
+    chmodSync(join(r.root, script), 0o755);
+    r.git("add", "-A", "--", script);
+    r.git("-c", "user.name=S", "-c", "user.email=s@example.test", "commit", "-m", "script");
+
+    await r.committer.commit({
+      docId: "doc_note01",
+      actor: "user",
+      subject: "doc edit: Note (doc_note01) by user",
+      paths: [script],
+      snapshot: snapshotOf(script, "#!/bin/sh\necho hi\n"),
+    });
+
+    expect(r.git("ls-tree", "HEAD", "--", script).split(" ")[0]).toBe("100755");
+  });
+
+  it("leaves a path the snapshot does not describe entirely alone", async () => {
+    const r = makeRepo("snapshot-undescribed");
+    const stray = "data/docs/inbox/stray.md";
+    r.touch(DOC, "irrelevant\n");
+    r.touch(stray, "not described\n");
+    r.git("add", "--", stray);
+
+    await save(r, snapshotOf(DOC, "observed\n"), [DOC, stray]);
+
+    // Neither committed nor unstaged: a path the caller named but did not
+    // describe is not part of this commit's scope, so the index reset that
+    // follows a snapshot commit must not reach it either.
+    expect(r.git("show", "--name-only", "--format=", "HEAD").trim()).toBe(DOC);
+    expect(r.git("status", "--porcelain", "--", stray).trim()).toBe(`A  ${stray}`);
+  });
+
+  it("reports a refused staging as a failure, leaving no scratch index behind", async () => {
+    const r = makeRepo("snapshot-refused");
+    // On disk, so `git add` would have succeeded: the refusal can only be the
+    // snapshot's own staging.
+    r.touch(DOC, "on disk\n");
+    r.failCommand("hash-object");
+
+    const outcome = await save(r, snapshotOf(DOC, "observed\n"));
+
+    expect(outcome).toMatchObject({ kind: "failed", reason: "staging failed" });
+    expect(r.log("%s")).toEqual(["seed"]);
+    expect(
+      r
+        .git("status", "--porcelain")
+        .split("\n")
+        .filter((line) => line.includes("scratch-index")),
+    ).toEqual([]);
+  });
+});

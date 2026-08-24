@@ -55,6 +55,33 @@ import { useNowTick } from "./useNowTick";
  * substitution CONTRACT-061 shaped `Resident` to prevent. It also cannot be read
  * as *no resident* — there is one, and the dot beside it says whether it is
  * there.
+ *
+ * ## What it deliberately does **not** say: the weight (UI-168)
+ *
+ * This badge answers *who is resident*, and the composer's line one gesture
+ * below answers *at what*. UI-168 built the weight clause here and it was taken
+ * out again, on the measurement rather than on taste — recorded so nobody adds
+ * it back without the number.
+ *
+ * The value arrives on a second round trip (`useWeightLevels` scans
+ * `?type=skill` and then reads the body), and it is the workspace's own words,
+ * so it needs the reserved box `console.css` documents: **~164px, 26ch**. In a
+ * head that is `flex-wrap: wrap` that took a row of its own on a narrow card,
+ * permanently, on every conversation with a resident — while the composer's
+ * address line a few lines down already reads `researcher will answer · Heavy or
+ * judgment-laden`. Room spent twice for one fact.
+ *
+ * The criterion it was built for is that *the choice must not be invisible once
+ * made*, and it is not: it is at the **point of change** (the conversation's own
+ * menu, `residentActions.ts`), the **point of use** (the composer's address line
+ * and its popover), and in the **roster** (the console's Residents tab, whose
+ * `.lane-weight` is a row with the width to hold it). Three surfaces, none of
+ * them this one — which is the same split that keeps the weight off the
+ * composer's recipient *rows*.
+ *
+ * Left out of the `title` too, rather than hidden there: a hover is not an
+ * answer to "where is this shown", and a badge whose tooltip carries a fact its
+ * face does not is the half-state this decision exists to avoid.
  */
 
 export interface ResidentBadgeProps {

@@ -45,7 +45,7 @@ const LANES: Readonly<Record<LaneResidentKind, AgentLane>> = {
   },
   profiled: {
     lane: "th_claims",
-    resident: { name: "claims-review", docId: "doc_claims", weight: "heavy" },
+    resident: { name: "claims-review", docId: "doc_claims", weight: "heavy", designationId: null },
     live: true,
     since: NOW,
     summary: "reading the policy",
@@ -53,7 +53,7 @@ const LANES: Readonly<Record<LaneResidentKind, AgentLane>> = {
   },
   general: {
     lane: "th_rent",
-    resident: { name: null, docId: null, weight: "standard" },
+    resident: { name: null, docId: null, weight: "standard", designationId: null },
     live: false,
     since: null,
     summary: null,
@@ -61,7 +61,7 @@ const LANES: Readonly<Record<LaneResidentKind, AgentLane>> = {
   },
   "profile-gone": {
     lane: "th_gone",
-    resident: { name: "researcher", docId: null, weight: null },
+    resident: { name: "researcher", docId: null, weight: null, designationId: null },
     live: false,
     since: LONG_AGO,
     summary: null,

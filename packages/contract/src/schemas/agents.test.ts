@@ -20,13 +20,21 @@ import {
   ResidentReleasedPayloadSchema,
   ResidentSchema,
   residentField,
+  type DesignatedResident,
+  type Resident,
 } from "./agents.js";
+import { DesignationIdSchema } from "./id.js";
 import { REQUESTED_WEIGHT_MAX_LENGTH, RequestedWeightSchema } from "./weight.js";
 
-const resident = { name: "researcher", docId: "doc_agentdef", weight: null };
+const resident = {
+  name: "researcher",
+  docId: "doc_agentdef",
+  weight: null,
+  designationId: "des_9f2a1c",
+};
 
 /** A designation that named no profile (SPEC.md §7, rider SHARED-048). */
-const generalResident = { name: null, docId: null, weight: null };
+const generalResident = { name: null, docId: null, weight: null, designationId: "des_1a2b3c" };
 
 const orchestratorLane = {
   lane: "orchestrator",
@@ -85,6 +93,7 @@ describe("Resident", () => {
   it("demands both halves, present, even when both are null", () => {
     expect(ResidentSchema.safeParse({ name: "researcher", weight: null }).success).toBe(false);
     expect(ResidentSchema.safeParse({ docId: "doc_agentdef", weight: null }).success).toBe(false);
+    expect(ResidentSchema.safeParse({ ...resident, designationId: undefined }).success).toBe(false);
     expect(ResidentSchema.safeParse({}).success).toBe(false);
   });
 
@@ -100,6 +109,7 @@ describe("Resident", () => {
       name: null,
       docId: null,
       weight: null,
+      designationId: generalResident.designationId,
     });
   });
 
@@ -112,7 +122,7 @@ describe("Resident", () => {
    * from a general resident — one is ordinary, the other is worth mentioning.
    */
   it("round-trips a named profile that no longer resolves, distinguishably", () => {
-    const gone = { name: "researcher", docId: null, weight: null };
+    const gone = { ...resident, docId: null };
     expect(ResidentSchema.parse(gone)).toEqual(gone);
     expect(gone.name).not.toBe(generalResident.name);
   });
@@ -124,16 +134,14 @@ describe("Resident", () => {
    * (CONTRACT-037: a `oneOf` has no `type: "object"`).
    */
   it("refuses a docId with no name, which would be a document nobody named", () => {
-    const parsed = ResidentSchema.safeParse({ name: null, docId: "doc_agentdef", weight: null });
+    const parsed = ResidentSchema.safeParse({ ...resident, name: null });
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues[0]?.path).toEqual(["docId"]);
   });
 
   /** A blank name is still a mistake, wherever it appears. */
   it("still refuses a blank name rather than reading it as no profile", () => {
-    expect(ResidentSchema.safeParse({ name: "   ", docId: null, weight: null }).success).toBe(
-      false,
-    );
+    expect(ResidentSchema.safeParse({ ...resident, name: "   ", docId: null }).success).toBe(false);
   });
 });
 
@@ -144,9 +152,10 @@ describe("Resident", () => {
 describe("Resident.weight", () => {
   it("is required and nullable: null is none chosen, the launcher decides", () => {
     expect(ResidentSchema.parse(resident).weight).toBeNull();
-    expect(ResidentSchema.safeParse({ name: "researcher", docId: "doc_agentdef" }).success).toBe(
-      false,
-    );
+    expect(
+      ResidentSchema.safeParse({ name: "researcher", docId: "doc_agentdef", designationId: null })
+        .success,
+    ).toBe(false);
   });
 
   it("carries a level key verbatim, the same token a message's weight uses", () => {
@@ -160,8 +169,9 @@ describe("Resident.weight", () => {
       name: null,
       docId: null,
       weight: "light",
+      designationId: generalResident.designationId,
     });
-    expect(ResidentSchema.parse({ name: "researcher", docId: null, weight: "light" }).weight).toBe(
+    expect(ResidentSchema.parse({ ...resident, docId: null, weight: "light" }).weight).toBe(
       "light",
     );
   });
@@ -181,6 +191,74 @@ describe("Resident.weight", () => {
     expect(DesignateResidentRequestSchema.shape.weight.description).toContain(
       RESIDENT_WEIGHT_BOUNDARY,
     );
+  });
+});
+
+/**
+ * CONTRACT-071. A re-designation that changes only the profile leaves the lane
+ * present, the row in place and the weight untouched, so nothing a listener
+ * could compare moved — and the roster's resident cell is display text it is
+ * forbidden to parse. `designationId` is the fact that makes such a replacement
+ * detectable, and every rule about it is a rule about **comparison**.
+ */
+describe("Resident.designationId", () => {
+  it("is required and nullable, like every response field here", () => {
+    expect(ResidentSchema.parse(resident).designationId).toBe("des_9f2a1c");
+    const { designationId: _absent, ...withoutIt } = resident;
+    expect(ResidentSchema.safeParse(withoutIt).success).toBe(false);
+    expect(ResidentSchema.parse({ ...resident, designationId: null }).designationId).toBeNull();
+  });
+
+  it("carries its own prefix, so no other id can be passed where it belongs", () => {
+    expect(DesignationIdSchema.parse("des_9f2a1c")).toBe("des_9f2a1c");
+    for (const wrong of ["doc_a1b2c3", "th_x9y8", "evt_7c1d", "9f2a1c", "des_", "des_9f2a1c!"]) {
+      expect(ResidentSchema.safeParse({ ...resident, designationId: wrong }).success).toBe(false);
+    }
+  });
+
+  /**
+   * The defect this field exists for, stated as the comparison a listener
+   * makes: two residents that differ only in their profile are two
+   * designations, and nothing else on the row says so.
+   */
+  it("tells a profile-only replacement at the same weight apart", () => {
+    const before = ResidentSchema.parse({ ...resident, weight: "heavy" });
+    const after = ResidentSchema.parse({
+      ...resident,
+      name: "claims-review",
+      docId: "doc_claims",
+      weight: "heavy",
+      designationId: "des_44b0e1",
+    });
+    expect(after.weight).toBe(before.weight);
+    expect(after.designationId).not.toBe(before.designationId);
+  });
+
+  /**
+   * Null is the absence of an answer, not an answer. A designation made before
+   * the server recorded this — or a hand-written `resident:` block that omits
+   * it — must not read as "the same designation" to a listener whose own id is
+   * also null, or the field would manufacture the very verdict it exists to
+   * report honestly.
+   */
+  it("says so in published prose, because two nulls are not a match", () => {
+    const published = ResidentSchema.shape.designationId.description ?? "";
+    expect(published).toContain("Two nulls are not evidence of the same designation");
+    expect(published).toContain("equality is the only sound operation");
+    expect(published).toContain("Not the id of the `resident.designated` event");
+  });
+
+  /**
+   * `DesignatedResident` is the server's comparison type: `designationId` in it
+   * would make every re-designation a replacement, since a fresh mint differs
+   * from anything. The `Omit` is what makes that unspellable, so this pins the
+   * one property the `Omit` exists for.
+   */
+  it("is absent from DesignatedResident, the shape a designation is compared on", () => {
+    const asked: DesignatedResident = { name: "researcher", docId: "doc_agentdef", weight: null };
+    expect(Object.keys(asked)).not.toContain("designationId");
+    const full: Resident = { ...asked, designationId: "des_9f2a1c" };
+    expect(ResidentSchema.parse(full)).toEqual(full);
   });
 });
 
@@ -275,7 +353,7 @@ describe("AgentLane", () => {
   it("carries a general-resident lane as a designated row, not as a residentless one", () => {
     const general = { ...residentLane, resident: generalResident };
     const parsed = AgentLaneSchema.parse(general);
-    expect(parsed.resident).toEqual({ name: null, docId: null, weight: null });
+    expect(parsed.resident).toEqual(generalResident);
     expect(parsed.resident).not.toBeNull();
     // Everything else about the row is identical to a profiled lane's (SPEC.md
     // §7: "everything else about a resident is identical either way").

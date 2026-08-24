@@ -36,7 +36,12 @@ export const RESIDENT_WEIGHT = "heavy";
 export function residentLane(overrides: Partial<AgentLane> = {}): AgentLane {
   return {
     lane: RESIDENT_THREAD_ID,
-    resident: { name: RESIDENT_NAME, docId: "doc_agent", weight: RESIDENT_WEIGHT },
+    resident: {
+      name: RESIDENT_NAME,
+      docId: "doc_agent",
+      weight: RESIDENT_WEIGHT,
+      designationId: null,
+    },
     live: true,
     since: new Date().toISOString(),
     summary: "reviewing the draft",

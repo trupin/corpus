@@ -27,6 +27,14 @@ import {
 import { LANE_GRACE_MS } from "../queue/liveness.js";
 import { RESIDENT_DESIGNATED, RESIDENT_RELEASED } from "./resident.js";
 
+/**
+ * The shape `newId(ID_PREFIXES.designation)` mints (SERVER-147): twelve base32
+ * characters. Assertions about *which* id a designation has live in the
+ * SERVER-147 block at the bottom of this file; everywhere else the id is
+ * incidental and only its presence is pinned.
+ */
+const A_DESIGNATION: unknown = expect.stringMatching(/^des_[a-z2-7]{12}$/);
+
 let ws: WriteWorkspace;
 
 const AGENT = { "x-corpus-author": "agent" };
@@ -208,6 +216,7 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
     // Read back through the route a client uses, off the re-projected state.
     // `weight` is null: this designation chose no level, which is the ordinary
@@ -216,6 +225,7 @@ describe("POST /api/threads/{id}/resident", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: null,
+      designationId: A_DESIGNATION,
     });
     // And in the projection, where SERVER-111's enqueue path will ask.
     expect(residentRow(created.id)).toEqual({
@@ -285,6 +295,7 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -297,6 +308,7 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "retired",
       docId: "doc_retired",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -312,10 +324,11 @@ describe("POST /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "editor",
       docId: "doc_editorone",
+      designationId: A_DESIGNATION,
     });
     expect(designations().map((event) => event.payload["resident"])).toEqual([
-      { name: "researcher", docId: "doc_researcher", weight: null },
-      { name: "editor", docId: "doc_editorone", weight: null },
+      { name: "researcher", docId: "doc_researcher", weight: null, designationId: A_DESIGNATION },
+      { name: "editor", docId: "doc_editorone", weight: null, designationId: A_DESIGNATION },
     ]);
   });
 
@@ -546,11 +559,16 @@ describe("designating with no profile at all", () => {
     // person reading the markdown tells them apart by the values and not by a
     // second grammar. The key being *present* is the designation; releasing
     // removes it.
-    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: null,
+      docId: null,
+      designationId: A_DESIGNATION,
+    });
     expect((await readThread(created.id))["resident"]).toEqual({
       name: null,
       docId: null,
       weight: null,
+      designationId: A_DESIGNATION,
     });
     // And in the projection: designated, with no profile.
     expect(residentRow(created.id)).toEqual({
@@ -569,7 +587,17 @@ describe("designating with no profile at all", () => {
     expect((await designateGeneral(bodyless.id)).status).toBe(200);
     expect((await ws.post(`/api/threads/${empty.id}/resident`, {})).status).toBe(200);
 
-    expect(threadFrontmatterOf(ws, bodyless.id)["resident"]).toEqual(
+    // Same designation, and two different acts: the ids are freshly minted per
+    // act and must differ, so what is compared is what the two requests *asked
+    // for* (SERVER-147's `DesignatedResident`).
+    const asked = (id: string): unknown => {
+      const stored = threadFrontmatterOf(ws, id)["resident"] as Record<string, unknown>;
+      const { designationId, ...rest } = stored;
+      expect(designationId).toEqual(A_DESIGNATION);
+      return rest;
+    };
+    expect(asked(bodyless.id)).toEqual(asked(empty.id));
+    expect(threadFrontmatterOf(ws, bodyless.id)["resident"]).not.toEqual(
       threadFrontmatterOf(ws, empty.id)["resident"],
     );
     expect(designatedRow(bodyless.id)).toBe(designatedRow(empty.id));
@@ -590,6 +618,7 @@ describe("designating with no profile at all", () => {
       name: null,
       docId: null,
       weight: null,
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -665,18 +694,23 @@ describe("designating with no profile at all", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
 
     ws.advance(61_000);
     const before = ws.log("%H").length;
     expect((await designateGeneral(created.id)).status).toBe(200);
 
-    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({ name: null, docId: null });
+    expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
+      name: null,
+      docId: null,
+      designationId: A_DESIGNATION,
+    });
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(designations().map((event) => event.payload["resident"])).toEqual([
-      { name: null, docId: null, weight: null },
-      { name: "researcher", docId: "doc_researcher", weight: null },
-      { name: null, docId: null, weight: null },
+      { name: null, docId: null, weight: null, designationId: A_DESIGNATION },
+      { name: "researcher", docId: "doc_researcher", weight: null, designationId: A_DESIGNATION },
+      { name: null, docId: null, weight: null, designationId: A_DESIGNATION },
     ]);
   });
 
@@ -854,6 +888,7 @@ describe("DELETE /api/threads/{id}/resident", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
     expect((await release("th_zzzzzzzz")).status).toBe(404);
   });
@@ -1005,11 +1040,13 @@ describe("the weight a designation chooses (SERVER-129)", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
     expect((await readThread(created.id))["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
     expect(residentRow(created.id)).toEqual({
       resident_designated: 1,
@@ -1024,6 +1061,7 @@ describe("the weight a designation chooses (SERVER-129)", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -1054,6 +1092,9 @@ describe("the weight a designation chooses (SERVER-129)", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: null,
+      // No `designationId` key on disk, which the wire reports as null — the
+      // pre-CONTRACT-071 designations in every workspace today (SERVER-147).
+      designationId: null,
     });
     expect(designatedRow(created.id)).toBe(1);
   });
@@ -1069,6 +1110,7 @@ describe("the weight a designation chooses (SERVER-129)", () => {
       name: null,
       docId: null,
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -1090,10 +1132,21 @@ describe("the weight a designation chooses (SERVER-129)", () => {
       name: "researcher",
       docId: "doc_researcher",
       weight: "heavy",
+      designationId: A_DESIGNATION,
     });
     expect(designations().map((event) => event.payload["resident"])).toEqual([
-      { name: "researcher", docId: "doc_researcher", weight: "light" },
-      { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+      {
+        name: "researcher",
+        docId: "doc_researcher",
+        weight: "light",
+        designationId: A_DESIGNATION,
+      },
+      {
+        name: "researcher",
+        docId: "doc_researcher",
+        weight: "heavy",
+        designationId: A_DESIGNATION,
+      },
     ]);
   });
 
@@ -1126,6 +1179,7 @@ describe("the weight a designation chooses (SERVER-129)", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -1191,7 +1245,12 @@ describe("the weight a designation chooses (SERVER-129)", () => {
 
     expect(designations()[0]?.payload).toEqual({
       threadId: created.id,
-      resident: { name: "researcher", docId: "doc_researcher", weight: "heavy" },
+      resident: {
+        name: "researcher",
+        docId: "doc_researcher",
+        weight: "heavy",
+        designationId: A_DESIGNATION,
+      },
     });
   });
 });
@@ -1213,12 +1272,14 @@ describe("reading a resident back", () => {
       name: "researcher",
       docId: "doc_researchernew",
       weight: null,
+      designationId: A_DESIGNATION,
     });
     // Nothing was rewritten to make that true: the file still holds what the
     // designation stored.
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
   });
 
@@ -1243,12 +1304,14 @@ describe("reading a resident back", () => {
       name: "researcher",
       docId: null,
       weight: null,
+      designationId: A_DESIGNATION,
     });
     // Nothing was rewritten to say so: the designation stands, and the file
     // still holds the pair it was written with.
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
     // And it is still a lane — a missing persona ends nothing (§7).
     expect(designatedRow(created.id)).toBe(1);
@@ -1292,6 +1355,7 @@ describe("reading a resident back", () => {
       name: "researcher",
       docId: null,
       weight: null,
+      designationId: A_DESIGNATION,
     });
     // The document it used to resolve to is still a document, under the same id
     // — so the null is about the root and not about existence. This is the whole
@@ -1304,6 +1368,7 @@ describe("reading a resident back", () => {
     expect(threadFrontmatterOf(ws, created.id)["resident"]).toEqual({
       name: "researcher",
       docId: "doc_researcher",
+      designationId: A_DESIGNATION,
     });
     expect(residentRow(created.id)).toEqual({
       resident_designated: 1,
@@ -1815,5 +1880,200 @@ describe("a release ends a parked listener at once (SERVER-128)", () => {
     expect(parkedNow()).toBe(1);
     parked.leave();
     await parked.done;
+  });
+});
+
+/**
+ * SERVER-147, CONTRACT-071. `designationId` names **which designation** a
+ * resident is, so a listener launched for one can learn the lane now serves
+ * another. The rule is one sentence — *the id changes exactly when the
+ * designation changes, and never otherwise* — and the six transitions below are
+ * the whole of it.
+ *
+ * The trap this block exists to hold shut: if `designationId` ever joins
+ * `sameResident`'s comparison, **every** re-designation becomes a write, a
+ * `resident.released` with reason `replaced`, and a displaced listener — for a
+ * request that asked for the state already in force. UI-168 puts a weight picker
+ * on the designation, which makes re-designating an ordinary gesture, so that
+ * would be felt immediately.
+ */
+describe("which designation this is (SERVER-147)", () => {
+  const idOf = async (thread: string): Promise<string | null> => {
+    const resident = (await readThread(thread))["resident"] as { designationId: string } | null;
+    return resident?.designationId ?? null;
+  };
+
+  const designateWith = (id: string, body: Record<string, unknown>) =>
+    ws.post(`/api/threads/${id}/resident`, body);
+
+  it("mints one on a first designation, and reports it on all four surfaces", async () => {
+    const created = await createThread(ws, { body: "start" });
+
+    const response = await designateWith(created.id, { name: "researcher" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      thread: { resident: { designationId: string } };
+    };
+    const minted = payload.thread.resident.designationId;
+    expect(minted).toEqual(A_DESIGNATION);
+
+    // The thread, the file, the projected row, the roster row and the event —
+    // one id, everywhere it is published.
+    expect(await idOf(created.id)).toBe(minted);
+    expect(
+      (threadFrontmatterOf(ws, created.id)["resident"] as Record<string, unknown>)["designationId"],
+    ).toBe(minted);
+    expect(
+      (
+        ws.db
+          .prepare("SELECT resident_designation_id AS d FROM threads WHERE id = ?")
+          .get(created.id) as { d: string | null }
+      ).d,
+    ).toBe(minted);
+    const roster = (await (await ws.request("/api/agents")).json()) as {
+      agents: { lane: string; resident: { designationId: string } | null }[];
+    };
+    expect(roster.agents.find((lane) => lane.lane === created.id)?.resident?.designationId).toBe(
+      minted,
+    );
+    expect(
+      (designations()[0]?.payload["resident"] as { designationId: string }).designationId,
+    ).toBe(minted);
+  });
+
+  it("keeps the id when a re-designation asks for the state already in force", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWith(created.id, { name: "researcher", weight: "heavy" });
+    const first = await idOf(created.id);
+    ws.advance(61_000);
+    const commits = ws.log("%H").length;
+    const releasedBefore = releases().length;
+
+    // The whole reason the id is not in `sameResident`: this is how a person
+    // asks for a stopped listener to be relaunched, and nothing about the
+    // designation moved.
+    expect((await designateWith(created.id, { name: "researcher", weight: "heavy" })).status).toBe(
+      200,
+    );
+
+    expect(await idOf(created.id)).toBe(first);
+    expect(ws.log("%H")).toHaveLength(commits);
+    expect(releases()).toHaveLength(releasedBefore);
+    // Still announced, because the re-announce is the relaunch request.
+    expect(designations()).toHaveLength(2);
+    expect(
+      designations().map(
+        (event) => (event.payload["resident"] as { designationId: string }).designationId,
+      ),
+    ).toEqual([first, first]);
+  });
+
+  it("mints a fresh one when only the profile changes, at the same weight", async () => {
+    // The defect CONTRACT-071 exists for: nothing else on the roster row moves,
+    // so before this field there was no machine-readable way to learn it.
+    const created = await createThread(ws, { body: "start" });
+    await designateWith(created.id, { name: "researcher", weight: "heavy" });
+    const first = await idOf(created.id);
+    ws.advance(61_000);
+
+    expect((await designateWith(created.id, { name: "editor", weight: "heavy" })).status).toBe(200);
+
+    const second = await idOf(created.id);
+    expect(second).toEqual(A_DESIGNATION);
+    expect(second).not.toBe(first);
+    // The displaced occupant's release carries the id it *had*, never the
+    // newcomer's.
+    expect((releases()[0]?.payload["resident"] as { designationId: string }).designationId).toBe(
+      first,
+    );
+  });
+
+  it("mints a fresh one when only the weight changes", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWith(created.id, { name: "researcher", weight: "light" });
+    const first = await idOf(created.id);
+    ws.advance(61_000);
+
+    expect((await designateWith(created.id, { name: "researcher", weight: "heavy" })).status).toBe(
+      200,
+    );
+
+    expect(await idOf(created.id)).not.toBe(first);
+  });
+
+  it("mints a fresh one after a release, remembering nothing across it", async () => {
+    const created = await createThread(ws, { body: "start" });
+    await designateWith(created.id, { name: "researcher" });
+    const first = await idOf(created.id);
+    ws.advance(61_000);
+    expect((await release(created.id)).status).toBe(200);
+    expect(await idOf(created.id)).toBeNull();
+    ws.advance(61_000);
+
+    expect((await designateWith(created.id, { name: "researcher" })).status).toBe(200);
+
+    const second = await idOf(created.id);
+    expect(second).toEqual(A_DESIGNATION);
+    expect(second).not.toBe(first);
+  });
+
+  it("reports null for a designation written before the field existed", async () => {
+    // Every designation in every workspace on disk today. Null is a defined
+    // answer — "no id to compare" — and nothing else about the response moves.
+    const created = await createThread(ws, { body: "legacy" });
+    spliceFrontmatter(
+      created.id,
+      "resident:\n  name: researcher\n  docId: doc_researcher\n  weight: heavy\n",
+    );
+
+    const resident = (await readThread(created.id))["resident"];
+    expect(resident).toEqual({
+      name: "researcher",
+      docId: "doc_researcher",
+      weight: "heavy",
+      designationId: null,
+    });
+    expect(designatedRow(created.id)).toBe(1);
+  });
+
+  it("mints one when a legacy designation is re-designated at a new weight", async () => {
+    const created = await createThread(ws, { body: "legacy" });
+    spliceFrontmatter(created.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
+    ws.advance(61_000);
+
+    expect((await designateWith(created.id, { name: "researcher", weight: "heavy" })).status).toBe(
+      200,
+    );
+
+    expect(await idOf(created.id)).toEqual(A_DESIGNATION);
+  });
+
+  it("keeps null on a legacy designation a re-designation did not change", async () => {
+    // The `unchanged` branch carries the id it *found*, and what it found here
+    // is nothing. Backfilling is deliberately not this issue's (see its Edge
+    // Cases): null is a defined answer, and inventing one on a read would make
+    // the id change without the designation changing.
+    const created = await createThread(ws, { body: "legacy" });
+    spliceFrontmatter(created.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
+    ws.advance(61_000);
+    const commits = ws.log("%H").length;
+
+    expect((await designateWith(created.id, { name: "researcher" })).status).toBe(200);
+
+    expect(await idOf(created.id)).toBeNull();
+    expect(ws.log("%H")).toHaveLength(commits);
+    expect(releases()).toEqual([]);
+  });
+
+  it("reads a malformed id as no designation at all, taking the block with it", async () => {
+    // The block is one value — the rule an ill-shaped `weight` already follows.
+    const created = await createThread(ws, { body: "hand-edited" });
+    spliceFrontmatter(
+      created.id,
+      "resident:\n  name: researcher\n  docId: doc_researcher\n  designationId: 7\n",
+    );
+
+    expect((await readThread(created.id))["resident"]).toBeNull();
+    expect(designatedRow(created.id)).toBe(0);
   });
 });

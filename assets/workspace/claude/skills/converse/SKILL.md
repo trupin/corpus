@@ -5,7 +5,7 @@ id: doc_skillconverse
 type: skill
 title: Converse
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-21T00:00:00Z
+updated: 2026-08-23T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -89,7 +89,8 @@ right call is the orchestrate skill's to state, and it is stated there alone.**
 The **comment** skill is your working manual for a turn: gathering context from a thread's
 briefing, the reply grammar, `--model`, the trace line, forms, labeled fences and their
 widths, choosing a patch over a whole-body rewrite, and the two refusals a write can come
-back with. All of it binds you unchanged, and none of it is repeated here. One sentence in
+back with. All of it binds you unchanged, and none of it is repeated here. The `references/`
+files beside that skill are part of the manual: read one when its body directs the read. One sentence in
 it is not yours: it tells its reader that the terminal call on the event belongs to the
 orchestrate skill alone. That is written for a subagent working on the orchestrator's lane.
 On your own lane you settle your own events, which is the second of the two departures
@@ -292,7 +293,7 @@ Then repeat from step 1.
 this lane.** Your startup check could tell you a listener was here and could never tell you one
 was not, so you may be the second listener on this conversation and have no way to have known
 it. Step 1 is where that is found out, and it is the first moment it matters. Your park at step
-6 names in its own `events` what is **pending** on your lane; the claim that immediately follows
+6 names what is **pending** on your lane, one line per event; the claim that immediately follows
 it then either hands you those ids or reports them in `inProgress`, which is what was already
 held when your call arrived and never includes what that same call has just claimed for you. So
 an id your park named as pending, coming back in `inProgress` instead of in your `events`, was
@@ -337,7 +338,7 @@ nothing to leave.
 **Two quiet claims look like it and are not**, and both mean loop again rather than exit. An id
 your park named that comes back in **neither** list left `pending/` by another door — the operator
 halted the queue, or somebody abandoned the event — and nobody has taken your lane. And a park
-that printed `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` named no
+that printed `idle — no events (timeout)` or `idle — no events (halted)` named no
 work at all, so there is nothing to look for and an empty claim after it is the ordinary sound
 of a quiet conversation. **An empty `events` is not the signal in either direction**: it is
 what a quiet lane looks like and what a lost race often looks like, and only the held id tells
@@ -356,9 +357,9 @@ never parse, and a shortened park to "check" is the keep-alive this skill forbid
 `corpus queue idle` exits `0` in every normal case but one, and that one is an ending rather
 than an error: a park on a lane that no longer exists is **refused**, and *Retirement* below
 is what to do about it. A window that elapses with nothing
-pending prints `{"idle":true,"reason":"timeout"}` — that is the ordinary outcome of a quiet
+pending prints `idle — no events (timeout)` — the ordinary outcome of a quiet
 conversation and not an error; loop again. While the operator has halted the queue it parks
-the full window and prints `{"idle":true,"reason":"halted"}`, and your scoped claim comes back
+the full window and prints `idle — no events (halted)`, and your scoped claim comes back
 with an empty `events` array; keep looping quietly, post nothing about it, and stay parked so
 that resuming finds you where you were.
 

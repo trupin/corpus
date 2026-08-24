@@ -79,6 +79,76 @@ describe("useSetResident", () => {
     ]);
   });
 
+  /**
+   * UI-168, and the assertion the whole issue turns on: **the body carries the
+   * weight**.
+   *
+   * SPEC.md §7's rider signed 2026-08-19 makes the designation the only place a
+   * resident's level is chosen, and this hook had no field for it — so the
+   * contract carried it, the server honoured it, `corpus resident` set it, and
+   * every designation the app ever made sent nothing. A test asserting only
+   * *"a designation was sent"* passes throughout that defect, which is exactly
+   * what the two above did.
+   */
+  it("sends the level the designation chose, beside the profile", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
+
+    result.current.mutate({ id: "th_root", designate: "claims-review", weight: "heavy" });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(wire.calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/threads/th_root/resident",
+        body: { name: "claims-review", weight: "heavy" },
+      },
+    ]);
+  });
+
+  /**
+   * The two fields are independent (CONTRACT-067): a general resident may run at
+   * a stated level, and sending a weight alone designates one.
+   */
+  it("sends a level with no profile, which is a general resident at that level", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
+
+    result.current.mutate({ id: "th_root", designate: null, weight: "light" });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(wire.calls).toEqual([
+      { method: "POST", path: "/api/threads/th_root/resident", body: { weight: "light" } },
+    ]);
+  });
+
+  /**
+   * **Omitted, not null.** Absence is what "the launcher decides" is spelled as
+   * on this route — the contract's field is `.optional()` with no `.default()`,
+   * and both `null` and `""` are refusals. `toEqual` alone would pass on
+   * `{weight: undefined}`, which `JSON.stringify` drops but which is a second
+   * spelling of nothing one refactor from becoming a real key, so the parsed
+   * body's own key list is what is asserted.
+   */
+  it("omits the key entirely when no level was chosen, rather than sending null", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useSetResident(), { wrapper: harness.Wrapper });
+
+    result.current.mutate({ id: "th_root", designate: "claims-review", weight: undefined });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(Object.keys(wire.calls[0]?.body as object)).toEqual(["name"]);
+  });
+
   it("releases with DELETE on the same path, and no body", async () => {
     // Releasing is `DELETE` rather than a `null` name, so absence never has two
     // spellings (SPEC.md §7 — dissolution is the absence of a resident).

@@ -19,6 +19,20 @@ export interface MenuAction {
   readonly danger?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   /**
+   * This item **states a choice** rather than performing an act, and this is
+   * whether it is the one standing.
+   *
+   * Present makes the item a `menuitemradio` carrying `aria-checked`, which is
+   * what the state actually is: one of a contiguous set, exactly one of which
+   * holds. Absent leaves an ordinary `menuitem` — an act has no state to report,
+   * and `aria-checked="false"` on one would claim it does.
+   *
+   * A checked item is nearly always {@link MenuAction.keepOpen}: stating a
+   * choice is what the *next* item acts on, so a menu that closed on it would
+   * have taken the act away with it (UI-168's designation weight).
+   */
+  readonly checked?: boolean | undefined;
+  /**
    * The explicit confirmation §9 requires of deletion: the first activation
    * only re-labels the item, and the second is the one that reaches the wire.
    */

@@ -52,6 +52,13 @@ const EXPECTED_TREE = [
   "claude/skills/asd-ste100/examples/before-after.md",
   "claude/skills/asd-ste100/references/writing-rules.md",
   "claude/skills/comment/SKILL.md",
+  "claude/skills/comment/references/closure.md",
+  "claude/skills/comment/references/fences.md",
+  "claude/skills/comment/references/forms.md",
+  "claude/skills/comment/references/history.md",
+  "claude/skills/comment/references/inbox-filing.md",
+  "claude/skills/comment/references/skill-genesis.md",
+  "claude/skills/comment/references/worked-examples.md",
   "claude/skills/converse/SKILL.md",
   "claude/skills/orchestrate/SKILL.md",
   "claude/skills/profile/SKILL.md",
@@ -125,12 +132,44 @@ const templatePlan = planTemplateInstall(TEMPLATE_ROOT);
 const installedSkills: readonly InstalledSkill[] = templatePlan
   .filter(
     (file) =>
-      file.to.startsWith(".claude/skills/") && file.to.endsWith(".md") && !isVendored(file.from),
+      file.to.startsWith(".claude/skills/") &&
+      file.to.endsWith(".md") &&
+      !isVendored(file.from) &&
+      !isNonDocument(file.from),
   )
   .map((file) => ({
     label: `assets/workspace/${file.from}`,
     body: documentAt(file.from).body,
   }));
+
+/**
+ * The comment skill's `references/` files (AGENT-047): skill payload read on a
+ * directed pointer from `SKILL.md`, installed beside it and excluded from the
+ * document rules the way the vendored skill's references are — but authored
+ * here, so every sweep that binds a skill body's worked commands binds them
+ * too. Drawn from the installer's plan for the same reason `installedSkills`
+ * is: a reference added to the template is swept the day it lands.
+ */
+const skillReferences: readonly InstalledSkill[] = templatePlan
+  .filter((file) => file.to.startsWith(".claude/skills/comment/references/"))
+  .map((file) => ({
+    label: `assets/workspace/${file.from}`,
+    body: readTemplateFile(file.from),
+  }));
+
+/** Every installed skill text — bodies and reference files alike — for the sweeps. */
+const installedSkillTexts: readonly InstalledSkill[] = [...installedSkills, ...skillReferences];
+
+/**
+ * The comment skill as its subagent can read it: the body plus every reference
+ * it points at. Doctrine that moved into a reference (AGENT-047) is still the
+ * skill's doctrine — a pin that asks "does the comment skill state this?" asks
+ * it of the package, and a pin about *where* a rule sits reads the one file.
+ */
+const commentPackage = [
+  documentAt("claude/skills/comment/SKILL.md").body,
+  ...skillReferences.map(({ body }) => body),
+].join("\n\n");
 
 /**
  * Every worked turn-writing invocation in a skill body: `--from agent` on a
@@ -344,6 +383,22 @@ describe("the workspace CLAUDE.md (AGENT-037)", () => {
   });
 
   /**
+   * AGENT-048: the skill body is 3,366 tokens per context and this digest is
+   * 891 already paid in every one (SHARED-070, rank 2 at ~111k tokens/day).
+   * The standing rule stands — what changed is which text carries it. The
+   * digest is the whole obligation for ordinary writing; the skill body is
+   * opened only on its own triggers, or for a rewrite that needs the
+   * dictionary-level rules and the scan checklist.
+   */
+  it("makes the digest the rule, and the skill body a directed read", () => {
+    expect(claudeMd).toMatch(/This digest is the rule, not a summary of one you still owe a read/);
+    expect(claudeMd).toMatch(/you do not open the skill file to follow them/);
+    expect(claudeMd).toMatch(/exactly two cases/);
+    // The wording must not read as licence to skip the rules themselves.
+    expect(claudeMd).toMatch(/Skipping the read never means skipping the rules/);
+  });
+
+  /**
    * The two exemptions that carry the real risk, pinned separately because they
    * fail in opposite directions. Dropping the quotation rule corrupts what
    * somebody else wrote — the one failure a reader cannot see. Dropping the
@@ -371,29 +426,32 @@ describe("the workspace CLAUDE.md (AGENT-037)", () => {
    * reply bodies carried a semicolon, which STE Rule 8.1 bans outright rather
    * than only as a clause join.
    */
-  it.each(installedSkills)("$label models no reply a person reads with a semicolon", ({ body }) => {
-    // Scoped to `thread reply` deliberately. Those are the turns CLAUDE.md names
-    // first, and they are unambiguously "text you produce for a person". A
-    // document body the agent authors is also read by a person, and three of
-    // them carry a semicolon today — but a document is a different genre from a
-    // reply, and settling that is not this issue's to do. It is worth settling.
-    const replies = [
-      ...body.matchAll(/corpus thread reply[^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g),
-    ].map(([, payload]) =>
-      // The trace is the reply's final line and is an **action report**, not
-      // prose: it has its own conventions, and `to 6.4%; resolved this thread`
-      // is pinned elsewhere as the shape that keeps a state change out of a
-      // second reporting convention. The rule under test is about the sentences
-      // a person reads above it.
-      (payload ?? "")
-        .split("\n")
-        .filter((line) => !line.startsWith("↳ "))
-        .join("\n"),
-    );
-    for (const payload of replies) {
-      expect(payload).not.toContain(";");
-    }
-  });
+  it.each(installedSkillTexts)(
+    "$label models no reply a person reads with a semicolon",
+    ({ body }) => {
+      // Scoped to `thread reply` deliberately. Those are the turns CLAUDE.md names
+      // first, and they are unambiguously "text you produce for a person". A
+      // document body the agent authors is also read by a person, and three of
+      // them carry a semicolon today — but a document is a different genre from a
+      // reply, and settling that is not this issue's to do. It is worth settling.
+      const replies = [
+        ...body.matchAll(/corpus thread reply[^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g),
+      ].map(([, payload]) =>
+        // The trace is the reply's final line and is an **action report**, not
+        // prose: it has its own conventions, and `to 6.4%; resolved this thread`
+        // is pinned elsewhere as the shape that keeps a state change out of a
+        // second reporting convention. The rule under test is about the sentences
+        // a person reads above it.
+        (payload ?? "")
+          .split("\n")
+          .filter((line) => !line.startsWith("↳ "))
+          .join("\n"),
+      );
+      for (const payload of replies) {
+        expect(payload).not.toContain(";");
+      }
+    },
+  );
 
   it("states the cost the user accepted rather than denying it", () => {
     // The user chose "everything the agent writes" knowing the skill warns
@@ -587,6 +645,18 @@ describe("skills", () => {
     { name: "profile", relPath: "claude/skills/profile/SKILL.md" },
   ];
 
+  /**
+   * What each doctrine skill *states*, wherever it states it. AGENT-047 moved
+   * the comment skill's rare-path accounts — the revert loop above all — into
+   * `references/` files its body points at, so a pin asking "does the comment
+   * skill still teach this?" reads the package; `orchestrate` still carries
+   * everything in its body. Pins about *placement* keep naming one file.
+   */
+  const skillDoctrine = [
+    { name: "orchestrate", text: documentAt("claude/skills/orchestrate/SKILL.md").body },
+    { name: "comment", text: commentPackage },
+  ];
+
   it.each(coreSkills)("$name carries both frontmatter field sets", ({ name, relPath }) => {
     const { frontmatter } = documentAt(relPath);
     expect(frontmatter.name).toBe(name);
@@ -654,6 +724,7 @@ describe("skills", () => {
         "purpose",
         "invariants",
         "command's help",
+        "one invocation",
         "the loop",
         "claiming",
         "routing",
@@ -671,12 +742,14 @@ describe("skills", () => {
         "worked example",
       ],
       comment: [
+        // "worked example" left this list with AGENT-047: the four worked
+        // events live in `references/worked-examples.md`, pointed at from
+        // "When this runs", and the reference describe pins them there.
         "gather context",
         "inbox filing",
         "reply",
         "forms",
         "skill genesis",
-        "worked example",
       ],
       converse: [
         "purpose",
@@ -812,13 +885,17 @@ describe("skills", () => {
       expect(body).toMatch(/no error anywhere|nothing anywhere reports an error/i);
     });
 
-    it("spells out, in the comment skill, what an unclosed fence costs the reader", () => {
+    it("spells out what an unclosed fence costs the reader", () => {
+      // The consequence is inline — a subagent that skips the reference still
+      // reads what the failure does — and the mechanical fix lives with the
+      // worked shapes in the fences reference (AGENT-047).
       const body = documentAt("claude/skills/comment/SKILL.md").body;
       expect(body).toMatch(/stays open to the end\s+of the turn/);
       expect(body).toMatch(/absorbed into the body of yours/);
-      expect(body).toMatch(/It does not render badly; it makes the next message vanish/);
+      const reference = readTemplateFile("claude/skills/comment/references/fences.md");
+      expect(reference).toMatch(/It does not render badly; it makes the next message vanish/);
       // The fix is mechanical and stated as one: newline, then the run alone.
-      expect(body).toMatch(
+      expect(reference).toMatch(
         /newline after the\s+payload's last character, then the closing run by itself/,
       );
     });
@@ -833,7 +910,9 @@ describe("skills", () => {
     });
 
     it("shows exactly one worked deliverable, alone in its fence", () => {
-      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      // The worked shape lives in the fences reference (AGENT-047), read
+      // before any fence is written — the skill body states the rule.
+      const body = readTemplateFile("claude/skills/comment/references/fences.md");
       const lines = body.split("\n");
       const examples = fencedBlocks(body).filter((block) => block.info === "prompt");
       expect(examples).toHaveLength(1);
@@ -943,33 +1022,44 @@ describe("skills", () => {
       expect(installedSkills.some((skill) => turnCommands(skill.body).length > 0)).toBe(true);
     });
 
-    it.each(installedSkills)("$label posts no example turn without a model", ({ label, body }) => {
-      for (const command of turnCommands(body)) {
-        expect(command, `${label}: turn written with no model`).toMatch(/ --model \S/);
-      }
-    });
+    it.each(installedSkillTexts)(
+      "$label posts no example turn without a model",
+      ({ label, body }) => {
+        for (const command of turnCommands(body)) {
+          expect(command, `${label}: turn written with no model`).toMatch(/ --model \S/);
+        }
+      },
+    );
 
-    it.each(installedSkills)("$label puts a trace last in its turn, or none", ({ label, body }) => {
-      const lines = body.split("\n");
-      for (const [index, line] of lines.entries()) {
-        if (!line.trimStart().startsWith("↳")) continue;
-        expect(lines[index + 1]?.trim(), `${label}: trace not last in its turn`).toBe("CORPUS_EOF");
-      }
-    });
+    it.each(installedSkillTexts)(
+      "$label puts a trace last in its turn, or none",
+      ({ label, body }) => {
+        const lines = body.split("\n");
+        for (const [index, line] of lines.entries()) {
+          if (!line.trimStart().startsWith("↳")) continue;
+          expect(lines[index + 1]?.trim(), `${label}: trace not last in its turn`).toBe(
+            "CORPUS_EOF",
+          );
+        }
+      },
+    );
 
-    it.each(installedSkills)("$label quotes every heredoc it hands text to", ({ label, body }) => {
-      // The delimiter, and nothing after it. `\S+` used to swallow whatever
-      // touched the token, which made a heredoc *named in prose* — `` `<<'CORPUS_EOF'`
-      // `` — read as the unquoted delimiter `<<'CORPUS_EOF'\``. A quoted delimiter is
-      // its quotes plus what is inside them; an unquoted one runs to the first
-      // space or backtick, so `<<CORPUS_EOF` and `<<"CORPUS_EOF"` still fail
-      // below — as does `<<'EOF'`, which is a separate rule with its own pins
-      // (PR #50 MAJOR 3): the terminator is a word carried text will not hold.
-      for (const heredoc of body.match(/<<-?\s*(?:'[^'\n]*'|"[^"\n]*"|[^\s`]+)/g) ?? []) {
-        expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'CORPUS_EOF'$/);
-      }
-      expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
-    });
+    it.each(installedSkillTexts)(
+      "$label quotes every heredoc it hands text to",
+      ({ label, body }) => {
+        // The delimiter, and nothing after it. `\S+` used to swallow whatever
+        // touched the token, which made a heredoc *named in prose* — `` `<<'CORPUS_EOF'`
+        // `` — read as the unquoted delimiter `<<'CORPUS_EOF'\``. A quoted delimiter is
+        // its quotes plus what is inside them; an unquoted one runs to the first
+        // space or backtick, so `<<CORPUS_EOF` and `<<"CORPUS_EOF"` still fail
+        // below — as does `<<'EOF'`, which is a separate rule with its own pins
+        // (PR #50 MAJOR 3): the terminator is a word carried text will not hold.
+        for (const heredoc of body.match(/<<-?\s*(?:'[^'\n]*'|"[^"\n]*"|[^\s`]+)/g) ?? []) {
+          expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'CORPUS_EOF'$/);
+        }
+        expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
+      },
+    );
   });
 
   /**
@@ -998,7 +1088,7 @@ describe("skills", () => {
         .map((match) => match[0])
         .filter((invocation) => /<<'CORPUS_EOF'$|\s-m |\s--file /.test(invocation));
 
-    it.each(installedSkills)("$label names no lock mechanism at all", ({ label, body }) => {
+    it.each(installedSkillTexts)("$label names no lock mechanism at all", ({ label, body }) => {
       expect(body, `${label}: names a lock verb`).not.toMatch(/corpus lock\b/);
       expect(body, `${label}: teaches an edit lock`).not.toMatch(/edit lock/i);
       expect(body, `${label}: teaches lock breaking`).not.toMatch(
@@ -1009,7 +1099,7 @@ describe("skills", () => {
       expect(body, `${label}: names the lock's status code`).not.toMatch(/\b423\b/);
     });
 
-    it.each(installedSkills)("$label replaces no body without a key", ({ label, body }) => {
+    it.each(installedSkillTexts)("$label replaces no body without a key", ({ label, body }) => {
       for (const invocation of bodyReplacingEdits(body)) {
         expect(invocation, `${label}: body-replacing edit with no --key`).toMatch(/--key \S/);
       }
@@ -1094,8 +1184,8 @@ describe("skills", () => {
    *   plainly or an agent will try to run a repair it is not alive for.
    */
   describe("a revert is a write like any other", () => {
-    it.each(skills)("$name teaches the revert as a loop, not a verb", ({ relPath }) => {
-      const body = documentAt(relPath).body;
+    it.each(skillDoctrine)("$name teaches the revert as a loop, not a verb", ({ text }) => {
+      const body = text;
       const flat = body.replace(/\s+/g, " ");
       expect(flat).toMatch(/a revert is a write whose content came from history/i);
       expect(flat).toMatch(/there is no revert command/i);
@@ -1107,8 +1197,8 @@ describe("skills", () => {
       expect(flat).toMatch(/rarely the whole old file/i);
     });
 
-    it.each(skills)("$name reads git and never writes to it", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name reads git and never writes to it", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(/read from git, never write to it/i);
       for (const verb of ["git log", "git show", "git checkout", "git restore", "git commit"]) {
         expect(flat, `does not name \`${verb}\``).toContain(`\`${verb}\``);
@@ -1119,8 +1209,8 @@ describe("skills", () => {
       expect(flat).toMatch(/closing `---`/);
     });
 
-    it.each(skills)("$name says what makes a revert safe", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name says what makes a revert safe", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       // Not "be careful": the key of the version just read is presented, so a
       // revert over somebody's newer change is refused rather than landed.
       expect(flat).toMatch(/the key is what makes (?:a|this) revert safe/i);
@@ -1290,8 +1380,8 @@ describe("skills", () => {
       expect(flat).toMatch(/wrote the file between the match and the save/i);
     });
 
-    it.each(skills)("$name reverts a passage with a patch", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name reverts a passage with a patch", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(/a passage you can quote goes back as a \*?\*?patch/i);
       // The frontmatter trap AGENT-023 measured: a patch quotes body text, so
       // there is no whole file in hand to paste the YAML block back in from.
@@ -1591,13 +1681,15 @@ describe("skills", () => {
     });
 
     it("has heredocs in the installed skills for that rule to bind", () => {
-      const total = installedSkills.reduce(
+      const total = installedSkillTexts.reduce(
         (count, skill) => count + (skill.body.match(/<<'CORPUS_EOF'/g)?.length ?? 0),
         0,
       );
       // 34 across the four core skills at the time of the change. A floor, not
       // the count: the pin is that the rule above is checking real examples.
-      // (It read 35 until INFRA-031 deleted the todos plugin's own skill.)
+      // (It read 35 until INFRA-031 deleted the todos plugin's own skill;
+      // AGENT-047 moved several worked examples into the comment skill's
+      // references, so the sweep counts those files too.)
       expect(total).toBeGreaterThanOrEqual(34);
     });
 
@@ -1608,7 +1700,9 @@ describe("skills", () => {
      * defect was exactly a thread title.
      */
     it("builds a thread's title in a heredoc, at both sites that set one", () => {
-      const comment = documentAt("claude/skills/comment/SKILL.md").body;
+      // The second site is worked example 2, which AGENT-047 moved into the
+      // references — the package is where both sites live now.
+      const comment = commentPackage;
       const retitles = [...comment.matchAll(/corpus doc edit th_\w+ --title (\S+)/g)].map(
         (match) => match[1],
       );
@@ -1627,7 +1721,9 @@ describe("skills", () => {
     });
 
     it("passes a skill's description by name, like any other prose somebody reads", () => {
-      const comment = documentAt("claude/skills/comment/SKILL.md").body;
+      // The creation block lives in the genesis reference (AGENT-047); the
+      // package is what the rule binds.
+      const comment = commentPackage;
       expect(comment).toMatch(/description=\$\(cat <<'CORPUS_EOF'\n/);
       for (const invocation of comment.match(/corpus skill create [^\n]*/g) ?? []) {
         expect(invocation, "a skill description is quoted straight into the command").toMatch(
@@ -1702,7 +1798,11 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(18);
+    // 19 since AGENT-051 added *Several commands in one invocation*, beside
+    // *Reading a command's help*: both are conventions for talking to the CLI
+    // at all rather than rules about one verb, and both are single-owner rules
+    // the other skills point at.
+    expect(sections.size).toBe(19);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -1729,8 +1829,11 @@ describe("orchestrate skill body", () => {
       "--from agent",
       "--reason",
       ".corpus/HALT",
-      '{"idle":true,"reason":"timeout"}',
-      '{"idle":true,"reason":"halted"}',
+      // AGENT-049: the loop runs `corpus queue idle` bare, and bare prints the
+      // human strings — the JSON shape exists only under `--json`, which no
+      // example passes. Measured against the shipping CLI, 2026-08-23.
+      "idle — no events (timeout)",
+      "idle — no events (halted)",
       // SHARED-067 deleted the `<plugin>.<action>` row that used to sit here.
       // Its catch-all did not go with it: the loop still meets types it has no
       // row for, and the command it fails them with is the pinned text now.
@@ -3226,7 +3329,51 @@ describe("orchestrate skill body", () => {
       expect(flat).toMatch(/run the same command with \*\*no `--since` at all\*\*/);
       expect(flat).toMatch(/\*\*Read a document only when its list line is not enough\.\*\*/);
       expect(flat).toMatch(/\*\*Your own writes are not new work\.\*\*/);
-      expect(flat).toMatch(/carries `lastActor` on every row/);
+      expect(flat).toMatch(/`lastActor` on every row is what tells the two apart/);
+    });
+
+    /**
+     * AGENT-051 — CLI-065 shipped `--fields` and named this listing as the one
+     * caller that would collect it: measured on a 20-document window, 203.6
+     * tokens a row whole against 59.6 for the nine fields the paragraphs below
+     * the command actually read. The pin has two halves, and the second is the
+     * one that matters. **The projection must not drop a field the section goes
+     * on to read** — a missing field is simply absent from the row, with no
+     * error anywhere, so a saving taken by naming one field fewer than the
+     * prose reads is a bug that looks like a saving. So the field list is
+     * derived from the section's own sentences here, not spelled by hand.
+     */
+    it("asks the window read for the fields it goes on to read, and no others", () => {
+      const command = /corpus doc list --since \S+ ([^\n]*)/.exec(section)?.[1] ?? "";
+      expect(command, "the window read no longer names --json").toContain("--json");
+      const fields = (/--fields (\S+)/.exec(command)?.[1] ?? "").split(",");
+      expect(fields.length, "the window read asks for whole rows again").toBeGreaterThan(1);
+
+      // What the section says it reads off a row, each keyed to the sentence
+      // that reads it. A sentence rewritten to read something new fails here
+      // until the projection is widened to carry it.
+      const readsFromARow: readonly (readonly [string, RegExp])[] = [
+        ["id", /`corpus doc show <id>` is the deliberate second act/],
+        ["title", /The row carries the title/],
+        ["type", /the row carries[^.]*the\s+type/i],
+        ["path", /the folder \(its `path`\)/],
+        ["status", /the stage, the status/],
+        ["stage", /the stage, the status/],
+        ["tags", /the tags, the stage/],
+        ["excerpt", /the status and an excerpt/],
+        ["lastActor", /`lastActor` on every row is what tells the two apart/],
+      ];
+      for (const [field, sentence] of readsFromARow) {
+        expect(flat, `the section no longer reads ${field}`).toMatch(sentence);
+        expect(fields, `the projection drops ${field}, which the section reads`).toContain(field);
+      }
+      expect(
+        fields.filter((field) => !readsFromARow.some(([name]) => name === field)),
+        "the projection pays for a field no sentence in the section reads",
+      ).toEqual([]);
+      // The human tally line is gone under `--json`, so the section has to name
+      // what replaced it or the second page is never fetched.
+      expect(flat).toMatch(/the `page` object beside\s+the items says so/);
     });
 
     it("says a failure leaves the clock, and an ask is never doubled", () => {
@@ -3383,7 +3530,7 @@ describe("comment skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(13);
+    expect(sections.size).toBe(12);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -3468,80 +3615,101 @@ describe("comment skill body", () => {
    * as sound, so a later editor who finds it plausible would restore it.
    */
   describe("closing a settled thread", () => {
+    /**
+     * AGENT-047: the judgment — four conditions, four exclusions, the
+     * closed-door rule — lives in `references/closure.md`, read before any
+     * resolve or suggestion to resolve. The body keeps the trigger, the
+     * resolve-rides-on-a-reply rule, and the directed pointer.
+     */
+    const closure = readTemplateFile("claude/skills/comment/references/closure.md");
+
+    it("keeps the trigger and the pointer in the body", () => {
+      expect(body).toMatch(/You may close a settled matter yourself/);
+      expect(body).toMatch(/\*\*the resolve rides on the reply that reports\s+the work\*\*/);
+      expect(body).toMatch(/never a resolve with no readable turn\s+attached/);
+      expect(body).toMatch(
+        /before you resolve any thread, or suggest resolving one, read\s+`references\/closure\.md`/,
+      );
+    });
+
     it("carries the prohibition in no form, nor the hazard that motivated it", () => {
-      expect(body).not.toMatch(/Do not resolve on the person's behalf/i);
-      expect(body).not.toMatch(/only when they asked for the matter to be closed/i);
+      expect(commentPackage).not.toMatch(/Do not resolve on the person's behalf/i);
+      expect(commentPackage).not.toMatch(/only when they asked for the matter to be closed/i);
       // SERVER-062 made this false. It is the sentence that made the ban look
       // right, so it may not survive the ban.
-      expect(body).not.toMatch(/resolved unilaterally/i);
-      expect(body).not.toMatch(/stops\s+waking you/i);
+      expect(commentPackage).not.toMatch(/resolved unilaterally/i);
+      expect(commentPackage).not.toMatch(/stops\s+waking you/i);
     });
 
     it("states the trigger as four conditions holding at once", () => {
-      expect(body).toMatch(/\*\*Close what you asked for and got\.\*\*/);
-      expect(body).toMatch(/all four of these\s+hold at once/);
-      expect(body).toMatch(/you asked the person for feedback or information/);
-      expect(body).toMatch(/they \*\*provided it\*\* — a turn of their own in the thread/);
-      expect(body).toMatch(/you have \*\*used\*\* it/);
-      expect(body).toMatch(/nothing in the thread is still waiting on anyone/);
+      expect(closure).toMatch(/\*\*Close what you asked for and got\.\*\*/);
+      expect(closure).toMatch(/all four of these\s+hold at once/);
+      expect(closure).toMatch(/you asked the person for feedback or information/);
+      expect(closure).toMatch(/they \*\*provided it\*\* — a turn of their own in the thread/);
+      expect(closure).toMatch(/you have \*\*used\*\* it/);
+      expect(closure).toMatch(/nothing in the thread is still waiting on anyone/);
       // Authorship is deliberately not among them: keying the permission to it
       // would forbid the commonest real shape and permit almost nothing else.
-      expect(body).toMatch(/Who opened the thread is irrelevant/);
-      expect(body).toMatch(/they ask,\s+you need one clarification, they clarify, you finish/);
+      expect(closure).toMatch(/Who opened the thread is irrelevant/);
+      expect(closure).toMatch(/they ask,\s+you need one clarification, they clarify, you finish/);
     });
 
     it("names all four exclusions, each as a rule rather than a call", () => {
-      expect(body).toMatch(/\*\*Four threads you never close\*\*, each a rule rather than a call/);
-      expect(body).toMatch(/\*\*A thread the person never replied to\.\*\*/);
-      expect(body).toMatch(/no amount of elapsed time turns silence into an answer/);
-      expect(body).toMatch(/\*\*A thread holding an unanswered form\.\*\*/);
+      expect(closure).toMatch(
+        /\*\*Four threads you never close\*\*, each a rule rather than a call/,
+      );
+      expect(closure).toMatch(/\*\*A thread the person never replied to\.\*\*/);
+      expect(closure).toMatch(/no amount of elapsed time turns silence into an answer/);
+      expect(closure).toMatch(/\*\*A thread holding an unanswered form\.\*\*/);
       // Not qualified by how many of the thread's forms did come back.
-      expect(body).toMatch(/however many of\s+its other forms came back/);
-      expect(body).toMatch(/\*\*An unfinished piece of your own work\.\*\*/);
-      expect(body).toMatch(/marking your own homework done/);
-      expect(body).toMatch(/\*\*A question the person put to you that you have not yet answered/);
+      expect(closure).toMatch(/however many of\s+its other forms came back/);
+      expect(closure).toMatch(/\*\*An unfinished piece of your own work\.\*\*/);
+      expect(closure).toMatch(/marking your own homework done/);
+      expect(closure).toMatch(
+        /\*\*A question the person put to you that you have not yet answered/,
+      );
       // The one case that is neither permitted nor forbidden keeps its old
       // instruction rather than falling through the gap between the two lists.
-      expect(body).toMatch(/\*\*suggest resolving\*\* and leave the control with them/);
+      expect(closure).toMatch(/\*\*suggest resolving\*\* and leave the control with them/);
     });
 
     it("rides the resolve on a reply turn that says so in words", () => {
-      expect(body).toMatch(/\*\*The resolve rides on the reply that reports the work\.\*\*/);
-      expect(body).toMatch(/never a resolve with no readable turn attached/);
+      expect(closure).toMatch(/\*\*The resolve rides on the reply that reports the work\.\*\*/);
+      expect(closure).toMatch(/never a resolve with no readable turn attached/);
       // The rule is that there is a turn — not which command runs first, which
       // the author's own reply not reopening its thread makes immaterial.
-      expect(body).toMatch(/Which of the two commands runs first changes nothing/);
-      expect(body).toMatch(/that there \*\*is\*\* a turn changes everything/);
+      expect(closure).toMatch(/Which of the two commands runs first changes nothing/);
+      expect(closure).toMatch(/that there \*\*is\*\* a turn changes everything/);
       // Why a silent resolve is not merely terse: with SHARED-018's collapse it
       // is a conversation that folds away unread.
-      expect(body).toMatch(/the board collapses\s+a resolved thread holding nothing unseen/);
-      expect(body).toMatch(/state the closing in the prose, in words/);
+      expect(closure).toMatch(/the board collapses\s+a resolved thread holding nothing unseen/);
+      expect(closure).toMatch(/state the closing in the prose, in words/);
       // Practised, not only stated: one reply, one resolve, same act.
-      expect(body).toContain("corpus thread resolve th_4b8e2c --from agent");
-      expect(body).toContain("so I'm closing this thread");
+      expect(closure).toContain("corpus thread resolve th_4b8e2c --from agent");
+      expect(closure).toContain("so I'm closing this thread");
       // The state change goes on the trace line rather than inventing a second
       // convention for reporting it.
-      expect(body).toMatch(
+      expect(closure).toMatch(
         /↳ updated the rate assumption in \[\[doc_a1b2c3\]\] to 6\.4%; resolved/,
       );
     });
 
     it("states the reopen rule in both directions", () => {
-      expect(body).toMatch(/\*\*Resolved is a closed door, not a locked one\.\*\*/);
-      expect(body).toMatch(/sets it back to `open` in the same write that appends it/);
-      expect(body).toMatch(/that reply reaches you again with no\s+`@agent` needed/);
-      expect(body).toMatch(/A turn\s+\*\*you\*\* write reopens nothing/);
+      expect(closure).toMatch(/\*\*Resolved is a closed door, not a locked one\.\*\*/);
+      expect(closure).toMatch(/sets it back to `open` in the same write that appends it/);
+      expect(closure).toMatch(/that reply reaches you again with no\s+`@agent` needed/);
+      expect(closure).toMatch(/A turn\s+\*\*you\*\* write reopens nothing/);
       // Stated as what resolving costs, because an agent that believes closing
       // is final closes nothing.
-      expect(body).toMatch(/one reply restores the conversation/);
+      expect(closure).toMatch(/one reply restores the conversation/);
     });
 
     it("cascades nowhere and treats a second resolve as a no-op", () => {
-      expect(body).toMatch(/\*\*Resolving cascades nowhere\.\*\*/);
-      expect(body).toMatch(/closing\s+a subthread leaves its parent open/);
-      expect(body).toMatch(/closing a parent leaves its children open/);
-      expect(body).toMatch(/prints\s+"already resolved" and changes nothing/);
-      expect(body).toMatch(/not an error/);
+      expect(closure).toMatch(/\*\*Resolving cascades nowhere\.\*\*/);
+      expect(closure).toMatch(/closing\s+a subthread leaves its parent open/);
+      expect(closure).toMatch(/closing a parent leaves its children open/);
+      expect(closure).toMatch(/prints\s+"already resolved" and changes nothing/);
+      expect(closure).toMatch(/not an error/);
     });
   });
 
@@ -3574,12 +3742,18 @@ describe("comment skill body", () => {
   });
 
   it("files the inbox concretely and names its convention", () => {
+    // AGENT-047: the body keeps recognition, the pointer, and the two rules
+    // that bind before the read; the procedure lives in the filing reference.
     expect(body).toContain("data/docs/inbox/");
-    expect(body).toContain("corpus doc move <id> --folder finance --from agent");
-    expect(body).toContain("--add-tag");
-    expect(body).toMatch(/prefer\s+one that already holds similar documents/i);
+    expect(body).toMatch(/read\s+`references\/inbox-filing\.md` before you file/);
     expect(body).toMatch(/leave it in `inbox\/` and ask/i);
     expect(body).toMatch(/Expansion adds structure, never content/i);
+    const filing = readTemplateFile("claude/skills/comment/references/inbox-filing.md");
+    expect(filing).toContain("corpus doc move <id> --folder finance --from agent");
+    expect(filing).toContain("--add-tag");
+    expect(filing).toMatch(/prefer\s+one that already holds similar documents/i);
+    expect(filing).toMatch(/leave it in `inbox\/` and ask/i);
+    expect(filing).toMatch(/Expansion adds structure, never content/i);
   });
 
   /**
@@ -3590,8 +3764,25 @@ describe("comment skill body", () => {
    * and not merely the presence of the word "form".
    */
   describe("forms", () => {
+    /**
+     * AGENT-047: the decision rules stay in the body — they are what makes an
+     * agent reach for a form at all — and the grammar, the worked example and
+     * the answer's shape live in `references/forms.md`, read before a form is
+     * written and again when a `form.respond` arrives.
+     */
+    const grammar = readTemplateFile("claude/skills/comment/references/forms.md");
     /** The worked ```` ```form ```` example, which is a real multi-field ask. */
-    const example = fencedBlocks(body).find((block) => block.info === "form");
+    const example = fencedBlocks(grammar).find((block) => block.info === "form");
+
+    it("directs the read at both moments the grammar is needed", () => {
+      expect(body).toMatch(
+        /grammar, the field kinds, and the answer's shape live in `references\/forms\.md`/i,
+      );
+      expect(body).toMatch(/before you write a form fence/i);
+      expect(body).toMatch(/again when a `form\.respond` event arrives/i);
+      // And the form.respond entry point sends its reader the same way.
+      expect(body).toMatch(/Before acting on one, read\s+`references\/forms\.md`/);
+    });
 
     it("makes a form the default shape for a turn whose purpose is to ask", () => {
       expect(body).toMatch(/When a turn's purpose is to get something from the person, ask with/);
@@ -3615,24 +3806,24 @@ describe("comment skill body", () => {
     });
 
     it("tells the agent to mark optional generously, and why", () => {
-      expect(body).toMatch(/required unless it\s+carries `optional: true`/);
-      expect(body).toMatch(/Mark generously/);
-      expect(body).toMatch(/more optional fields, never fewer forms/i);
-      expect(body).toMatch(/short enough to read as a control/i);
-      expect(body).toMatch(/what you will do with the answers/i);
+      expect(grammar).toMatch(/required unless it\s+carries `optional: true`/);
+      expect(grammar).toMatch(/Mark generously/);
+      expect(grammar).toMatch(/more optional fields, never fewer forms/i);
+      expect(grammar).toMatch(/short enough to read as a control/i);
+      expect(grammar).toMatch(/what you will do with the answers/i);
     });
 
     it("documents the three kinds and shows a genuinely multi-field example", () => {
-      expect(body).toContain("```form\nfields:\n");
-      expect(body).toContain("kind: choose one");
-      expect(body).toContain("kind: choose any");
-      expect(body).toContain("kind: write");
-      expect(body).toContain("optional: true");
-      expect(body).toContain("options:");
-      expect(body).not.toContain("~~~");
-      expect(body).toMatch(/there is no fourth kind/i);
-      expect(body).toMatch(/distinct within the\s+form/i);
-      expect(body).toMatch(/at most one form per\s+turn/i);
+      expect(grammar).toContain("```form\nfields:\n");
+      expect(grammar).toContain("kind: choose one");
+      expect(grammar).toContain("kind: choose any");
+      expect(grammar).toContain("kind: write");
+      expect(grammar).toContain("optional: true");
+      expect(grammar).toContain("options:");
+      expect(grammar).not.toContain("~~~");
+      expect(grammar).toMatch(/there is no fourth kind/i);
+      expect(grammar).toMatch(/distinct within the\s+form/i);
+      expect(grammar).toMatch(/at most one form per\s+turn/i);
       // A one-field example is what produces one question per turn, so the
       // example is a decision, a selection and a fact — one of them optional.
       const questions = example?.content.match(/^\s*- question: /gm) ?? [];
@@ -3646,66 +3837,79 @@ describe("comment skill body", () => {
     it("drops the two stale claims, one of which SERVER-068 made false", () => {
       // A malformed form is refused at write time now; a skill teaching a
       // grammar nothing checks would be teaching the wrong posture entirely.
-      expect(body).not.toMatch(/nothing validates the block when it is posted/i);
+      expect(grammar).not.toMatch(/nothing validates the block when it is posted/i);
+      expect(grammar).toMatch(/the server refuses the whole turn with a `400`/i);
       expect(body).toMatch(/the server refuses the whole turn with a `400`/i);
       // `choose any` exists, so the answer is no longer one option verbatim.
-      expect(body).not.toMatch(/single-select/i);
+      expect(grammar).not.toMatch(/single-select/i);
     });
 
     it("states that the agent never answers a form, including its own", () => {
-      expect(body).toMatch(/You never answer a form — not the person's, and not your own/);
-      expect(body).toMatch(/the server refuses an answer from you/i);
+      expect(grammar).toMatch(/You never answer a form — not the person's, and not your own/);
+      expect(grammar).toMatch(/the server refuses an answer from you/i);
     });
 
     it("resumes from the richer payload, keyed to the questions", () => {
       for (const field of ["formTs", "answers", "question", "kind", "option", "note"]) {
         expect(body, `form.respond field ${field} unnamed`).toContain(field);
       }
-      expect(body).toMatch(/no\s+`parentId`/i);
-      expect(body).toMatch(/continuation, not a new request/i);
-      expect(body).toMatch(/never re-ask, never re-explain from the top/i);
-      expect(body).toMatch(/keyed to its question/i);
+      expect(grammar).toMatch(/no\s+`parentId`/i);
+      expect(grammar).toMatch(/continuation, not a new request/i);
+      expect(grammar).toMatch(wrapped("never re-ask, never re-explain from the top"));
+      expect(grammar).toMatch(/keyed to its question/i);
       // The two answers that are easy to mishandle: a blank optional field is a
       // complete answer, and a prose reply is not an answer at all.
-      expect(body).toMatch(/Every optional field left blank is a \*\*complete\*\* answer/);
-      expect(body).toMatch(/never resolve the thread to make the row go\s+away/);
+      expect(grammar).toMatch(wrapped("Every optional field left blank is a **complete** answer"));
+      expect(grammar).toMatch(/never resolve the thread to make the row go\s+away/);
     });
   });
 
   it("states skill genesis: threshold, destination, mechanism, announcement, conflicts", () => {
+    // AGENT-047: the threshold and the two hard rules stay in the body; the
+    // destination choice and the creation mechanics live in the genesis
+    // reference, read before any skill is created or edited.
     expect(body).toMatch(/stated more than once/i);
+    expect(body).toMatch(/read `references\/skill-genesis\.md`/i);
+    const genesis = readTemplateFile("claude/skills/comment/references/skill-genesis.md");
     // Extend-first stays the default; creation is for when nothing fits.
-    expect(body).toMatch(/Extend an existing skill when one fits/i);
-    expect(body).toMatch(/Create a genuinely new skill when nothing installed fits/i);
+    expect(genesis).toMatch(/Extend an existing skill when one fits/i);
+    expect(genesis).toMatch(/Create a genuinely new skill when nothing installed fits/i);
     // AGENT-006: the creation branch names the shipped verb (CLI-011), and the
     // propose-a-note path is gone — one documented way, not two.
     // AGENT-035 moved the placeholder from `"<one line>"` to `"$description"`:
     // the description is somebody's words, so it arrives through a heredoc.
-    expect(body).toContain('corpus skill create <name> --description "$description" --from agent');
-    expect(body).not.toMatch(/Propose a genuinely new skill/i);
-    expect(body).not.toMatch(/cannot write into `\.claude\/`/i);
-    expect(body).toMatch(/an \*\*edit to that\s+skill\*\*, never a second skill/i);
-    expect(body).toMatch(/Announce it in the reply/i);
-    expect(body).toMatch(/\*\*next\*\* run of the loop/i);
+    expect(genesis).toContain(
+      'corpus skill create <name> --description "$description" --from agent',
+    );
+    expect(commentPackage).not.toMatch(/Propose a genuinely new skill/i);
+    expect(commentPackage).not.toMatch(/cannot write into `\.claude\/`/i);
+    // The two rules bind in both places: the body repeats them because they
+    // gate acts the reference-read may arrive too late for.
+    for (const text of [body, genesis]) {
+      expect(text).toMatch(/an \*\*edit to that\s+skill\*\*, never a second skill/i);
+      expect(text).toMatch(/Announce it in the reply/i);
+      expect(text).toMatch(/\*\*next\*\* run of the loop/i);
+    }
   });
 
   it("states what the server owns about skill creation, as outcomes not pre-checks", () => {
+    const genesis = readTemplateFile("claude/skills/comment/references/skill-genesis.md");
     // TEST-411/412/413: name grammar, install/archive collision with the right
     // recovery, required description, dual frontmatter, and the ways back.
-    expect(body).toMatch(/lowercase letters, digits and single hyphens, at most 64 characters/);
-    expect(body).toContain("`400`");
-    expect(body).toMatch(/installed \*\*or archived\*\* is a `409`/);
-    expect(body).toMatch(/`409` means unarchive it/);
-    expect(body).toMatch(/`--description` is required/);
-    expect(body).toContain(".claude/skills/<name>/SKILL.md");
-    expect(body).toMatch(/\*\*both\*\* frontmatter vocabularies\s+written by the server/i);
+    expect(genesis).toMatch(/lowercase letters, digits and single hyphens, at most 64 characters/);
+    expect(genesis).toContain("`400`");
+    expect(genesis).toMatch(/installed \*\*or archived\*\* is a `409`/);
+    expect(genesis).toMatch(/`409` means unarchive it/);
+    expect(genesis).toMatch(/`--description` is required/);
+    expect(genesis).toContain(".claude/skills/<name>/SKILL.md");
+    expect(genesis).toMatch(/\*\*both\*\* frontmatter vocabularies\s+written by the server/i);
     // SHARED-042: the ways back are the ordinary ones. Archiving disables a
     // skill; a wording it regrets is reverted the way any document is, so the
     // branch points at the revert loop rather than at a verb that no longer
     // exists.
-    expect(body).toMatch(/read the history, write the old text back with the key/i);
-    expect(body).toMatch(/corpus doc archive/);
-    expect(body).toMatch(/do not pre-check/i);
+    expect(genesis).toMatch(/read the history, write the old text back with the key/i);
+    expect(genesis).toMatch(/corpus doc archive/);
+    expect(genesis).toMatch(/do not pre-check/i);
   });
 
   it("bounds stewardship and forbids deletion", () => {
@@ -3778,17 +3982,21 @@ describe("comment skill body", () => {
   });
 
   it("carries four worked examples, each with runnable commands", () => {
-    const examples = body.split("\n").filter((line) => /^\*\*\d+ — /.test(line));
+    // AGENT-047: the examples live in the worked-examples reference, pointed
+    // at from "When this runs"; each is still swept for models and traces.
+    expect(body).toMatch(/are in `references\/worked-examples\.md`/);
+    const worked = readTemplateFile("claude/skills/comment/references/worked-examples.md");
+    const examples = worked.split("\n").filter((line) => /^\*\*\d+ — /.test(line));
     expect(examples).toHaveLength(4);
-    expect(body).toMatch(/\*\*1 — Anchored comment/);
-    expect(body).toMatch(/\*\*2 — Standalone Ask/);
-    expect(body).toMatch(/\*\*3 — Inbox capture/);
-    expect(body).toMatch(/\*\*4 — A `form\.respond` continuation/);
+    expect(worked).toMatch(/\*\*1 — Anchored comment/);
+    expect(worked).toMatch(/\*\*2 — Standalone Ask/);
+    expect(worked).toMatch(/\*\*3 — Inbox capture/);
+    expect(worked).toMatch(/\*\*4 — A `form\.respond` continuation/);
   });
 
-  it("does not restate the orchestrate skill's loop", () => {
-    expect(body).not.toMatch(/corpus queue (?:claim-all|idle|halt|resume|reap-stale)/);
-    expect(body).not.toContain(".corpus/HALT");
+  it("does not restate the orchestrate skill's loop, in the body or any reference", () => {
+    expect(commentPackage).not.toMatch(/corpus queue (?:claim-all|idle|halt|resume|reap-stale)/);
+    expect(commentPackage).not.toContain(".corpus/HALT");
     expect(body).toContain("orchestrate skill");
   });
 
@@ -3805,6 +4013,152 @@ describe("comment skill body", () => {
     expect(heredocs.length).toBeGreaterThan(0);
     for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'CORPUS_EOF'$/);
     expect(body).not.toMatch(/-m "\$\(/);
+  });
+});
+
+/**
+ * AGENT-047 — the comment skill was read whole by a dispatched subagent on
+ * every event: 15,228 tokens (10,401 words) against 376–2,254 tokens of CLI
+ * traffic for the same event, 56% of everything the loop spent on a projected
+ * 30-event day (SHARED-070). The restructure moves the grammars a given event
+ * makes optional into `references/` files read on a directed pointer, and
+ * deletes the dispatch prompt's ~1,000-token restatement of the binding rules.
+ * After it, the body measures 6,771 words / ~9.5k tokens and the per-event
+ * fixed payload fell ~43%.
+ *
+ * What is pinned is what a later edit silently loses:
+ *
+ * - **The budget** — a body drifting back toward its old size fails with a
+ *   number attached, which is how this issue stays fixed.
+ * - **Directed reads** — every shipped reference is pointed at from the body
+ *   by path; a reference nothing directs a read at is worse than inline text,
+ *   because the runtime pays for it never and the rule in it binds nobody.
+ * - **References are skill payload, not documents** — no frontmatter, excluded
+ *   from the document loader, never projected (a skill root admits only
+ *   `SKILL.md`), and told to the subagent as such so the retrieval doctrine
+ *   does not read the directed read as a forbidden disk read.
+ * - **One copy of the invariants per dispatch** — the skill's own section for
+ *   the two comment routing rows, the prompt for the two reflections, never
+ *   both.
+ */
+describe("progressive disclosure in the comment skill (AGENT-047)", () => {
+  const body = documentAt("claude/skills/comment/SKILL.md").body;
+
+  it("keeps the body inside the budget the restructure bought", () => {
+    const words = body.split(/\s+/).filter((word) => word !== "").length;
+    expect(words).toBeLessThan(7000);
+  });
+
+  it("points at every reference it ships, and ships every reference it points at", () => {
+    const shipped = skillReferences
+      .map(({ label }) => label.replace("assets/workspace/claude/skills/comment/", ""))
+      .sort();
+    expect(shipped, "the reference tree is empty — the plan no longer sees it").not.toEqual([]);
+    const pointed = [
+      ...new Set([...body.matchAll(/references\/[a-z-]+\.md/g)].map((match) => match[0])),
+    ].sort();
+    expect(pointed).toEqual(shipped);
+    // Directed reads, not mentions: the imperative appears with each pointer.
+    const directed = body.match(
+      /read\s+`references\/[a-z-]+\.md`|`references\/[a-z-]+\.md`[^.]{0,60}\bread\b|are in `references\/worked-examples\.md`/gi,
+    );
+    expect(directed?.length ?? 0).toBeGreaterThanOrEqual(skillReferences.length);
+  });
+
+  it("gives no reference frontmatter, and excludes each for that reason", () => {
+    expect(skillReferences).toHaveLength(7);
+    for (const { label, body: text } of skillReferences) {
+      expect(text.startsWith("---"), `${label} grew frontmatter`).toBe(false);
+      expect(text.startsWith("# "), `${label} opens with no title`).toBe(true);
+      expect(isNonDocument(label.replace("assets/workspace/", "")), label).toBe(true);
+    }
+  });
+
+  it("carries no dev-harness references in any reference file", () => {
+    for (const { label, body: text } of skillReferences) {
+      for (const marker of ["SPEC.md", "CLAUDE.md", "issues/", "npm run", "/implement"]) {
+        expect(text, `${label} contains "${marker}"`).not.toContain(marker);
+      }
+      for (const hedge of ["use your judgment", "consider whether", "you may want"]) {
+        expect(text.toLowerCase(), `${label} hedges with "${hedge}"`).not.toContain(hedge);
+      }
+    }
+  });
+
+  it("tells the subagent a reference is skill payload, outside the retrieval rules", () => {
+    expect(body).toMatch(/part of this skill, not a document in the corpus/);
+    expect(body).toMatch(wrapped("read it directly, at the path this text names"));
+  });
+
+  it("states the invariants to a comment subagent exactly once — in the skill", () => {
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+    expect(orchestrate).toMatch(wrapped("exactly one document states them to it"));
+    expect(orchestrate).toMatch(
+      wrapped(
+        "A dispatch that names a skill — the comment skill's two routing rows — restates nothing",
+      ),
+    );
+    expect(orchestrate).toMatch(wrapped("Name the skill and let it speak"));
+    // The reflections still get the rules in their prompts — they read no skill.
+    expect(orchestrate).toMatch(
+      wrapped("reads no skill of its own, so its prompt is the only road the rules have into it"),
+    );
+    // The worked example practices the deletion rather than contradicting it.
+    expect(orchestrate).toMatch(wrapped("no restatement of the binding rules"));
+    // And the comment skill's own section says the prompt carries no copy.
+    expect(body).toMatch(/there is no second copy in the prompt/);
+  });
+});
+
+/**
+ * AGENT-046, decided by the user 2026-08-23: adopt the folder verbs, bounded.
+ * A skill uses `corpus folder archive|unarchive|rename` only where the folder
+ * is what the person named; bulk stewardship the agent decided on itself stays
+ * per document, because the agent chose those documents and must be able to
+ * name each one. The boundary is written as a **rule**, per the decision — an
+ * example of the safe case is not a rule against the unsafe one. `corpus
+ * folder delete` stays the user's: measured 2026-08-23, `--from agent` is
+ * refused at exit 2 before any request is sent, naming the archive detour.
+ */
+describe("folder acts are bounded by who named the folder (AGENT-046)", () => {
+  const comment = documentAt("claude/skills/comment/SKILL.md").body;
+  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+  it("teaches the verbs at the point a request arrives, as a rule", () => {
+    expect(comment).toMatch(
+      wrapped("**Act on a whole folder only where the folder is what the person named.**"),
+    );
+    expect(comment).toMatch(wrapped("a rule, not a preference"));
+    expect(comment).toContain("corpus folder archive <path>");
+    expect(comment).toContain("corpus folder unarchive <path>");
+    expect(comment).toContain("corpus folder rename <from> <to>");
+    // The bulk act reaches documents the request never mentioned — the reason
+    // the boundary exists — and the reply states the count.
+    expect(comment).toMatch(wrapped("names documents the request never mentioned"));
+    expect(comment).toMatch(wrapped("state the count in the reply"));
+    // The other half of the rule: agent-chosen work stays per document.
+    expect(comment).toMatch(wrapped("Where **you** picked the documents"));
+    expect(comment).toMatch(wrapped("a folder verb never inherits that judgment"));
+  });
+
+  it("keeps deletion the user's, with the archive detour stated", () => {
+    expect(comment).toMatch(
+      wrapped(
+        "`corpus folder delete` is the user's alone and the CLI refuses it from you at exit `2`",
+      ),
+    );
+    expect(comment).toMatch(wrapped("archive it and say that deletion is theirs"));
+  });
+
+  it("bounds the stewardship charter the same way, in orchestrate", () => {
+    expect(orchestrate).toMatch(
+      wrapped(
+        "**A folder verb serves a request that named the folder, and it never serves this charter.**",
+      ),
+    );
+    expect(orchestrate).toMatch(wrapped("stewardship picks its documents one by one"));
+    // The charter's own bullets stay per document.
+    expect(orchestrate).toMatch(wrapped("The two bullets above stay per document"));
   });
 });
 
@@ -4362,7 +4716,9 @@ describe("converse skill body", () => {
         /\*\*An id your park named, held by somebody else when you claim, means another listener is on\s+this lane\.\*\*/,
       );
       // The two lists, and what makes reading one against the other exact.
-      expect(body).toMatch(/names in its own `events` what is \*\*pending\*\* on your lane/);
+      // AGENT-049: the park's bare output is one line per pending event, not a
+      // JSON `events` list — the pin follows the corrected wording.
+      expect(body).toMatch(/names what is \*\*pending\*\* on your lane, one line per event/);
       expect(body).toMatch(/never includes what that same call has just claimed for you/);
       expect(body).toMatch(
         /coming back in `inProgress` instead of in your `events`, was\s+claimed by another caller/,
@@ -4928,9 +5284,11 @@ describe("converse skill body", () => {
     // the conversation's order, which AGENT-038 measured is not the batch's.
     expect(body).toMatch(/one at a time, in the order the conversation has them/);
     expect(body).toMatch(/There is no overlap set to compute here/);
-    // Halted is quiet, not an exit.
-    expect(body).toContain('{"idle":true,"reason":"halted"}');
-    expect(body).toContain('{"idle":true,"reason":"timeout"}');
+    // Halted is quiet, not an exit — and the strings are the ones the bare
+    // command prints (AGENT-049), not the `--json` shape no example asks for.
+    expect(body).toContain("idle — no events (halted)");
+    expect(body).toContain("idle — no events (timeout)");
+    expect(body).not.toContain('"idle":true');
   });
 
   it("hedges nothing and quotes every multi-line argument", () => {
@@ -5980,6 +6338,404 @@ describe("profile skill body", () => {
 });
 
 /**
+ * AGENT-051 — `corpus batch` shipped in v0.21.0 (CLI-064) and nothing invoked
+ * it. Measured on the comment skill's own worked event, its seven commands cost
+ * seven process starts, and the same seven sent as three invocations run 3.6×
+ * faster. What is pinned here is not the saving, which is CLI-064's, but the
+ * three ways a skill can take it and be wrong:
+ *
+ * - **A batch entry is invisible to `cli command references`.** That sweep sees
+ *   lines beginning with `corpus`, and an entry is a JSON array inside a
+ *   heredoc, so a verb or a flag that does not exist would sail past it. Every
+ *   entry is resolved against `docs/cli.md` here instead.
+ * - **Nothing threads a result from one entry into the next**, and a skill that
+ *   assumed otherwise fails in a shape the per-command report makes look like
+ *   an ordinary success. CLI-064's own first run hit it: the batch held a read
+ *   and the patch that quoted it, and the patch matched nothing.
+ * - **A batch is not a transaction.** §4's commit window may fold its writes
+ *   into one git commit anyway, so a skill that saw that and inferred atomicity
+ *   would be relying on timing. The owner says so in as many words.
+ *
+ * The dependency pin is a net rather than a proof, in the same sense as the
+ * single-owner detectors below: it knows two producers whose output a later
+ * entry would plainly want — a read that prints a key and the text to quote,
+ * and a creation that prints an id — and it does not know a third. Widen it the
+ * day a skill finds one.
+ */
+describe("a run of commands as one invocation (AGENT-051)", () => {
+  const surface = readCliDoc();
+
+  interface BatchBlock {
+    readonly label: string;
+    /** The flags on the `corpus batch` invocation itself. */
+    readonly invocation: string;
+    readonly entries: readonly (readonly string[])[];
+  }
+
+  /** Every `corpus batch <<'CORPUS_EOF' … CORPUS_EOF` block in the template tree. */
+  const batchBlocks = (label: string, source: string): BatchBlock[] =>
+    [...source.matchAll(/corpus batch([^\n]*)<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g)].map(
+      (match) => {
+        const payload = match[2] ?? "";
+        let entries: unknown;
+        try {
+          entries = JSON.parse(payload);
+        } catch (cause) {
+          throw new Error(`${label}: a batch payload is not JSON\n${payload}`, { cause });
+        }
+        if (
+          !Array.isArray(entries) ||
+          entries.some(
+            (entry) => !Array.isArray(entry) || entry.some((word) => typeof word !== "string"),
+          )
+        ) {
+          throw new Error(`${label}: a batch payload is not an array of argv arrays`);
+        }
+        return { label, invocation: match[1] ?? "", entries: entries as string[][] };
+      },
+    );
+
+  const allBlocks: readonly BatchBlock[] = templateFiles
+    .filter((file) => file.endsWith(".md"))
+    .flatMap((relPath) => batchBlocks(relPath, readTemplateFile(relPath)));
+
+  const verbOf = (entry: readonly string[]): string =>
+    normalizeInvocation([...entry], surface) ?? entry.join(" ");
+
+  it("ships batches at all, in both loop skills that make a run of calls", () => {
+    // Anti-vacuity: every pin below is over `allBlocks`, so an empty list would
+    // make the whole describe pass while nothing collected CLI-064's saving.
+    expect(allBlocks.length, "no skill sends a run of commands as one").toBeGreaterThan(4);
+    const files = new Set(allBlocks.map(({ label }) => label));
+    expect([...files]).toContain("claude/skills/orchestrate/SKILL.md");
+    expect([...files]).toContain("claude/skills/comment/SKILL.md");
+    expect([...files]).toContain("claude/skills/comment/references/worked-examples.md");
+  });
+
+  it("resolves every batch entry against docs/cli.md, which the `corpus …` sweep cannot see", () => {
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        const command = verbOf(entry);
+        expect(
+          surface.commands.has(command) || surface.topics.has(command),
+          `${label}: batch entry \`${entry.join(" ")}\` is not a command docs/cli.md documents`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("puts nothing in an entry that the batch invocation owns", () => {
+    // Each of these refuses the whole array at exit 2, before anything runs.
+    const invocationFlags = [
+      "--json",
+      "--help",
+      "-h",
+      "--version",
+      "--no-color",
+      "--verbose",
+      "--workspace",
+    ];
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        for (const flag of invocationFlags) {
+          expect(
+            entry,
+            `${label}: \`${flag}\` belongs to the invocation, not to an entry`,
+          ).not.toContain(flag);
+        }
+        expect(
+          ["batch", "init", "upgrade"],
+          `${label}: \`${entry[0] ?? ""}\` may not be a batch entry`,
+        ).not.toContain(entry[0]);
+      }
+    }
+  });
+
+  it("never parks or follows inside a batch", () => {
+    // An entry that long-polls or follows holds every entry after it, exactly
+    // as it holds a shell — the array is one process running them in order.
+    // `corpus queue idle` parks for its whole ~8-minute window, and
+    // `corpus server logs --follow` never returns at all (CLI-068 measured that
+    // one: inside a batch it streamed until a 6 s bound killed the run, exit
+    // 124). Both are instances of the rule, so the pin is over the property —
+    // an entry that does not return on its own — and not over a list of two.
+    for (const { label, entries } of allBlocks) {
+      for (const entry of entries) {
+        expect(verbOf(entry), `${label}: a batch that parks is a loop that stops`).not.toBe(
+          "queue idle",
+        );
+        // `--follow` is checked on every entry, whatever the verb, so a second
+        // command that grows one is caught. `-f` is only checked where
+        // docs/cli.md gives it that meaning today (`server logs`), so a future
+        // `-f` for something else does not fail this by its spelling alone.
+        const follows =
+          entry.includes("--follow") || (verbOf(entry) === "server logs" && entry.includes("-f"));
+        expect(follows, `${label}: \`${entry.join(" ")}\` follows, so the array stops there`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  /**
+   * The dependency rule, mechanically. Two producers, each with the consumer
+   * whose input it would have been:
+   *
+   * - `doc show` prints the **key** a whole-body write presents and the bytes a
+   *   patch quotes, so no `--key` and no `--old` may sit in the same array.
+   * - `doc create` prints the **id** a reply refers to, so no `[[…]]` ref may.
+   */
+  const dependsOnAnEarlierEntry = ({ entries }: BatchBlock): string[] => {
+    const offences: string[] = [];
+    entries.forEach((entry, index) => {
+      const before = entries.slice(0, index);
+      const producedAKey = before.some((earlier) => verbOf(earlier) === "doc show");
+      const producedAnId = before.some((earlier) => verbOf(earlier) === "doc create");
+      if (producedAKey && entry.some((word) => word === "--key" || word === "--old")) {
+        offences.push(
+          `entry ${index + 1} wants the key or the text an earlier \`doc show\` printed`,
+        );
+      }
+      if (producedAnId && entry.some((word) => word.includes("[["))) {
+        offences.push(`entry ${index + 1} names a ref an earlier \`doc create\` printed`);
+      }
+    });
+    return offences;
+  };
+
+  it("threads no entry's output into another entry's input", () => {
+    for (const block of allBlocks) {
+      expect(dependsOnAnEarlierEntry(block), block.label).toEqual([]);
+    }
+  });
+
+  it("reports the dependency it is looking for, and says which one it misses", () => {
+    // The claim above, executable — CLI-064's own first run, which put a read
+    // and the patch quoting it in one array and got `patch_no_match`.
+    const shipped: BatchBlock = {
+      label: "cli-064's first run",
+      invocation: " ",
+      entries: [
+        ["doc", "show", "doc_a1b2c3"],
+        ["doc", "patch", "doc_a1b2c3", "--old", "6.1%", "--new", "6.4%"],
+      ],
+    };
+    expect(dependsOnAnEarlierEntry(shipped), "the pin would have passed over it").not.toEqual([]);
+    // And the gap, stated out loud rather than left to be discovered: a second
+    // whole-body write in one array wants the key the first one printed, and
+    // nothing here knows that. If somebody teaches the pin, this fails and the
+    // docblock's admission gets corrected with it.
+    const twoBodies: BatchBlock = {
+      label: "two whole-body writes in one array",
+      invocation: " ",
+      entries: [
+        ["doc", "edit", "doc_a1b2c3", "--key", "abc", "-m", "first"],
+        ["doc", "edit", "doc_a1b2c3", "--key", "def", "-m", "second"],
+      ],
+    };
+    expect(
+      dependsOnAnEarlierEntry(twoBodies),
+      "the pin now catches a case the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("states who is acting once, on the invocation", () => {
+    // CLI-064: `--from` on the batch applies to every entry, and an entry's own
+    // wins over it. So a mutating array says it once and no entry repeats it.
+    for (const { label, invocation, entries } of allBlocks) {
+      const mutates = entries.some((entry) =>
+        /^(doc (?:patch|edit|create|move|archive|unarchive)|thread (?:reply|create|resolve)|job log)$/.test(
+          verbOf(entry),
+        ),
+      );
+      if (!mutates) continue;
+      expect(invocation, `${label}: a batch that writes does not say who is acting`).toContain(
+        "--from agent",
+      );
+      for (const entry of entries) {
+        expect(
+          entry,
+          `${label}: an entry repeats the \`--from\` the invocation already carries`,
+        ).not.toContain("--from");
+      }
+    }
+  });
+
+  it("says a batch is not a transaction, where the rule lives", () => {
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+    expect(orchestrate).toMatch(
+      /\*\*A batch is not a transaction, and nothing in it rolls back\.\*\*/,
+    );
+    expect(orchestrate).toMatch(/reading it\s+as atomicity/);
+    expect(orchestrate).toMatch(/\*\*So read the report, never the exit code alone\.\*\*/);
+    expect(orchestrate).toMatch(/reported as \*\*never\s+run\*\*/);
+    // CLI-066, measured against the packaged binary: a heredoc and a pipe are
+    // read, and a socket — which is what `spawnSync({ input })` gives a child —
+    // is refused at exit 2 with nothing sent. A skill that said "a pipe is
+    // refused" would send somebody looking for a defect that is not there.
+    expect(orchestrate).toMatch(/arrives on a heredoc or a pipe\*\*, which are the two transports/);
+    expect(orchestrate).toMatch(/A\s+socket is never one/);
+  });
+
+  it("collects the saving where the comment skill's calls actually are", () => {
+    const body = documentAt("claude/skills/comment/SKILL.md").body;
+    const blocks = batchBlocks("comment", body);
+    // The opening reads: two commands, one invocation, the all-reads shape.
+    const opening = blocks.find(({ entries }) =>
+      entries.every((entry) => verbOf(entry).startsWith("thread ")),
+    );
+    expect(opening?.entries.map(verbOf), "the two opening reads are still two invocations").toEqual(
+      ["thread context", "thread show"],
+    );
+    // The write tail: the write, the log line and the reply.
+    const tail = blocks.find(({ entries }) =>
+      entries.some((entry) => verbOf(entry) === "thread reply"),
+    );
+    expect(tail?.entries.map(verbOf), "the write tail is still three invocations").toEqual([
+      "doc patch",
+      "job log",
+      "thread reply",
+    ]);
+    // And the two rules that bound it, both about the reply rather than the writes.
+    expect(body).toMatch(/before you take your own turn at its word/);
+    expect(body).toMatch(/\*\*a run never\s+shortens a reply\.\*\*/);
+  });
+});
+
+/**
+ * AGENT-052 — the prohibition AGENT-051 wrote is lifted, because the defect
+ * underneath it is gone. CLI-068 fixed it in one line: `createNestedOutput`
+ * hardcoded `json: false`, so every command a batch ran was told the invocation
+ * was in human mode, and `queue claim-all` — whose whole payload sits on the
+ * mode-dependent branch — wrote its claim to the channel a `--json` parent
+ * suppresses.
+ *
+ * The reproduction was worse than AGENT-051 reported. The events **were**
+ * claimed (`pending` 2 → 0, `inProgress` 0 → 2) and the caller was handed
+ * `null` at exit `0`, then held two events it could not name or settle.
+ *
+ * Three parts to the lift, each failing differently if it goes:
+ *
+ * - **The rule that replaced it is about returning, not about a verb.** An
+ *   entry that follows or long-polls holds every entry after it, because the
+ *   array is one process running its entries in order. `queue idle` and
+ *   `server logs --follow` are two instances, and a list of two is a list the
+ *   third one will be missing from.
+ * - **The reasoning outlives the rule.** A reader who learned the prohibition
+ *   has to be able to find out that it was lifted and why. So the skill still
+ *   says the payload came back `null` — in the past tense, which the negative
+ *   guard below is about — and says that it was a defect and that it is fixed.
+ * - **A batch is not a transaction** (CLI-064, the user's decision), and a
+ *   batched claim is where that bites. The skill says what the loop does when
+ *   an entry behind a claim fails, rather than only warning that it can.
+ */
+describe("the claim goes back in the batch (AGENT-052)", () => {
+  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  const section = orchestrate.slice(
+    orchestrate.indexOf("## Several commands in one invocation"),
+    orchestrate.indexOf("## The loop"),
+  );
+  const loop = orchestrate.slice(
+    orchestrate.indexOf("## The loop"),
+    orchestrate.indexOf("## Claiming"),
+  );
+  const headBlock = [
+    ...section.matchAll(/corpus batch[^\n]*<<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/g),
+  ]
+    .map((match) => JSON.parse(match[1] ?? "") as string[][])
+    .find((entries) => entries.some((entry) => entry.join(" ") === "queue claim-all"));
+
+  it("states the holding rule as a property of the verb, with instances rather than a list", () => {
+    expect(section).toMatch(
+      /\*\*An entry that follows or long-polls holds every entry after it\*\*/,
+    );
+    // Why it holds: one process, entries in order. Not a rule about the queue.
+    expect(section).toMatch(/the array is one process running the entries in order/);
+    expect(section).toMatch(/one that never returns stops the array there/);
+    // The two instances, named as instances.
+    expect(section).toMatch(/`corpus queue idle`\s+parks for its whole/);
+    expect(section).toMatch(/`corpus server logs --follow`/);
+    expect(section).toMatch(/two instances rather than the list/);
+    // And the test a reader applies to a third verb nobody has written down.
+    expect(section).toMatch(/ask of a verb whether it returns\s+on its own/);
+  });
+
+  it("lifts the prohibition and leaves the reasoning where it stood", () => {
+    expect(section).toMatch(
+      /\*\*The claim is an ordinary entry, and step 4 belongs in a batch\.\*\*/,
+    );
+    // The history, so a reader who learned the old rule can see it end.
+    expect(section).toMatch(/used to hand back `null` while claiming\s+the events anyway/);
+    expect(section).toMatch(
+      /a defect in the\s+batch's JSON channel rather than anything about the verb/,
+    );
+    expect(section).toMatch(/It is fixed/);
+    // And what the fix bought, in the terms the loop reads it in.
+    expect(section).toMatch(/carries exactly what it carries alone/);
+    expect(section).toMatch(/the `events` list and the `inProgress` list/);
+  });
+
+  it("does not let the prohibition back in through a present-tense sentence", () => {
+    // The old text, word for word, must not reappear anywhere in the skill.
+    expect(orchestrate).not.toMatch(/the claim stays its own\s+invocation/);
+    expect(orchestrate).not.toMatch(/Three things are never entries/);
+    // `null` is a fact about the past here and about nothing else: one mention,
+    // and it is the one the history sentence carries. A new present-tense
+    // sentence about a lost payload fails this rather than shipping beside it.
+    const mentions = section.match(/`null`/g) ?? [];
+    expect(mentions, "the batch section names `null` more than once").toHaveLength(1);
+    expect(section).toMatch(/used to hand back `null`/);
+    // And no skill tells the loop to keep its claim out of an array. The tense
+    // is the whole discriminator: *kept* is the history the section is required
+    // to carry two assertions above, and *keeps* would be the rule returning.
+    for (const { label, body } of installedSkillTexts) {
+      expect(body, `${label}: forbids a claim in a batch again`).not.toMatch(
+        /\b(?:keep|keeps|stay|stays)\b[^.]{0,80}claim[^.]{0,80}out of (?:a|every|any) (?:batch|array)/i,
+      );
+      expect(body, `${label}: makes the claim ineligible as an entry again`).not.toMatch(
+        /claim[^.]{0,60}(?:is never|may not be|cannot be) (?:a|an) (?:batch )?entry/i,
+      );
+    }
+  });
+
+  it("puts the loop's head in one array, claim last, in the order the loop runs", () => {
+    expect(headBlock, "no batch in the skill claims anything").toBeDefined();
+    // The three commands of steps 2, 3 and 4, in that order. Order is not
+    // decoration: reaping requeues a dead session's events, and the claim below
+    // it is what collects them.
+    expect(headBlock).toEqual([["queue", "reap-stale"], ["agents"], ["queue", "claim-all"]]);
+    expect(section).toMatch(/reaping requeues a dead session's events in\s+time for the claim/);
+    // The claim is the last entry, which is the whole answer to a failing tail.
+    expect(headBlock?.at(-1)?.join(" ")).toBe("queue claim-all");
+    // The loop's own step list points at it and does not restate it. It also
+    // says what does not join: dispatch is not a command, and step 7 parks.
+    expect(loop).toMatch(/\*\*Steps 2, 3 and 4 go as one invocation, in that order\.\*\*/);
+    expect(loop).toMatch(/\*Several commands in one invocation\*/);
+    expect(loop).toMatch(/step 6 is not a command, and step 7 parks/);
+    // The steps survive as steps: what changed is the number of process starts.
+    expect(loop).toMatch(/They stay three steps/);
+    // AGENT-019's structural rule still holds over the section that gained a
+    // pointer: there is no script in *The loop* for anyone to copy.
+    expect(fencedBlocks(loop)).toEqual([]);
+  });
+
+  it("says what the loop does when an entry behind a claim fails", () => {
+    expect(section).toMatch(
+      /\*\*A batch that claims, claims — whatever the entries behind it do\.\*\*/,
+    );
+    // The exposure, stated as state the agent now owns rather than as a warning.
+    expect(section).toMatch(/leaves those events in `in-progress\/` and\s+yours to settle/);
+    expect(section).toMatch(/dispatch what was claimed and settle each event on its own\s+outcome/);
+    expect(section).toMatch(/rather than treating a failed tail as an unclaim/);
+    // And why it is not an argument against batching a claim.
+    expect(section).toMatch(/same exposure as running the commands one after another/);
+    expect(section).toMatch(/neither adds it nor removes\s+it/);
+    // The transaction rule itself stays where it was, once, in this same owner.
+    expect(section).toMatch(/\*\*A batch is not a transaction, and nothing in it rolls back\.\*\*/);
+  });
+});
+
+/**
  * AGENT-032 — the class rather than the instance.
  *
  * Four review findings in three passes have come from one rule written into two
@@ -6011,7 +6767,10 @@ describe("one rule, one skill", () => {
   const skillBody: Record<SkillName, string> = {
     orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
     converse: documentAt("claude/skills/converse/SKILL.md").body,
-    comment: documentAt("claude/skills/comment/SKILL.md").body,
+    // The package, not the body: text AGENT-047 moved into `references/` is
+    // still the comment skill's text, and a rule restated there would drift
+    // exactly as one restated in the body would.
+    comment: commentPackage,
     profile: documentAt("claude/skills/profile/SKILL.md").body,
   };
 
@@ -6144,7 +6903,8 @@ describe("one rule, one skill", () => {
       passages: [
         "read work write with the key you were given keep the key the write returned.",
         "means passing the --key that corpus doc show printed and the write prints a fresh key for the next edit.",
-        "- a fence closes only on a line that is nothing but",
+        "- a fence closes only on a line that is nothing but backticks",
+        "the fence stays open to the end of the turn and a turn heading inside a fence is",
         "a change you can quote is a patch a change you cannot quote is a",
         "if you can point at the text that is wrong a figure a sentence a paragraph that should go",
         "and puts every other line in your hands where a bad paste",
@@ -6312,6 +7072,16 @@ describe("one rule, one skill", () => {
   const HELP_BRIEF_REGISTER = /--help=brief|\bbrief (?:help|form|register|text)\b/i;
   const HELP_WHOLE_REGISTER =
     /\b(?:whole|full) (?:help|text|register|form|description|prose)\b|\bthe prose\b|\bworked examples?\b/i;
+
+  // AGENT-051. The compound invocation. The naming half is deliberately loose —
+  // `batch` is also what both loop skills call a claimed set of events, and
+  // `array` is ordinary — because the **explaining** half is what makes the
+  // pair specific: none of those phrases turns up in prose about the event
+  // batch. Measured over the four skills as they stand: 6 sentences in
+  // `orchestrate`, 0 in each of the others.
+  const BATCH_MECHANISM = /\bbatch\b|\barray\b/i;
+  const BATCH_EXPLAINED =
+    /not a transaction|rolls? back|atomicity|never\s+run\b|exit `?11`?|owns stdin|fixed before the first|wins over|no shell reads/i;
 
   const SINGLE_OWNER_RULES: readonly SingleOwnerRule[] = [
     {
@@ -6494,6 +7264,43 @@ describe("one rule, one skill", () => {
         },
       ],
     },
+    {
+      // AGENT-051. `corpus batch` is the third convention about talking to the
+      // CLI at all rather than about one verb, after the help register and the
+      // shell rule, and it goes to the same owner for the same reason. What a
+      // consumer needs out of it is the outcome — *send this run as one* — and
+      // the shape of the array at its own call site. What it may not do is give
+      // a second account of the constraints, because those are what a rewrite
+      // gets subtly wrong: an entry cannot read another's output, the array is
+      // not a transaction, and the report rather than the exit code says what
+      // happened.
+      //
+      // The detector wants a sentence that names the mechanism and **explains**
+      // it. Naming a batch alone is what a call site does, so `comment` stays
+      // off the pin while it says *send the run as one* and *read what the
+      // report says each entry did* — the outcomes it relies on. The word
+      // `report` is deliberately absent from the explaining vocabulary for that
+      // reason: a consumer has to be able to tell an agent to read one.
+      //
+      // Net, not proof, in the same sense as the rules above: a restatement
+      // that avoids the vocabulary — *"a command in the array cannot see what
+      // the one above it printed"* — states the rule and matches nothing here,
+      // and the test below says so out loud.
+      rule: "how a run of commands goes as one invocation",
+      owner: "orchestrate",
+      restatements: (body) =>
+        proseSentences(body).filter(
+          (sentence) => BATCH_MECHANISM.test(sentence) && BATCH_EXPLAINED.test(sentence),
+        ),
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**What a batch is, and when a run may go as one, is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
   ];
 
   it("keeps every registered rule in the one skill that owns it", () => {
@@ -6587,6 +7394,37 @@ describe("one rule, one skill", () => {
     expect(
       writing?.restatements(
         "Create the persona document, then set the two fields Claude Code reads.",
+      ) ?? ["unchecked"],
+      "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
+    ).toEqual([]);
+  });
+
+  it("catches a second account of the batch, and says which paraphrase it misses", () => {
+    // AGENT-051. The failure this guards is a second skill acquiring its own
+    // account of the constraints — which is how one of them would come to say
+    // that a batch's writes land together, on the strength of §4's window
+    // folding them into one commit. The three below are the shapes such an
+    // account is written in.
+    const compound = SINGLE_OWNER_RULES.find(({ rule }) =>
+      rule.startsWith("how a run of commands"),
+    );
+    expect(compound, "the compound invocation is no longer registered").toBeDefined();
+    const caught = [
+      "Remember that a batch is not a transaction: a write that landed stays landed.",
+      "The array is fixed before the first command runs, so nothing can read what the one above it printed.",
+      "An entry may not carry `--from`, or rather its own wins over the batch's.",
+    ];
+    for (const sentence of caught) {
+      expect(
+        compound?.restatements(sentence) ?? [],
+        `a second account of the batch now evades the pin: "${sentence}"`,
+      ).not.toEqual([]);
+    }
+    // The gap the docblock admits: an account that names neither the mechanism
+    // by one of its two words nor a constraint by one of its phrases.
+    expect(
+      compound?.restatements(
+        "A command sent together with others cannot see what the one above it printed.",
       ) ?? ["unchecked"],
       "the pin now catches a paraphrase the docblock says it misses — correct the docblock",
     ).toEqual([]);

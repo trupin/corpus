@@ -61,7 +61,12 @@ const JUST_NOW = new Date().toISOString();
 
 const RESIDENT_LANE: AgentLane = {
   lane: "th_res",
-  resident: { name: "claims-review", docId: "doc_claims_agent", weight: "heavy" },
+  resident: {
+    name: "claims-review",
+    docId: "doc_claims_agent",
+    weight: "heavy",
+    designationId: null,
+  },
   live: true,
   since: JUST_NOW,
   summary: "reading the policy",
@@ -204,7 +209,7 @@ test.describe("the recipient a composer states", () => {
   }) => {
     const corpus = await board(page, {
       ...RESIDENT_LANE,
-      resident: { name: "claims-review", docId: null, weight: "heavy" },
+      resident: { name: "claims-review", docId: null, weight: "heavy", designationId: null },
     });
     const lane = laneOption(page, "th_res");
 

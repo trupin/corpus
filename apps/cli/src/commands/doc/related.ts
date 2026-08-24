@@ -72,7 +72,8 @@ export const relatedCommand: WorkspaceCommandSpec = {
     "neighbour and appears as one. Every id printed is a document that exists and can be read: " +
     "references to documents nobody has created yet are real in the corpus but are not offered " +
     "here. Archived neighbours are excluded by default, like every list — `--include-archived` " +
-    "widens the set. An id that names no document is the server's `404`, which is exit 5, and " +
+    "widens the set.\n\n" +
+    "An id that names no document is the server's `404`, which is exit 5, and " +
     "a document nothing relates to is a single honest line and exit 0.",
   args: [{ name: "id", required: true, description: "The document to expand from." }],
   flags: [

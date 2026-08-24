@@ -123,6 +123,22 @@ export function createOutput(options: OutputOptions): Output {
  * step's human lines are passed through indented, because a person watching an
  * upgrade wants to see `stopped (pid 4711)` as it happens. Nothing reaches
  * stdout that the parent did not choose to put there.
+ *
+ * **`json` reports the invocation's mode, and always did have to** (CLI-068).
+ * It was hardcoded `false` here, which conflated two different things: *a step
+ * may not print a JSON document* — true, and enforced structurally below, since
+ * `emit` captures and `write` routes through `line` — with *this invocation is
+ * in human mode*, which is the parent's fact and is not the nested output's to
+ * invent. A handful of commands read `out.json` to choose what they produce
+ * rather than merely how they print it, and every one of them was told the
+ * wrong answer inside `corpus batch --json`: `queue claim-all` writes its
+ * payload with `out.write` in human mode, so under a `--json` batch it took the
+ * human branch, its claim went to the suppressed human channel, and the report
+ * said `value: null` for a command that had just claimed the queue. `doc list
+ * --fields` refused itself for want of a `--json` that was present, and `server
+ * logs --follow` streamed forever instead of being refused. Propagating the
+ * parent's mode fixes all four at the source. Nothing here lets a step print:
+ * that is the mechanism's job, not the flag's.
  */
 export interface NestedOutput {
   readonly output: Output;
@@ -140,10 +156,11 @@ export function createNestedOutput(parent: Output, prefix = "  "): NestedOutput 
     value: () => value,
     lines: () => lines,
     output: {
-      // The nested command must not decide to print JSON: whether this run has a
-      // machine-readable result is the *parent's* question, and its answer is
-      // one value for the whole composite.
-      json: false,
+      // The invocation's mode, unaltered. A step must not *print* JSON, and it
+      // cannot: `emit` captures and `write` routes through `line`. Telling it
+      // the mode was human in order to secure that was the CLI-068 defect — a
+      // command that chooses its payload by the mode then chose the wrong one.
+      json: parent.json,
       color: parent.color,
       emit(next: unknown): void {
         value = next;

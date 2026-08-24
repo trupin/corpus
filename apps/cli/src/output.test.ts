@@ -180,8 +180,56 @@ describe("a nested output, for a command run as a step of another", () => {
     expect(sink.stderr.join("")).toBe("  the server still holds 1 event in-progress\n");
   });
 
-  it("never lets a step decide to print JSON", () => {
-    const nested = createNestedOutput(collector().out(true));
-    expect(nested.output.json).toBe(false);
+  /**
+   * CLI-068. `json` was hardcoded `false` here to stop a step printing a JSON
+   * document, and it stopped nothing — `emit` captures and `write` routes
+   * through `line`, so the printing is already impossible by construction. What
+   * the lie did instead was tell every command that reads `out.json` to decide
+   * *what* it produces that the invocation was in human mode, inside a
+   * `corpus batch --json` that was not.
+   */
+  it("reports the parent's mode rather than inventing a human one", () => {
+    expect(createNestedOutput(collector().out(true)).output.json).toBe(true);
+    expect(createNestedOutput(collector().out(false)).output.json).toBe(false);
+  });
+
+  it("still lets no step print JSON under a --json parent, mode or no mode", () => {
+    // The property the hardcoded `false` was reaching for, held by the
+    // mechanism: the step's value is captured, and the parent's stdout stays
+    // the parent's to spend.
+    const sink = collector();
+    const parent = sink.out(true);
+    const nested = createNestedOutput(parent);
+
+    nested.output.emit({ events: [{ id: "evt_1" }] });
+    nested.output.write('{"events":[{"id":"evt_1"}]}\n');
+    nested.output.line("a human line");
+
+    expect(sink.stdout).toEqual([]);
+    expect(nested.value()).toEqual({ events: [{ id: "evt_1" }] });
+  });
+
+  /**
+   * The shape of `queue claim-all`, which writes its payload with `write` when
+   * the mode is human and emits it when the mode is `--json`. Under the old
+   * hardcoded `false` it took the human branch inside a `--json` batch, and its
+   * claim reached the channel a `--json` parent suppresses.
+   */
+  it("gives a mode-branching step the branch the invocation asked for", () => {
+    const payload = { events: [{ id: "evt_sxgnzdvfb747" }] };
+    const step = (out: ReturnType<typeof createNestedOutput>["output"]): void => {
+      if (out.json) out.emit(payload);
+      else out.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    const underJson = createNestedOutput(collector().out(true));
+    step(underJson.output);
+    expect(underJson.value()).toEqual(payload);
+    expect(underJson.lines()).toEqual([]);
+
+    const underHuman = createNestedOutput(collector().out(false));
+    step(underHuman.output);
+    expect(underHuman.value()).toBeUndefined();
+    expect(underHuman.lines()).toEqual(['{"events":[{"id":"evt_sxgnzdvfb747"}]}']);
   });
 });

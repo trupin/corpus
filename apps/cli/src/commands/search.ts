@@ -118,6 +118,11 @@ export const searchCommand: WorkspaceCommandSpec = {
         "The same structured filters `corpus doc list` takes, narrowing the ranking rather than enumerating what matched.",
     },
     {
+      command: 'corpus search "reconcile in-progress" --type skill',
+      description:
+        "Name the type you want and the ranking is confined to it, so the hits are installed skills rather than whatever else says `reconcile`. This is the genesis lookup the comment skill makes before it writes a new skill.",
+    },
+    {
       command: 'corpus search "deadline" --json',
       description:
         'One JSON value: `{"hits":[{"id":"doc_a1b2c3","title":"Mortgage options",' +

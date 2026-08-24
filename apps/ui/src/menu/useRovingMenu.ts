@@ -50,10 +50,22 @@ export interface RovingMenuProps {
   readonly onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }
 
-/** The enabled items, in document order — what the arrow keys walk. */
+/**
+ * The enabled items, in document order — what the arrow keys walk.
+ *
+ * `menuitemradio` is included because an item that states a choice is an item:
+ * `MenuAction.checked` gives one that role, and a selector matching only
+ * `menuitem` would have left the designation's weight rows reachable by pointer
+ * alone — the same one-affordance-short defect UI-167 is about, one role
+ * attribute deeper.
+ */
 export function menuItems(menu: HTMLElement | null): HTMLElement[] {
   if (menu === null) return [];
-  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')];
+  return [
+    ...menu.querySelectorAll<HTMLElement>(
+      '[role="menuitem"]:not([disabled]),[role="menuitemradio"]:not([disabled])',
+    ),
+  ];
 }
 
 export function useRovingMenu(

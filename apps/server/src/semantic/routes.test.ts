@@ -185,3 +185,42 @@ describe("POST /api/index/rebuild", () => {
     expect(response.status).toBe(202);
   });
 });
+
+/**
+ * SERVER-116, over the wiring rather than over the announcer. The unit block in
+ * `announce.test.ts` proves the rule; this proves that `app.ts` and
+ * `worker-attach.ts` actually hand the two emitters the one announcer, which is
+ * the half a unit test cannot see.
+ */
+describe("the index's state word reaches the surfaces that embed a copy of it", () => {
+  const framesOf = (server: CorpusServer): { keys: string[] } => {
+    const keys: string[] = [];
+    server.bus.subscribe((batch) => {
+      for (const key of batch) keys.push(JSON.stringify(key));
+    });
+    return { keys };
+  };
+
+  it("announces the board's prefix on a rebuild's edges and not otherwise", async () => {
+    boot();
+    useEngine();
+    // The word settles before anything is watched, so what follows is a
+    // transition and not a first reading.
+    expect((await request("/api/index/status")).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const frames = framesOf(server);
+    const response = await request("/api/index/rebuild", { method: "POST" });
+    expect(response.status).toBe(202);
+    // The rebuild's own drain is detached, so let it finish and lower the flag.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // `["index"]` on every announcement, as always — and `["docs"]` only where
+    // the word moved, which is what an open search overlay is waiting for.
+    expect(frames.keys).toContain(JSON.stringify(["index"]));
+    expect(frames.keys).toContain(JSON.stringify(["docs"]));
+    expect(frames.keys.filter((key) => key === JSON.stringify(["docs"])).length).toBeLessThan(
+      frames.keys.filter((key) => key === JSON.stringify(["index"])).length + 1,
+    );
+  });
+});

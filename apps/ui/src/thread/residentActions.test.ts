@@ -6,12 +6,17 @@ import {
   designatedNotice,
   residentActions,
   DESIGNATE_LABEL,
+  DESIGNATE_META,
   GENERAL_META,
+  LEVEL_WEIGHT_META,
   NO_PROFILES_LABEL,
   NO_PROFILES_META,
+  REDESIGNATE_GENERAL_LABEL,
   RELEASE_GENERAL_LABEL,
   RELEASE_META,
   REPLACE_GENERAL_LABEL,
+  UNDECLARED_WEIGHT_META,
+  WEIGHT_LABEL_LEAD,
   type ResidentActionsInput,
 } from "./residentActions";
 
@@ -63,12 +68,26 @@ function input(overrides: Partial<ResidentActionsInput> = {}): ResidentActionsIn
       { id: "doc_b", name: "editor" },
     ],
     pending: false,
+    // The default is a workspace that declares **nothing**, which is the
+    // shipping state for any workspace on a template older than AGENT-015 — so
+    // every assertion written before UI-168 goes on describing a menu with no
+    // weight rows, and the rows are opted into by the tests that are about them.
+    levels: [],
+    weight: undefined,
+    onChooseWeight: vi.fn(),
     onDesignateGeneral: vi.fn(),
     onDesignate: vi.fn(),
     onRelease: vi.fn(),
     ...overrides,
   };
 }
+
+/** A declaration in the shape `weightLevels.ts` parses out of the tier table. */
+const LEVELS = [
+  { label: "Small and mechanical", key: "light" },
+  { label: "Standard", key: "standard" },
+  { label: "Heavy or judgment-laden", key: "heavy" },
+] as const;
 
 const ids = (actions: readonly { readonly id: string }[]): readonly string[] =>
   actions.map((action) => action.id);
@@ -154,12 +173,14 @@ describe("residentActions", () => {
     expect(designate?.meta).toBe(GENERAL_META);
   });
 
-  it("designates with no profile, naming nobody", () => {
+  it("designates with no profile and no level, naming nobody and stating nothing", () => {
     const onDesignateGeneral = vi.fn();
     const onDesignate = vi.fn();
     const actions = residentActions(input({ agents: [], onDesignateGeneral, onDesignate }));
     actions[0]?.run(() => undefined);
-    expect(onDesignateGeneral).toHaveBeenCalledWith();
+    // `undefined` and not a key: absence is what the launcher-decides case is,
+    // and it is what the hook turns into an absent `weight` on the wire.
+    expect(onDesignateGeneral).toHaveBeenCalledWith(undefined);
     expect(onDesignate).not.toHaveBeenCalled();
   });
 
@@ -209,11 +230,11 @@ describe("residentActions", () => {
     expect(actions[1]?.label).toBe("Designate researcher");
   });
 
-  it("designates by the name and nothing else", () => {
+  it("designates by the name, and states no level where none was chosen", () => {
     const onDesignate = vi.fn();
     const actions = residentActions(input({ onDesignate }));
     actions[2]?.run(() => undefined);
-    expect(onDesignate).toHaveBeenCalledWith("editor");
+    expect(onDesignate).toHaveBeenCalledWith("editor", undefined);
   });
 
   /**
@@ -413,6 +434,198 @@ describe("residentActions", () => {
   it("disables the general offer too while one is in flight", () => {
     const actions = residentActions(input({ agents: [], pending: true }));
     expect(actions[0]?.disabled).toBe(true);
+  });
+});
+
+/**
+ * UI-168: the level a resident runs at, chosen where the designation is made —
+ * SPEC.md §7's rider signed 2026-08-19, and the only place the choice exists.
+ */
+describe("the designation's weight", () => {
+  const weightIds = (actions: readonly { readonly id: string }[]): readonly string[] =>
+    ids(actions).filter((id) => id.startsWith("resident-weight-"));
+
+  /**
+   * The shipping state for any workspace on a template older than AGENT-015, and
+   * for one whose table is unreadable. It is not an edge case: `weightLevels.ts`
+   * fails **clean**, so "declares nothing" and "declares something malformed"
+   * are one answer, and both must still designate.
+   */
+  it("offers no rows at all where the workspace declares no levels", () => {
+    const actions = residentActions(input({ levels: [] }));
+    expect(weightIds(actions)).toEqual([]);
+    expect(ids(actions)).toContain("resident-designate-general");
+  });
+
+  it("offers the workspace's own levels, lightest first, after the acts", () => {
+    const actions = residentActions(input({ levels: LEVELS }));
+    expect(ids(actions)).toEqual([
+      "resident-designate-general",
+      "resident-designate-doc_a",
+      "resident-designate-doc_b",
+      "resident-weight-launch",
+      "resident-weight-light",
+      "resident-weight-standard",
+      "resident-weight-heavy",
+    ]);
+  });
+
+  /**
+   * The label a person picks by is the guidance's **Weight** cell; the key is
+   * what travels. That split is what makes a rewording of the table safe, and it
+   * is also §10's "no model names in the UI" holding by construction — this
+   * module has no vocabulary of its own to leak one.
+   */
+  it("shows the declared label and never the key", () => {
+    const rows = residentActions(input({ levels: LEVELS }));
+    const heavy = rows.find((action) => action.id === "resident-weight-heavy");
+    expect(heavy?.label).toBe(`${WEIGHT_LABEL_LEAD} Heavy or judgment-laden`);
+    expect(heavy?.label).not.toContain("heavy");
+  });
+
+  /**
+   * "The launcher decides" is a named outcome the contract reports back
+   * (`Resident.weight` null), so it is a row that can be chosen — not a state
+   * reachable only by never pressing anything, which would leave a person who
+   * pressed a level with no way back and make every designation opinionated.
+   */
+  it("stands on the launcher's choice until a level is pressed, and comes back to it", () => {
+    const onChooseWeight = vi.fn();
+    const none = residentActions(input({ levels: LEVELS, onChooseWeight }));
+    const launch = none.find((action) => action.id === "resident-weight-launch");
+    expect(launch?.checked).toBe(true);
+    expect(none.find((action) => action.id === "resident-weight-heavy")?.checked).toBe(false);
+
+    const chosen = residentActions(input({ levels: LEVELS, weight: "heavy", onChooseWeight }));
+    expect(chosen.find((action) => action.id === "resident-weight-launch")?.checked).toBe(false);
+    expect(chosen.find((action) => action.id === "resident-weight-heavy")?.checked).toBe(true);
+
+    chosen.find((action) => action.id === "resident-weight-launch")?.run(() => undefined);
+    expect(onChooseWeight).toHaveBeenCalledWith(undefined);
+    chosen.find((action) => action.id === "resident-weight-heavy")?.run(() => undefined);
+    expect(onChooseWeight).toHaveBeenLastCalledWith("heavy");
+  });
+
+  /**
+   * A row states what the **act above** will send, so a press that closed the
+   * menu would have taken the act away with the choice.
+   */
+  it("keeps the menu open on every row, because the act is still to come", () => {
+    const rows = residentActions(input({ levels: LEVELS })).filter((action) =>
+      action.id.startsWith("resident-weight-"),
+    );
+    expect(rows).toHaveLength(4);
+    expect(rows.every((row) => row.keepOpen === true)).toBe(true);
+  });
+
+  /** An act names the level it will send, so the item describes its own write. */
+  it("names the chosen level on every act, and nothing where none is chosen", () => {
+    const plain = residentActions(input({ levels: LEVELS }));
+    expect(plain[0]?.meta).toBe(GENERAL_META);
+    expect(plain[1]?.meta).toBe(DESIGNATE_META);
+
+    const heavy = residentActions(input({ levels: LEVELS, weight: "heavy" }));
+    expect(heavy[0]?.meta).toBe(`${GENERAL_META} — at Heavy or judgment-laden`);
+    expect(heavy[1]?.meta).toBe(`${DESIGNATE_META} — at Heavy or judgment-laden`);
+  });
+
+  it("carries the chosen key to whichever act is run", () => {
+    const onDesignateGeneral = vi.fn();
+    const onDesignate = vi.fn();
+    const actions = residentActions(
+      input({ levels: LEVELS, weight: "light", onDesignateGeneral, onDesignate }),
+    );
+    actions[0]?.run(() => undefined);
+    expect(onDesignateGeneral).toHaveBeenCalledWith("light");
+    actions[1]?.run(() => undefined);
+    expect(onDesignate).toHaveBeenCalledWith("researcher", "light");
+  });
+
+  /**
+   * **"Same profile, new level" is not a no-op** — the skip that suppresses a
+   * write with no effect must not suppress this one. The server writes it and
+   * reports it (`threads/resident.ts`: *"a different weight is a different
+   * state, so it writes"*), and a menu that hid the act would make re-weighing
+   * unreachable on exactly the conversation somebody wanted to re-weigh.
+   */
+  it("re-offers a general resident at a different level, and calls it a re-designation", () => {
+    const general = { ...GENERAL, weight: null };
+    const same = residentActions(input({ levels: LEVELS, resident: general }));
+    expect(ids(same)).not.toContain("resident-designate-general");
+
+    const different = residentActions(
+      input({ levels: LEVELS, resident: general, weight: "heavy" }),
+    );
+    const act = different.find((action) => action.id === "resident-designate-general");
+    expect(act?.label).toBe(REDESIGNATE_GENERAL_LABEL);
+    expect(act?.label).not.toContain("Replace");
+  });
+
+  it("re-offers the resident's own profile at a different level, without calling it a swap", () => {
+    const resident = { ...RESIDENT, profileDoc: "doc_a", weight: "light" };
+    const same = residentActions(input({ levels: LEVELS, resident, weight: "light" }));
+    expect(ids(same)).not.toContain("resident-designate-doc_a");
+
+    const different = residentActions(input({ levels: LEVELS, resident, weight: "heavy" }));
+    const act = different.find((action) => action.id === "resident-designate-doc_a");
+    expect(act?.label).toBe("Re-designate researcher");
+    // Every other profile is still a replacement — the change is one row wide.
+    expect(different.find((action) => action.id === "resident-designate-doc_b")?.label).toBe(
+      "Replace with editor",
+    );
+  });
+
+  /**
+   * The direction that is easy to get backwards. Omitting the weight **clears**
+   * it server-side, so going from a stated level back to the launcher's choice
+   * is a real write and the act has to stay offered.
+   */
+  it("re-offers a weighted resident at the launcher's choice, which clears the level", () => {
+    const resident = { ...GENERAL, weight: "heavy" };
+    const back = residentActions(input({ levels: LEVELS, resident, weight: undefined }));
+    expect(ids(back)).toContain("resident-designate-general");
+
+    const unchanged = residentActions(input({ levels: LEVELS, resident, weight: "heavy" }));
+    expect(ids(unchanged)).not.toContain("resident-designate-general");
+  });
+
+  /**
+   * The table is the workspace's own and can be edited under a standing
+   * designation, so a resident's recorded level may name a row that no longer
+   * exists. Dropping it would leave a radio set with **nothing** checked and a
+   * resident whose level the menu refuses to name; substituting a surviving
+   * level would be the menu lying about the request.
+   */
+  it("keeps a level the guidance stopped declaring, and says so", () => {
+    const actions = residentActions(input({ levels: LEVELS, weight: "exhaustive" }));
+    const rows = actions.filter((action) => action.id.startsWith("resident-weight-"));
+    // Exactly one member of the set holds, and it is the recorded one.
+    expect(rows.filter((row) => row.checked === true).map((row) => row.id)).toEqual([
+      "resident-weight-exhaustive",
+    ]);
+    const undeclared = rows.find((row) => row.id === "resident-weight-exhaustive");
+    // No label to show but its own key — true, rather than invented.
+    expect(undeclared?.label).toBe(`${WEIGHT_LABEL_LEAD} exhaustive`);
+    expect(undeclared?.meta).toBe(UNDECLARED_WEIGHT_META);
+    expect(rows.find((row) => row.id === "resident-weight-heavy")?.meta).toBe(LEVEL_WEIGHT_META);
+    // …and the act names what it will actually send rather than staying silent.
+    expect(actions[0]?.meta).toBe(`${GENERAL_META} — at exhaustive`);
+  });
+
+  it("disables the rows while a designation is in flight", () => {
+    const rows = residentActions(input({ levels: LEVELS, pending: true })).filter((action) =>
+      action.id.startsWith("resident-weight-"),
+    );
+    expect(rows.every((row) => row.disabled === true)).toBe(true);
+  });
+
+  /**
+   * §7 forbids a resident on a thread with a parent, so there is nothing to
+   * weigh either — the rows must not survive the gate the acts do not.
+   */
+  it("offers nothing on a thread that may not have a resident", () => {
+    expect(residentActions(input({ levels: LEVELS, hasParent: true }))).toEqual([]);
+    expect(residentActions(input({ levels: LEVELS, rosterAnswered: false }))).toEqual([]);
   });
 });
 

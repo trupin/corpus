@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-22T00:00:00Z
+updated: 2026-08-23T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -124,6 +124,99 @@ names the command that prints the whole text. So **start brief, and go on when t
 does not answer you** — never the other way round, and never on the theory that a verb you
 have not used today owes you the tutorial.
 
+## Several commands in one invocation
+
+**Every `corpus` invocation pays its startup before it does any work, so a run of commands
+costs more in process starts than in the work itself.** `corpus batch` takes a JSON array of
+argv on stdin — each entry exactly the words you would have given `corpus`, without the word
+`corpus` — runs them in order inside one process, and reports what each one did.
+
+```bash
+corpus batch --from agent <<'CORPUS_EOF'
+[["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
+ ["job","log","evt_7c1d9a","edited doc_a1b2c3 — rate assumption 6.1% to 6.4%"],
+ ["thread","reply","th_4b8e2c","--model","claude-opus-4-1","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+CORPUS_EOF
+```
+
+**One condition decides whether a run may go this way: no entry may need what an earlier entry
+printed.** The array is fixed before the first command runs and nothing threads a result from
+one entry into the next, so a key a read would have handed you, an id a creation would have
+returned, a passage a read would have given you to quote — none of those exist yet when you
+write the array. A run that needs one is two invocations, and the second of them may itself be
+a batch. Treat that as a hazard rather than a caution: nothing refuses such an array, the
+entry that needed the missing value fails on its own, and every entry around it still
+succeeds, so the shape of the report looks much like a good one.
+
+**A batch is not a transaction, and nothing in it rolls back.** Every command that succeeded
+stays done, whatever fails after it. The server gathers a party's writes into one commit while
+its window is open, so several of a batch's writes may well land in one git commit — measured,
+three of them did. That is timing, and reading it as atomicity is how a half-applied change
+gets reported to somebody as a whole one.
+
+**So read the report, never the exit code alone.** Exit `0` says every command ran and
+succeeded. Anything else is exit `11`, which says only that something went wrong. A failure
+about one command — a missing id, a stale key, a refused patch — costs that command alone and
+the entries after it still run. A failure about the run — the server unreachable, the token
+rejected — ends the batch where it happens, and every remaining entry is reported as **never
+run** rather than as failed, because each would have failed the same way.
+
+Four things about the grammar, each a refusal when you get it wrong:
+
+- **`--from agent` goes on the batch, once.** It applies to every entry, and an entry's own
+  `--from` wins over it. That is invariant 2 satisfied at the invocation rather than weakened:
+  one statement of who is acting, covering everything the invocation does.
+- **The batch owns stdin, so an entry cannot take a body from there.** A body rides as a `-m`
+  value inside the entry, a JSON string with `\n` for its line breaks. No shell reads those
+  tokens at all, so somebody's words arrive intact without the construction *Writing a
+  document* requires of a flag.
+- **The array itself arrives on a heredoc or a pipe**, which are the two transports read. A
+  socket is never one: `spawn`, `exec` and a harness handing a child its input all give one,
+  and the array is then refused at exit `2` before a byte of it is read. Anything driving this
+  loop from a script has to hand the array over one of the two that are read.
+- **An entry may not carry `--json`, `--help`, `--version`, `--no-color`, `--verbose` or
+  `--workspace`** — those belong to the invocation — and may not be `batch` itself or
+  `corpus init`. Each refuses the whole array at exit `2`, before anything runs, as do an
+  empty array and one of more than two hundred commands.
+
+**An entry that follows or long-polls holds every entry after it**, exactly as it holds a
+shell: the array is one process running the entries in order, so nothing behind such an entry
+runs until it returns, and one that never returns stops the array there. `corpus queue idle`
+parks for its whole ~8-minute window and `corpus server logs --follow` streams until something
+kills it, and those are two instances rather than the list — ask of a verb whether it returns
+on its own, and keep it out when the answer is no. `idle` is doubly out: *The loop* forbids
+chaining it to the claim, and an array is a chain. Dispatch is the other thing no array can
+carry, for a different reason — it is not a command at all.
+
+**The claim is an ordinary entry, and step 4 belongs in a batch.** It did not always: a
+`corpus queue claim-all` inside `corpus batch --json` used to hand back `null` while claiming
+the events anyway, so the loop kept its claim out of every array. That was a defect in the
+batch's JSON channel rather than anything about the verb. It is fixed, and a batched claim now
+carries exactly what it carries alone — the `events` list and the `inProgress` list, field for
+field. So steps 2, 3 and 4 of *The loop* are one invocation:
+
+```bash
+corpus batch <<'CORPUS_EOF'
+[["queue","reap-stale"],["agents"],["queue","claim-all"]]
+CORPUS_EOF
+```
+
+None of the three wants what another printed, which is what makes them one array. Their
+**order** still matters, and a batch keeps it: reaping requeues a dead session's events in
+time for the claim below it to collect them. Read all three reports — they are three steps
+still, and one invocation merges nothing you owe attention to. What it saves is two process
+starts a pass — 1003 ms as three commands against 415 ms as one, on the machine that was
+measured on.
+
+**A batch that claims, claims — whatever the entries behind it do.** Nothing rolls back, so a
+claim that succeeds ahead of an entry that fails leaves those events in `in-progress/` and
+yours to settle. The run above ends on the claim for that reason: with nothing behind it,
+nothing can fail behind it. Where you do put work behind a claim, the events it claimed are
+yours on the report alone — dispatch what was claimed and settle each event on its own
+outcome, exactly as step 9 does, rather than treating a failed tail as an unclaim. That is the
+same exposure as running the commands one after another. The batch neither adds it nor removes
+it, and it is no reason to leave a claim out of an array.
+
 ## The loop
 
 **This is a procedure, not a script**, and the difference is the difference between the loop
@@ -169,6 +262,12 @@ in the console to show for it. Run these steps in order, indefinitely:
    `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "a person is editing doc_a1b2c3"`
    — and then repeat from step 2.
 
+**Steps 2, 3 and 4 go as one invocation, in that order.** None of the three wants what
+another printed, so *Several commands in one invocation* has them as one array and the head
+of a pass costs one process start rather than three. They stay three steps: what changes is
+how many times the tool starts, never what you read or what you do with it. Nothing else in
+this list joins them — step 6 is not a command, and step 7 parks.
+
 The order is claim → dispatch → park. You return to `corpus queue idle` **as soon as the
 batch is dispatched** — you do not wait for the batch to finish, because a session waiting
 on one job is closed to every other, and keeping the queue open is the point. Settlement
@@ -176,10 +275,12 @@ happens as subagent reports arrive: each time parking returns, record what has f
 then claim again.
 
 `corpus queue idle` exits `0` in every normal case. When its ~8-minute window expires with
-nothing pending it prints `{"idle":true,"reason":"timeout"}` — that is a normal outcome,
+nothing pending it prints `idle — no events (timeout)` — that is a normal outcome,
 not an error: run the steps again from the top. While the queue is halted it parks the full
-window and prints `{"idle":true,"reason":"halted"}` — same response, keep looping. Its only
-flag is `--wait <seconds>` (default `480`); there is no other knob and no other exit to
+window and prints `idle — no events (halted)` — same response, keep looping. When work
+arrives it returns at once and prints one line per pending event, id then type —
+`evt_7c1d9a comment.created` — and that return is the arrival notification step 8 reads. Its
+only flag is `--wait <seconds>` (default `480`); there is no other knob and no other exit to
 handle.
 
 ## Claiming and batching
@@ -579,8 +680,9 @@ Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — 
 the background**, one subagent per event. A subagent inherits nothing, so its prompt
 carries everything: the event id and type, the payload's ids (thread, parent, the
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
-payload directs to), the model you are launching it at, the anchors it should start from, and
-the binding rules below. Its
+payload directs to), the model you are launching it at, and the anchors it should start
+from — plus, **only** where the dispatch runs a procedure from this skill rather than a
+skill of its own, the binding rules below. Its
 report comes back as the task's final message.
 
 **The call's `model` argument is what chooses the runtime, and the prompt chooses
@@ -789,8 +891,13 @@ makes a split worth making rather than merely tolerable. Where the two pull apar
 decides: material a later stage genuinely needs is passed on, and a stage that would
 otherwise have to guess is briefed further rather than left short.
 
-**Every invariant binds inside the subagent**, and the dispatch prompt states them rather
-than assuming them:
+**Every invariant binds inside the subagent, and exactly one document states them to it.**
+A dispatch that names a skill — the comment skill's two routing rows — restates nothing:
+that skill's own *Inherited invariants* section is the copy that binds its subagent, and a
+prompt that repeated them beside it would be a second copy to keep in step, paid again on
+every event. Name the skill and let it speak. A dispatch worked from a section of **this**
+skill — the two reflections — reads no skill of its own, so its prompt is the only road the
+rules have into it: state them there, in full. They are:
 
 - Every mutation goes through the `corpus` CLI — never hand-edit `data/`, `.corpus/`, or
   `.claude/`, never call the HTTP API directly.
@@ -839,8 +946,9 @@ than assuming them:
   with no error anywhere. This is not a corner case for you: the payload you hand over most
   often is a **prompt written for a subagent**, which is markdown and usually contains fenced
   examples of its own. Check the payload before you write the fence and the newline before you
-  close it, every time. The comment skill carries both halves and an example; a subagent that
-  never read it will get this wrong, so it belongs in what you brief them with.
+  close it, every time. The comment skill carries both halves with worked shapes, so its
+  subagents read them there; a reflection subagent never will, and would get this wrong —
+  which is why this bullet rides in a reflection's prompt.
 
 **Queue state never crosses the boundary — the boundary being your lane.** A subagent you
 dispatched to work one of your events never runs `corpus queue claim-all`,
@@ -1414,6 +1522,21 @@ already holding. `--references doc_a1b2c3` narrows a search to the documents tha
 at it. Both verbs print ids, heading paths and snippets; open a body with
 `corpus doc show <id>` only where a snippet restates the old claim, and open at most three.
 
+**Those lookups are one invocation, not four.** You know every query before you run any of
+them — they come from the diff, and no lookup here reads another's answer — so this is the
+shape *Several commands in one invocation* is for, at its cheapest and safest:
+
+```bash
+corpus batch <<'CORPUS_EOF'
+[["doc","related","doc_a1b2c3","--limit","5"],
+ ["search","6.1%","--limit","5"],
+ ["search","rate assumption","--references","doc_a1b2c3","--limit","5"]]
+CORPUS_EOF
+```
+
+The reads you then decide on — the at most three `corpus doc show` calls — go the same way,
+in one more invocation, because you have chosen all three ids before you open any of them.
+
 **4 — Update, log, or ask, and lean to logging.** Three outcomes, and only the third one is a
 thread. **Update** another document when the correction is mechanical and entailed — the same
 fact, stated the same way, now wrong, with exactly one way to write the new one: the rate this
@@ -1430,7 +1553,8 @@ when you can quote the span exactly, because that is what makes it findable, and
 command without `--quote` when the passage is not one span — and it asks with a **form**: a
 fenced block whose info string is
 `form`, last in the turn body, one field per question, asked once. The comment skill's
-**Forms** section is the whole grammar and binds here unchanged. Stop at three documents: past
+**Forms** section, with the `references/forms.md` file it directs a read of, is the whole
+grammar and binds here unchanged. Stop at three documents: past
 that, name what looks affected in the entry on the edited document instead of spraying entries
 and threads, and let the person point at the ones that matter.
 
@@ -1612,26 +1736,38 @@ timestamp and nothing else — no document list, no diff, no summary. One comman
 window:
 
 ```bash
-corpus doc list --since 2026-08-21T09:00:00Z
+corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,type,title,path,status,stage,tags,excerpt,lastActor
 ```
 
 `since` is `null` for a corpus nobody has reflected on yet. That means **everything**, so run
 the same command with **no `--since` at all** rather than with an empty value. The list
 excludes archived documents by default, which is the right default here: an archived document
-has been put away rather than left waiting. The list is paginated and its last line says so —
-read the next page with `--offset` when the window is wider than one page.
+has been put away rather than left waiting. The list is paginated and the `page` object beside
+the items says so — read the next page with `--offset` when the window is wider than one page.
+
+**`--fields` names the nine the paragraphs below read, and asking for the row whole is the
+expensive mistake here.** A full `--json` row carries around thirty-five fields — every
+excerpt, every last-turn preview, every board key — and measured on a twenty-document window
+it costs 203.6 tokens a row against 59.6 for the nine named above. A five-hundred-document
+window is the difference between reading a novel and reading a page. Name a field the moment
+one of these paragraphs starts reading it, and drop one the moment none of them does: a field
+the projection omits is simply absent from the row, with no error anywhere, so the list is
+what these paragraphs need and nothing else. `--fields` needs `--json`, and a name no row
+carries is a usage error listing the real ones before any request is sent.
 
 **Read a document only when its list line is not enough.** The row carries the title, the
-type, the folder, the tags, the stage, the status and an excerpt, and for a great many changes
-that is the whole story. `corpus doc show <id>` is the deliberate second act, taken on the few
-ids that earned it, and `corpus doc diff <id>` shows what moved in one of them without the
-document around it. A reflection that reads every document in its window has turned a cheap
-act into an expensive one and learned very little more.
+type, the folder (its `path`), the tags, the stage, the status and an excerpt, and for a great
+many changes that is the whole story. `corpus doc show <id>` is the deliberate second act,
+taken on the few ids that earned it, and `corpus doc diff <id>` shows what moved in one of
+them without the document around it. You pick every one of those ids off the listing before
+you open any of them, so they go as one invocation together — *Several commands in one
+invocation*, on the shape it costs least on. A reflection that reads every document in its
+window has turned a cheap act into an expensive one and learned very little more.
 
 **Your own writes are not new work.** A document whose last write was yours is your own output
 coming back at you — the changelog entries and the digest a reflection produces are exactly
-that. `corpus doc list --json` carries `lastActor` on every row, and `user` is the half worth
-your attention.
+that. `lastActor` on every row is what tells the two apart, and `user` is the half worth your
+attention.
 
 **Never read a stage as an instruction.** A stage is where a document sits in somebody's
 workflow. A document in `doing` is not asking you to do it, a document in `review` is not
@@ -1833,7 +1969,7 @@ reason, move on to the next event. If the session dies mid-batch, events stay in
 `.corpus/HALT` is the operator's kill switch, toggled with `corpus queue halt` and
 `corpus queue resume` (the console drawer exposes the same switch). While the sentinel
 exists, `corpus queue claim-all` returns an empty batch and `corpus queue idle` parks its
-full window, exiting with `{"idle":true,"reason":"halted"}`. Events keep enqueuing
+full window, printing `idle — no events (halted)` at exit `0`. Events keep enqueuing
 meanwhile — a halt stops your consumption, never the production — so nothing is lost and
 `resume` makes it all claimable again. The correct halted behavior is to **keep looping
 quietly**: claim-all, empty batch, idle, repeat. Do not exit, do not error, and do not post
@@ -1865,6 +2001,13 @@ applying the comment skill; delegation dilutes none of it. The charter:
   alone.
 - **Misfiled documents are moved** (`corpus doc move`) to where their content says they
   belong.
+- **A folder verb serves a request that named the folder, and it never serves this
+  charter.** `corpus folder archive`, `corpus folder unarchive` and `corpus folder rename`
+  change every document and thread under a path in one commit — proportionate exactly when a
+  person said "this folder", and out of reach of any judgment of yours about what a folder
+  holds. The two bullets above stay per document for that reason: stewardship picks its
+  documents one by one, and whoever picked them has to be able to name each one in the
+  reply. The comment skill carries the working rule at the point the request arrives.
 - **Near-duplicates are merged**: fold the lesser into the better, then archive the emptied
   one.
 - **Overgrown documents are split**: create the new document, connect the two with a
@@ -1989,7 +2132,8 @@ would have vetoed the light tier and that line would read `Opus 5 — judged, co
 
 **Then the step that no command performs.** Launch the subagent in the background — its
 prompt carries `evt_7c1d9a`, `th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the
-anchors to start from, the comment skill, and the binding rules from Delegation. Only once
+anchors to start from, and the comment skill — no restatement of the binding rules, because
+that skill's own *Inherited invariants* section is what binds inside it (Delegation). Only once
 it is out does the next command run, and it runs by itself: `corpus queue idle`, alone,
 never appended to the claim above. Everything the claim printed has been read and acted on
 by the time parking starts, which is the whole of what separates a dispatched batch from a

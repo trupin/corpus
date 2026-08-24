@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DocIdSchema, ThreadIdSchema } from "./id.js";
+import { DesignationIdSchema, DocIdSchema, ThreadIdSchema } from "./id.js";
 import { LaneSchema, ORCHESTRATOR_LANE } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
 import { REQUESTED_WEIGHT_MAX_LENGTH, RequestedWeightSchema } from "./weight.js";
@@ -178,6 +178,17 @@ export const RESIDENT_WEIGHT_BOUNDARY =
  * un-collidable, and a caller that wants a word for a general resident picks its
  * own, in its own language, at the one place it renders one.
  *
+ * ## A fourth field, about the designation rather than about the resident
+ *
+ * `designationId` is the identity of the **act** that put this resident here,
+ * and the three fields above are what that act asked for. It is here for one
+ * reader: a listener that was launched for one designation and needs to find
+ * out, without parsing anything written for a person, that the lane it sits on
+ * now serves a different one (CONTRACT-071). It is carried on `Resident`
+ * rather than beside it because both halves of that comparison are `Resident`s
+ * — the launch payload's and the roster row's — so a field here is read on both
+ * sides with nothing to keep in step.
+ *
  * ## Why a flat object, and not a union
  *
  * `{name: string, docId: string | null} | {name: null, docId: null}` would make
@@ -230,6 +241,34 @@ export const ResidentSchema = openapi(
           "A designation is long-lived, so a level the launcher cannot meet is not refused here " +
           "(the table is skill text the server never reads): the launcher reports it, per §7's " +
           "weight rider, in the listener's first reply.",
+      ),
+      designationId: DesignationIdSchema.nullable().describe(
+        "**Which designation this is** — an opaque id the server mints for the act, not for the " +
+          "agent (SPEC.md §7). It changes **exactly when the designation changes**: a " +
+          "re-designation that names a different profile, or the same profile at a different " +
+          "weight, is a different designation and gets a different id, while one that asks for " +
+          "the state already in force writes nothing, displaces nobody and keeps the id it had.\n\n" +
+          "**It exists to be compared, by the listener the designation launched.** A listener " +
+          "carries the id from the `resident.designated` it was launched with, and the lane's " +
+          "roster row carries the id in force now; where the two differ, the designation it " +
+          "serves has been replaced and a successor is or will be running. That comparison is " +
+          "the only machine-readable way to learn it — a replacement at the same weight leaves " +
+          "the lane present and the row in place, so nothing else on the row moves, and the " +
+          "row's rendered resident cell is written for a person and must never be parsed. What a " +
+          "listener then does is the converse skill's to state, not this contract's.\n\n" +
+          "**Not the id of the `resident.designated` event.** That event announces a " +
+          "designation and one designation may be announced more than once — re-designating is " +
+          "how a person asks for a listener that stopped to be started again, and each such call " +
+          "enqueues an event while the designation stands unchanged. An event id would therefore " +
+          "differ where nothing had been replaced, which is the one wrong answer this field must " +
+          "not give.\n\n" +
+          "**Opaque, and never rendered.** Nothing is encoded in it, two of them have no order, " +
+          "and no surface shows it to a person: equality is the only sound operation. **Null " +
+          "means there is no id to compare** — a designation made before the server recorded " +
+          "this, or a hand-written `resident:` block that omits it — and it is not a value. Two " +
+          "nulls are not evidence of the same designation, so a reader that meets one on either " +
+          "side has no answer and must do what it did before this field existed, rather than " +
+          "concluding that nothing changed.",
       ),
     })
     .refine((resident) => resident.name !== null || resident.docId === null, {
@@ -669,6 +708,24 @@ export function parseResidentDesignatedPayload(event: {
 
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type Resident = z.infer<typeof ResidentSchema>;
+
+/**
+ * A {@link Resident} **without its designation's identity** — what a designation
+ * asks for, as opposed to which designation asked.
+ *
+ * Written as an `Omit` of the published type rather than as a second schema, so
+ * a field added to `Resident` later lands here too and there is no shape to keep
+ * in step.
+ *
+ * It exists for one caller and one hazard. The server decides whether a
+ * `POST /api/threads/{id}/resident` writes at all by comparing what was asked
+ * for against what the thread already has, and `designationId` must never enter
+ * that comparison: it differs on every mint, so including it would make every
+ * re-designation a replacement — a write, a release event and a displaced
+ * listener where the request asked for the state that already held. Comparing
+ * `DesignatedResident`s makes that unspellable rather than merely documented.
+ */
+export type DesignatedResident = Omit<Resident, "designationId">;
 export type LaneOrigin = z.infer<typeof LaneOriginSchema>;
 export type AgentLane = z.infer<typeof AgentLaneSchema>;
 export type AgentRoster = z.infer<typeof AgentRosterSchema>;

@@ -12,7 +12,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { ALL_CONTRACT_ROUTES } from "@corpus/contract";
 import { createServer, type CorpusServer } from "../app.js";
+import { createContractPathMatcher } from "../middleware/route-path.js";
 import { DEFAULT_ATTACHMENT_LIMITS, type AttachmentLimits } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
 import type { StalenessThresholds } from "./staleness.js";
@@ -24,6 +26,214 @@ import {
   type ProjectionDb,
 } from "../projection/index.js";
 import { documentKey } from "./key.js";
+
+// ---------------------------------------------------------------------------
+// SERVER-119: every response this fixture returns is checked against the
+// statuses its operation declares.
+//
+// Three routes had shipped a status the contract did not declare —
+// `GET /api/queue/idle`'s `422` (CONTRACT-058), `PUT /api/docs/{id}`'s `403`
+// (CONTRACT-059), and three queue `409`s at once after SERVER-145
+// (CONTRACT-083) — and all of them were found by a person sweeping by hand,
+// once, while doing something else. The existing suite already *produced* each
+// of them: `roster.test.ts` asserts the 422, `provenance.test.ts` asserts the
+// 403, the queue suites assert the 409s. Nothing looked.
+//
+// **Why here and not in `packages/contract`.** CONTRACT-058 established that a
+// check there cannot work: it may not import `apps/server`, and nothing in the
+// document knows which statuses a handler reaches. CONTRACT-083 sharpened it —
+// a queue `409` is triggered by the event's current status on the server, which
+// appears in no request, in no response (`QueueEvent` publishes no `status`
+// field) and in no declaration, so no sweep over `openapi.json` can derive that
+// it is owed. The response seam is the only place the question is answerable.
+//
+// **What a green suite does not mean.** This turns the tests the repo already
+// has into the cross-check; it cannot see anything they do not exercise:
+//
+// - a route with no integration test says nothing here;
+// - a route the fixture never reaches with a given status says nothing about
+//   that status;
+// - the two **declared but unmounted** upgrade routes CONTRACT-058 found are
+//   the mirror image of this check and are invisible to it — they are declared
+//   statuses no handler returns, where this catches returned statuses no
+//   declaration names. `app.test.ts`'s mounted-route sweep is what covers that
+//   direction;
+// - **seventeen suites build their own server** with `createServer` rather than
+//   through this fixture, and are unchecked unless they call
+//   {@link checkDeclaredStatuses} themselves. One does — `queue/routes.test.ts`,
+//   because that is where CONTRACT-083's three `409`s were asserted green. The
+//   other sixteen are a known gap, not an oversight: wiring them is sixteen more
+//   files and this issue is deliberately one.
+//
+// A request whose path and method match no contract route is left alone, which
+// is how the static UI shell, `/events` and a deliberately unrouted path stay
+// testable.
+// ---------------------------------------------------------------------------
+
+interface ContractOperation {
+  readonly method: string;
+  readonly path: string;
+  readonly matches: (path: string) => boolean;
+  readonly statuses: ReadonlySet<number>;
+}
+
+/**
+ * Literal paths before parameterized ones, so `/api/docs/tree` is resolved as
+ * itself rather than as `/api/docs/{id}` with an odd id.
+ */
+const CONTRACT_OPERATIONS: readonly ContractOperation[] = ALL_CONTRACT_ROUTES.map((route) => ({
+  method: route.method.toUpperCase(),
+  path: route.path,
+  matches: createContractPathMatcher(route.path),
+  statuses: new Set(
+    Object.keys(route.responses)
+      .map(Number)
+      .filter((status) => Number.isFinite(status)),
+  ),
+})).sort((a, b) => Number(a.path.includes("{")) - Number(b.path.includes("{")));
+
+/**
+ * What `Hono.request` accepts, taken from the method itself rather than
+ * restated — a `lib.dom` `RequestInfo` is not in this workspace's globals, and a
+ * hand-written union would drift from the framework's.
+ */
+type RequestTarget = Parameters<CorpusServer["app"]["request"]>[0];
+
+/** The path a fixture request names, with any query string and origin removed. */
+const requestPath = (input: RequestTarget): string => {
+  const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const withoutQuery = raw.split("?")[0] ?? raw;
+  const withoutHash = withoutQuery.split("#")[0] ?? withoutQuery;
+  const scheme = withoutHash.indexOf("://");
+  if (scheme === -1) return withoutHash;
+  const afterOrigin = withoutHash.indexOf("/", scheme + 3);
+  return afterOrigin === -1 ? "/" : withoutHash.slice(afterOrigin);
+};
+
+const requestMethod = (input: RequestTarget, init: RequestInit | undefined): string =>
+  (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+
+/**
+ * The one status this cannot ask a route about, exempt for everyone rather than
+ * per test — and the reasoning, because a blanket exemption is the thing
+ * SERVER-119 asks not to be reached for lightly.
+ *
+ * `500` is the envelope `app.onError` puts on **any** unhandled throw, on any
+ * route, and no route in `packages/contract` declares it. The seven tests that
+ * reach it here all inject a filesystem failure on purpose and then assert
+ * SPEC.md §11's promise — the bytes survive, the folder is restored, the order
+ * does not half-apply. They are asserting recovery, not an interface.
+ *
+ * Two reasons it is a global exemption and not seven opt-outs. Whether a
+ * mutating route should *declare* `500` is a contract question, in another
+ * domain, over roughly sixty routes — a check in `apps/server` must not
+ * pre-judge it by making the suite red until someone does. And exempting it
+ * costs this check nothing against the class it exists for: CONTRACT-058's
+ * `422`, CONTRACT-059's `403` and CONTRACT-083's three `409`s are all statuses a
+ * handler *chose*, and every one of them is still caught.
+ *
+ * If the contract ever declares `500`, delete this and the check tightens by
+ * itself.
+ */
+const FRAMEWORK_ENVELOPE_STATUS = 500;
+
+/**
+ * Nesting depth of {@link withUndeclaredStatus}. A counter rather than a boolean
+ * so nesting cannot end the suspension early.
+ */
+let suspensions = 0;
+/** Undeclared statuses seen while suspended, so a stale opt-out is detectable. */
+let suspendedHits = 0;
+
+/**
+ * Runs `body` with the declared-status check suspended, for a call that
+ * deliberately reaches a response no operation declares.
+ *
+ * `reason` is required and is not decoration: it appears in the failure when the
+ * opt-out turns out to be unnecessary. An opt-out that stops being needed is a
+ * hole nobody is watching, so this **fails** rather than passing quietly —
+ * which is what keeps the escape hatch from spreading.
+ *
+ * Suspension is process-wide for its duration, so a `.concurrent` test in the
+ * same file could shelter under someone else's opt-out. Nothing in the suite is
+ * concurrent today, and the alternative — threading a flag through every
+ * request helper — would put the escape hatch on the hot path of every call.
+ */
+export async function withUndeclaredStatus<T>(reason: string, body: () => Promise<T>): Promise<T> {
+  const before = suspendedHits;
+  suspensions += 1;
+  let result: T;
+  try {
+    result = await body();
+  } finally {
+    suspensions -= 1;
+  }
+  if (suspendedHits === before) {
+    throw new Error(
+      `withUndeclaredStatus("${reason}") saw no undeclared status, so the opt-out is stale. ` +
+        "Remove it — leaving it in place hides the next one.",
+    );
+  }
+  return result;
+}
+
+/**
+ * Throws when a response carries a status its operation does not declare, in
+ * words that name the fix — which is a contract change, in another domain.
+ */
+function assertDeclaredStatus(
+  input: RequestTarget,
+  init: RequestInit | undefined,
+  status: number,
+): void {
+  if (status === FRAMEWORK_ENVELOPE_STATUS) return;
+  const method = requestMethod(input, init);
+  const path = requestPath(input);
+  const operation = CONTRACT_OPERATIONS.find(
+    (candidate) => candidate.method === method && candidate.matches(path),
+  );
+  if (operation === undefined || operation.statuses.has(status)) return;
+  if (suspensions > 0) {
+    suspendedHits += 1;
+    return;
+  }
+  const declared = [...operation.statuses].sort((a, b) => a - b).join(", ");
+  const message =
+    `${method} ${operation.path} answered ${status}, which the contract does not declare ` +
+    `(it declares ${declared}). The request was ${method} ${path}.\n` +
+    "Fix it in one of two ways: declare the status on that route in " +
+    "packages/contract/src/routes/ — a contract change, so route it to contract-dev — " +
+    "or stop returning it. Do not loosen this check.";
+  // Printed as well as thrown, because a caller can swallow the throw and the
+  // reader then loses the only sentence that says what to do. `roster.test.ts`
+  // is exactly that: its park helper is `done.catch(() => new Response(null,
+  // { status: 499 }))`, so the whole suite reports `expected 499 to be 422` and
+  // nothing else. This runs only on a real violation, so it is never noise.
+  console.error(message);
+  throw new Error(message);
+}
+
+/**
+ * Installs the check on one server, in place.
+ *
+ * {@link createWriteWorkspace} does it for every fixture it builds, which is
+ * most of the integration suite. Seventeen files call `createServer` themselves
+ * and are **not** covered unless they ask — `queue/routes.test.ts` does, because
+ * it is where CONTRACT-083's three undeclared `409`s were asserted and the
+ * reason this issue's case is made from three instances rather than one.
+ *
+ * The seam is `app.request` rather than the fixture's four helpers, because
+ * suites reach past those (`roster.test.ts` builds its park directly, and it is
+ * one of the two known-answer cases).
+ */
+export function checkDeclaredStatuses(server: CorpusServer): void {
+  const dispatch = server.app.request.bind(server.app);
+  server.app.request = async (input, init, env, executionCtx): Promise<Response> => {
+    const response = await dispatch(input, init, env, executionCtx);
+    assertDeclaredStatus(input, init, response.status);
+    return response;
+  };
+}
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 export const AUTH: Record<string, string> = { Authorization: `Bearer ${TOKEN}` };
@@ -175,6 +385,7 @@ export function createWriteWorkspace(
     now: () => state.clock,
     heartbeatMs: 0,
   });
+  checkDeclaredStatuses(server);
   // What `attachProjection` does in production: the queue's `events` table is a
   // mirror bound after construction, so without this an enqueue lands on disk
   // and never reaches the projection — a difference a thread test would

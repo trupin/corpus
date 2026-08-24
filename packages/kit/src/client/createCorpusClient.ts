@@ -8,6 +8,7 @@ import type {
   DeleteDocResult,
   DeleteFolderResult,
   DeleteTurnResult,
+  DesignateResidentRequest,
   Doc,
   DocList,
   DocMutationResponse,
@@ -543,10 +544,10 @@ export interface CorpusClient {
    * `POST /api/threads/{id}/resident` — **designate** a standalone thread's
    * resident agent (SPEC.md §7).
    *
-   * `name` is the invocable name, never a document id: the same resolution
+   * `input.name` is the invocable name, never a document id: the same resolution
    * `@<subagent>` mentions use, so a person designates by the word they already
    * type after a sigil. The response carries the thread with `resident` resolved
-   * to `{name, docId}`.
+   * to `{name, docId, weight}`.
    *
    * **Omitting `name` designates a general resident** — §7's ordinary case,
    * which names no profile and requires nothing to exist in the workspace first.
@@ -554,6 +555,16 @@ export interface CorpusClient {
    * optional in full and `null` has two other jobs one level away on the
    * response (`residentField`, `ResidentSchema`). The resolved resident comes
    * back with both halves null.
+   *
+   * **`input.weight` is the level the resident runs at** (CONTRACT-067, SPEC.md
+   * §7's rider signed 2026-08-19: a resident's weight is set when it is
+   * designated, not per message). It takes the whole request object rather than
+   * a second positional argument for the reason the field is optional at all:
+   * absence is the meaning — *the launcher decides* — and
+   * {@link DesignateResidentRequest} under `exactOptionalPropertyTypes` is the
+   * one spelling in which a caller cannot write `undefined` into a key and
+   * quietly send a second spelling of nothing. `body` is `input ?? {}`, so what
+   * this method sends is exactly what the caller assembled.
    *
    * **User-only, and single-valued.** The server refuses an agent actor (`403`)
    * and a thread with a parent (`409`); designating a thread that already has a
@@ -572,7 +583,10 @@ export interface CorpusClient {
    * and nothing else — asserted directly (`useComposerRecipient.test.tsx`)
    * rather than implied by a missing method.
    */
-  designateResident(threadId: string, name?: string): Promise<ThreadMutationResponse>;
+  designateResident(
+    threadId: string,
+    input?: DesignateResidentRequest,
+  ): Promise<ThreadMutationResponse>;
   /**
    * `DELETE /api/threads/{id}/resident` — **release** it, returning the scope to
    * ordinary routing (SPEC.md §7).
@@ -640,6 +654,9 @@ type PostDocBody = NonNullable<
 >["content"]["application/json"];
 type PostThreadBody = NonNullable<
   paths["/api/threads"]["post"]["requestBody"]
+>["content"]["application/json"];
+type PostResidentBody = NonNullable<
+  paths["/api/threads/{id}/resident"]["post"]["requestBody"]
 >["content"]["application/json"];
 
 /**
@@ -1275,12 +1292,19 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       );
     },
 
-    async designateResident(threadId, name) {
+    async designateResident(threadId, input) {
+      // The `createDoc`/`updateDoc` mismatch again: the generated body type and
+      // the zod-inferred `DesignateResidentRequest` describe identical values
+      // under different `exactOptionalPropertyTypes` stances. The **values** are
+      // what matters here and they are the caller's verbatim — an absent key
+      // stays absent, which is how "the launcher decides" is spelled on the
+      // wire.
+      const body = (input ?? {}) as PostResidentBody;
       return unwrap(
         "POST /api/threads/{id}/resident",
         await api.POST("/api/threads/{id}/resident", {
           params: { path: { id: threadId } },
-          body: name === undefined ? {} : { name },
+          body,
         }),
       );
     },

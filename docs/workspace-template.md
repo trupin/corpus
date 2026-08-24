@@ -23,7 +23,11 @@ assets/workspace/
   claude/                                # installs as .claude/
     skills/
       orchestrate/SKILL.md               # the agent loop, on the orchestrator's lane (SPEC §7)
-      comment/SKILL.md                   # handles comment.created / form.respond (SPEC §7-§8)
+      comment/
+        SKILL.md                         # handles comment.created / form.respond (SPEC §7-§8)
+        references/*.md                  #   seven grammars the body points at — forms, fences,
+                                         #   filing, closure, genesis, history, worked examples —
+                                         #   read only when the event needs one (AGENT-047)
       converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
       profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §10)
       asd-ste100/                        # vendored, MIT — controlled language (AGENT-037)
@@ -48,10 +52,16 @@ assets/workspace/
     threads/.gitkeep                      # thread documents, flat, named <thread-id>.md
 ```
 
-Every `.md` file in the tree is a canonical Corpus document (SPEC.md §5): complete
+Every authored `.md` file in the tree is a canonical Corpus document (SPEC.md §5): complete
 frontmatter, a unique `id`, and `evergreen: true` so a day-one workspace does not open with
 its own seed content already sitting in Attention. `created` and `updated` carry a single
-fixed timestamp — the template's authoring date — across the whole tree.
+fixed timestamp — the template's authoring date — across the whole tree. Three groups stand
+outside that rule and are enumerated in `scripts/workspace-template.ts`: `CLAUDE.md`, which
+the agent reads as instructions and nothing projects (AGENT-037); the vendored
+`asd-ste100/` tree, held byte-identical to its source; and the comment skill's
+`references/` files, skill payload read on a directed pointer from its `SKILL.md`
+(AGENT-047) — in an installed workspace a skill root admits only `SKILL.md`, so nothing
+projects them either.
 
 The four `SKILL.md` files carry Claude Code's `name`/`description` and Corpus's
 `id`/`type`/`title`/… in one YAML block (SPEC.md §7). `name` must equal the containing

@@ -912,6 +912,19 @@ describe("startEmbedWorker — debounce behind the write path (TEST-864)", () =>
     await worker.tick();
     stub.calls.length = 0;
 
+    // SERVER-146 caught this test failing under load, with its name: ten 5 ms
+    // gaps sit comfortably inside a 60 ms debounce until the event loop is
+    // contended, at which point one gap outgrows the window, the worker embeds
+    // an intermediate revision, and the assertion below reports
+    // `expected [ …(2) ] to have a length of 1`.
+    //
+    // **It is left as it is, deliberately.** Removing the sleeps makes the
+    // burst synchronous, which no timer can interrupt — and which also makes
+    // the test pass with `debounceMs: 0`, i.e. vacuous about the very thing it
+    // is named for. The claim *is* a claim about wall-clock time, and the only
+    // honest way to make it decidable is fake timers over the scheduler, which
+    // is a larger change than a P2 flake hunt should make on its way past. The
+    // instance is recorded in INFRA-020, which owns this class.
     for (let revision = 1; revision <= 10; revision += 1) {
       workspace.doc({
         id: "doc_000",

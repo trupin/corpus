@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P2 (nice-to-have)
@@ -98,14 +98,24 @@ none, because it looks fixed.
 
 ## Acceptance Criteria
 
-- [ ] The intent is decided and written down, with the rejected reading and why.
-- [ ] Whichever is chosen, a turn's typography is decided by a rule that names
+- [x] The intent is decided and written down, with the rejected reading and why.
+      — "Decided by the user, 2026-08-23" above.
+- [x] Whichever is chosen, a turn's typography is decided by a rule that names
       turns, not inherited from a document-prose selector it shares a class with.
-- [ ] `design/index.html` is checked. UI-156 found its `.turn-body` is sans and
+      — `.focus .turn-markdown` in `FocusMode.css` now sets `font-size` and
+      `line-height`. `Turn.tsx` keeps `doc-body`, which is what gives a turn its
+      markdown styling at all.
+- [x] `design/index.html` is checked. UI-156 found its `.turn-body` is sans and
       carries no `.doc-body` at all, so the mockup already has an opinion here.
-- [ ] Before and after screenshots of both surfaces, at the default widths.
-- [ ] If `max-width` still cannot bind, say so and leave it alone rather than
-      setting a value with no effect.
+      — quoted in the log. Its `.thread-card` is 12.5px on every surface, and its
+      only focus-mode rule for a conversation moves the card's `max-width`.
+- [x] Before and after screenshots of both surfaces, at the default widths.
+      — 1440×900, both surfaces, rule active and reverted. The column's two
+      files are byte-identical.
+- [x] If `max-width` still cannot bind, say so and leave it alone rather than
+      setting a value with no effect. — **it still cannot**: 519.65px computed
+      against a turn rendering at 487.6px or 268px. Not declared. The spec
+      asserts the box rather than the declaration.
 
 ## Technical Design
 
@@ -141,15 +151,197 @@ turn on both surfaces, so the test is a measurement, not a class assertion.
 
 ## E2E Verification Log
 
-### Post-Implementation Verification
-_[Agent fills]_
+Implemented by **ui-dev on opus** (`claude-opus-5[1m]`), 2026-08-23, branch
+`phase-44-reach-and-size`. Every number is `getComputedStyle` or
+`getBoundingClientRect` off a real Chromium page, Playwright against the Vite dev
+server on `CORPUS_UI_PORT=5399`, viewport 1600×900. UI-156's sweep was re-run
+rather than re-reasoned, on **four** surfaces rather than two.
+
+### The change
+
+One rule, in `FocusMode.css`, that names turns:
+
+    .focus .turn-markdown {
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+It replaces `.focus .turn-markdown { font-size: 13.5px }`. `Turn.tsx` is not
+touched: `doc-body` is what gives a turn all of `markdown.css`, and only these
+two declarations were ever unwanted. No specificity war either — the rule already
+weighed two classes and already came after `.focus .doc-body` in the file.
+
+### Before and after, measured
+
+`.turn-markdown`, the element the issue's table is about:
+
+| surface | before | after |
+| --- | --- | --- |
+| thread-as-document, column | 12.5px / 18.75px (1.5) / `none` / 274px wide | unchanged |
+| thread-as-document, **full screen** | **13.5px / 22.95px (1.7)** / 561.23px / 487.6px wide | **12.5px / 18.75px (1.5)** / 519.65px / 487.6px wide |
+| anchored card, column | 12.5px / 18.75px / `none` / 268px wide | unchanged |
+| anchored card, **full screen** | **13.5px / 22.95px** / 561.23px / 268px wide | **12.5px / 18.75px** / 519.65px / 268px wide |
+
+The typeface was already `var(--sans)` on all four (UI-156). After this rule the
+four rows agree on typeface, size and leading. A conversation now reads the same
+on every surface, and differs only in the room it has: 274px in a default column
+against 487.6px in full screen.
+
+### `max-width` does not bind — said out loud, and left alone
+
+It never bound, and it still does not:
+
+| surface | `max-width` computed | the turn's rendered width |
+| --- | --- | --- |
+| thread-as-document, full screen | 519.65px (66ch of 12.5px sans) | **487.6px** |
+| anchored card, full screen | 519.65px | **268px** |
+| both, in a column | `none` | 274px / 268px |
+
+`.focus .doc-body` still puts `var(--doc-measure, 66ch)` on a turn in full
+screen, and the card the turn sits in is narrower than that on every surface
+measured. **Declaring `max-width: none` in the new rule would change nothing on
+screen while looking like a fix**, so it is not declared, exactly as the decision
+asked. `cascade-order.spec.ts` pins the fact rather than the declaration: it
+asserts the turn fills its parent's box and that the computed `max-width` is
+*wider* than that box.
+
+### The look, before and after
+
+Both surfaces were screenshotted at 1440×900 with the rule active and with it
+reverted, and looked at rather than only measured — the decision says this is a
+re-theme of a surface people read.
+
+- **The column is byte-identical.** `sha256(before-column.png) ==
+  sha256(after-column.png)` = `bfdbdacc…52e8a665`. Nothing outside full screen
+  moved, which is the strongest form the "unchanged" claim can take.
+- **Full screen, before**: the turn body reads visibly larger and looser than
+  everything around it — the `standalone thread · th_type` context line, the
+  `USER` / `AGENT` labels, and the composer's own "Reply — @ route · / skill"
+  line directly beneath it. The agent's reply wraps after "by 200,".
+- **Full screen, after**: the turn sits at the same scale as the card furniture
+  and the composer under it. The agent's reply now wraps after "which is",
+  because the same room holds more of the smaller type.
+
+The screenshots are in the session scratchpad rather than the repository; the
+byte-identical column hash and the computed-style tables above are the durable
+record.
+
+### What else the cascade change moved — nothing
+
+The sweep read the whole conversation tree on all four surfaces, not just the
+turn. Everything else is byte-identical before and after: `.thread-conversation`,
+`.thread-card`, `.turn`, `.turn-body`, `.turn-who`, and `.doc-width-rail`.
+
+Two of those are worth stating, because they look like they should have moved:
+
+- **`.thread-conversation` in full screen stays 16.5px / 685.94px**, and that is
+  deliberate. That number is not typography — it is the *measure*: 685.94px is
+  `66ch` of 16.5px sans, and `.doc-width-rail.rail-conversation` carries the same
+  type so the drag handle sits exactly on the body's right edge
+  (`doc-width.spec.ts` › "puts the handle at the right edge of a
+  conversation"). Every child of that container sets its own size, so the 16.5px
+  reaches no text. Pulling it to 12.5px would have moved `66ch` to ~519px, left
+  the rail at 685.94px, and put the handle 166px off the edge it measures.
+- **`.turn-body` was already 12.5px in full screen**, inherited from
+  `.thread-card` / `.thread-conversation`'s own furniture, so the turn's markdown
+  was the only thing reading larger than the card around it. That is the visual
+  oddity this rule removes.
+
+### Against `design/index.html`
+
+The mockup already had this opinion, and it is now what ships:
+
+    .thread-card { … font-family: var(--sans); font-size: 12.5px; … }
+    .turn-body   { color: var(--ink); font-family: var(--sans); }
+    .focus .thread-card, .focus .backlinks, .focus .skill-fm { max-width: 66ch; }
+
+`.turn-body` carries **no** `doc-body`, no size, no leading and no measure; it
+takes the card's 12.5px. The mockup's only focus-mode rule for a conversation
+changes the card's `max-width` — the room — and nothing about the type. So the
+13.5px/1.7 a turn used to take in full screen was never a design decision.
+
+### Falsification
+
+The rule was reverted in place to `font-size: 13.5px` and the spec re-run:
+
+    ✘ cascade-order.spec.ts › a turn reads the same in full screen as in a column
+      Error: full screen resized the conversation
+      Expected: 12.5
+      Received: 13.5
+
+The other three tests in the file stayed green, including the `max-width` one —
+correct, because the dead measure is dead in both states. Restored, all four
+green.
+
+### Suites run
+
+- `playwright cascade-order.spec.ts doc-width.spec.ts --workers=1` — **19
+  passed** (4.5m).
+- `playwright turn-model.spec.ts collapse.spec.ts anchor-layer.spec.ts
+  anchors.spec.ts --workers=1` — **50 passed** (6.7m). `turn-model.spec.ts` is
+  the other spec that reads a turn on both surfaces and in the margin.
+- `vitest run apps/ui packages/kit` — first run: 4678 passed, 2 failed, both in
+  `apps/ui/src/main.test.tsx` timing out at vitest's 5000ms default. Reported as
+  pre-existing, then **measured and fixed** — see below. Re-run after the fix:
+  **242 files, 4680 tests, all green, exit 0**.
+- `eslint` clean, `prettier --check` clean, `tsc --noEmit` clean in both
+  workspaces.
+
+### `main.test.tsx` was over budget, not unlucky — sized to the measurement
+
+I first reported this as a pre-existing load flake. My own numbers said otherwise:
+**5040ms on the committed tree against a 5000ms budget** is over budget. The
+orchestrator asked for it to be closed out here, so it was measured rather than
+waited on.
+
+Eight sampled runs, in two contexts, with the one-minute load average recorded:
+
+| context | load | mounts the shell | fails loudly |
+| --- | --- | --- | --- |
+| `vitest run apps/ui` (A) | 3.7 | 4248ms | 2012ms |
+| `vitest run apps/ui` (B) | 3.4 | 6745ms | 4435ms |
+| `vitest run apps/ui` (C) | 4.2 | 5485ms | **7610ms** |
+| `vitest run apps/ui packages/kit` (D) | 3.6 | 3531ms | 910ms |
+| file alone ×5 | 4.4–6.3 | 3596–4534ms | 224–412ms |
+| file alone, cold after `npm run build` | — | **7385ms** | 1177ms |
+
+**The spread is the finding.** One test ranges 224ms to 7610ms — 34× — and its
+two in-suite extremes are 3.8× apart at *falling* load, so this is worker
+scheduling and transform-cache warmth rather than a busy machine. Load is
+recorded anyway, and every figure was taken on a laptop shared with other
+agents, so the isolated minima over-state the at-rest cost if anything.
+
+**The fix**: `ENTRY_POINT_BUDGET_MS = 20_000`, applied to those two tests only —
+not to the file, not to the config. 20000 is 2.6× the observed maximum, which is
+the margin the measured spread itself asks for. The table lives beside the
+constant in `apps/ui/src/main.test.tsx`, so the next person can see why the
+number is that number.
+
+**A narrower import was checked and rejected**, which is INFRA-020's first
+remedy. "fails loudly" does drag the whole app graph in to assert a three-line
+`#root` guard, and extracting that guard into its own module would make it
+nearly free. But a helper's own test passes just as well when nobody calls the
+helper, so the extraction would stop proving the thing the test exists for —
+that **`main.tsx`** refuses to mount into nothing. And it would not remove the
+budget: "mounts the shell" has to evaluate the real entry point, and that is the
+7385ms half. Nothing else in the repo imports `main.tsx`.
+
+Confirmed by re-running the exact command that failed, with no timeout override:
+242 files, 4680 tests, exit 0.
+
+### Nothing needs a decision
+
+The one judgment call inside the decision's boundaries was **which** number a
+turn takes in full screen. The decision says a conversation reads the same on
+every surface, and the mockup says 12.5px on both, so full screen came down to
+the column rather than the column going up.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)

@@ -1,4 +1,5 @@
 import { agentsCommand } from "../commands/agents.js";
+import { batchCommand } from "../commands/batch.js";
 import { boardTopic } from "../commands/board/index.js";
 import { dbTopic } from "../commands/db/index.js";
 import { docTopic } from "../commands/doc/index.js";
@@ -41,6 +42,9 @@ export const registry: Registry = validateRegistry({
   // parked request and nothing else, so the roster is only ever read.
   commands: [
     agentsCommand,
+    // `batch` is top-level because its entries span every topic: it is not an
+    // act on any one resource but a way of invoking the others (CLI-064).
+    batchCommand,
     healthCommand,
     initCommand,
     reflectCommand,

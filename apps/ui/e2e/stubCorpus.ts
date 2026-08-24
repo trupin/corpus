@@ -2539,7 +2539,14 @@ export async function stubCorpus(
       // Recorded verbatim, as the server does (CONTRACT-067): the designation's
       // weight is a level key, and `null` says the launcher chose.
       const weight = typeof body.weight === "string" ? body.weight : null;
-      let resident: Resident = { name: null, docId: null, weight };
+      /*
+       * `designationId` is `null` throughout: this stub does not model
+       * designation identity (CONTRACT-071), and nothing in `apps/ui` reads it —
+       * it exists for the listener that compares the id it was launched with
+       * against the one in force. A stub that minted ids nobody compares would
+       * be modelling a mechanism it cannot exercise.
+       */
+      let resident: Resident = { name: null, docId: null, weight, designationId: null };
       if (name !== undefined) {
         const agentDefs = [...store.values()].filter((row) => row.type === "agent-def");
         const profile = resolveAgentDefName(agentDefs, name);
@@ -2552,7 +2559,7 @@ export async function stubCorpus(
         }
         // The **resolved** name, never the caller's spelling — and the resolved
         // name of a file under `.claude/agents/` is its stem, not its title.
-        resident = { name: profile.name, docId: profile.docId, weight };
+        resident = { name: profile.name, docId: profile.docId, weight, designationId: null };
       }
       setLane(id, resident);
       return json(route, threadMutation(doc));

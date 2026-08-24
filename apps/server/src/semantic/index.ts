@@ -94,6 +94,8 @@ export { PROBE_TEXT, describeResolution, resolveEmbeddingProvider } from "./reso
 export { RESOLVE_COOLDOWN_MS, createSemanticRetrieval } from "./retrieval.js";
 export type { SemanticOutcome, SemanticRetrieval, SemanticRetrievalOptions } from "./retrieval.js";
 export { createIndexMaintenance } from "./maintenance.js";
+export { createIndexAnnouncer } from "./announce.js";
+export type { IndexAnnouncer, IndexAnnouncerOptions } from "./announce.js";
 export type { IndexMaintenance, IndexMaintenanceOptions } from "./maintenance.js";
 export { mountIndexRoutes } from "./routes.js";
 export { createIndexRebuildFlag, semanticIndexState } from "./state.js";

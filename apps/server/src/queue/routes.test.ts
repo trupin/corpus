@@ -14,6 +14,7 @@ import {
   type ClaimBatch,
 } from "@corpus/contract";
 import { createServer, type CorpusServer } from "../app.js";
+import { checkDeclaredStatuses } from "../docs/write-fixture.js";
 import { DEFAULT_MAX_ATTEMPTS } from "./service.js";
 import { HaltSentinelSchema, type HaltSentinel } from "./store.js";
 import type { ServerConfig } from "../config.js";
@@ -74,6 +75,10 @@ const seed = async (count: number): Promise<string[]> => {
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "corpus-s008-"));
   server = createServer(makeConfig(), { logger: silentLogger });
+  // SERVER-119. This file is where CONTRACT-083's three undeclared `409`s were
+  // asserted, green, on the day SERVER-145 landed. It builds its own server, so
+  // the check `createWriteWorkspace` installs does not reach it unless asked.
+  checkDeclaredStatuses(server);
 });
 
 afterEach(async () => {

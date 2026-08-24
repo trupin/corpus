@@ -118,6 +118,14 @@ export const designateResident = createRoute({
     "resident at all: `409` for a thread with a parent — anchored or whole-document — because a " +
     "thread on a document is *about* that document, and a resident owns a conversation rather " +
     "than a passage.\n\n" +
+    "**A replacement is identified, not only announced** (CONTRACT-071). Every designation that " +
+    "changes what the thread has gets a fresh `Resident.designationId`, and one that asks for the " +
+    "state already in force writes nothing and keeps the id it had. That is what lets the " +
+    "listener launched by an earlier designation find out it was replaced: it compares the id it " +
+    "was launched with against the id the lane carries now. Before this field the comparison had " +
+    "no honest input — a replacement naming a different profile at the same weight leaves the " +
+    "lane live and the roster row in place, and the row's rendered resident cell is written for a " +
+    "person and must never be parsed.\n\n" +
     "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident " +
     "claims a conversation and every artifact that grows out of it, and an agent that could " +
     "designate would be choosing who answers a person's messages (SPEC.md §7 — designation is " +
@@ -142,9 +150,10 @@ export const designateResident = createRoute({
   responses: {
     200: jsonContent(
       ThreadMutationResponseSchema,
-      "The thread, its `resident` now the resolved `{name, docId, weight}` — the first two null " +
-        "for a general resident, the third null when no weight was chosen — and any warnings " +
-        "raised while writing it.",
+      "The thread, its `resident` now the resolved `{name, docId, weight, designationId}` — the " +
+        "first two null for a general resident, the third null when no weight was chosen, and " +
+        "the fourth the id of the designation now in force — and any warnings raised while " +
+        "writing it.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,

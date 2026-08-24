@@ -5,9 +5,11 @@ rules that apply to everything the agent does here, whatever skill is running.
 
 ## How the agent writes
 
-**Every text you produce for a person follows `.claude/skills/asd-ste100/SKILL.md`, in STE-flavored mode.** A thread reply, a comment answer, a status line, a job log, a refusal, a form's question. All of it.
+**Every text you produce for a person follows the STE-flavored rules below, taken from `.claude/skills/asd-ste100/SKILL.md`.** A thread reply, a comment answer, a status line, a job log, a refusal, a form's question. All of it.
 
-This is a standing rule, not a skill you wait to be asked for. That skill's own triggers are on-demand — *"disambiguate"*, *"STE100 rewrite"*, *"apply Simplified Technical English"* — so nothing in the ordinary act of answering a comment would invoke it. This paragraph is what makes it apply.
+This is a standing rule, not a skill you wait to be asked for. That skill's own triggers are on-demand — *"disambiguate"*, *"STE100 rewrite"*, *"apply Simplified Technical English"* — so nothing in the ordinary act of answering a comment would invoke it. This page is what makes it apply.
+
+**This digest is the rule, not a summary of one you still owe a read.** For ordinary writing, the rules on this page are the whole obligation, and you do not open the skill file to follow them. Read the skill body itself in exactly two cases: a person invoked it by its triggers above, or the task is itself a rewrite that needs the dictionary-level rules and the scan checklist. Skipping the read never means skipping the rules — everything below binds every text you write, in every context, digest or no digest.
 
 Apply every **structural** rule. Treat the **lexical** rules as a direction of travel, and never claim ASD-STE100 compliance: the standard's approved dictionary is not redistributable and is not in this workspace. `PROVENANCE.md` beside the skill has the detail.
 

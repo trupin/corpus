@@ -16,7 +16,7 @@ afterEach(() => {
 function designated(overrides: Partial<AgentLane> = {}): AgentLane {
   return {
     lane: "th_root",
-    resident: { name: "researcher", docId: "doc_agentdef", weight: null },
+    resident: { name: "researcher", docId: "doc_agentdef", weight: null, designationId: null },
     live: true,
     // Relative to now: `isAgentPresent` expires evidence that has aged past the
     // grace window, so a fixed instant would be lapsed by the time this runs.
@@ -163,7 +163,9 @@ describe("the three shapes a resident has", () => {
     vi.useRealTimers();
   });
 
-  const GENERAL: AgentLane = designated({ resident: { name: null, docId: null, weight: null } });
+  const GENERAL: AgentLane = designated({
+    resident: { name: null, docId: null, weight: null, designationId: null },
+  });
 
   it("names a profiled resident, and says so", async () => {
     const { container } = renderBadge("th_root", [designated()]);
@@ -216,7 +218,9 @@ describe("the three shapes a resident has", () => {
    */
   it("reports a profile that has gone, still naming the resident", async () => {
     const { container } = renderBadge("th_root", [
-      designated({ resident: { name: "researcher", docId: null, weight: null } }),
+      designated({
+        resident: { name: "researcher", docId: null, weight: null, designationId: null },
+      }),
     ]);
 
     await waitFor(() => {

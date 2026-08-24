@@ -8,6 +8,10 @@ describe("residentOrNull", () => {
       name: "researcher",
       docId: "doc_a1b2c3",
       weight: null,
+      // A designation written before CONTRACT-071 has no `designationId` key,
+      // which the wire reports as null — the pre-CONTRACT-071 behaviour, safely
+      // (SERVER-147).
+      designationId: null,
     });
   });
 
@@ -30,6 +34,7 @@ describe("residentOrNull", () => {
       name: "researcher",
       docId: "doc_a1b2c3",
       weight: null,
+      designationId: null,
     });
   });
 
@@ -38,6 +43,7 @@ describe("residentOrNull", () => {
       name: null,
       docId: null,
       weight: null,
+      designationId: null,
     });
   });
 
@@ -50,6 +56,7 @@ describe("residentOrNull", () => {
       name: "researcher",
       docId: null,
       weight: null,
+      designationId: null,
     });
   });
 
@@ -64,6 +71,7 @@ describe("residentOrNull", () => {
         name: null,
         docId: null,
         weight: "heavy",
+        designationId: null,
       });
     });
 
@@ -116,13 +124,25 @@ describe("residentOrNull", () => {
  */
 describe("residentToStored", () => {
   it("writes no `weight` key when no level was chosen", () => {
-    const stored = residentToStored({ name: "researcher", docId: "doc_a1b2c3", weight: null });
+    const stored = residentToStored({
+      name: "researcher",
+      docId: "doc_a1b2c3",
+      weight: null,
+      designationId: null,
+    });
     expect(stored).toEqual({ name: "researcher", docId: "doc_a1b2c3" });
     expect(Object.hasOwn(stored, "weight")).toBe(false);
   });
 
   it("writes the level beside the profile when one was chosen", () => {
-    expect(residentToStored({ name: "researcher", docId: "doc_a1b2c3", weight: "heavy" })).toEqual({
+    expect(
+      residentToStored({
+        name: "researcher",
+        docId: "doc_a1b2c3",
+        weight: "heavy",
+        designationId: null,
+      }),
+    ).toEqual({
       name: "researcher",
       docId: "doc_a1b2c3",
       weight: "heavy",
@@ -131,14 +151,42 @@ describe("residentToStored", () => {
 
   it("round-trips through the reader, both ways", () => {
     for (const weight of [null, "heavy"]) {
-      const resident = { name: null, docId: null, weight };
-      expect(residentOrNull(residentToStored(resident))).toEqual(resident);
+      for (const designationId of [null, "des_abcdefgh2345"]) {
+        const resident = { name: null, docId: null, weight, designationId };
+        expect(residentOrNull(residentToStored(resident))).toEqual(resident);
+      }
     }
+  });
+
+  /**
+   * SERVER-147. Same rule as `weight`, same reason: a file has one spelling of
+   * "there is no id here", and it is the absent key — which is how every
+   * designation written before CONTRACT-071 spells it.
+   */
+  it("writes no `designationId` key when there is none", () => {
+    const stored = residentToStored({
+      name: null,
+      docId: null,
+      weight: null,
+      designationId: null,
+    });
+    expect(Object.hasOwn(stored, "designationId")).toBe(false);
+  });
+
+  it("writes the id when there is one", () => {
+    expect(
+      residentToStored({
+        name: null,
+        docId: null,
+        weight: null,
+        designationId: "des_abcdefgh2345",
+      }),
+    ).toEqual({ name: null, docId: null, designationId: "des_abcdefgh2345" });
   });
 });
 
 describe("storedResident", () => {
-  const resident = { name: "researcher", docId: "doc_a1b2c3", weight: null };
+  const resident = { name: "researcher", docId: "doc_a1b2c3", weight: null, designationId: null };
 
   it("reads a standalone thread's designation", () => {
     expect(storedResident(resident, null)).toEqual(resident);
@@ -149,7 +197,7 @@ describe("storedResident", () => {
   });
 
   it("reads a general designation off a standalone thread, and none off a parented one", () => {
-    const general = { name: null, docId: null, weight: null };
+    const general = { name: null, docId: null, weight: null, designationId: null };
     expect(storedResident(general, null)).toEqual(general);
     expect(storedResident(general, "doc_parent1")).toBeNull();
   });

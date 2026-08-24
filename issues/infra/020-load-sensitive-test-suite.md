@@ -141,3 +141,187 @@ Two related facts from the same release, both worth having beside this:
 - **SERVER-146** was filed because one server test failed once in a gate and the
   orchestrator read the summary line instead of keeping the log, losing the
   name. Whatever is done here, capture to a file.
+
+---
+
+## A third instance, named at last (SERVER-146, 2026-08-23)
+
+SERVER-146's bounded search caught a server test under deliberate load **with its
+name**, which is what that issue existed for. Recorded here because it is this
+pattern rather than a new thing, and because the diagnosis matters more than the
+instance.
+
+**The test.**
+`apps/server/src/semantic/worker.test.ts` →
+`startEmbedWorker — debounce behind the write path (TEST-864)` →
+`embeds the final content once after a burst of saves`.
+
+**The shape that reproduces it.** Two full `apps/server` suites running at once,
+four workers each. Round 1:
+
+```
+arm a   Tests  1 failed | 4610 passed (4611)   Duration 373.40s
+        × embeds the final content once after a burst of saves   446ms
+          AssertionError: expected [ …(2) ] to have a length of 1 but got 2
+arm b   Tests  4611 passed (4611)              Duration 373.40s
+```
+
+Same tree, same instant, one arm red and one green — so it is not the code.
+373 s against a normal ~140 s is the contention, which is what separates this
+from INFRA-020's own warning about tests that fail on an *uncontended* run.
+
+**It does not reproduce more cheaply.** The file alone, ten times, with one full
+suite beside it as load: **10 passed, 0 failed**. Running the file alone gives it
+the whole event loop. The failure needs the test to be *inside* a saturated
+suite, which is precisely why "it passed on retry" is not evidence of anything.
+
+**Why the margin is thin.** The test makes ten saves with an `await` of 5 ms
+between them, against a 60 ms debounce. Ten 5 ms gaps sit comfortably inside the
+window until the event loop is contended; then one gap outgrows it, the worker
+embeds an intermediate revision, and the count is 2.
+
+**The obvious fix is worse, and was tried and reverted.** Removing the sleeps
+makes the burst synchronous, and a `setTimeout` callback cannot fire inside
+synchronous code — deterministic under any load. It also makes the test pass with
+`debounceMs: 0`, **measured**, which is to say vacuous about the one thing it is
+named for. The claim is a claim about wall-clock time, so the only honest way to
+decide it is fake timers over the worker's scheduler. That belongs to this issue,
+not to a P2 flake hunt passing through. The test now carries a comment saying so.
+
+**A second observation, weaker, kept for the record.** Round 2's two arms both
+failed the *same* two tests at ~6 s —
+`threads/create.test.ts → mints distinct anchor ids for concurrent comments on one document`
+and `docs/acts.test.ts → an ordinary save of a document body, whichever document it is to`.
+Both arms were killed before they printed a summary, so those two are **not**
+trustworthy evidence and are noted rather than tabled.
+
+### A fourth instance, and the best-measured one (same search)
+
+`apps/server/src/docs/acts.test.ts` →
+`what does not close a window (§4)` →
+`an ordinary save of a document body, whichever document it is to`.
+
+It is the most expensive test in its file: **fourteen real HTTP mutations, each
+with a real git commit** — two creates, five create/save pairs, two more saves.
+
+```
+alone, load average ~7:   2783ms  ✓ | 3120ms ✓ | 6110ms × (timed out at 5000ms)
+alone, quieter:           3110ms  ✓
+inside a full suite competing with another agent's:  ×  6023–6708ms
+```
+
+**2.8–3.1 s against vitest's 5 s default is 62% of its budget at rest** — which
+is this issue's own proposed rule ("a test that needs >20% of its timeout idle
+will flake under the gate") met three times over. It failed **1 in 3 running
+alone**, which is why it is tabled rather than merely noted.
+
+**Given an explicit 20 s budget, with the measurement written beside it.** Not
+raised across the board — every other test in that file keeps the default — and
+not a fix: the real remedy is this issue's second criterion, *make the genuine
+work cheaper*. Fourteen commits to prove that six saves fold into one window is
+more setup than the claim needs.
+
+| Test | Observed | Alone |
+| --- | --- | --- |
+| `apps/server/src/semantic/worker.test.ts` → "embeds the final content once after a burst of saves" | assertion failure at 446 ms inside a doubly-saturated suite | 10/10 pass |
+| `apps/server/src/docs/acts.test.ts` → "an ordinary save of a document body, whichever document it is to" | timed out at 5000 ms, 1 in 3 | **2.8–3.1 s of a 5 s budget** |
+
+### And the disjoint-set signature again, on `apps/server` this time
+
+Three full `apps/server` runs on the same tree while other agents ran their own
+suites, after the two fixes above:
+
+```
+run A  2 failed | 4609 passed   Duration 474s   update.test.ts, key.test.ts
+run B  5 failed | 4606 passed   Duration 452s   acknowledgment.test.ts ×2, resident.test.ts, acts.test.ts ×2
+run C  0 failed | 4611 passed   Duration 373s
+```
+
+Every failure is a **5.1–7.0 s timeout**, never an assertion, and the sets are
+**disjoint between runs** — the same signature the Playwright note above records.
+All of them pass in isolation: `update.test.ts` + `key.test.ts` → 83 of 83 at
+load average 12.
+
+A normal `apps/server` run on this machine is ~140 s. At 450–475 s the suite is
+not measuring the code.
+
+## A third instance, v0.21.0 (2026-08-24)
+
+`apps/cli/src/commands/workspace/maintenance.test.ts > stops git repacking the
+repository behind us across a run of commits` — **timed out at 5000ms** in a
+full `apps/cli` run while a ui-dev agent worked, and passed **3 of 3** in
+isolation immediately afterwards.
+
+It is the same shape SERVER-146 diagnosed hours earlier in `apps/server`: a
+git-heavy test on a fixed millisecond budget, where the budget was chosen when
+the machine was quiet. SERVER-146's own fix is the precedent worth copying —
+**measure what the test costs at rest, then size the budget to the
+measurement**, rather than raising budgets across the board.
+
+Routed to cli-dev with that instruction. Recorded here because this issue exists
+for the pattern, and because the pattern now has instances in two workspaces
+found on the same day.
+
+## A fourth instance, and an unnamed one (2026-08-24)
+
+`vitest run scripts` reported `1 failed | 990 passed` on the **first** of four
+runs during AGENT-052, and **scrolled without naming the test**. Three runs since
+are green, the template file alone is green five times, and the orchestrator ran
+it twice more afterwards at 991 passed, exit 0.
+
+**The name is lost, again.** That is the second time in two releases — SERVER-146
+was filed for exactly this and closed with its own search recorded. The agent
+recorded it rather than dismissing it as a retry-pass, which is the right
+instinct and the reason it is here.
+
+The standing instruction stands and is evidently not enough on its own: **capture
+every run to a file**. A summary line that scrolls is a summary line that cannot
+be read twice. Where a suite is being run repeatedly to chase a flake,
+`--reporter=verbose` into a file is the only form that survives.
+
+## What was actually inflating every measurement (2026-08-24)
+
+**Five orphaned vitest workers, ppid 1, running two hours ten minutes each** —
+pids 33081, 33219, 39589, 42251, 57590 — holding roughly 15% CPU and 400 MB
+apiece. Their parents were long gone, so they reported to nobody and no agent's
+own cleanup could reach them.
+
+They were found by an agent that recorded them and **declined to kill them**,
+because it only sweeps pids it recorded itself. That is the right rule for an
+agent and the wrong outcome for the machine, so the orchestrator killed them
+after confirming each was `node (vitest N)` with ppid 1 and that neither of the
+user's server pids was among them.
+
+**This is very likely a contributing cause of this issue's own instances.** Every
+timing taken today — the CLI's 5 s git budget, the server's disjoint timeout
+sets, this file's own entry-point measurements — was taken with most of a core
+and 2 GB missing. Those readings are conservative, which is the right direction
+for a budget to be wrong in, but the flakes attributed to "other agents' load"
+were partly attributable to load nobody was running.
+
+**The orchestrator's sweep missed them, twice.** `ps | grep -Ei 'vitest|…'`
+returned nothing on two attempts earlier in the session, because the shell proxy
+had filtered the output down to the lines matching the port query. The lesson is
+not "sweep more often" — it is that **a sweep returning nothing must be verified
+rather than believed**, by naming pids directly or by disabling the proxy.
+
+## A fifth instance — and this one has its name (2026-08-24, v0.21.0 harvest)
+
+`apps/ui/e2e/changelog.spec.ts:243 — a conversation anchored inside a clipped
+entry > expands the clip when the conversation is revealed`, failing
+`expect(locator).toBeInViewport()`.
+
+- Full Playwright run 1: **1 failed, 617 passed**
+- The same spec file alone: **7 passed**
+- Full Playwright run 2, unchanged tree: **618 passed, exit 0**
+
+**Recorded because the name was captured, which is the improvement.** The two
+earlier instances in this release lost their names to a scrolled summary line.
+This one was found by grepping the captured log backwards from the assertion
+text to the test id — worth writing down as the technique, since a Playwright
+failure prints its title far above its error.
+
+It was checked as a possible regression before being called load. UI-165 changed
+when a column earns a thread margin, and a viewport assertion on a revealed
+conversation is exactly what that could disturb — so it was run in isolation and
+then in a second full suite before the release moved on. Neither reproduced it.

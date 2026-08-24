@@ -519,6 +519,9 @@ function createServer() {
             name,
             docId: name === null ? null : "doc_agentdef",
             weight: body?.weight ?? null,
+            // Every designation that writes mints one (CONTRACT-071); the stub
+            // answers with a fixed id because nothing here re-designates.
+            designationId: "des_9f2a1c",
           },
         },
         warnings: [],
@@ -1603,6 +1606,7 @@ describe("the roster and designation through the generated client (CONTRACT-051)
       name: "researcher",
       docId: "doc_agentdef",
       weight: null,
+      designationId: "des_9f2a1c",
     });
   });
 
@@ -1621,7 +1625,12 @@ describe("the roster and designation through the generated client (CONTRACT-051)
       params: { path: { id: "th_x9y8" } },
       ...(body === undefined ? {} : { body }),
     });
-    expect(data?.thread.resident).toEqual({ name: null, docId: null, weight: null });
+    expect(data?.thread.resident).toEqual({
+      name: null,
+      docId: null,
+      weight: null,
+      designationId: "des_9f2a1c",
+    });
   });
 
   /**
