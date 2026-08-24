@@ -217,7 +217,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
-| CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
+| CLI-024 | SIGPIPE guard for piped output (eval finding) | done | P2 | CLI-001 |
 | UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
@@ -628,7 +628,7 @@ guarantees the watcher commits it as the `user` edit it is.
 | AGENT-023 | Teach the revert loop, and the operator's git path | done | P0 | SHARED-042 |
 | SERVER-104 | Delete the server's rollback module | done | P0 | SHARED-042 |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
-| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | todo | P2 | — |
+| CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | done | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | done | P1 | — |
 | SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
 | CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
@@ -807,7 +807,7 @@ ones their own files carry.
 | SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
 | SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
 | CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
-| CLI-039 | A hung `git gc` leaves children the timeout does not kill | todo | P2 | — |
+| CLI-039 | A hung `git gc` leaves children the timeout does not kill | done | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
 | SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
 
@@ -1019,8 +1019,8 @@ uncertain.
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | done | P2 | — |
-| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
-| CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | todo | P3 | — |
+| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | in_progress | P2 | — |
+| CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | done | P3 | — |
 
 ## Phase 36 — Residents you can see, stop, and choose (2026-08-19, user feedback)
 
@@ -1643,7 +1643,7 @@ user, not work).
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | todo | P2 | opus | — |
-| CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | todo | P1 | opus | SERVER-144 |
+| CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | done | P1 | opus | SERVER-144 |
 | CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
 | SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | todo | P1 | opus | SERVER-148 |

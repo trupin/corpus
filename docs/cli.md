@@ -357,9 +357,15 @@ Reads `GET /api/search` (SPEC.md §9.2) and prints one line per hit: the documen
 
 **This is how the agent locates content** (SPEC.md §7): searching, then reading the one or two documents the ranking pointed at, costs what the answer costs. Listing the corpus and reading candidates costs the corpus.
 
+**The ranking skips two document types by default** (SERVER-144): `skill` and `agent-def` — the skills and personas `corpus init` installed. Their worked examples are written in realistic domain prose about rates, mortgages and filing, so they match the questions a real corpus asks and displace the row you wanted: the SHARED-070 audit measured rows pointing at them at **52% of seven retrieval calls' output tokens**.
+
+**Naming any `--type` turns that default off entirely** — the gate is whether you named a type at all, not whether you named an excluded one — so `--type skill` returns every skill and `--type note,skill` returns both. Nothing is de-indexed either way: this is a default about ranking, never a change to what is searchable, and `doc show` and `doc list` are untouched. `template` is **not** on the list — a template is the user's own writing, and hiding that from their own search would be a different act.
+
+**`view` and `board` are kept here, deliberately.** This verb asks _where is this said?_, and a board or a view you named and can open is a real answer to that. The neighbour surfaces — `corpus doc related` and `corpus thread context` — ask _what else bears on this?_, where a stored query bears on nothing because it has no prose, so they drop `view` and `board` on top of the two above. Their exclusion has **no override**: neither verb takes a type.
+
 Threads are documents too, so a match inside a reply is a hit on the thread, and its heading path is that turn's heading. A passage with no heading above it reports the document's title, so a hit always has an address. Heading levels are joined for display by a spaced `›` — print the path, never split it, since a heading may contain the character.
 
-It takes the same structured filters as `corpus doc list`, with the same meanings and the same archived default, because both are built from one definition. What it does **not** take is `--sort`, `--pinned` or `--offset`: a ranked result set has one order — its ranking — and is a top-k rather than a page. `--limit` (default 10, max 50) is the cap; widen it or narrow the filters. Nothing matching is an empty ranking and exit 0, never an error.
+It takes the same structured filters as `corpus doc list`, with the same meanings and the same archived default, because both are built from one definition — the type default above is this verb's own and applies on top of it. What it does **not** take is `--sort`, `--pinned` or `--offset`: a ranked result set has one order — its ranking — and is a top-k rather than a page. `--limit` (default 10, max 50) is the cap; widen it or narrow the filters. Nothing matching is an empty ranking and exit 0, never an error.
 
 `--json` emits the server's envelope unchanged — the hits plus each one's title, and the `semanticIndex` state — which is what a skill parses when it wants a field rather than a glance.
 
@@ -402,13 +408,13 @@ One padded line per hit — id, heading path, snippet — best match first. Read
 corpus search "rate assumptions"
 ```
 
-The same structured filters `corpus doc list` takes, narrowing the ranking rather than enumerating what matched.
+The same structured filters `corpus doc list` takes, narrowing the ranking rather than enumerating what matched. Naming `--type` at all also lifts the default that skips `skill` and `agent-def` — here that changes nothing, since `note` excludes them anyway.
 
 ```
 corpus search "mortgage" --type note --folder finance --limit 5
 ```
 
-Name the type you want and the ranking is confined to it, so the hits are installed skills rather than whatever else says `reconcile`. This is the genesis lookup the comment skill makes before it writes a new skill.
+How to reach a type the default ranking skips: name it. The ranking is then confined to it, so the hits are installed skills rather than whatever else says `reconcile`. This is the genesis lookup the comment skill makes before it writes a new skill, and it is the reason the default is a type gate rather than a hard exclusion.
 
 ```
 corpus search "reconcile in-progress" --type skill
@@ -1107,7 +1113,11 @@ corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,title,lastActor,
 
 Move a document to another folder.
 
-Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is already in is a reported no-op that writes and commits nothing — the agent's loop never has to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, so neither can be moved; the server says so. A move **names its own delta** and needs no key (SPEC.md §7) — and because a key names the document's content rather than its path, a key read before a move is still good after it.
+Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is already in is a reported no-op that writes and commits nothing — the agent's loop never has to branch on it.
+
+**Only a document under `data/docs/` can be moved**, and that is the whole rule — stated rather than enumerated, because the list is what went stale twice (CLI-052). Anything filed anywhere else has a fixed location: a thread under `data/threads/`, a skill under `.claude/skills/`, a persona under `.claude/agents/`. The server refuses all of them with `this document's location is fixed`, in **two** wordings that differ by type — a thread is `threads are flat under data/threads/ and cannot be moved`, and everything else off the docs root is `<path> is not under data/docs/ and cannot be moved`, which names the path so the reason is legible. Repair such a document where it is (`corpus doc check`) rather than moving it by hand: off the docs root a file often carries no `id:` of its own, so relocating it re-mints the id and breaks every `[[ref]]`, anchor and thread pointing at it.
+
+A move **names its own delta** and needs no key (SPEC.md §7) — and because a key names the document's content rather than its path, a key read before a move is still good after it.
 
 ```
 corpus doc move <id> [flags]
@@ -1246,6 +1256,10 @@ Reads `GET /api/docs/{id}/related` (SPEC.md §9.2) and prints one line per neigh
 This is the follow-up move to `corpus search`: search finds an entry point, this walks out from it. Phase A relates through the reference graph — an outgoing `[[ref]]`, a backlink, or both directions, which ranks first — so every row is labelled `linked`. `similar` and `both` arrive with semantic retrieval (SPEC.md §9.1) and are already in the vocabulary, so nothing about this output changes shape when they do.
 
 Threads are documents, so a thread whose reply mentions this document is a legitimate neighbour and appears as one. Every id printed is a document that exists and can be read: references to documents nobody has created yet are real in the corpus but are not offered here. Archived neighbours are excluded by default, like every list — `--include-archived` widens the set.
+
+**Four document types are never neighbours** (SERVER-144): `skill`, `agent-def`, `view` and `board`. The first two are the tool's own machinery, whose worked examples are realistic domain prose and therefore honeypots — the SHARED-070 audit found the top neighbour of a user's mortgage note was the orchestrate skill. The other two are stored queries and column lists: `corpus doc related` asks _what else bears on this?_, and a query with no prose bears on nothing, so a hit on one is a title collision dressed as a neighbour.
+
+**There is no flag to widen it** — this route takes no type — so the exclusion is unconditional here in a way it is not on `corpus search`, which keeps `view` and `board` and lifts the rest for any `--type`. Nothing is de-indexed: `corpus search --type skill` still finds every skill, `corpus doc show` on one still reads it, and `corpus doc related` **on** a skill as the subject still works. `template` is **not** excluded — a neighbour surface that hid the user's own templates would hide their own writing. It is the neighbour list these types are kept out of, never the corpus.
 
 An id that names no document is the server's `404`, which is exit 5, and a document nothing relates to is a single honest line and exit 0.
 
@@ -2352,6 +2366,10 @@ Reads `GET /api/threads/{id}/context` (SPEC.md §7 Retrieval discipline, §9.2) 
 **The parent block takes the shape the thread has.** A thread anchored to a selection shows the parent's id, title and heading path, the quote itself, and the **whole enclosing section** around it — a comment on one sentence is rarely answerable from that sentence. A whole-document thread shows the parent's title and its opening content. A thread whose anchor no longer resolves (SPEC.md §6) says so and prints the preserved quote, with no invented passage — and when the quote did not survive either, it says the original text cannot be recovered rather than promising one. A thread whose parent was deleted says that too, and still gets its excerpts — it is a `200`, never a `404`, because the conversation plainly exists. A standalone thread has no parent content, so it prints no parent block at all and goes straight to the excerpts.
 
 When the parent-side prose was cut to fit, a `#` line says so and names the escalation — `corpus doc show <parent>`. Nothing is ever silently trimmed: an agent editing a section must know whether it saw all of it.
+
+**Four document types are never neighbours** (SERVER-144): `skill`, `agent-def`, `view` and `board`. The first two are the tool's own machinery, whose worked examples are realistic domain prose and therefore honeypots — the SHARED-070 audit found the top neighbour of a user's mortgage note was the orchestrate skill. The other two are stored queries and column lists: `corpus thread context` asks _what else bears on this?_, and a query with no prose bears on nothing, so a hit on one is a title collision dressed as a neighbour.
+
+**There is no flag to widen it** — this route takes no type — so the exclusion is unconditional here in a way it is not on `corpus search`, which keeps `view` and `board` and lifts the rest for any `--type`. Nothing is de-indexed: `corpus search --type skill` still finds every skill, `corpus doc show` on one still reads it, and `corpus doc related` **on** a skill as the subject still works. `template` is **not** excluded — a neighbour surface that hid the user's own templates would hide their own writing. It is the neighbour list these types are kept out of, never the corpus. A thread whose _parent_ is one of these types still gets that parent's block: the conversation is on it, and a parent is read by id rather than through the candidate query.
 
 Each excerpt is one padded line — id, heading path, relation, excerpt — and **never a body**. Reading one is a separate, deliberate `corpus doc show <id>` on that row's id, exactly as with `corpus search` and `corpus doc related`. A pack with nothing related is a single honest line and exit 0. `--json` emits the server's envelope unchanged, whose `shape` field is the one thing a machine reader switches on. A thread id that names nothing is the server's `404`, which is exit 5.
 
