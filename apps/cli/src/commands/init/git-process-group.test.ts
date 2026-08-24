@@ -44,7 +44,11 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  process.env["PATH"] = originalPath;
+  // `originalPath ?? ""` above admits this may be undefined, so restore by
+  // deleting rather than assigning it back — `process.env` turns an undefined
+  // into the string "undefined" (PR #61 re-review sweep).
+  if (originalPath === undefined) delete process.env["PATH"];
+  else process.env["PATH"] = originalPath;
   rmSync(scratch, { recursive: true, force: true });
 });
 
