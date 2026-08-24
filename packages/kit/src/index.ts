@@ -236,6 +236,7 @@ export {
   type RowNotice,
 } from "./row/useRowActions.js";
 export {
+  deferredRowTitle,
   useAgentActivity,
   type AgentActivity,
   type AgentActivityState,

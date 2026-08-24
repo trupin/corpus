@@ -136,6 +136,10 @@ const RUNTIME_SURFACE = [
   "triagePrompt",
   "useRowActions",
   "useAgentActivity",
+  // …and what a row says while the agent has a request parked on somebody's
+  // editing (SPEC.md §7, UI-115): a sentence, so the board's dot and the
+  // conversation's pending row cannot come to word one state two ways.
+  "deferredRowTitle",
   // rendered markdown + the `[[ref]]` grammar
   "MarkdownView",
   "parseRefs",

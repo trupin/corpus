@@ -496,3 +496,169 @@ test.describe("the room is the input and the content is not", () => {
     await expect(says).toHaveAttribute("title", new RegExp(summary.slice(0, 40)));
   });
 });
+
+/**
+ * **The reserve is a reading of the room, not a line count** — UI-143, and the
+ * half of SHARED-061 UI-142 left undone in this file.
+ *
+ * `--says-lines: 4` was measured at the 240px card UI-142 removed. At the
+ * room-derived widths that replaced it no §7 statement reaches four lines, so an
+ * ordinary card reserved about two lines of white space — a bound chosen once at
+ * a measure that is no longer one thing.
+ *
+ * ## Why every assertion here is a relationship, again
+ *
+ * The reserve now differs per host and per window, so a pinned line count or
+ * pixel value would be the same defect this issue removes, written as a test. So
+ * each case asserts the **rule**:
+ *
+ *     tallest ≤ reserve < tallest + one line
+ *
+ * The left half is SHARED-057 — the box holds every sentence the roster can put
+ * in it, so nothing is truncated on the ordinary reading path and nothing moves
+ * when a preview changes the words. The right half is SHARED-061 — it holds no
+ * line the statements cannot use.
+ *
+ * ## And it is measured at three widths
+ *
+ * The card's floor (`min-width: 240px`, the narrow case the `4` was measured
+ * at), a reply composer's ordinary column, and the wide column UI-142 made
+ * reachable. One number cannot be right at all three, which is the point.
+ */
+test.describe("the statement's reserve is derived from the width the card has", () => {
+  /**
+   * Four lanes whose statements are four different lengths, every one a state §7
+   * produces — the orchestrator's, a plain lapsed resident, a never-parked
+   * conversation, and §7's missing-profile report, which is the longest sentence
+   * the roster can say about a lane.
+   *
+   * Different lengths is what the measurement needs: a roster whose lanes read
+   * alike would pass a reserve of any size.
+   */
+  const MIXED: readonly AgentLane[] = [
+    {
+      lane: "th_lane_gone",
+      resident: { name: "claims-review", docId: null, weight: null, designationId: null },
+      live: false,
+      since: ago(17 * 60_000),
+      summary: null,
+      origin: { id: "th_lane_gone", title: "The claims conversation" },
+    },
+    {
+      lane: "th_lane_lapsed",
+      resident: {
+        name: "release-researcher",
+        docId: "doc_release",
+        weight: null,
+        designationId: null,
+      },
+      live: false,
+      since: ago(17 * 60_000),
+      summary: null,
+      origin: { id: "th_lane_lapsed", title: "The lapsed conversation" },
+    },
+    {
+      lane: "th_lane_new",
+      resident: { name: null, docId: null, weight: null, designationId: null },
+      live: false,
+      since: null,
+      summary: null,
+      origin: { id: "th_lane_new", title: "A conversation nobody has parked on" },
+    },
+  ];
+
+  /**
+   * The reserve, and every sentence's **natural** height inside it, at the width
+   * the card currently has.
+   *
+   * **`scrollHeight` cannot answer this**, and the first version of this helper
+   * used it and measured nothing: `.recipient-says` has a fixed `height`, and
+   * `scrollHeight` is never smaller than `clientHeight` — so every sentence
+   * reported the reserve's own height, the two bounds below held trivially, and
+   * only the liveness check on the fixture caught it.
+   *
+   * So the clamp and the height come **off the real element**, with the real
+   * sentence in it at the real width, and go straight back on. That is a
+   * different question from the one the implementation asks (which measures a
+   * detached probe), so a fit that agreed with itself and disagreed with the
+   * page would show up here.
+   */
+  async function reserveAt(
+    page: Page,
+    lanes: readonly AgentLane[],
+  ): Promise<{ reserve: number; line: number; sentences: number[] }> {
+    const says = page.locator(SAYS);
+    const shape = await says.evaluate((el) => ({
+      reserve: el.getBoundingClientRect().height,
+      line: Number.parseFloat(window.getComputedStyle(el).lineHeight),
+    }));
+    const sentences: number[] = [];
+    for (const lane of ["orchestrator", ...lanes.map((row) => row.lane)]) {
+      await page.locator(`${LIST} [data-recipient-lane="${lane}"]`).focus();
+      sentences.push(
+        await says.evaluate((el) => {
+          const held = el.getAttribute("style");
+          el.setAttribute("style", "height:auto;max-height:none;-webkit-line-clamp:none");
+          const natural = el.getBoundingClientRect().height;
+          if (held === null) el.removeAttribute("style");
+          else el.setAttribute("style", held);
+          return natural;
+        }),
+      );
+    }
+    return { ...shape, sentences };
+  }
+
+  for (const width of [240, 560, 900] as const) {
+    test(`reserves what the sentences occupy in a ${String(width)}px column, and not a line more`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openReply(page, { lanes: MIXED, width, doc: LONG_HOST, scrollToFoot: true });
+      await expect(page.locator(`${LIST} [data-recipient-lane]`)).toHaveCount(MIXED.length + 1);
+
+      const { reserve, line, sentences } = await reserveAt(page, MIXED);
+      const tallest = Math.max(...sentences);
+
+      // SHARED-057: every sentence the roster can say fits, so previewing one
+      // truncates nothing and moves nothing. A pixel of slack for the rounding
+      // between a fractional `calc()` height and a measured line box.
+      expect(
+        reserve,
+        `the reserve is shorter than a statement it must hold (${JSON.stringify(sentences)})`,
+      ).toBeGreaterThanOrEqual(tallest - 1);
+
+      // SHARED-061: and it holds no line those sentences cannot use. This is the
+      // assertion the old `4` fails at 560px and 900px — it reserved two lines
+      // of white space on an ordinary card.
+      expect(
+        reserve,
+        `the reserve holds a line no statement reaches (${String(reserve)} vs ${String(tallest)}, line ${String(line)})`,
+      ).toBeLessThan(tallest + line);
+
+      // The fixture is alive: four lanes really did produce statements of
+      // different heights, so the two bounds above closed on something.
+      expect(new Set(sentences).size).toBeGreaterThan(1);
+    });
+  }
+
+  /**
+   * The rule the reserve exists for, restated at the new derivation: it is
+   * measured against the **closed set** of sentences and never against the one
+   * showing, so a pointer travelling over the list moves nothing (UI-127).
+   */
+  test("still holds still while the pointer previews every lane in turn", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReply(page, { lanes: MIXED, width: 560, doc: LONG_HOST, scrollToFoot: true });
+
+    const says = page.locator(SAYS);
+    const at = await boxOf(says);
+    const said: string[] = [];
+    for (const lane of ["orchestrator", ...MIXED.map((row) => row.lane)]) {
+      await page.locator(`${LIST} [data-recipient-lane="${lane}"]`).focus();
+      said.push((await says.textContent()) ?? "");
+      expect(await boxOf(says), `previewing ${lane} resized the statement's box`).toEqual(at);
+    }
+    expect(new Set(said).size).toBe(MIXED.length + 1);
+  });
+});
