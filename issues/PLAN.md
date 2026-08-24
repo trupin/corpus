@@ -1019,7 +1019,7 @@ uncertain.
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | done | P2 | — |
-| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | in_progress | P2 | — |
+| SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | done | P2 | — |
 | CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | done | P3 | — |
 
 ## Phase 36 — Residents you can see, stop, and choose (2026-08-19, user feedback)

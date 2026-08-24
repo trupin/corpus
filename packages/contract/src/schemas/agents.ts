@@ -147,16 +147,14 @@ export const AGENT_DEF_ROOT = ".claude/agents/";
  * each cause with a **workspace act** by type identity, applies it to a real
  * workspace, and asserts set-equality in both directions — so a cause added here
  * without an act that produces it fails, and so does an act that starts emptying
- * `docId` without a cause. That file also pins this array against
- * `packages/kit`'s `MISSING_PROFILE_CAUSES`, the copy the board and the picker
- * render from.
+ * `docId` without a cause.
  *
- * **Why the copies are elsewhere and the home is here.** The dependency
- * direction is fixed — `packages/contract` ← `packages/kit` / `apps/cli` — so
- * neither downstream array can be this package's source, and this one can be
- * theirs. Both are scheduled to become re-exports of this one (SHARED-054),
- * which is why a pin exists rather than an import: until they move, two
- * declarations a test holds equal beats a silent divergence.
+ * **This is the home, and it is the only one** (SHARED-054, closed 2026-08-24).
+ * The dependency direction is fixed — `packages/contract` ← `packages/kit` /
+ * `apps/cli` — so neither downstream array could be this package's source and
+ * this one can be theirs. Both are now re-exports. The blocks that held three
+ * declarations equal are deleted rather than rewritten: a test holding three
+ * lists equal is not one home, it is three homes with a guard.
  */
 export const MISSING_PROFILE_CAUSES = [
   "renamed",

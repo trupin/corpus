@@ -1,4 +1,11 @@
-import { isAgentPresent, ORCHESTRATOR_LANE, type AgentLane, type Lane } from "@corpus/contract";
+import {
+  isAgentPresent,
+  MISSING_PROFILE_CAUSES,
+  ORCHESTRATOR_LANE,
+  type AgentLane,
+  type Lane,
+  type MissingProfileCause,
+} from "@corpus/contract";
 import { humanizeElapsed } from "../time/elapsed.js";
 
 /**
@@ -166,8 +173,10 @@ export const GENERAL_RESIDENT_LABEL = "resident, no profile";
  * {@link MISSING_PROFILE_NOTE} is composed from this list rather than written
  * beside it.
  *
- * The three are `AgentNameSchema`/`ResidentSchema`'s (`@corpus/contract`), whose
- * `docId` description is where this rule is canonical. `docId` re-resolves the
+ * The list itself lives in `@corpus/contract` and is re-exported here — one home,
+ * not a copy held equal by a test (SHARED-054). `AgentNameSchema`/`ResidentSchema`'s
+ * `docId` description is where this rule is canonical, and it now composes from
+ * the same array rather than restating it. `docId` re-resolves the
  * stored name on every read (`currentResident`, `apps/server/src/threads/read.ts`)
  * through `resolveMentionTarget`, so it empties exactly when the name stops
  * resolving: the file is gone, its stem changed, or it left `.claude/agents/` —
@@ -191,14 +200,7 @@ export const GENERAL_RESIDENT_LABEL = "resident, no profile";
  * or an act that starts emptying it without a cause, is a failing test rather
  * than a sentence nobody re-measures.
  */
-export const MISSING_PROFILE_CAUSES = [
-  "renamed",
-  "deleted",
-  "moved out of .claude/agents/",
-] as const;
-
-/** One of {@link MISSING_PROFILE_CAUSES} — the type a parity fixture pairs with an act. */
-export type MissingProfileCause = (typeof MISSING_PROFILE_CAUSES)[number];
+export { MISSING_PROFILE_CAUSES, type MissingProfileCause };
 
 /**
  * What a lane whose profile has gone says about it — SPEC.md §7's *"the missing

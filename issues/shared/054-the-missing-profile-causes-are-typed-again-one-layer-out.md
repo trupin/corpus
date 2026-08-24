@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-in_progress
+done
 
 ## Priority
 
@@ -76,13 +76,10 @@ abstraction got written.
 
 ## Acceptance Criteria
 
-- [ ] One home for the causes, respecting the contract → kit dependency
-      direction — **not met, and further from met than when this was filed.**
-      Every site now composes rather than restating, which was the defect. But
-      it composes from **three** declarations: `packages/kit`,
-      `packages/contract/src/schemas/agents.ts` and
-      `apps/cli/src/commands/resident.ts`. `scripts/missing-profile-parity.test.ts`
-      holds all three equal, so nothing can drift silently — but a test holding
+- [x] One home for the causes, respecting the contract → kit dependency
+      direction — **`packages/contract/src/schemas/agents.ts`.** `packages/kit`
+      and `apps/cli` re-export it. It reached three declarations first, held
+      equal by a parity test, and that was not the same thing: a test holding
       three lists equal is not one home, it is three homes with a guard
 - [x] Every site that enumerates them either composes from that home or is held
       to it by a test — the five `apps/cli` sites and the two contract sites all
@@ -92,10 +89,12 @@ abstraction got written.
       the new cases compare against the **composed** string, which only
       interpolation produces, and measure the CLI's array against the same
       workspace acts the existing pin uses
-- [ ] `laneRows.ts`'s claim about which text is canonical is true afterwards, or
-      is removed — **not done**
+- [x] `laneRows.ts`'s claim about which text is canonical is true afterwards —
+      the docblock now says the list lives in `@corpus/contract` and is
+      re-exported, and the contract's own docblock stops describing the kit's
+      array as a copy it is pinned against
 
-### What closes this issue
+### How it was closed
 
 `packages/contract` is the dependency-correct home: both `packages/kit` and
 `apps/cli` may import it, and it may import neither. So the remaining work is
@@ -104,8 +103,18 @@ small and mechanical — the kit's array becomes a re-export of the contract's,
 becomes true, and the two parity blocks holding the copies equal are deleted
 because there is nothing left to hold apart.
 
-Held open on purpose. Marking it `done` with three declarations standing would
-be the exact defect this release is named for.
+Done 2026-08-24 by the orchestrator, as a SHARED issue.
+
+**Falsified rather than assumed.** Adding `"archived"` — the one false cause PR
+#50 removed — to the contract's array turns **five** tests red in
+`scripts/missing-profile-parity.test.ts`, because the acts are still measured
+against a real workspace. The file was restored byte-identical.
+
+**What the parity test kept, and what it lost.** It still pairs each cause with
+a workspace act and asks the real projector what that act does, so a cause added
+without an act still fails. What it no longer does is compare copies against each
+other — two blocks and thirteen lines of equality assertions are deleted, along
+with the aliased imports that existed only to feed them.
 
 ## Technical Design
 

@@ -1,4 +1,4 @@
-import type { Resident } from "@corpus/contract";
+import { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSES, type Resident } from "@corpus/contract";
 
 /**
  * **How this CLI says who is resident** — one function, so four surfaces cannot
@@ -58,39 +58,27 @@ import type { Resident } from "@corpus/contract";
  */
 export const GENERAL_RESIDENT = "a general resident";
 
-/** The root a `type: agent-def` document must be under to be designatable. */
-export const AGENT_DEF_ROOT = ".claude/agents/";
-
 /**
- * **What makes a resident's profile go missing — typed once for this CLI**
+ * **What makes a resident's profile go missing — one home, re-exported here**
  * (SHARED-054).
  *
- * PR #50 corrected ten copies of this claim and removed the ability to type it
- * in `@corpus/kit`: `MISSING_PROFILE_CAUSES` is an exported array there, the
- * board's note is composed from it, and `scripts/missing-profile-parity.test.ts`
- * pairs each cause with a **workspace act** and asks the real projector what
- * that act does. Five sites outside that reach still carried the causes as
- * hand-typed prose, four of them in this package's help text.
+ * These were hand-typed prose at ten sites, then composed from three separate
+ * arrays, then held equal by a parity test. A test holding three lists equal is
+ * not one home; it is three homes with a guard. `packages/contract` is the
+ * dependency-correct home — `apps/cli` and `packages/kit` may both import it and
+ * it may import neither — so the array lives there and this package re-exports
+ * it under the names its own help text already uses.
  *
- * They are composed from this array now. It is not an import of the kit's, and
- * cannot be: `apps/cli` does not depend on `@corpus/kit` and must not — the
- * dependency direction is fixed (CLAUDE.md). So the two lists are held together
- * by the parity test, which measures both against the same acts on a real
- * workspace. The values are byte-identical to the kit's on purpose, so that
- * comparison is an equality rather than a translation.
- *
- * **Archiving is deliberately absent**, and that is the false statement PR #50
- * removed: an archived `agent-def` stays under `.claude/agents/`, keeps
- * resolving, and stays designatable. The parity test asserts that positively.
- *
- * The remaining two sites, in `packages/contract/src/schemas/agents.ts`, are
- * still hand-typed. SHARED-054 stays open for them.
+ * **Archiving is deliberately absent** from the list, and that is the false
+ * statement PR #50 removed: an archived `agent-def` stays under
+ * `.claude/agents/`, keeps resolving, and stays designatable.
+ * `scripts/missing-profile-parity.test.ts` still pairs each cause with a
+ * **workspace act** and asks the real projector what that act does, so a cause
+ * added without an act — or an act that starts emptying the field without a
+ * cause — is a failing test rather than a sentence nobody re-measures. What it
+ * no longer has to do is compare copies against each other.
  */
-export const MISSING_PROFILE_CAUSES = [
-  "renamed",
-  "deleted",
-  `moved out of ${AGENT_DEF_ROOT}`,
-] as const;
+export { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSES };
 
 /**
  * The causes as one English list, with the root code-quoted for the help

@@ -1,4 +1,3 @@
-import { MISSING_PROFILE_CAUSES as CONTRACT_MISSING_PROFILE_CAUSES } from "@corpus/contract";
 import {
   MISSING_PROFILE_CAUSES,
   MISSING_PROFILE_NOTE,
@@ -6,7 +5,6 @@ import {
 } from "@corpus/kit";
 import {
   ARCHIVING_IS_NOT_A_CAUSE,
-  MISSING_PROFILE_CAUSES as CLI_MISSING_PROFILE_CAUSES,
   MISSING_PROFILE_CAUSES_PHRASE,
 } from "../apps/cli/src/commands/resident.js";
 import { agentsCommand } from "../apps/cli/src/commands/agents.js";
@@ -271,26 +269,16 @@ describe("the sentence the product shows for a missing profile", () => {
  * other, which is what makes the comparison an equality rather than two lists
  * that merely happen to be the same length.
  *
- * **Still outstanding**: `packages/contract/src/schemas/agents.ts` states the
- * causes twice more, in the published `docId` description. That half of
- * SHARED-054 is unfinished, and this file does not yet reach it.
+ * **One home now** (SHARED-054, 2026-08-24). `packages/contract` declares the
+ * array, `packages/kit` and `apps/cli` re-export it, and the two blocks that
+ * held three copies equal are deleted rather than rewritten — there is nothing
+ * left to hold apart. What stays here is what was never about copies: whether
+ * the list is *true* against a real workspace, and whether this package's help
+ * text composes from it rather than restating it.
  */
 describe("the same causes, as `apps/cli`'s help states them", () => {
-  it("names exactly the acts that empty the resident's docId", () => {
-    const emptying = ACTS.flatMap((act) => (act.cause === null ? [] : [act.cause]));
-    // Measured against the workspace, not against the kit — so the CLI would
-    // still be caught if both copies were edited the same wrong way.
-    expect(new Set(CLI_MISSING_PROFILE_CAUSES)).toEqual(new Set(emptying));
-  });
-
-  it("is the same list the kit holds, spelled the same way", () => {
-    // Byte-identical on purpose: two renderings of one cause would be a reason
-    // to keep two lists, which is the shape this whole issue is about.
-    expect([...CLI_MISSING_PROFILE_CAUSES]).toEqual([...MISSING_PROFILE_CAUSES]);
-  });
-
   it("composes the phrase from that list and adds nothing to it", () => {
-    const [renamed, deleted, moved] = CLI_MISSING_PROFILE_CAUSES;
+    const [renamed, deleted, moved] = MISSING_PROFILE_CAUSES;
     // The one difference from the kit's note, and it is a rendering: help text
     // is markdown, so the root is code-quoted.
     expect(MISSING_PROFILE_CAUSES_PHRASE).toBe(
@@ -325,56 +313,6 @@ describe("the same causes, as `apps/cli`'s help states them", () => {
   it("never names archiving inside the causes themselves", () => {
     for (const spelling of ["archiv", "disabl", "deactivat", "retired"]) {
       expect(MISSING_PROFILE_CAUSES_PHRASE.toLowerCase()).not.toContain(spelling);
-    }
-  });
-});
-
-/**
- * **The same list, declared twice, held equal** — SHARED-054.
- *
- * `packages/kit` declares {@link MISSING_PROFILE_CAUSES} for the surfaces a
- * person reads, and `packages/contract` declares
- * {@link CONTRACT_MISSING_PROFILE_CAUSES} for the description published on
- * `Resident.docId` — the sentence four domains read. Two declarations, because
- * the dependency direction is fixed (`packages/contract` ← `packages/kit`) and
- * the kit's copy has not yet become a re-export of the contract's.
- *
- * Two declarations with nothing between them is the exact shape SHARED-053's
- * four false statements came out of, so this pins them by **set equality in both
- * directions**, never by either being a superset. It lives here for this file's
- * own reason: `scripts/` is the one tree allowed to look at two packages that
- * are not on a dependency path.
- *
- * The pin is deliberately narrow. Everything above measures whether the list is
- * *true* against a real workspace, and needs only one list to do it — so when
- * the kit becomes a re-export, this block is deleted rather than rewritten.
- */
-describe("the contract publishes the same causes the kit renders", () => {
-  it("names the same set, in both directions", () => {
-    expect(new Set(CONTRACT_MISSING_PROFILE_CAUSES)).toEqual(new Set(MISSING_PROFILE_CAUSES));
-    expect(CONTRACT_MISSING_PROFILE_CAUSES).toHaveLength(MISSING_PROFILE_CAUSES.length);
-  });
-
-  /**
-   * Order too, since both compose a three-item English clause from indices — a
-   * reordered array would leave the two sentences reading differently while a
-   * set comparison stayed green.
-   */
-  it("keeps them in the same order, because both compose a sentence from it", () => {
-    expect([...CONTRACT_MISSING_PROFILE_CAUSES]).toEqual([...MISSING_PROFILE_CAUSES]);
-  });
-
-  /**
-   * And the acts measured above answer for the contract's copy as well, stated
-   * rather than inferred: every cause the contract publishes is produced by an
-   * act this file applied to a real workspace.
-   */
-  it("publishes only causes an act above actually produces", () => {
-    const measured = new Set<string>(
-      ACTS.flatMap((act) => (act.cause === null ? [] : [act.cause])),
-    );
-    for (const cause of CONTRACT_MISSING_PROFILE_CAUSES) {
-      expect(measured, cause).toContain(cause);
     }
   });
 });
