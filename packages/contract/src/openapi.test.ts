@@ -5153,7 +5153,12 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
       expect(resident?.anyOf?.[1]?.type, component).toBe("null");
     }
     expect(componentSchemas?.["Resident"]?.type).toBe("object");
-    expect(componentSchemas?.["Resident"]?.required).toEqual(["name", "docId", "weight"]);
+    expect(componentSchemas?.["Resident"]?.required).toEqual([
+      "name",
+      "docId",
+      "weight",
+      "designationId",
+    ]);
   });
 
   /**
@@ -5195,7 +5200,7 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     expect(
       JSON.stringify(operation("/api/threads/{id}/resident", "post").responses?.["200"]),
-    ).toContain("{name, docId, weight}");
+    ).toContain("{name, docId, weight, designationId}");
   });
 
   /**
@@ -5212,10 +5217,39 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     // `weight` joined the pair with CONTRACT-067, required and nullable for the
     // same reason: null is a state (none chosen), never an absent key.
-    expect(resident?.required).toEqual(["name", "docId", "weight"]);
+    expect(resident?.required).toEqual(["name", "docId", "weight", "designationId"]);
     // The refinement rejecting `{name: null, docId: "doc_…"}` is not expressible
     // in JSON Schema, so it is stated where a reader of the document meets it.
     expect(resident?.properties?.["docId"]?.description).toContain("Read the two fields together");
+  });
+
+  /**
+   * CONTRACT-071. A listener has to be able to learn that the designation it
+   * serves was replaced, and a profile-only replacement at the same weight
+   * moves nothing else it may look at. Pinned against the **generated**
+   * document, and pinned as a *singular* fact: the whole point of carrying it
+   * on `Resident` rather than beside it is that both halves of the listener's
+   * comparison — the launch payload's resident and the roster row's — read one
+   * field with one description, so nothing has to be kept in step.
+   */
+  it("identifies which designation a Resident is, once, wherever a Resident is carried", () => {
+    const published = componentSchemas?.["Resident"]?.properties?.["designationId"];
+    expect(published?.type).toEqual(["string", "null"]);
+    expect(published?.pattern).toBe("^des_[A-Za-z0-9]+$");
+    expect(published?.description).toContain("It exists to be compared");
+    expect(published?.description).toContain("Two nulls are not evidence of the same designation");
+
+    // Every surface a listener could read it from is a `$ref` to this one
+    // component, so there is no second copy of the prose to drift.
+    for (const component of ["Thread", "ThreadSummary", "AgentLane"]) {
+      const field = componentSchemas?.[component]?.properties?.resident;
+      expect(field?.anyOf?.[0]?.$ref, component).toBe("#/components/schemas/Resident");
+    }
+
+    // And nothing else in the document declares the field — a second declaration
+    // would be a second answer to "which designation is this".
+    const declarations = [...JSON.stringify(document).matchAll(/"designationId":\{/g)];
+    expect(declarations).toHaveLength(1);
   });
 
   /**

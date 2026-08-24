@@ -1585,11 +1585,13 @@ suite cannot confirm. Both halves stand without it.
 | --- | --- | --- | --- | --- | --- |
 | UI-167 | Designating a resident is reachable only by right-click | todo | P0 | opus | — |
 | UI-168 | A resident's weight cannot be chosen from the app at all | todo | P0 | opus | — |
-| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces | todo | P1 | opus | — |
+| CONTRACT-071 | A profile-only re-designation is invisible to the listener it replaces | done | P1 | opus | — |
 | SERVER-142 | An out-of-band commit stages the tree as it later stands | todo | P1 | fable | — |
 | UI-165 | A column's thread margin cannot be reached by any gesture | todo | P2 | opus | UI-163 |
 | UI-166 | What full screen does to a turn's leading and measure | todo | P2 | opus | UI-156 |
-| INFRA-032 | A tampered generated artifact survives a green local run | todo | P2 | opus | — |
+| INFRA-032 | A tampered generated artifact survives a green local run | done | P2 | opus | — |
+| SERVER-147 | A designation is written without its identity | todo | P1 | opus | CONTRACT-071 |
+| AGENT-050 | A listener does not check which designation it serves | todo | P1 | fable | CONTRACT-071, SERVER-147 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | done | P1 | fable | CLI-060 |
 | CLI-064 | A batch verb needs a decided exit code before it is worth building | todo | P1 | fable | CLI-057, CLI-058 |
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |

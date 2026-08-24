@@ -159,7 +159,12 @@ const agentRoster = {
     },
     {
       lane: "th_x9y8",
-      resident: { name: "researcher", docId: "doc_agentdef", weight: null },
+      resident: {
+        name: "researcher",
+        docId: "doc_agentdef",
+        weight: null,
+        designationId: "des_9f2a1c",
+      },
       live: false,
       since: "2026-07-19T09:40:00Z",
       summary: null,
@@ -794,6 +799,9 @@ function createStubApp() {
             name,
             docId: name === null ? null : "doc_agentdef",
             weight: body?.weight ?? null,
+            // Every designation that writes mints one (CONTRACT-071); the stub
+            // answers with a fixed id because nothing here re-designates.
+            designationId: "des_9f2a1c",
           },
         },
         warnings: [],
@@ -1772,7 +1780,12 @@ describe("routes mounted on a Hono app", () => {
 
     type DesignationBody = {
       thread: {
-        resident: { name: string | null; docId: string | null; weight: string | null } | null;
+        resident: {
+          name: string | null;
+          docId: string | null;
+          weight: string | null;
+          designationId: string | null;
+        } | null;
       };
       warnings: unknown[];
     };
@@ -1785,6 +1798,7 @@ describe("routes mounted on a Hono app", () => {
         name: "researcher",
         docId: "doc_agentdef",
         weight: null,
+        designationId: "des_9f2a1c",
       });
       expect(body.warnings).toEqual([]);
     });
@@ -1799,7 +1813,12 @@ describe("routes mounted on a Hono app", () => {
       const response = await designate({});
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: null });
+      expect(body.thread.resident).toEqual({
+        name: null,
+        docId: null,
+        weight: null,
+        designationId: "des_9f2a1c",
+      });
     });
 
     /**
@@ -1811,7 +1830,12 @@ describe("routes mounted on a Hono app", () => {
       const response = await designate({ weight: "heavy" });
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: "heavy" });
+      expect(body.thread.resident).toEqual({
+        name: null,
+        docId: null,
+        weight: "heavy",
+        designationId: "des_9f2a1c",
+      });
       expect((await designate({ weight: "" })).status).toBe(400);
       expect((await designate({ weight: null })).status).toBe(400);
     });
@@ -1823,7 +1847,12 @@ describe("routes mounted on a Hono app", () => {
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as DesignationBody;
-      expect(body.thread.resident).toEqual({ name: null, docId: null, weight: null });
+      expect(body.thread.resident).toEqual({
+        name: null,
+        docId: null,
+        weight: null,
+        designationId: "des_9f2a1c",
+      });
     });
 
     it.each([
