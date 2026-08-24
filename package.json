@@ -40,6 +40,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:slow": "vitest run --includeTaskLocation --reporter=default --reporter=json --outputFile.json=coverage-raw/vitest-results.json && npm run test:slow:report",
+    "test:slow:report": "node --import tsx scripts/check-slow-tests.ts",
     "e2e": "playwright test --config apps/ui/playwright.config.ts",
     "coverage": "npm run test:coverage && npm run e2e && npm run coverage:merge",
     "coverage:merge": "node --max-old-space-size=8192 --import tsx scripts/merge-coverage.ts",

@@ -383,7 +383,7 @@ belongs to the same fix wave.
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
 | UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | closed | P2 | UI-073 |
-| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
+| INFRA-020 | Tests that fail under gate load and pass in isolation (pattern, cycles lost) | done | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | closed | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
