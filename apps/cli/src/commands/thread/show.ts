@@ -1,5 +1,11 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
-import { residentLabel } from "../resident.js";
+import {
+  ARCHIVING_IS_NOT_A_CAUSE,
+  GENERAL_RESIDENT,
+  MISSING_PROFILE_CAUSES_PHRASE,
+  PROFILE_MISSING,
+  residentLabel,
+} from "../resident.js";
 
 /**
  * `corpus thread show` — the read half of the conversation surface (SPEC.md §6,
@@ -89,11 +95,11 @@ export const showCommand: WorkspaceCommandSpec = {
     "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
     "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
     "`resident` line naming the agent that owns the conversation, with the `agent-def` document " +
-    "that defines it where it has one — a resident designated with no profile prints as `a " +
-    "general resident`, and one whose profile has since been renamed, deleted, or moved out of " +
-    "`.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an " +
-    "archived `agent-def` still under that root resolves exactly as before, and is still " +
-    "designatable, so the line keeps printing its id. Where the designation chose a weight " +
+    "that defines it where it has one — a resident designated with no profile prints as " +
+    `\`${GENERAL_RESIDENT}\`, and one whose profile has since been ` +
+    `${MISSING_PROFILE_CAUSES_PHRASE} prints \`name (${PROFILE_MISSING})\`. ` +
+    `${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id. ` +
+    "Where the designation chose a weight " +
     "(SPEC.md §7, rider signed 2026-08-19) the line names it after the resident — `resident a " +
     "general resident at heavy` — with the word taken from this workspace's own agent guidance " +
     "rather than being a model name, and a designation that chose none prints nothing extra. " +

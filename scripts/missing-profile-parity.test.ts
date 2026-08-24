@@ -3,6 +3,14 @@ import {
   MISSING_PROFILE_NOTE,
   type MissingProfileCause,
 } from "@corpus/kit";
+import {
+  ARCHIVING_IS_NOT_A_CAUSE,
+  MISSING_PROFILE_CAUSES as CLI_MISSING_PROFILE_CAUSES,
+  MISSING_PROFILE_CAUSES_PHRASE,
+} from "../apps/cli/src/commands/resident.js";
+import { agentsCommand } from "../apps/cli/src/commands/agents.js";
+import { designateCommand } from "../apps/cli/src/commands/thread/designate.js";
+import { showCommand } from "../apps/cli/src/commands/thread/show.js";
 import { renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -244,6 +252,78 @@ describe("the sentence the product shows for a missing profile", () => {
     expect(ACTS[0]?.cause).toBeNull();
     for (const spelling of ["archiv", "disabl", "deactivat", "retired", "skills-archived"]) {
       expect(MISSING_PROFILE_NOTE.toLowerCase()).not.toContain(spelling);
+    }
+  });
+});
+
+/**
+ * **The same claim in `apps/cli`'s help text** (SHARED-054).
+ *
+ * PR #50's fourth review found five sites outside the kit's reach still typing
+ * the causes as prose, four of them here. They are composed now, from
+ * `apps/cli/src/commands/resident.ts`'s own array.
+ *
+ * That array cannot be an import of the kit's: `apps/cli` does not depend on
+ * `@corpus/kit` and must not (CLAUDE.md fixes the dependency direction). So the
+ * two independent statements are compared here instead — both against the acts
+ * measured above, which is the standard the file already holds, and against each
+ * other, which is what makes the comparison an equality rather than two lists
+ * that merely happen to be the same length.
+ *
+ * **Still outstanding**: `packages/contract/src/schemas/agents.ts` states the
+ * causes twice more, in the published `docId` description. That half of
+ * SHARED-054 is unfinished, and this file does not yet reach it.
+ */
+describe("the same causes, as `apps/cli`'s help states them", () => {
+  it("names exactly the acts that empty the resident's docId", () => {
+    const emptying = ACTS.flatMap((act) => (act.cause === null ? [] : [act.cause]));
+    // Measured against the workspace, not against the kit — so the CLI would
+    // still be caught if both copies were edited the same wrong way.
+    expect(new Set(CLI_MISSING_PROFILE_CAUSES)).toEqual(new Set(emptying));
+  });
+
+  it("is the same list the kit holds, spelled the same way", () => {
+    // Byte-identical on purpose: two renderings of one cause would be a reason
+    // to keep two lists, which is the shape this whole issue is about.
+    expect([...CLI_MISSING_PROFILE_CAUSES]).toEqual([...MISSING_PROFILE_CAUSES]);
+  });
+
+  it("composes the phrase from that list and adds nothing to it", () => {
+    const [renamed, deleted, moved] = CLI_MISSING_PROFILE_CAUSES;
+    // The one difference from the kit's note, and it is a rendering: help text
+    // is markdown, so the root is code-quoted.
+    expect(MISSING_PROFILE_CAUSES_PHRASE).toBe(
+      `${renamed}, ${deleted}, or ${(moved ?? "").replace(".claude/agents/", "`.claude/agents/`")}`,
+    );
+  });
+
+  it("reaches every help block that used to type the causes", () => {
+    // A restatement worded to dodge the vocabulary cannot pass: the assertion is
+    // containment of the *composed* string, which only interpolation produces.
+    for (const command of [agentsCommand, designateCommand, showCommand]) {
+      expect([command.name, command.description?.includes(MISSING_PROFILE_CAUSES_PHRASE)]).toEqual([
+        command.name,
+        true,
+      ]);
+    }
+  });
+
+  it("keeps the true half beside the corrected one at every block", () => {
+    // SHARED-053 removed archiving from the causes. A reader just told three
+    // ways a profile can vanish will assume archiving is a fourth unless the
+    // block says otherwise, so the sentence travels with the list.
+    expect(ACTS[0]?.cause).toBeNull();
+    for (const command of [agentsCommand, designateCommand, showCommand]) {
+      expect([command.name, command.description?.includes(ARCHIVING_IS_NOT_A_CAUSE)]).toEqual([
+        command.name,
+        true,
+      ]);
+    }
+  });
+
+  it("never names archiving inside the causes themselves", () => {
+    for (const spelling of ["archiv", "disabl", "deactivat", "retired"]) {
+      expect(MISSING_PROFILE_CAUSES_PHRASE.toLowerCase()).not.toContain(spelling);
     }
   });
 });
