@@ -56,6 +56,29 @@ by default only from the second visit of a browser session.
 - [ ] `JobDetail.tsx` says *queued*, not a start time, when `started` is null
 - [ ] `readerFixture.ts` carries `enqueued` and `unread`
 
+### The full breakage list, enumerated by ui-dev 2026-08-24
+
+The contract landing (`373b07b7`) turned `apps/ui` and `packages/kit` red in
+about twenty places and failed six unit tests. All of it belongs here.
+
+**Six failing unit tests, one cause.** `packages/kit/src/query/useCapture.test.tsx`
+(3), `packages/kit/src/weight/weightTransport.test.tsx` (2),
+`apps/ui/src/thread/turnSelectionComment.test.tsx` (1) — every one a `ZodError`,
+`thread.unread` expected boolean and received undefined, thrown from
+`packages/contract/src/client/upload.ts`. **This is the multipart-validates-and-
+JSON-does-not trap**: only the upload paths fail, so a fixture missing a required
+field is invisible everywhere else. Fix the fixtures, not the validator.
+
+**Type errors**: `apps/ui/e2e/stubCorpus.ts`, `console.spec.ts`,
+`clipboard.spec.ts`, `fences.spec.ts`, `images.spec.ts`, `render-fixes.spec.ts`,
+`turn-breaks.spec.ts`, `apps/ui/src/testing/readerFixture.ts`,
+`console/Console.test.tsx`, `console/JobDetail.tsx`, `menu/JobMenuItems.test.tsx`,
+and `thread/outstandingAgentRequest.ts` (`startedAt` and `agentWaitSince`, both
+pre-existing, now that `started` is `string | null`).
+
+All 90 Playwright specs were green under the new dist. This is types and
+multipart fixtures, not runtime.
+
 ## Testing Strategy
 
 The reload case is the one that matters and the one a unit test cannot reach.

@@ -242,7 +242,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | done | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | done | P2 | — |
 | INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
-| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
+| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | done | P2 | — |
 
 Note: the SPEC §10 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 
@@ -834,7 +834,7 @@ through.
 | SHARED-044 | §7 claims an artifact belongs to at most one scope, and its four clauses do not guarantee it | done | P1 | — |
 | SHARED-045 | SPEC §9.2 still says the diff base is `to`'s parent, which §4 made wrong | done | P1 | SERVER-113 |
 | SHARED-047 | §7 does not say whether parked listeners count against the concurrency bound | done | P2 | — |
-| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | todo | P2 | UI-097 |
+| UI-115 | A deferred request reads as "waiting", which is honest but not the whole answer | done | P2 | UI-097 |
 
 `SHARED-044` is the one of the three that is not merely deferred work. `SERVER-111`
 had to pick a precedence between an artifact's own `origin` and its `parent`
@@ -1018,7 +1018,7 @@ uncertain.
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
-| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
+| UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | done | P2 | — |
 | SHARED-054 | The missing-profile causes are typed again, one layer out (PR #50 review 4) | todo | P2 | — |
 | CLI-052 | doc move's help omits .claude/ from what cannot be moved (PR #50 review 4 NIT) | todo | P3 | — |
 
@@ -1080,7 +1080,7 @@ rule produces taste, and an audit with one produces findings a person can check.
 | UI-128 | Audit: every surface whose size follows its content | done | P0 | SHARED-057 |
 | UI-130 | The address popover has no ceiling, and rises behind the reader head (UI-127 measurement) | done | P1 | — |
 | UI-137 | The address line widens when its weight arrives, and pushes Send (UI-131 measurement) | done | P0 | SHARED-057 |
-| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | todo | P2 | — |
+| UI-138 | A lane's liveness word re-cuts the name beside it, on a 15s clock (PR #53 review) | done | P2 | — |
 | UI-139 | A refusal a keyboard-only or touch user cannot finish reading (UI-132 gap) | done | P1 | SHARED-058 |
 | UI-136 | Two surfaces are drawn taller than the room they open into (UI-129/130 findings) | done | P2 | — |
 
@@ -1222,12 +1222,12 @@ left in a report.
 | --- | --- | --- | --- | --- |
 | SHARED-058 | A refusal outlives its toast — the console's Notices tab (AUTHORIZED 2026-08-21, applied) | done | P1 | — |
 | UI-140 | A reveal on a cold open silently does nothing when the body is slow (UI-079 diagnosis) | done | P0 | — |
-| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | todo | P2 | UI-063 |
+| UI-141 | The design mockup still draws the 💬 popover UI-063 replaced | done | P2 | UI-063 |
 | SHARED-060 | The comments switch arrives with the first conversation (SIGNED 2026-08-21, applied) | done | P1 | — |
 | SHARED-061 | A surface is as large as its place allows (SIGNED 2026-08-21, applied) | done | P0 | — |
 | UI-142 | Audit: every surface drawn smaller than the room it has | done | P0 | SHARED-061 |
-| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | todo | P2 | UI-142 |
-| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | todo | P3 | — |
+| UI-143 | `--says-lines: 4` is over-reserved now that the card has room (UI-142 finding) | done | P2 | UI-142 |
+| UI-144 | A deleted document's reveal names the wrong absence (PR #54 re-review NIT) | done | P3 | — |
 | UI-145 | The context menu's ceiling never applies, and the row menu scrolls at five items (UI-094 measurement) | done | P1 | SHARED-061 |
 | UI-156 | The kit's stylesheets load after the app's, so a turn changes typeface in full screen (UI-145 sweep) | done | P1 | UI-145 |
 | UI-157 | The composer's address line misbehaves at the path column's 440px (UI-149 finding) | done | P2 | UI-149 |
@@ -1645,5 +1645,6 @@ user, not work).
 | CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | todo | P2 | opus | — |
 | CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | todo | P1 | opus | SERVER-144 |
 | CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
-| SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | todo | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
+| SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | todo | P1 | opus | SERVER-148 |
+| UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | todo | P2 | opus | UI-144 |
