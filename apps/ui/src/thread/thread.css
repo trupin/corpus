@@ -692,8 +692,43 @@
   align-self: center;
 }
 
+/*
+ * ── What gives, and in what order (UI-124) ──────────────────────────────────
+ *
+ * The badge is one line inside a `flex-wrap: wrap` head it shares with the
+ * status chip, Resolve, `⋯` and the fold. Measured in a real browser at the
+ * board's narrowest column (240px), before this rule: `scrollWidth` 522 against
+ * a `clientWidth` of 178, and the resident's name laid out **306px tall** —
+ * broken mid-word down eight lines, because nothing said it could not be.
+ *
+ * SHARED-057 says text that does not fit is *revealed rather than
+ * accommodated*, so every run below truncates in place and the whole of it is on
+ * the badge's `title`. What that rule does not decide is **which** run gives
+ * first, and a flex row with three shrinkable items shrinks them all at once. So
+ * the three carry shrink factors two orders of magnitude apart, which orders
+ * them in practice: an item at zero cannot shrink further, so the next one
+ * takes over.
+ *
+ *   1. `.t-resident-line`  — whether they are there. Bounded but not short
+ *      (`LANE_SUMMARY_MAX_LENGTH`, 200 characters), the most repetitive, and the
+ *      one the picker states in full a gesture away. It **takes only leftover
+ *      room**: `flex: 1 1 0`, so it is not part of what the badge asks for at
+ *      all. That is what stops a 370px liveness line deciding both where the
+ *      head wraps and how much of the name survives.
+ *   2. `.t-resident-note`  — §7's missing-profile report at row width. Twelve
+ *      characters, and it qualifies the name rather than describing the lane.
+ *   3. `.t-resident-name`  — who is resident. The one fact this badge exists to
+ *      state, so it is last, and it ellipsizes rather than wrapping when even it
+ *      has to give.
+ */
+
 .t-resident-name {
   color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 /*
@@ -704,17 +739,26 @@
  */
 .t-resident-kind {
   font-style: italic;
+  /* A role word is a name's stand-in here, so it holds exactly as a name does. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 /*
- * The missing-profile report (SPEC.md §7). Same elision rule as the line beside
- * it: the head is one row, and the whole of it stays on the badge's title.
+ * §7's missing-profile report, at **row width** — `LaneRow.mark` since UI-124,
+ * where the whole sentence measured 522px against a 178px box and clipped every
+ * time it rendered. Twelve characters now, so it fits wherever the name does;
+ * the sentence is on the badge's title, which is where it always was.
  */
 .t-resident-note {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 0 50 auto;
 }
 
 .t-resident-note::before {
@@ -732,6 +776,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 1 1 0;
 }
 
 .t-resident-line::before {

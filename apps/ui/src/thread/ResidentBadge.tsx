@@ -32,6 +32,26 @@ import { useNowTick } from "./useNowTick";
  * frontmatter names no agent, or a lapsed one whose line has to say what happens
  * meanwhile. The dot is the picker's own `LaneDot`.
  *
+ * ## §7's missing-profile report is carried at **row width** (UI-124)
+ *
+ * The badge is one line inside a conversation's head, and it used to print
+ * `LaneRow.note` — {@link MISSING_PROFILE_NOTE}, the whole sentence. Measured in
+ * a real browser during PR #50's third review: `scrollWidth` 499 against a
+ * `clientWidth` of 263. It clipped, and the resident's name beside it wrapped.
+ *
+ * So it prints `LaneRow.mark` instead. That is **not a second wording of the
+ * claim** — the thing SHARED-053 exists to prevent, and the thing this issue's
+ * acceptance criteria forbid inventing. `note` and `mark` are two renderings of
+ * one fact, both derived from `LaneRow.kind`, and `laneRows.ts` says in as many
+ * words which surface takes which: *"a surface with a line to itself says the
+ * note; one whose rows sit side by side says this."* The recipient picker's own
+ * rows already take the mark for the same reason, and the composer's statement
+ * — the surface this note is written for — still carries the whole sentence.
+ *
+ * The sentence is not lost here either: the badge's `title` carries `note` in
+ * full, which is SHARED-057's reveal (*"a truncated value gets its whole self on
+ * a tooltip"*) and was already true before this change.
+ *
  * ## Why it holds a clock
  *
  * Because liveness expires without anything arriving. `isAgentPresent` treats a
@@ -119,8 +139,12 @@ export function ResidentBadge({ threadId }: ResidentBadgeProps): ReactElement | 
        * whose designation still stands. Beside the liveness line rather than
        * inside it, because they answer different questions — who is resident,
        * and whether they are there.
+       *
+       * At **row width** (`mark`), because this badge is a row; the whole
+       * sentence (`note`) is on the title above and in the composer's statement
+       * below. See the docblock — the two are one fact, not two wordings.
        */}
-      {row.note === "" ? null : <span className="t-resident-note">{row.note}</span>}
+      {row.mark === "" ? null : <span className="t-resident-note">{row.mark}</span>}
       {row.line === "" ? null : <span className="t-resident-line">{row.line}</span>}
     </span>
   );
