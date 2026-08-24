@@ -76,20 +76,36 @@ abstraction got written.
 
 ## Acceptance Criteria
 
-- [~] One home for the causes, respecting the contract → kit dependency
-      direction — **done for `apps/cli`**, whose four sites now compose from
-      `apps/cli/src/commands/resident.ts`. The contract's two sites are
-      untouched, so there is not yet *one* home
-- [~] Every site that enumerates them either composes from that home or is held
-      to it by a test — **the five `apps/cli` sites do**; the two in
-      `packages/contract/src/schemas/agents.ts` are still hand-typed, and are
-      held only by `resident.test.ts`'s literal comparison
+- [ ] One home for the causes, respecting the contract → kit dependency
+      direction — **not met, and further from met than when this was filed.**
+      Every site now composes rather than restating, which was the defect. But
+      it composes from **three** declarations: `packages/kit`,
+      `packages/contract/src/schemas/agents.ts` and
+      `apps/cli/src/commands/resident.ts`. `scripts/missing-profile-parity.test.ts`
+      holds all three equal, so nothing can drift silently — but a test holding
+      three lists equal is not one home, it is three homes with a guard
+- [x] Every site that enumerates them either composes from that home or is held
+      to it by a test — the five `apps/cli` sites and the two contract sites all
+      compose, and the parity test measures each array against the same
+      **workspace acts**, so two copies edited the same wrong way still fail
 - [x] The test survives a smuggled restatement worded to avoid the vocabulary —
       the new cases compare against the **composed** string, which only
       interpolation produces, and measure the CLI's array against the same
       workspace acts the existing pin uses
 - [ ] `laneRows.ts`'s claim about which text is canonical is true afterwards, or
-      is removed — **not done**, `packages/kit` is out of this agent's scope
+      is removed — **not done**
+
+### What closes this issue
+
+`packages/contract` is the dependency-correct home: both `packages/kit` and
+`apps/cli` may import it, and it may import neither. So the remaining work is
+small and mechanical — the kit's array becomes a re-export of the contract's,
+`apps/cli` imports from `@corpus/contract`, `laneRows.ts`'s canonical claim
+becomes true, and the two parity blocks holding the copies equal are deleted
+because there is nothing left to hold apart.
+
+Held open on purpose. Marking it `done` with three declarations standing would
+be the exact defect this release is named for.
 
 ## Technical Design
 
@@ -240,6 +256,124 @@ place.
 typecheck clean, eslint clean, prettier clean, `docs/cli.md` regenerated,
 `vitest run apps/cli scripts/missing-profile-parity.test.ts
 scripts/retrieval-exclusion-parity.test.ts` — 109 files, 2148 tests, exit 0.
+
+### Contract half — 2026-08-24, contract-dev, opus (`claude-opus-5[1m]`)
+
+Scope was restricted to the two `packages/contract/src/schemas/agents.ts` sites.
+`apps/cli`, `apps/ui` and `packages/kit` were not touched. Isolated worktree
+`.claude/worktrees/agent-ac4ea264a31fc4cc4` with its own `npm install` and its
+own `dist/`.
+
+#### Decision 1 — the home is the contract, and the copies are pinned to it
+
+The two sites could not simply *reference* the array: `MISSING_PROFILE_CAUSES`
+lives in `packages/kit`, and `packages/contract` ← `packages/kit` is fixed, so
+the contract cannot import it. Nor could the kit be moved to consume the
+contract, since the kit was out of scope. So the contract now **declares** the
+array — the dependency-correct final home — and `scripts/` holds the two
+declarations equal:
+
+- `AGENT_DEF_ROOT`, `MISSING_PROFILE_CAUSES`, `MissingProfileCause` and
+  `MISSING_PROFILE_CAUSE_CLAUSE` in `packages/contract/src/schemas/agents.ts`.
+- The `ResidentSchema` docblock (the first site) now says *"one of
+  {@link MISSING_PROFILE_CAUSES} has happened to it since"*. A JSDoc comment
+  cannot interpolate, so a reference is the strongest form available there.
+- `Resident.docId`'s **published description** (the second site) interpolates
+  `MISSING_PROFILE_CAUSE_CLAUSE`. That is the sentence four domains read, and it
+  is now composed.
+- `scripts/missing-profile-parity.test.ts` gained three cases holding the
+  contract's array and the kit's equal — as a set, in order, and against the
+  acts the file already measures on a real workspace.
+
+#### Decision 2 — the enumeration is shared, the typography is not
+
+The array's members stay bare (`moved out of .claude/agents/`) because the kit
+renders them into a lane's own sentence on the board, where a backtick reaches a
+person's eye as a backtick. `MISSING_PROFILE_CAUSE_CLAUSE` code-quotes the root,
+because a `description` and `docs/cli.md` are both markdown. cli-dev reached the
+same split independently in `apps/cli/src/commands/resident.ts`, and this
+implementation matches its spelling **exactly** so its pin survives the harvest
+(measured below).
+
+#### What was rejected
+
+- **Leaving the description hand-typed and only referencing the array in prose.**
+  That is the fourth copy the issue is about.
+- **A second array named differently in the contract** to avoid the duplicate
+  export name. The intended end state is one name, and a pin makes the interim
+  safe.
+- **Deriving the kit from the contract now.** Out of scope, and it is one import
+  line once the kit's issue runs.
+
+#### Falsification — all three pins fire
+
+Reworded the contract's third cause to `"moved out of the personas folder"`,
+rebuilt, ran:
+
+```
+$ vitest run packages/contract/src/schemas/agents.test.ts \
+             packages/contract/src/openapi.test.ts \
+             scripts/missing-profile-parity.test.ts        → EXIT=1, 5 failed
+× agents.test.ts   > lists exactly the three §7 names, and archiving is not among them
+× openapi.test.ts  > gates the designation name on `.claude/agents/`, …
+× parity           > names the same set, in both directions
+× parity           > keeps them in the same order, because both compose a sentence from it
+× parity           > publishes only causes an act above actually produces
+```
+
+Then the other direction — the array left alone and the description **hand-typed
+back with a drifted cause** (`renamed, archived, or moved out of …`):
+
+```
+FAIL openapi.test.ts > does not list archiving among the ways a profile stops resolving
+  Expected: "has since been renamed, deleted, or moved out of `.claude/agents/`"
+FAIL agents.test.ts > publishes that clause on Resident.docId, and mentions archiving only to deny it
+  Expected: "has since been renamed, deleted, or moved out of `.claude/agents/`"
+```
+
+Two existing pins that transcribed the list by hand were rewritten to derive it
+(`openapi.test.ts:5492` and the CONTRACT-051 root check), so no hand-typed copy
+was left behind in a test either.
+
+#### cli-dev's pin, measured rather than assumed
+
+`apps/cli/src/commands/resident.test.ts` asserts
+`ResidentSchema.shape.docId.description` contains its own composed phrase. Run in
+this worktree against the new contract:
+
+```
+contract clause : "renamed, deleted, or moved out of `.claude/agents/`"
+cli phrase      : "renamed, deleted, or moved out of `.claude/agents/`"
+identical       : true
+docId ⊇ cli phrase : true
+docId ⊇ archiving  : true
+```
+
+#### Checks
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run --reporter=verbose \
+    packages/contract apps/server/src/check scripts/missing-profile-parity.test.ts
+EXIT=0 · Test Files 74 passed (74) · Tests 3048 passed (3048)
+
+$ npm run typecheck -w packages/contract        → 0
+$ tsc --noEmit -p scripts/tsconfig.json         → 0
+$ eslint packages/contract/src scripts/missing-profile-parity.test.ts → 0
+$ prettier --check (every touched file + both generated artifacts)    → clean
+$ npm run generate -w packages/contract (twice) → idempotent
+```
+
+#### Still open for the CLI/kit half
+
+- Acceptance criterion 4 — `packages/kit/src/recipient/laneRows.ts:155-159`'s
+  claim that the **contract's** `docId` description is canonical. It is now true
+  in the strong sense (the contract composes the sentence and the kit's array is
+  pinned to the contract's), but the kit still declares rather than consumes.
+  Nothing compares the two from inside the kit, only from `scripts/`.
+- Three declarations of the same list now exist — contract, kit, `apps/cli` —
+  all held equal by tests. The follow-up is two import lines: the kit and the CLI
+  re-export the contract's, and the `scripts/` pin added here is deleted rather
+  than rewritten.
 
 ## Completion Checklist (domain agent)
 

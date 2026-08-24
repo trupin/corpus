@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSE_CLAUSE } from "./schemas/agents.js";
 import { BULK_ACTION_NAMES } from "./schemas/bulk.js";
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import {
@@ -4137,6 +4138,51 @@ describe("a folder move reports the documents it carried (CONTRACT-047)", () => 
   });
 
   /**
+   * CONTRACT-084. A save that accepts a §11 error now has somewhere on the wire
+   * to say so, and the published document is where the agent's client author
+   * reads what that code means.
+   *
+   * Pinned on the generated document rather than on the schema module for the
+   * usual reason, and pinned as **four separate claims** because the failure
+   * mode here is a description that names the type and stops: a reader who is
+   * told only "an error happened" will reasonably conclude the save downgraded
+   * the finding, and the whole point of the code is that it did not.
+   */
+  describe("a tolerated §11 error is reportable and says it was not downgraded", () => {
+    const description = (): string => codeSchema()?.description ?? "";
+
+    it("publishes the code in the shared warning vocabulary", () => {
+      expect(codeSchema()?.enum).toContain("validation_error");
+      expect(codeSchema()?.enum).toEqual([...WARNING_CODES]);
+    });
+
+    /** The severity claim, in both directions: tolerated here, still fatal there. */
+    it("says the check still fails on the same bytes", () => {
+      expect(description()).toContain("re-grades");
+      expect(description()).toContain("`corpus doc check` still fails on the same bytes");
+      expect(description()).toContain("exits 6");
+    });
+
+    /** The shape a console and the CLI render verbatim. */
+    it("states the detail's shape and that it is one warning per finding", () => {
+      expect(description()).toContain("`<check-code>: <specifics>`");
+      expect(description()).toContain("**One warning per finding, not one per save**");
+    });
+
+    /**
+     * The negative that keeps the channel worth reading: `anchor-unused` is
+     * answered a write behind on the commonest mutation in the product, so a
+     * later widening to "every error the save lets through" would put a false
+     * warning on nearly every anchored comment. Published, so the widening is
+     * argued against text rather than rediscovered.
+     */
+    it("refuses the generalisation to every error the write path lets through", () => {
+      expect(description()).toContain("`anchor-unused`");
+      expect(description()).toContain("a write behind");
+    });
+  });
+
+  /**
    * `detail` is prose the contract forbids parsing, so every distinction a
    * client acts on has to be in `code`. A routine carry (§7 working as
    * specified, on every nested skill) and the server rewriting a file the
@@ -5434,8 +5480,12 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     }
     // And the resolved half of a `Resident` says what leaving the root does to
     // it, since `docId` is re-resolved through the same gate on every response.
+    // Read out of the composed clause rather than typed (SHARED-054): the
+    // sentence is derived from MISSING_PROFILE_CAUSES, and a copy here would be
+    // a second opinion about it.
+    expect(MISSING_PROFILE_CAUSE_CLAUSE).toContain(`moved out of \`${AGENT_DEF_ROOT}\``);
     expect(componentSchemas?.["Resident"]?.properties?.["docId"]?.description).toContain(
-      "moved out of `.claude/agents/`",
+      MISSING_PROFILE_CAUSE_CLAUSE,
     );
   });
 
@@ -5489,7 +5539,11 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
    */
   it("does not list archiving among the ways a profile stops resolving", () => {
     const description = componentSchemas?.["Resident"]?.properties?.["docId"]?.description ?? "";
-    expect(description).toContain("renamed, deleted, or moved out of `.claude/agents/`");
+    // Derived, not transcribed (SHARED-054). The published sentence is composed
+    // from MISSING_PROFILE_CAUSES, so this asserts the composition reached the
+    // document rather than asserting one spelling of it — a fourth hand-typed
+    // copy of the list is exactly what the issue is about.
+    expect(description).toContain(`has since been ${MISSING_PROFILE_CAUSE_CLAUSE}`);
     expect(description).toContain("**Archiving a profile does not empty this field**");
     // Every sentence that mentions archiving must be one of the sentences
     // saying it changes nothing — a re-added "renamed, archived, …" lands in a

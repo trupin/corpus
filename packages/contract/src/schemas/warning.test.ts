@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHECK_CODES, CHECK_WARNING_CODES } from "./check.js";
 import { WARNING_CODES, WarningSchema, warningsField } from "./warning.js";
 
 describe("Warning", () => {
@@ -9,17 +10,51 @@ describe("Warning", () => {
     );
   });
 
-  it("names exactly §11's two warning families and CONTRACT-047's third", () => {
+  it("names exactly §11's two warning families, CONTRACT-047's third and CONTRACT-084's fourth", () => {
     expect(WARNING_CODES).toEqual([
       "commit_failed",
       "commit_skipped",
       "orphaned_anchor",
       "unresolved_ref",
+      "validation_error",
       "carried_skill",
       "carried_reconciliation",
       "stage_status",
       "default_open_cleared",
     ]);
+  });
+
+  /**
+   * CONTRACT-084. The fourth family: a §11 validation finding of **error**
+   * severity that the save reported and did not refuse.
+   *
+   * The assertion that matters is the one below it — this channel and the
+   * validator's severity split are **two different families**, and the whole
+   * issue turns on not confusing them. `CHECK_WARNING_CODES` (`./check.ts`)
+   * decides `corpus doc check`'s exit 0 versus 6 and is closed at two members;
+   * this array is the response channel and already spanned `carried_skill`
+   * ("nothing went wrong") to `commit_failed`. So nothing moved across the
+   * validator's partition to make room here, and `apps/server`'s
+   * `check/codes.test.ts` passes unchanged.
+   */
+  it("gives a tolerated error a way to say so on the response", () => {
+    expect(WARNING_CODES).toContain("validation_error");
+    expect(new Set(WARNING_CODES).size).toBe(WARNING_CODES.length);
+  });
+
+  /**
+   * The validator's severity split is untouched by the addition, asserted from
+   * this side so the claim is not only in a comment. `validation_error` is a
+   * response code and never a `CheckCode`, and no `CheckCode` became a response
+   * code to carry it — the mapping from finding to warning stays the server's,
+   * through `detail`.
+   */
+  it("does not move anything across the validator's partition", () => {
+    const responseCodes: readonly string[] = WARNING_CODES;
+    for (const checkCode of CHECK_CODES) expect(responseCodes, checkCode).not.toContain(checkCode);
+    const checkCodes: readonly string[] = CHECK_CODES;
+    expect(checkCodes).not.toContain("validation_error");
+    expect(CHECK_WARNING_CODES).toEqual(["anchor-unresolved", "ref-unresolved"]);
   });
 
   /**

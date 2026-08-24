@@ -115,6 +115,78 @@ export const RESIDENT_WEIGHT_BOUNDARY =
   "resident hands off (SPEC.md §7, rider signed 2026-08-19)";
 
 /**
+ * The one directory a `type: agent-def` document has to sit in to be
+ * addressable at all (SPEC.md §7) — see {@link AgentNameSchema}, where the root
+ * is the gate rather than a detail of the stem clause.
+ *
+ * Named because two things interpolate it: the third of
+ * {@link MISSING_PROFILE_CAUSES}, and the code-quoted spelling
+ * {@link MISSING_PROFILE_CAUSE_CLAUSE} publishes.
+ */
+export const AGENT_DEF_ROOT = ".claude/agents/";
+
+/**
+ * **Every way a designated profile stops resolving**, and the only place this
+ * package writes them down — SPEC.md §7, as amended by SHARED-053 (signed
+ * 2026-08-20): *"A profile that is renamed, deleted, or moved out of
+ * `.claude/agents/` after designation does not end the designation … the missing
+ * profile is reported rather than silently substituted."*
+ *
+ * **Archiving is not a member, and its absence is the point.** An archived
+ * `agent-def` stays under `.claude/agents/`, so it still resolves and its
+ * resident is still designatable — telling a person that a working archived
+ * profile is gone is a false statement about a lane that is fine. That clause
+ * was in this sentence for a release, at eight sites at once, because each site
+ * was typed (SHARED-053).
+ *
+ * **So no surface types the list.** {@link MISSING_PROFILE_CAUSE_CLAUSE} is
+ * composed from this array and `Resident.docId`'s published description is
+ * composed from that, which leaves one place to correct and one place a test
+ * has to read. The measurement lives in `scripts/missing-profile-parity.test.ts`,
+ * the one tree allowed to see `apps/server` and `packages/kit` at once: it pairs
+ * each cause with a **workspace act** by type identity, applies it to a real
+ * workspace, and asserts set-equality in both directions — so a cause added here
+ * without an act that produces it fails, and so does an act that starts emptying
+ * `docId` without a cause. That file also pins this array against
+ * `packages/kit`'s `MISSING_PROFILE_CAUSES`, the copy the board and the picker
+ * render from.
+ *
+ * **Why the copies are elsewhere and the home is here.** The dependency
+ * direction is fixed — `packages/contract` ← `packages/kit` / `apps/cli` — so
+ * neither downstream array can be this package's source, and this one can be
+ * theirs. Both are scheduled to become re-exports of this one (SHARED-054),
+ * which is why a pin exists rather than an import: until they move, two
+ * declarations a test holds equal beats a silent divergence.
+ */
+export const MISSING_PROFILE_CAUSES = [
+  "renamed",
+  "deleted",
+  `moved out of ${AGENT_DEF_ROOT}`,
+] as const;
+
+/** One of {@link MISSING_PROFILE_CAUSES} — the type a parity fixture pairs with an act. */
+export type MissingProfileCause = (typeof MISSING_PROFILE_CAUSES)[number];
+
+/**
+ * The three causes as one English clause, for the descriptions that enumerate
+ * them. Composed, never written out — see {@link MISSING_PROFILE_CAUSES}.
+ *
+ * **The root is code-quoted here and bare in the array**, and the split is the
+ * point of having two constants. A published `description` is markdown, and so
+ * is `docs/cli.md`, which `apps/cli` generates from the same clause — a bare
+ * path reads there as prose rather than as a path. The array's members stay
+ * bare because `packages/kit` renders them into a lane's own sentence on the
+ * board, where a backtick reaches a person's eye as a backtick. So the
+ * enumeration is shared and the typography is not.
+ */
+export const MISSING_PROFILE_CAUSE_CLAUSE = ((): string => {
+  const quoted = MISSING_PROFILE_CAUSES.map((cause) =>
+    cause.replace(AGENT_DEF_ROOT, `\`${AGENT_DEF_ROOT}\``),
+  );
+  return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1] ?? ""}`;
+})();
+
+/**
  * A thread's resident: the agent that owns the conversation, and the profile it
  * works from — **when it has one** (SPEC.md §7, rider SHARED-048).
  *
@@ -131,7 +203,7 @@ export const RESIDENT_WEIGHT_BOUNDARY =
  * - `{name: "researcher", docId: "doc_…"}` — a **profiled resident**: open that
  *   document to see what the agent is.
  * - `{name: "researcher", docId: null}` — a profiled resident whose **profile is
- *   gone**: renamed, deleted, or moved out of `.claude/agents/` since. The
+ *   gone**: one of {@link MISSING_PROFILE_CAUSES} has happened to it since. The
  *   designation stands and the resident goes on owning its scope; §7 requires
  *   the miss be *reported* rather than silently substituted, and this is the
  *   report. Not the same state as the first: one is ordinary and one is worth
@@ -216,7 +288,7 @@ export const ResidentSchema = openapi(
       docId: DocIdSchema.nullable().describe(
         "The `type: agent-def` document `name` resolves to **right now**, or null when there is " +
           "none to resolve — either because no profile was named, or because the one that was named " +
-          "has since been renamed, deleted, or moved out of `.claude/agents/`, the root a persona " +
+          `has since been ${MISSING_PROFILE_CAUSE_CLAUSE}, the root a persona ` +
           "has to live in to be addressable at all. **Archiving a profile does not empty this " +
           "field**: an archived `agent-def` still under that root resolves exactly as before, and is " +
           "still designatable, so what stands here is its id and `name (profile missing)` is the " +

@@ -51,6 +51,32 @@ import { openapi } from "./openapi-metadata.js";
  * carry, which is how the reconciliation beside it would get ignored. It stays
  * recorded where a change with no consequence belongs: the commit and the log.
  *
+ * A fourth family joins them with CONTRACT-084, and it is the one that reads as
+ * a contradiction until the two `WARNING_CODES` are told apart, so it is argued
+ * here rather than assumed:
+ *
+ * - **The tolerated half.** A §11 validation finding of **error** severity that
+ *   the save reported and did not refuse. §11 requires every mutation to
+ *   validate before writing, and the write path refuses a document for what a
+ *   save can *break* — but a fault the bytes already carry is a different case,
+ *   because refusing it makes the faulty document unwritable and takes the
+ *   repair with it. Such a finding used to reach `.corpus/server.log` and
+ *   nothing else, and the party it harms is the agent whose turn an unclosed
+ *   fence swallowed, which reads responses and never the log.
+ *
+ * **Why an error travels the warning channel, said once so it is not
+ * re-litigated.** {@link WARNING_CODES} here and `CHECK_WARNING_CODES` in
+ * `./check.ts` are **two different families**. That one is the *validator's*
+ * severity split: closed, load-bearing, and what decides whether
+ * `corpus doc check` exits 0 or 6. This one is the *response channel*, whose
+ * members already run from "nothing went wrong at all" (`carried_skill`) to
+ * "your commit failed". A channel with that span is a reporting channel and not
+ * a severity class, and §11 says so in its own words: the auto-commit sentence
+ * calls the event a **failure** and puts it on the response as a **warning**, in
+ * one sentence, and the rider signed 2026-08-10 states outright that "a warning
+ * is not only a failure". So no rider was needed for the fourth family, and
+ * nothing crossed the validator's partition to make room for it.
+ *
  * Response-side only. There is deliberately no request-side counterpart: a
  * client never tells the server what to warn about.
  *
@@ -66,7 +92,8 @@ import { openapi } from "./openapi-metadata.js";
  * the call right and asked only that the contract's own history record it.
  * This paragraph is that record, and it is the exception rather than the rule:
  * a member added here is a published vocabulary change, and the next one goes
- * through this domain.
+ * through this domain. `validation_error` is that next one, and it did
+ * (CONTRACT-084, with the server half in SERVER-067).
  *
  * The descriptions below were audited against their emitters on 2026-08-23
  * (CONTRACT-079), and three had drifted from what the server does. Each is
@@ -77,6 +104,7 @@ export const WARNING_CODES = [
   "commit_skipped",
   "orphaned_anchor",
   "unresolved_ref",
+  "validation_error",
   "carried_skill",
   "carried_reconciliation",
   "stage_status",
@@ -96,6 +124,24 @@ export const WarningCodeSchema = openapi(z.enum(WARNING_CODES), {
     "`orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the " +
     "body, so its thread is detached (SPEC.md §6). " +
     "`unresolved_ref`: a `[[ref]]` in the body names no document. " +
+    "`validation_error`: this write carried a §11 validation finding of **error** severity and " +
+    "the server wrote the file anyway. It reports what the save **tolerated**, and it re-grades " +
+    "nothing: the finding keeps the code and the severity it was raised under, so " +
+    "`corpus doc check` still fails on the same bytes and still exits 6. A save is refused for " +
+    "what a save can *break*, and a fault the bytes already carry is a different case — refusing " +
+    "it would make the faulty document unwritable and take the repair with it, since the repair " +
+    "is itself a write. Two families are tolerated today: an **unterminated code fence**, which " +
+    "swallows everything after it, a thread's later turns included, and **invalid frontmatter " +
+    "under one of §7's `.claude/` roots**, where the file may be one a hand wrote years before " +
+    "this system read it. The set is the server's, and a client tells one finding from another " +
+    "by reading `detail`, never by this code multiplying. `detail` is " +
+    "`<check-code>: <specifics>` — the finding's own code, then its own prose — rendered " +
+    "verbatim like every other `detail` and parsed by nobody. **One warning per finding, not one " +
+    "per save**: bytes carrying two tolerated findings report two. It is deliberately **not** " +
+    "every error the write path lets through: one cross-document rule (`anchor-unused`) is " +
+    "answered a write behind on the commonest mutation in the product, so reporting it would " +
+    "put a false warning on nearly every anchored comment and teach a reader to skip the channel " +
+    "the fence finding needs them to read. " +
     "`carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill " +
     "document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's " +
     "location its enablement, so a nested `SKILL.md` carried along by the folder changes state " +
@@ -174,8 +220,12 @@ export const warningsField = z
       "had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The " +
       "mutation succeeded regardless — files are the source of truth and the server never rolls " +
       "a write back because a commit or a check failed, and a carried effect is not a failure at " +
-      "all but a consequence the caller is owed. Empty when nothing went wrong and the act " +
-      "touched nothing beyond what it was asked to do.",
+      "all but a consequence the caller is owed. **This is a reporting channel and not a " +
+      "severity class**: its members run from `carried_skill`, where nothing went wrong at all, " +
+      "to `commit_failed`, and `validation_error` carries a §11 finding of error severity that " +
+      "the save reported rather than refused (CONTRACT-084). Read `code` to tell them apart, " +
+      "never the position in the array and never `detail`. Empty when nothing went wrong and the " +
+      "act touched nothing beyond what it was asked to do.",
   );
 
 export type WarningCode = z.infer<typeof WarningCodeSchema>;

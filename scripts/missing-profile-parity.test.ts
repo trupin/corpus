@@ -1,3 +1,4 @@
+import { MISSING_PROFILE_CAUSES as CONTRACT_MISSING_PROFILE_CAUSES } from "@corpus/contract";
 import {
   MISSING_PROFILE_CAUSES,
   MISSING_PROFILE_NOTE,
@@ -324,6 +325,56 @@ describe("the same causes, as `apps/cli`'s help states them", () => {
   it("never names archiving inside the causes themselves", () => {
     for (const spelling of ["archiv", "disabl", "deactivat", "retired"]) {
       expect(MISSING_PROFILE_CAUSES_PHRASE.toLowerCase()).not.toContain(spelling);
+    }
+  });
+});
+
+/**
+ * **The same list, declared twice, held equal** — SHARED-054.
+ *
+ * `packages/kit` declares {@link MISSING_PROFILE_CAUSES} for the surfaces a
+ * person reads, and `packages/contract` declares
+ * {@link CONTRACT_MISSING_PROFILE_CAUSES} for the description published on
+ * `Resident.docId` — the sentence four domains read. Two declarations, because
+ * the dependency direction is fixed (`packages/contract` ← `packages/kit`) and
+ * the kit's copy has not yet become a re-export of the contract's.
+ *
+ * Two declarations with nothing between them is the exact shape SHARED-053's
+ * four false statements came out of, so this pins them by **set equality in both
+ * directions**, never by either being a superset. It lives here for this file's
+ * own reason: `scripts/` is the one tree allowed to look at two packages that
+ * are not on a dependency path.
+ *
+ * The pin is deliberately narrow. Everything above measures whether the list is
+ * *true* against a real workspace, and needs only one list to do it — so when
+ * the kit becomes a re-export, this block is deleted rather than rewritten.
+ */
+describe("the contract publishes the same causes the kit renders", () => {
+  it("names the same set, in both directions", () => {
+    expect(new Set(CONTRACT_MISSING_PROFILE_CAUSES)).toEqual(new Set(MISSING_PROFILE_CAUSES));
+    expect(CONTRACT_MISSING_PROFILE_CAUSES).toHaveLength(MISSING_PROFILE_CAUSES.length);
+  });
+
+  /**
+   * Order too, since both compose a three-item English clause from indices — a
+   * reordered array would leave the two sentences reading differently while a
+   * set comparison stayed green.
+   */
+  it("keeps them in the same order, because both compose a sentence from it", () => {
+    expect([...CONTRACT_MISSING_PROFILE_CAUSES]).toEqual([...MISSING_PROFILE_CAUSES]);
+  });
+
+  /**
+   * And the acts measured above answer for the contract's copy as well, stated
+   * rather than inferred: every cause the contract publishes is produced by an
+   * act this file applied to a real workspace.
+   */
+  it("publishes only causes an act above actually produces", () => {
+    const measured = new Set<string>(
+      ACTS.flatMap((act) => (act.cause === null ? [] : [act.cause])),
+    );
+    for (const cause of CONTRACT_MISSING_PROFILE_CAUSES) {
+      expect(measured, cause).toContain(cause);
     }
   });
 });
