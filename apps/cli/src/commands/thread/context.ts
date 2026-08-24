@@ -6,7 +6,7 @@ import {
 import type { paths } from "@corpus/contract/client";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { oneLine, renderColumns } from "../columns.js";
-import { semanticIndexNote } from "../retrieval.js";
+import { neighbourExclusionNote, semanticIndexNote } from "../retrieval.js";
 
 /**
  * `corpus thread context` — the **briefing** SPEC.md §7 gives the comment skill
@@ -241,6 +241,9 @@ export const contextCommand: WorkspaceCommandSpec = {
     "When the parent-side prose was cut to fit, a `#` line says so and names the escalation — " +
     "`corpus doc show <parent>`. Nothing is ever silently trimmed: an agent editing a section " +
     "must know whether it saw all of it.\n\n" +
+    `${neighbourExclusionNote("corpus thread context")} A thread whose _parent_ is one of these ` +
+    "types still gets that parent's block: the conversation is on it, and a parent is read by id " +
+    "rather than through the candidate query.\n\n" +
     "Each excerpt is one padded line — id, heading path, relation, excerpt — and **never a " +
     "body**. Reading one is a separate, deliberate `corpus doc show <id>` on that row's id, " +
     "exactly as with `corpus search` and `corpus doc related`. A pack with nothing related is a " +

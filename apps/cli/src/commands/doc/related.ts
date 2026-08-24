@@ -2,7 +2,7 @@ import { RETRIEVAL_DEFAULT_LIMIT, RETRIEVAL_MAX_LIMIT } from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { oneLine, renderColumns } from "../columns.js";
-import { semanticIndexNote } from "../retrieval.js";
+import { neighbourExclusionNote, semanticIndexNote } from "../retrieval.js";
 
 /**
  * `corpus doc related` — the second half of retrieval (SPEC.md §7, §9.2): once
@@ -73,6 +73,7 @@ export const relatedCommand: WorkspaceCommandSpec = {
     "references to documents nobody has created yet are real in the corpus but are not offered " +
     "here. Archived neighbours are excluded by default, like every list — `--include-archived` " +
     "widens the set.\n\n" +
+    `${neighbourExclusionNote("corpus doc related")}\n\n` +
     "An id that names no document is the server's `404`, which is exit 5, and " +
     "a document nothing relates to is a single honest line and exit 0.",
   args: [{ name: "id", required: true, description: "The document to expand from." }],
