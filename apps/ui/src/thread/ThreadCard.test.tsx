@@ -654,9 +654,21 @@ describe("the pending indicator", () => {
     await waitFor(() => {
       expect(container.querySelector(".working")).not.toBeNull();
     });
+    const row = container.querySelector(".working");
     // It was claimed and then parked, so nobody is working it this minute
-    // (SPEC.md §7, UI-097): outstanding, and not "working…".
-    expect(container.querySelector(".working")?.getAttribute("data-pending-state")).toBe("waiting");
+    // (SPEC.md §7, UI-097): outstanding, and not "working…". Since UI-115 it is
+    // its own state rather than the nearest of two — it was **seen** and put
+    // down, and the row names the document it is parked on so the person who
+    // can clear it knows which one to leave alone.
+    expect(row?.getAttribute("data-pending-state")).toBe("deferred");
+    // The tier depends on how old the fixture's turn is, so the assertion is on
+    // what every tier says: it is paused, and on which document.
+    expect(row?.textContent).toContain("paused");
+    expect(row?.textContent).toContain("editing doc_m");
+    expect(row?.textContent).not.toContain("picked up");
+    // The dot still answers "is anything being worked", and the answer is no.
+    expect(container.querySelector(".queued-dot")).not.toBeNull();
+    expect(container.querySelector(".working-dot")).toBeNull();
   });
 
   /**

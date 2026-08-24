@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -63,13 +63,13 @@ will be wrong exactly when it matters, with two readers open.
 
 ## Acceptance Criteria
 
-- [ ] `deferred` reads distinctly from both `pending` and `in-progress`, and the
+- [x] `deferred` reads distinctly from both `pending` and `in-progress`, and the
       wording makes clear the request was seen rather than ignored
-- [ ] It names the document it is parked on, or — if that is not available —
+- [x] It names the document it is parked on, or — if that is not available —
       this issue is blocked and names the issue that must supply it
-- [ ] The time escalation does not shout: a deferral that lasts is not
+- [x] The time escalation does not shout: a deferral that lasts is not
       breakage, and the tiers must not read as one
-- [ ] The row-level dot treats `deferred` consistently with the indicator; the
+- [x] The row-level dot treats `deferred` consistently with the indicator; the
       two must not disagree about what state a row is in
 
 ## Technical Design
@@ -90,15 +90,102 @@ app cannot reach.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: Opus 5 (1M context).** 2026-08-24.
+
+### The blocking question, answered first
+
+**Not blocked.** `Job` already carries `blockedOn` **and** `blockedOnTitle`
+(`packages/contract/src/schemas/job.ts`, CONTRACT-021): `blockedOn` is non-null
+exactly when `status` is `deferred`, and `blockedOnTitle` is the denormalised
+title read at response time. No server or contract issue was needed, and nothing
+is inferred from "whichever document the person has open".
+
+### What changed
+
+- `apps/ui/src/thread/outstandingAgentRequest.ts` — `PendingState` becomes three
+  words (`working | deferred | waiting`) and moves here, where the queue is read;
+  `OutstandingAgentRequest` gains `deferred: DeferredOn | null`, the **oldest**
+  parked job's document, for the same reason the clock takes the oldest job.
+  `pendingStateOf` states the precedence in one place.
+- `apps/ui/src/thread/PendingIndicator.tsx` — `DEFERRED_TIERS`,
+  `DEFERRED_TIERS_UNNAMED` and `deferredLabel`, at the same 45 s / 3 m / 15 m
+  thresholds. `pendingLabel` routes `deferred` before it considers the lane.
+- `packages/kit/src/row/useRowSignals.ts` — `deferredRowTitle`, and the same
+  precedence for the board row's dot.
+
+### The wording, and the three things it had to do
+
+`paused while you are editing <document>` → `still paused while you are editing
+<document>` → `still paused — it resumes when you finish editing <document>` →
+`still paused for 22m — it resumes when you finish editing <document>`.
+
+1. It says the request was **seen**. §7: *"Nothing refused it: the agent deferred
+   because it saw, not because it was blocked."* No tier contains "waiting" or
+   "picked up".
+2. It **names the document**, off the job.
+3. It **does not shout.** The escalation is in precision — the third tier adds
+   what ends it, the fourth adds a duration — and never in volume. Asserted:
+   no tier contains `NO_AGENT_CLAUSE` or `longer than usual`.
+
+Where the wire names no document, a fourth set drops the clause rather than
+printing an empty quotation, and the state is still `deferred` — falling back to
+"waiting" there would be the false inference all over again.
+
+**The lane is deliberately not named.** A deferral has already been claimed, so
+which resident holds it is settled; what the reader needs is what it is parked on
+and who can move it, and both of those are about the document. Asserted directly
+(`prefers the deferral to the lane's own wording`).
+
+### The dot, and why it did not become a third shape
+
+The dot answers *is anything being worked*, which is a two-state question, so a
+deferral keeps the **queued** dot on both surfaces. Its distinctness is in the
+sentence, where it can be explained; a third shape would need a sentence to
+explain it and the sentence is already there. Consistency is by construction:
+`pendingStateOf` and `useAgentActivity` apply one precedence — working, then
+deferred, then unclaimed — and each docblock names the other.
+
+### Real browser (chromium, `CORPUS_UI_PORT=5373`)
+
+`apps/ui/e2e/pending-claim.spec.ts` → *"a request the agent parked on somebody's
+editing"*. Deferring is something the agent does through the CLI while somebody
+holds an edit session, so the job is **seeded**; what the browser is for is that
+the sentence and the dot come from two different modules and must agree — which
+is the last acceptance criterion and is not a thing either module's unit test can
+check. Observed:
+
+- the board row: `.working-dot` × 0, and the `.queued-dot`'s `title` is
+  `Paused while The reimbursement policy is being edited`;
+- the card: `data-pending-state="deferred"`, text `paused while you are editing
+  The reimbursement policy`, no `picked up`, `data-working-since` unchanged (the
+  clock is the wait's — being parked is not a fresh request), `.queued-dot` × 1
+  and `.working-dot` × 0.
+
+### Falsification
+
+`ThreadCard.test.tsx`'s existing deferred case failed with
+`expected 'deferred' to be 'waiting'` before its assertion was updated — the
+change is observable at the seam the old behaviour was pinned at.
+
+### Tests
+
+- `apps/ui/src/thread/PendingIndicator.test.tsx` — the ladder, the tone, the
+  unnamed fallback, the lane preference, and the rendered row on fake timers
+  crossing a tier.
+- `apps/ui/src/thread/outstandingAgentRequest.test.ts` — the state machine:
+  claimed outranks parked, parked outranks unclaimed, oldest deferral wins, and
+  an off-contract deferral with no document is still a deferral.
+- `packages/kit/src/row/Row.test.tsx` — the row's dot and title, plus
+  `deferredRowTitle` on its own.
+- `vitest run apps/ui/src/thread packages/kit/src/row` — 627 green.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

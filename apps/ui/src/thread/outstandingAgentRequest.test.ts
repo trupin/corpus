@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { jobFixture, readerTransport } from "../testing/readerFixture";
 import {
   agentWaitSince,
+  deferredOnName,
+  pendingStateOf,
   pickOutstandingJob,
   pickOutstandingRequest,
   useOutstandingAgentRequest,
@@ -120,27 +122,118 @@ describe("pickOutstandingRequest", () => {
 
   it("calls an unclaimed event waiting, not working", () => {
     const queued = jobFixture({ eventId: "evt_queued", status: "pending", originId: THREAD });
-    expect(pickOutstandingRequest([queued], THREAD)).toEqual({ job: queued, working: false });
+    expect(pickOutstandingRequest([queued], THREAD)).toEqual({
+      job: queued,
+      working: false,
+      deferred: null,
+    });
+    expect(pendingStateOf(pickOutstandingRequest([queued], THREAD)!)).toBe("waiting");
   });
 
   it("calls a claimed event working", () => {
     const held = jobFixture({ eventId: "evt_held", status: "in-progress", originId: THREAD });
-    expect(pickOutstandingRequest([held], THREAD)).toEqual({ job: held, working: true });
+    expect(pickOutstandingRequest([held], THREAD)).toEqual({
+      job: held,
+      working: true,
+      deferred: null,
+    });
+    expect(pendingStateOf(pickOutstandingRequest([held], THREAD)!)).toBe("working");
   });
 
   /**
    * A deferral was claimed and then parked because somebody is editing the
    * document it needs (SPEC.md §7). The reply is still coming — so it is still
    * outstanding — but nobody is working it this minute.
+   *
+   * **And it is not merely "waiting"** (UI-115). It was picked up, looked at,
+   * and put down on purpose, and the wait is on the person reading the row — so
+   * the request carries the document it is parked on and the state says so.
    */
-  it("calls a deferral waiting", () => {
+  it("calls a deferral parked, and says what it is parked on", () => {
     const parked = jobFixture({
       eventId: "evt_parked",
       status: "deferred",
       originId: THREAD,
       blockedOn: "doc-standup",
+      blockedOnTitle: "The standup notes",
     });
-    expect(pickOutstandingRequest([parked], THREAD)).toEqual({ job: parked, working: false });
+    const request = pickOutstandingRequest([parked], THREAD);
+    expect(request).toEqual({
+      job: parked,
+      working: false,
+      deferred: { docId: "doc-standup", title: "The standup notes" },
+    });
+    expect(pendingStateOf(request!)).toBe("deferred");
+  });
+
+  /**
+   * A claim outranks a deferral: one event being held makes "the agent is
+   * working on this thread" true, whatever else is parked behind it.
+   */
+  it("reports working rather than parked when something on the thread is claimed", () => {
+    const parked = jobFixture({
+      eventId: "evt_parked",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-standup",
+      started: "2026-07-01T10:00:00.000Z",
+    });
+    const held = jobFixture({
+      eventId: "evt_held",
+      status: "in-progress",
+      originId: THREAD,
+      started: "2026-07-01T10:20:00.000Z",
+    });
+    const request = pickOutstandingRequest([parked, held], THREAD);
+    expect(request?.deferred).toBeNull();
+    expect(pendingStateOf(request!)).toBe("working");
+  });
+
+  /**
+   * …and a deferral outranks an unclaimed event, because it is the one wait
+   * whose reason is knowable and whose end is in the reader's hands. The board
+   * row's own signal applies the same precedence (`useRowSignals`).
+   */
+  it("prefers the parked event to an unclaimed one, oldest deferral first", () => {
+    const queued = jobFixture({ eventId: "evt_queued", status: "pending", originId: THREAD });
+    const newer = jobFixture({
+      eventId: "evt_newer",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-b",
+      blockedOnTitle: "B",
+      started: "2026-07-01T10:20:00.000Z",
+    });
+    const older = jobFixture({
+      eventId: "evt_older",
+      status: "deferred",
+      originId: THREAD,
+      blockedOn: "doc-a",
+      blockedOnTitle: "A",
+      started: "2026-07-01T10:00:00.000Z",
+    });
+    for (const jobs of [
+      [queued, newer, older],
+      [older, newer, queued],
+    ]) {
+      const request = pickOutstandingRequest(jobs, THREAD);
+      expect(pendingStateOf(request!)).toBe("deferred");
+      expect(request?.deferred).toEqual({ docId: "doc-a", title: "A" });
+    }
+  });
+
+  /**
+   * `blockedOn` is non-null exactly when the status is `deferred`
+   * (CONTRACT-021), so this is off-contract — and it is still a deferral. The
+   * wording drops the clause; the state does not fall back to "waiting", which
+   * would be the false inference all over again.
+   */
+  it("still reports a deferral the wire named no document for", () => {
+    const parked = jobFixture({ eventId: "evt_parked", status: "deferred", originId: THREAD });
+    const request = pickOutstandingRequest([parked], THREAD);
+    expect(pendingStateOf(request!)).toBe("deferred");
+    expect(request?.deferred).toEqual({ docId: null, title: null });
+    expect(deferredOnName(request!.deferred!)).toBeNull();
   });
 
   /**
@@ -161,8 +254,16 @@ describe("pickOutstandingRequest", () => {
       originId: THREAD,
       started: "2026-07-01T10:20:00.000Z",
     });
-    expect(pickOutstandingRequest([older, newer], THREAD)).toEqual({ job: older, working: true });
-    expect(pickOutstandingRequest([newer, older], THREAD)).toEqual({ job: older, working: true });
+    expect(pickOutstandingRequest([older, newer], THREAD)).toEqual({
+      job: older,
+      working: true,
+      deferred: null,
+    });
+    expect(pickOutstandingRequest([newer, older], THREAD)).toEqual({
+      job: older,
+      working: true,
+      deferred: null,
+    });
   });
 
   /** Another thread's claim is not this thread's, however busy the queue is. */
@@ -173,7 +274,11 @@ describe("pickOutstandingRequest", () => {
       status: "in-progress",
       originId: "thread-other",
     });
-    expect(pickOutstandingRequest([mine, theirs], THREAD)).toEqual({ job: mine, working: false });
+    expect(pickOutstandingRequest([mine, theirs], THREAD)).toEqual({
+      job: mine,
+      working: false,
+      deferred: null,
+    });
   });
 });
 

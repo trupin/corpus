@@ -18,7 +18,11 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
 import { NewChildThread } from "./NewChildThread";
-import { agentWaitSince, useOutstandingAgentRequest } from "./outstandingAgentRequest";
+import {
+  agentWaitSince,
+  pendingStateOf,
+  useOutstandingAgentRequest,
+} from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { ResidentBadge } from "./ResidentBadge";
@@ -430,7 +434,8 @@ export function ThreadCard({
       {outstanding === null ? null : (
         <PendingIndicator
           since={agentWaitSince(outstanding.job, turns)}
-          state={outstanding.working ? "working" : "waiting"}
+          state={pendingStateOf(outstanding)}
+          deferred={outstanding.deferred}
           lane={laneRow}
         />
       )}

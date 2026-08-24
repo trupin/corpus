@@ -155,3 +155,67 @@ test.describe("a request nobody has picked up", () => {
     expect(dot.border).not.toBe("0px");
   });
 });
+
+/**
+ * **A request that was seen and put down** — SPEC.md §7's `deferred`, in the
+ * words §8's row says it in (UI-115).
+ *
+ * UI-097 folded `deferred` into "waiting", which is true and invites a false
+ * inference: read *"still waiting to be picked up"* against a deferred event and
+ * the reasonable conclusion is that nothing has happened and nobody has looked.
+ * §7 says the opposite — *"Nothing refused it: the agent deferred because it
+ * saw, not because it was blocked"* — and it is the one wait the person reading
+ * the row can end, by finishing the edit.
+ *
+ * **Seeded rather than produced.** Deferring is something the agent does through
+ * the CLI while somebody holds an edit session; this page cannot cause it. What
+ * the browser is here for is that the sentence and the row's dot come from two
+ * different modules (`apps/ui`'s `PendingIndicator` and `@corpus/kit`'s
+ * `useRowSignals`) and must agree — which is the last acceptance criterion, and
+ * is not a thing either module's own unit test can check.
+ */
+test.describe("a request the agent parked on somebody's editing", () => {
+  const POLICY = {
+    id: "doc_policy",
+    type: "note",
+    title: "The reimbursement policy",
+    path: "data/docs/notes/policy.md",
+    body: "Reimbursement is capped at the published rate for the quarter.\n",
+  };
+
+  const DEFERRED_EVENT = {
+    eventId: "evt_ask",
+    type: "comment.created",
+    status: "deferred" as const,
+    started: ASKED_AT,
+    originId: "th_ask",
+    blockedOn: "doc_policy",
+  };
+
+  test("says it is paused, names the document, and the row's dot agrees", async ({ page }) => {
+    await stubCorpus(page, [VIEW, THREAD, POLICY], { jobs: [DEFERRED_EVENT] });
+    await page.goto("/");
+    await expect(row(page, "th_ask")).toBeVisible();
+
+    // The row: still not pulsing — nothing is being worked — and its dot says
+    // what the pause is on rather than that nobody has looked.
+    await expect(column(page).locator(".working-dot")).toHaveCount(0);
+    await expect(column(page).locator(".queued-dot")).toHaveAttribute(
+      "title",
+      `Paused while ${POLICY.title} is being edited`,
+    );
+
+    // The card: its own state, its own sentence, and the same document named.
+    await row(page, "th_ask").click();
+    const pending = reader(page).locator(".thread-card .working");
+    await expect(pending).toBeVisible();
+    await expect(pending).toHaveAttribute("data-pending-state", "deferred");
+    await expect(pending).toHaveText(`paused while you are editing ${POLICY.title}`);
+    // Never the inference this state exists to prevent.
+    await expect(pending).not.toContainText("picked up");
+    // The clock is the wait's, unchanged: being parked is not a fresh request.
+    await expect(pending).toHaveAttribute("data-working-since", ASKED_AT);
+    await expect(pending.locator(".queued-dot")).toHaveCount(1);
+    await expect(pending.locator(".working-dot")).toHaveCount(0);
+  });
+});
