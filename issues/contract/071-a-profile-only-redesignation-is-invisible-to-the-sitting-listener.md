@@ -164,6 +164,35 @@ Nothing in this issue depends on it: the field is a contract mechanism, and the
 behaviour it enables is AGENT-050's, which is where a signed sentence would be
 cited.
 
+## The SPEC rider, signed 2026-08-24
+
+PR #60's reviewer blocked the release on this and was right to. It accepted the
+orchestrator's gap-versus-contradiction distinction **for severity but not for
+shippability**, in its own words:
+
+> `designationId` lands in the user's thread frontmatter — that is a
+> user-observable **data format** … a drafted, unsigned rider is a spec update
+> that has not happened yet. So the field does not need reverting — your revert
+> argument attacks a fix nobody requires — but it does need the rider signed or
+> explicitly waived before merge.
+
+The user signed it. Applied to §7, beside the weight rider it parallels:
+
+> **A designation carries an identity.** It is an opaque id, minted when the
+> designation changes and kept when it does not, so a listener can tell whether
+> the conversation it holds is still the one it was given: changing only the
+> profile mints a new one, and re-designating the same profile at the same
+> weight does not. The identity is written into the thread's frontmatter with
+> the rest of the designation, so a person reading their own file finds it
+> described here. A designation made before this existed has none, and a
+> listener that finds none behaves as it did before the field existed.
+
+**The frontmatter sentence is the reviewer's, not the draft's.** The first draft
+described the identity's behaviour and said nothing about where it is stored.
+The reviewer's whole objection was that the field reaches the user's own files,
+so the spec now says so — otherwise someone reading their own thread would find
+an undocumented key and have nowhere to look it up.
+
 ## Acceptance Criteria
 - [x] A listener can tell, without parsing display text, that the designation it
       serves is no longer the lane's designation — `resident.designationId`, on
