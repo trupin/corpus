@@ -40,7 +40,11 @@ import { DOCS_ROOT, classifyPath, workspaceRelativePath } from "./roots.js";
  * carries no verdict, so a consumer that does not recognise the kind still
  * renders its `detail` and loses nothing.
  */
-export const DOCTOR_WARNING_KINDS = ["unindexable_file", "unindexable_files_truncated"] as const;
+export const DOCTOR_WARNING_KINDS = [
+  "unindexable_file",
+  "unindexable_files_truncated",
+  "unlistable_directory",
+] as const;
 
 export type DoctorWarningKind = (typeof DOCTOR_WARNING_KINDS)[number];
 
@@ -141,6 +145,14 @@ type WalkState = {
   readonly workspaceRoot: string;
   readonly limit: number;
   readonly findings: Finding[];
+  /**
+   * Directories this walk could not list (SERVER-065). The third of the three
+   * readers, answering the same way as `roots.ts` and `project-runtime.ts`:
+   * skipped, kept out of the findings, and reported. Here the channel is the
+   * report itself — `doctor` has no logger an operator is watching, and this pass
+   * already speaks in warnings.
+   */
+  readonly unlistable: { path: string; reason: string }[];
 };
 
 const byName = (a: { name: string }, b: { name: string }): number =>
@@ -192,9 +204,20 @@ function walkUnindexed(state: WalkState, dir: string): void {
   let entries: Dirent<string>[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
     // A `data/docs` that does not exist is simply empty, and a directory that
-    // vanished mid-walk is a removal — neither is a finding.
+    // vanished mid-walk is a removal — neither is a finding. That reasoning is
+    // right for the two causes it names and covered a third by accident
+    // (SERVER-065): an unreadable directory is *not* empty, and this pass exists
+    // precisely to report files nobody can see — so answering silence for a
+    // directory nobody can read is this pass failing at its own job.
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      const path = workspaceRelativePath(state.workspaceRoot, dir) ?? dir;
+      state.unlistable.push({
+        path,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
     return;
   }
 
@@ -250,7 +273,7 @@ export function collectUnindexableFiles(
   const limit = options.limit ?? UNINDEXABLE_WARNING_LIMIT;
   const readCommit = options.readCreatingCommit ?? readCreatingCommit;
   const absoluteRoot = resolve(workspaceRoot);
-  const state: WalkState = { workspaceRoot: absoluteRoot, limit, findings: [] };
+  const state: WalkState = { workspaceRoot: absoluteRoot, limit, findings: [], unlistable: [] };
 
   walkUnindexed(state, join(absoluteRoot, ...DOCS_ROOT.path.split("/")));
 
@@ -267,6 +290,18 @@ export function collectUnindexableFiles(
 
   if (found.length > limit) {
     warnings.push({ kind: "unindexable_files_truncated", detail: truncationDetail(limit) });
+  }
+  // Reported after the findings and never truncated with them: a directory
+  // nobody can list is a different fault from a file nobody can index, and it is
+  // the one that says the list above may be short (SERVER-065).
+  for (const directory of state.unlistable) {
+    warnings.push({
+      kind: "unlistable_directory",
+      path: directory.path,
+      detail:
+        `${directory.path} could not be listed (${directory.reason}), so this check could not ` +
+        "look inside it. Any unindexable file under it is missing from the list above.",
+    });
   }
   return warnings;
 }

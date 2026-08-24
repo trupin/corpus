@@ -86,7 +86,21 @@ export function populateFromFiles(db: ProjectionDb): PopulateReport {
   let anchors = 0;
   let links = 0;
 
-  const files = enumerateDocuments(db.config.workspaceRoot);
+  const { files, unlistable } = enumerateDocuments(db.config.workspaceRoot);
+  // A directory the walk could not list holds documents this rebuild will not
+  // have, so it is reported rather than answered as empty (SERVER-065). It joins
+  // `skipped` because that is exactly what it is — the same field an unreadable
+  // *file* lands in — which keeps it out of every count by construction, and it
+  // is logged at `error` for the reason an unreadable file is: only an operator
+  // can repair it, and `error` is the one level a `silent` server still writes.
+  for (const directory of unlistable) {
+    const reason = `directory could not be listed: ${directory.reason}`;
+    skipped.push({ path: directory.path, reason });
+    db.logger.error("skipping unlistable directory; its documents are not projected", {
+      path: directory.path,
+      reason: directory.reason,
+    });
+  }
   // SPEC.md §9.1's `last_actor`, read from the one place a rebuild can still
   // find it: §4 authored every auto-commit as the acting party. One `git log`
   // for the whole workspace, taken before the transaction opens so a slow

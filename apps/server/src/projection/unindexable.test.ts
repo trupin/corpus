@@ -177,7 +177,11 @@ describe("collectUnindexableFiles", () => {
   });
 
   it("declares its kinds, and the shipped limit", () => {
-    expect([...DOCTOR_WARNING_KINDS]).toEqual(["unindexable_file", "unindexable_files_truncated"]);
+    expect([...DOCTOR_WARNING_KINDS]).toEqual([
+      "unindexable_file",
+      "unindexable_files_truncated",
+      "unlistable_directory",
+    ]);
     expect(UNINDEXABLE_WARNING_LIMIT).toBe(50);
   });
 
@@ -258,5 +262,46 @@ describe("readCreatingCommit", () => {
     expect(warning?.path).toBe("data/docs/.claude/uncommitted.md");
     expect(warning?.commit).toBeUndefined();
     expect(warning?.detail).toContain("no creating commit");
+  });
+});
+
+/**
+ * SERVER-065's third reader. `walkUnindexed` swallowed every `readdir` failure,
+ * with the same comment the document walk carried — right for `ENOENT` and for a
+ * directory that vanished mid-walk, wrong for `EACCES`. It is the worst of the
+ * three to get wrong: this pass exists to report files nobody can see, so
+ * answering silence for a directory nobody can read is the pass failing at its
+ * own job.
+ */
+describe("a directory the recovery walk cannot list (SERVER-065)", () => {
+  it("is reported as its own warning kind, naming the path and the reason", () => {
+    rmSync(join(ws, "data", "docs"), { recursive: true, force: true });
+    writeFileSync(join(ws, "data", "docs"), "not a directory", "utf8");
+
+    const warnings = collectUnindexableFiles(ws, { readCreatingCommit: stubCommits().read });
+
+    expect(warnings.map((warning) => warning.kind)).toEqual(["unlistable_directory"]);
+    expect(warnings[0]?.path).toBe("data/docs");
+    expect(warnings[0]?.detail).toContain("ENOTDIR");
+  });
+
+  it("is a skip rather than a throw, so the caller still gets a report", () => {
+    rmSync(join(ws, "data", "docs"), { recursive: true, force: true });
+    writeFileSync(join(ws, "data", "docs"), "not a directory", "utf8");
+
+    // Only `data/docs` itself can produce this in a privilege-free test: the
+    // walk descends only into `entry.isDirectory()`, which is false for both a
+    // regular file and a symlink, so a *nested* unlistable directory needs a
+    // mode — and a mode proves nothing under root (SERVER-063's measurement).
+    // What is portable, and what matters, is that the pass returns a report at
+    // all rather than propagating the failure into `corpus db doctor`.
+    expect(() =>
+      collectUnindexableFiles(ws, { readCreatingCommit: stubCommits().read }),
+    ).not.toThrow();
+  });
+
+  it("says nothing about a `data/docs` that is simply not there", () => {
+    rmSync(join(ws, "data", "docs"), { recursive: true, force: true });
+    expect(collectUnindexableFiles(ws, { readCreatingCommit: stubCommits().read })).toEqual([]);
   });
 });

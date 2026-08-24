@@ -89,6 +89,7 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "resident_doc_id",
     "resident_weight",
     "resident_designation_id",
+    "resident_problem",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from

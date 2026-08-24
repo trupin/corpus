@@ -436,7 +436,7 @@ belongs to the same fix wave.
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime — **misfiled**, the spec was right; replaced by UI-140 | closed | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
-| SERVER-065 | Three projection readers swallow a failed `readdir` silently | todo | P2 | — |
+| SERVER-065 | Three projection readers swallow a failed `readdir` silently | done | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
@@ -473,7 +473,7 @@ belongs to the same fix wave.
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | done | P2 | CONTRACT-038 |
 | SERVER-084 | Count the unanswered forms on a row, from the query that already finds them | done | P1 | CONTRACT-040 |
-| SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
+| SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | done | P2 | SERVER-068, CONTRACT-038 |
 | UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | done | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
@@ -719,7 +719,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | AGENT-032 | The stand-down rule is written in both skills, and they now contradict | done | P0 | — |
 | CONTRACT-060 | The grace window is derived two different ways, and both tests pass by coincidence | done | P1 | — |
 | UI-120 | A stale statement of the walk's order, and a hand-copied server message that drifted | done | P2 | — |
-| SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | todo | P2 | — |
+| SERVER-120 | Two leftovers from PR #48's fourth review: a stale literal, and a rule the pin cannot see | done | P2 | — |
 | UI-121 | A highlight blinks out between the optimistic mark and the server's (UI-117 finding) | done | P1 | — |
 | CONTRACT-059 | `PUT /api/docs/{id}` returns 403 and declares none (CONTRACT-058 sweep) | done | P1 | — |
 
@@ -1015,7 +1015,7 @@ uncertain.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
-| SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | todo | P2 | SERVER-124 |
+| SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | todo | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
 | UI-124 | The board badge's resident note truncates, and always has (PR #50 review 3 measurement) | todo | P2 | — |
@@ -1059,7 +1059,7 @@ not a behaviour change.
 | AGENT-039 | A listener is launched at the designation's weight | done | P0 | CONTRACT-067, SERVER-129, CLI-053, CONTRACT-069 |
 | SERVER-131 | A claim batch is in `readdir` order, not the conversation's (AGENT-038 drill) | done | P0 | — |
 | SHARED-056 | §7 enumerates the core events, §9.2 the routes, §10 the console (SIGNED 2026-08-20) | done | P1 | CONTRACT-068, CONTRACT-069, UI-125 |
-| SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | todo | P2 | SERVER-129 |
+| SERVER-132 | An ill-shaped `resident:` block vanishes a designation, and nothing reports it (PR #52 review) | done | P2 | SERVER-129 |
 
 ## Phase 37 — Nothing moves under your cursor (2026-08-20, user report)
 
@@ -1598,7 +1598,7 @@ suite cannot confirm. Both halves stand without it.
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
 | AGENT-048 | The standing style rule is paid twice per context | done | P2 | opus | SHARED-070 |
 | AGENT-049 | `queue idle` prints a shape the skill does not promise | done | P2 | opus | SHARED-070 |
-| SERVER-144 | Retrieval ranks the product's own skills into every pack — **rider signed 2026-08-24; re-implement without the `template` exclusion** | todo | P1 | opus | SHARED-070 |
+| SERVER-144 | Retrieval ranks the product's own skills into every pack — **rider signed 2026-08-24; re-implemented without the `template` exclusion** | done | P1 | opus | SHARED-070 |
 | CLI-065 | `doc list --json` pays 293 tokens a row | done | P1 | opus | SHARED-070 |
 | SERVER-119 | Nothing checks that a status the server returns is one the contract declares | done | P1 | opus | — |
 | SERVER-116 | "Ranking is degraded" keeps saying so after the index has caught up | done | P1 | opus | — |

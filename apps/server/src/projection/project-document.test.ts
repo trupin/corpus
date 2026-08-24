@@ -247,6 +247,8 @@ describe("projectDocument — threads and turns", () => {
       resident_doc_id: null,
       resident_weight: null,
       resident_designation_id: null,
+      // No `resident:` block at all, which is not a finding (SERVER-132).
+      resident_problem: null,
     });
 
     expect(db.prepare("SELECT idx, author, ts, body_md FROM turns ORDER BY idx").all()).toEqual([

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { LogFields, Logger } from "../logger.js";
 import { openProjection, type ProjectionDb } from "./db.js";
 import {
   isEventFile,
@@ -69,7 +70,7 @@ describe("projectQueueDir", () => {
     writeJson("queue/processed/evt_zzz999888777.json", { ...EVENT, id: "evt_zzz999888777" });
 
     // Status-directory order, then filename order — deterministic either way.
-    expect(listQueueEventFiles(corpusDir).map((file) => [file.status, file.name])).toEqual([
+    expect(listQueueEventFiles(corpusDir).files.map((file) => [file.status, file.name])).toEqual([
       ["pending", "evt_abc123def456.json"],
       ["processed", "evt_zzz999888777.json"],
     ]);
@@ -276,5 +277,99 @@ describe("projectRuntime", () => {
     expect(projectRuntime(db)).toEqual({ events: 1, jobs: 1, seen: 1 });
     // `jobs` joins the status the events pass just wrote — order matters.
     expect(db.prepare("SELECT status FROM jobs").get()).toEqual({ status: "pending" });
+  });
+});
+
+/**
+ * SERVER-065. `listFiles` carried no comment and no distinction: it answered the
+ * empty list both for a directory that does not exist — the ordinary state of a
+ * workspace that has enqueued nothing — and for one the process cannot read,
+ * which means `events` or `jobs` is short by however many files are in there.
+ *
+ * Provoked with `ENOTDIR`, which holds for every user including root, rather
+ * than with a mode a privileged process ignores.
+ */
+describe("a runtime directory that cannot be listed (SERVER-065)", () => {
+  type Line = { readonly message: string; readonly fields: LogFields | undefined };
+
+  const capturing = (): { logger: Logger; errors: Line[] } => {
+    const errors: Line[] = [];
+    const logger: Logger = {
+      // `silent` deliberately: `error` is the one level a server run this way
+      // still writes, which is half of what SERVER-065 is asserting.
+      level: "silent",
+      info: () => undefined,
+      debug: () => undefined,
+      error: (message: string, fields?: LogFields) => {
+        errors.push({ message, fields });
+      },
+    };
+    return { logger, errors };
+  };
+
+  const unlistable = (relative: string): void => {
+    const abs = join(corpusDir, relative);
+    rmSync(abs, { recursive: true, force: true });
+    writeFileSync(abs, "not a directory", "utf8");
+  };
+
+  it("is reported by `listQueueEventFiles` rather than read as empty", () => {
+    writeJson("queue/processed/evt_zzz999888777.json", { ...EVENT, id: "evt_zzz999888777" });
+    unlistable("queue/pending");
+
+    const listing = listQueueEventFiles(corpusDir);
+
+    // The other status directories are still scanned: losing `pending/` is not a
+    // reason to stop reporting what is `processed/`.
+    expect(listing.files.map((file) => file.name)).toEqual(["evt_zzz999888777.json"]);
+    expect(listing.unlistable).toHaveLength(1);
+    expect(listing.unlistable[0]?.reason).toContain("ENOTDIR");
+  });
+
+  it("says nothing about a status directory that is simply absent", () => {
+    rmSync(join(corpusDir, "queue", "abandoned"), { recursive: true, force: true });
+    expect(listQueueEventFiles(corpusDir).unlistable).toEqual([]);
+  });
+
+  it("logs the queue skip at `error` and leaves it out of the count", () => {
+    writeJson("queue/processed/evt_zzz999888777.json", { ...EVENT, id: "evt_zzz999888777" });
+    unlistable("queue/pending");
+    const { logger, errors } = capturing();
+    const logged = openProjection({ workspaceRoot: ws, corpusDir }, { logger });
+    // Boot's own population already logged it once, which is the point of the
+    // rule; the explicit call below is what this test is asserting about.
+    expect(errors).toHaveLength(1);
+    errors.length = 0;
+
+    // One event projected, not two-minus-a-silent-nothing: the events under
+    // `pending/` were never read, so the count says so.
+    expect(projectQueueDir(logged, corpusDir)).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("cannot list queue status directory");
+    expect(String(errors[0]?.fields?.["reason"])).toContain("ENOTDIR");
+    logged.close();
+  });
+
+  it("logs the jobs skip at `error` too, which is the same choice", () => {
+    unlistable("jobs");
+    const { logger, errors } = capturing();
+    const logged = openProjection({ workspaceRoot: ws, corpusDir }, { logger });
+    expect(errors).toHaveLength(1);
+    errors.length = 0;
+
+    expect(projectJobsDir(logged, corpusDir)).toBe(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("cannot list the jobs directory");
+    logged.close();
+  });
+
+  it("logs nothing when the jobs directory is merely absent", () => {
+    rmSync(join(corpusDir, "jobs"), { recursive: true, force: true });
+    const { logger, errors } = capturing();
+    const logged = openProjection({ workspaceRoot: ws, corpusDir }, { logger });
+
+    expect(projectJobsDir(logged, corpusDir)).toBe(0);
+    expect(errors).toEqual([]);
+    logged.close();
   });
 });

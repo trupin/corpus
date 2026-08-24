@@ -45,7 +45,7 @@ import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 import { originOrNull } from "../core/provenance.js";
 import { DEFAULT_LAST_ACTOR } from "./last-actor.js";
-import { storedResident } from "../core/resident.js";
+import { residentProblem, storedResident } from "../core/resident.js";
 
 /** How much of the body a list row shows (§9.1 `body_excerpt`). */
 export const EXCERPT_LENGTH = 280;
@@ -438,13 +438,20 @@ function projectThread(
   // reads as `null`. The two are one `!== null` apart here and nowhere else, so
   // the flag and the profile can never disagree about one file.
   const resident = storedResident(data["resident"], parentId);
+  // Why the block failed, when one is there and it did (SERVER-132). Asked of a
+  // standalone thread only, for the same reason `storedResident` filters on
+  // `parentId`: §7 allows a designation nowhere else, so a `resident:` key on a
+  // parented thread has lost nothing and is not a finding. Costs one extra
+  // `safeParse` on exactly the threads that already failed one, and nothing at
+  // all on the ordinary thread, whose block is absent.
+  const problem = parentId === null ? residentProblem(data["resident"]) : null;
 
   db.prepare(
     `INSERT INTO threads
        (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
         last_ts, resident_designated, resident_name, resident_doc_id, resident_weight,
-        resident_designation_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        resident_designation_id, resident_problem)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     parentId,
@@ -467,6 +474,7 @@ function projectThread(
     // Verbatim too, and NULL for every designation written before CONTRACT-071
     // (SERVER-147) — the contract's "no id to compare".
     resident?.designationId ?? null,
+    problem,
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp

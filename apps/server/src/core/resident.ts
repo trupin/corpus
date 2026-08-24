@@ -106,6 +106,48 @@ export const residentOrNull = (value: unknown): Resident | null => {
 };
 
 /**
+ * Why a `resident:` block that is **there** did not parse, or `null` when there
+ * is nothing to say — the block is absent, or it read as a designation
+ * (SERVER-132).
+ *
+ * {@link residentOrNull} answers one question and discards the reason, which is
+ * right for a reader: a thread whose block does not parse has no designation,
+ * and that is the whole of what a reader needs. It is wrong for a **report**.
+ * The designation disappears from the roster, the resident's next park is
+ * refused, work reroutes to the orchestrator, and before this function nothing
+ * anywhere said why. The docblock above defends failing the whole block by
+ * saying that honouring half of it would substitute "none chosen" for a choice
+ * somebody made — and failing it silently substitutes *nobody* for that choice,
+ * which is the louder of the two. The parse rule is unchanged; only the silence
+ * is.
+ *
+ * **Asked of the same normalized value the reader parses**, through the same two
+ * helpers, so the two can never disagree about which blocks are ill-shaped. An
+ * absent key and an explicit `resident: null` are both "nobody designated this",
+ * which is the ordinary state of nearly every thread and is not a finding.
+ *
+ * The message names the failing keys rather than restating what a designation
+ * may be: the shape has one wording, in the contract's `ResidentSchema`, and a
+ * second wording here is a rule that drifts.
+ */
+export const residentProblem = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  const normalized = withStoredDesignationId(withStoredWeight(value));
+  const parsed = ResidentSchema.safeParse(normalized);
+  if (parsed.success) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return "`resident` is not a mapping";
+  }
+  const faults = parsed.error.issues.map((issue) => {
+    const key = issue.path.map(String).join(".");
+    return key === "" ? issue.message : `\`${key}\`: ${issue.message}`;
+  });
+  // Deduplicated and ordered: a union member can report the same key twice, and
+  // a report a person reads should not repeat itself.
+  return [...new Set(faults)].join("; ");
+};
+
+/**
  * The frontmatter value a designation writes — {@link residentOrNull}'s inverse,
  * and the one place the stored shape is produced (SERVER-129).
  *

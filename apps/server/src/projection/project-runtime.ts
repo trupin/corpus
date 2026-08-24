@@ -45,27 +45,81 @@ function readJsonFile(path: string): unknown {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function listFiles(dir: string): string[] {
+/**
+ * A runtime directory the reader could not list, and why (SERVER-065) — the same
+ * shape `roots.ts` returns, for the same reason: skip, exclude from the counts,
+ * report. `ENOENT` is silent, because a workspace that has enqueued nothing has
+ * no `pending/` yet and that is the ordinary state.
+ */
+export type UnlistableRuntimeDirectory = {
+  readonly path: string;
+  readonly reason: string;
+};
+
+/**
+ * Every name in a runtime directory, and the reason if there were none to read.
+ *
+ * This function carried **no comment at all** before SERVER-065, and no
+ * distinction either: it answered the empty list for a directory that does not
+ * exist and for one the process cannot read, which are opposite facts. The first
+ * is the ordinary state of a workspace that has enqueued nothing. The second
+ * means `events` or `jobs` is short by however many files are in there, with
+ * nothing anywhere saying so — the projection reporting success over a partial
+ * corpus.
+ *
+ * The failure is **returned rather than logged**, as `roots.ts` returns its own:
+ * this module is called from a boot path and from `doctor`, and only the caller
+ * knows which channel an operator is watching.
+ */
+function listFiles(dir: string): {
+  readonly names: string[];
+  readonly unlistable: UnlistableRuntimeDirectory | null;
+} {
   try {
-    return readdirSync(dir).sort();
-  } catch {
-    return [];
+    return { names: readdirSync(dir).sort(), unlistable: null };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return { names: [], unlistable: null };
+    }
+    return {
+      names: [],
+      unlistable: {
+        path: dir,
+        reason: error instanceof Error ? error.message : String(error),
+      },
+    };
   }
 }
 
-/** Every `evt_*.json` under `.corpus/queue/`, keyed by the status directory holding it. */
-export function listQueueEventFiles(
-  corpusDir: string,
-): { status: QueueEventStatus; name: string; path: string }[] {
-  const files: { status: QueueEventStatus; name: string; path: string }[] = [];
+export type QueueEventFile = { status: QueueEventStatus; name: string; path: string };
+
+/**
+ * Every `evt_*.json` under `.corpus/queue/`, keyed by the status directory
+ * holding it, plus any status directory that could not be listed (SERVER-065).
+ *
+ * The skips are carried on the result rather than swallowed because both callers
+ * need them and neither could recover them: `projectQueueDir` must not report a
+ * count over a directory it never read, and `doctor`'s `count_mismatch` compares
+ * this list's length against the `events` table — so a status directory silently
+ * read as empty would make files and rows *agree* about a queue that is missing
+ * events.
+ */
+export function listQueueEventFiles(corpusDir: string): {
+  readonly files: QueueEventFile[];
+  readonly unlistable: readonly UnlistableRuntimeDirectory[];
+} {
+  const files: QueueEventFile[] = [];
+  const unlistable: UnlistableRuntimeDirectory[] = [];
   for (const status of QUEUE_EVENT_STATUSES) {
     const dir = join(corpusDir, QUEUE_DIR, status);
-    for (const name of listFiles(dir)) {
+    const listing = listFiles(dir);
+    if (listing.unlistable !== null) unlistable.push(listing.unlistable);
+    for (const name of listing.names) {
       if (!isEventFile(name)) continue;
       files.push({ status, name, path: join(dir, name) });
     }
   }
-  return files;
+  return { files, unlistable };
 }
 
 /**
@@ -167,11 +221,26 @@ export function projectEventFile(
   return true;
 }
 
-/** Rebuilds `events` from every status directory. */
+/**
+ * Rebuilds `events` from every status directory.
+ *
+ * A status directory that could not be listed is skipped and logged at `error`,
+ * never fatal (SERVER-065). Its events are absent from the count for the only
+ * honest reason there is: they were never read. `error` is the level because
+ * only an operator can repair an unreadable directory, and it is the one level a
+ * server running at `silent` still writes.
+ */
 export function projectQueueDir(db: ProjectionDb, corpusDir: string): number {
   db.sqlite.exec("DELETE FROM events");
   let projected = 0;
-  for (const file of listQueueEventFiles(corpusDir)) {
+  const { files, unlistable } = listQueueEventFiles(corpusDir);
+  for (const directory of unlistable) {
+    db.logger.error("cannot list queue status directory; its events are not projected", {
+      path: directory.path,
+      reason: directory.reason,
+    });
+  }
+  for (const file of files) {
     if (projectEventFile(db, file.path, file.status)) projected += 1;
   }
   return projected;
@@ -240,7 +309,17 @@ export function removeJob(db: ProjectionDb, eventId: string): void {
 export function projectJobsDir(db: ProjectionDb, corpusDir: string): number {
   db.sqlite.exec("DELETE FROM jobs");
   let projected = 0;
-  for (const name of listFiles(join(corpusDir, JOBS_DIR))) {
+  const listing = listFiles(join(corpusDir, JOBS_DIR));
+  // Skipped, excluded from the count, logged at `error` — the same three things
+  // the queue directory above and the document walk in `roots.ts` do, and for
+  // the same reason (SERVER-065).
+  if (listing.unlistable !== null) {
+    db.logger.error("cannot list the jobs directory; its job logs are not projected", {
+      path: listing.unlistable.path,
+      reason: listing.unlistable.reason,
+    });
+  }
+  for (const name of listing.names) {
     const match = JOB_FILE.exec(name);
     const eventId = match?.[1];
     if (eventId === undefined) continue;
