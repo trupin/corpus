@@ -1650,3 +1650,12 @@ user, not work).
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
 | SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |
 | SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | todo | P2 | opus | INFRA-020 |
+
+## Phase 46 — Reported after v0.22.0 (2026-08-25, user reports)
+
+Issues the user reported against the shipped build. They do not belong to any
+release scope yet.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| UI-171 | The board bar restates what the columns already say | done | P2 | opus | — |

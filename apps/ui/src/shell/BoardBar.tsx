@@ -38,7 +38,14 @@ import "./BoardBar.css";
  *
  * **The showing board's paths** (UI-149, rider 3) sit left of the spacer: the
  * count pill and "close paths", reading the same browser-local strip the board
- * renders.
+ * renders. The stray count joins them there (UI-171).
+ *
+ * **The tab strip holds tabs.** It carried a permanent `kanban over <field> ·
+ * <drag rule>` line between the `＋` button and the paths pill, and the user
+ * asked why. Two of its three clauses were drawn already — §10 puts the drag
+ * affordance on the columns, and the tab's own tag says the board is a kanban —
+ * so they became that tag's tooltip. The third named a fault nothing else
+ * reported, and moved right with the counters. See {@link KANBAN_HINT_TITLE}.
  *
  * **The explorer toggle** (`⌘B`, UI-150) sits left of the tabs, where
  * `design/navigation.html` draws it: the panel it opens is column zero, a
@@ -46,10 +53,27 @@ import "./BoardBar.css";
  * than in the top bar with the corpus-wide controls.
  */
 
-/** The full sentence behind the hint, including the way out of the graph. */
-const KANBAN_HINT_TITLE = (field: string): string =>
-  `This board's columns are its stages. A drag follows a transition and nothing else; ` +
-  `anything else is done by setting ${field} in the document, from the reader or the CLI.`;
+/**
+ * What the tab's `kanban` tag says on hover — **the whole of what the bar used
+ * to print in the tab strip** (UI-171).
+ *
+ * The bar carried a permanent `kanban over <field> · <drag rule>` line between
+ * the `＋` button and the paths pill, and two of its clauses were already drawn
+ * elsewhere. §10 puts the drag affordance on the columns — *"each column shows
+ * where it leads"* — and every column of a kanban carries one `→ <target>` chip
+ * per reachable stage and `→ ∅` where nothing leads out (`stageChips`). The
+ * board-wide line paraphrased that, and `kanban over <field>` restated the tag
+ * this string now hangs off, adding only the field name.
+ *
+ * So the field and the drag rule became a tooltip on the badge whose meaning
+ * they explain, and the tab strip went back to holding tabs. The one clause
+ * that named something no other surface showed — the stray count — stayed
+ * visible, and moved right to sit with the other board-scoped counters.
+ */
+const KANBAN_HINT_TITLE = (field: string, drag: string): string =>
+  `A kanban over ${field} — ${drag}. This board's columns are its stages, and each ` +
+  `column names where it leads. A drag follows a transition and nothing else; anything ` +
+  `else is done by setting ${field} in the document, from the reader or the CLI.`;
 
 /** What the bar says when a workspace holds no board documents at all. */
 export const NO_BOARDS_LABEL = "No boards — run `corpus upgrade`";
@@ -198,7 +222,23 @@ function BoardTab({
          * measured (`reflect.spec.ts`).
          */}
         <span className="board-tab-mark">{isChanged ? <ChangedMark /> : null}</span>
-        {board.kanban === null ? null : <span className="tag">kanban</span>}
+        {/*
+         * The tag carries the field and the drag rule (UI-171). It is the one
+         * element on the bar that already says "this board is a kanban", so it
+         * is where the rest of that sentence belongs — rather than as a clause
+         * printed across the tab strip forever.
+         */}
+        {board.kanban === null ? null : (
+          <span
+            className="tag"
+            title={KANBAN_HINT_TITLE(
+              board.kanban.field,
+              board.kanban.transitions === undefined ? FUNNEL_HINT : GRAPH_HINT,
+            )}
+          >
+            kanban
+          </span>
+        )}
         {board.defaultOpen ? (
           <span className="tag" title="Receives every open that names no board">
             default
@@ -460,22 +500,32 @@ export function BoardBar(): ReactElement {
         ＋
       </button>
       {/*
-       * What a drag on this board does (SPEC.md §10, rider 6). It is the
-       * prototype's status line, moved here rather than given a strip of its
-       * own: it is one clause about the showing board, and the only board that
-       * has anything to say is a kanban.
+       * Documents this board's scope holds and none of its columns draw
+       * (UI-171). This is the one clause of the old board-wide hint that named
+       * something no other surface shows: the columns say where they lead, and
+       * the tab's tag says what the board is, but nothing says a card in scope
+       * fell through every stage. It is a fault in the board document, so it
+       * sits with the other board-scoped counters rather than in the tab strip.
+       *
+       * **Absent, never empty.** `useStrayStages` answers `null` until its
+       * requests land and `0` when there are none, and both render nothing at
+       * all — an element that materialised would re-width this row on the frame
+       * the answer arrived (SPEC.md §10, "nothing resizes because of what it
+       * holds"). It sits left of `.paths-pill`, which is anchored to the right
+       * group, so what slack it takes comes out of the spacer.
        */}
-      {current?.kanban == null ? null : (
-        <span className="board-hint" title={KANBAN_HINT_TITLE(current.kanban.field)}>
-          {`kanban over ${current.kanban.field} · ${
-            current.kanban.transitions === undefined ? FUNNEL_HINT : GRAPH_HINT
-          }${
-            strays === null || strays === 0
-              ? ""
-              : ` · ${String(strays)} document${strays === 1 ? "" : "s"} in scope with a ${
-                  current.kanban.field
-                } this board does not list`
-          }`}
+      {current?.kanban == null || strays === null || strays === 0 ? null : (
+        <span
+          className="stray-pill"
+          title={
+            `This board's scope holds ${String(strays)} document${strays === 1 ? "" : "s"} ` +
+            `whose ${current.kanban.field} is not one this board draws a column for, so ` +
+            `${strays === 1 ? "it is" : "they are"} on no column of it. Add the stage to the ` +
+            `board document, or set a ${current.kanban.field} the board lists.`
+          }
+        >
+          <b>{strays}</b>
+          {` off-board`}
         </span>
       )}
       {/*

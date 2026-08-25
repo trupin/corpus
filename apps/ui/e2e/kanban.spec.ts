@@ -129,14 +129,14 @@ test.describe("a kanban's columns are its stages", () => {
     // A `status` kanban needs no null sentinel — every document has a status.
     expect(searches.some((search) => search.includes("stage=,"))).toBe(false);
 
-    // The tab says what it is, and the bar says what a drag does here.
-    await expect(
-      page.locator('.boardbar .board-tab[data-board="doc_board_by_status"] .tag').first(),
-    ).toHaveText("kanban");
-    await expect(page.locator(".boardbar .board-hint")).toContainText("kanban over status");
-    await expect(page.locator(".boardbar .board-hint")).toContainText(
-      "a drag moves one stage left or right",
-    );
+    // The tab says what it is, and its tag says what a drag does here — the bar
+    // itself prints neither, because the columns already name where they lead
+    // (SPEC.md §10) and this tag already says the board is a kanban (UI-171).
+    const tag = page.locator('.boardbar .board-tab[data-board="doc_board_by_status"] .tag').first();
+    await expect(tag).toHaveText("kanban");
+    await expect(tag).toHaveAttribute("title", /A kanban over status/);
+    await expect(tag).toHaveAttribute("title", /a drag moves one stage left or right/);
+    await expect(page.locator(".boardbar .board-hint")).toHaveCount(0);
     expect(uncaught).toEqual([]);
   });
 
@@ -210,9 +210,23 @@ test.describe("a kanban's columns are its stages", () => {
     await showHouse(page);
 
     await expect(page.locator('.board .row[data-row-doc="doc_birch"]')).toHaveCount(0);
-    await expect(page.locator(".boardbar .board-hint")).toContainText(
-      "1 document in scope with a stage this board does not list",
-    );
+    // The count sits with the board's other counters, right of the tabs
+    // (UI-171). Its tooltip is what says which field fell through.
+    const pill = page.locator(".boardbar .stray-pill");
+    await expect(pill).toHaveText("1 off-board");
+    await expect(pill).toHaveAttribute("title", /whose stage is not one this board draws/);
+  });
+
+  test("says nothing at all when every document in scope has a column", async ({ page }) => {
+    // Absent, never empty: an element that materialised when the count landed
+    // would re-width the row (SPEC.md §10, "nothing resizes because of what it
+    // holds"). The SEED carries no stray, so the pill never renders.
+    await stubCorpus(page, SEED);
+    await page.goto("/");
+    await showHouse(page);
+
+    await expect(page.locator(`${houseCol("done")} .chips`)).toBeVisible();
+    await expect(page.locator(".boardbar .stray-pill")).toHaveCount(0);
   });
 });
 
