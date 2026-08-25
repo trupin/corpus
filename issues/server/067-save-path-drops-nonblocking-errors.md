@@ -110,9 +110,16 @@ happens on. `WARNING_CODE_BY_CHECK` stays what it is. `REPORTED_CHECK_CODES`
 stays an explicit allow-list, so `anchor-unused` still never reaches the
 response. `codes.test.ts` passes **unchanged**.
 
-**One optional recording amendment is with the user** and implementation does not
-wait on it: §11 permits this behaviour but does not state it, so nothing in
-SPEC.md would fail if a later change silently removed the response warning.
+**One optional recording amendment was with the user** and implementation did not
+wait on it: §11 permitted this behaviour but did not state it, so nothing in
+SPEC.md would have failed if a later change silently removed the response
+warning. It was escalated unsigned with v0.22.0 and **signed on 2026-08-25**.
+The orchestrator appended it to §11's *"an error a save accepts"* bullet:
+
+> A save that accepts one says so on its own response — as a response warning,
+> the channel the auto-commit half below already routes a failure through — and
+> in the server log, because the party whose write carried the fault reads the
+> response and not the log. _(Rider signed 2026-08-25.)_
 
 ### The question, as it stood before the adjudication above answered it
 

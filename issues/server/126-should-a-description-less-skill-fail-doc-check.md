@@ -219,13 +219,14 @@ vitest run apps/server/src/docs/write.test.ts
 
 Restored, green.
 
-### The SPEC residual — drafted, unsigned, escalated
+### The SPEC residual — signed 2026-08-25 and applied
 
 §7:399 says *"`corpus doc check` validates both sets"*. Its Corpus half is true
 under every Claude Code root (SERVER-124). Its Claude Code half is true for
 agent-defs and, by this decision, deliberately not for skills. **This agent does
-not edit SPEC.md.** Drafted rider, for the user to accept, amend or refuse — it
-replaces the clause `corpus doc check` validates both sets`:
+not edit SPEC.md.** The rider below was drafted here, escalated unsigned with
+v0.22.0, and **signed as drafted on 2026-08-25**. The orchestrator applied it to
+§7 verbatim — it replaces the clause `` `corpus doc check` validates both sets ``:
 
 > Corpus's frontmatter fields (`id`, `type`, `title`, `tags`, `status`,
 > `anchors`) coexist with Claude Code's (`name`, `description`) in the same YAML
@@ -237,7 +238,7 @@ replaces the clause `corpus doc check` validates both sets`:
 > hand-authored skills in daily use, eleven carry no `name` and load correctly,
 > so requiring it would report working files as faults. A skill Corpus creates
 > carries a description regardless — `corpus skill create` requires one.
-> *(Rider signed <date>.)*
+> _(Rider signed 2026-08-25.)_
 
 ### Checks
 
