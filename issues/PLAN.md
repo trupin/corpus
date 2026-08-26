@@ -1666,3 +1666,44 @@ table and that one both append here and will conflict on merge. Keep both rows.
 | SERVER-151 | The server writes the quiet window it already reads | todo | P0 | opus | SHARED-071, CONTRACT-086 |
 | UI-172 | The Reflect control carries the switch | todo | P0 | opus | SHARED-071, CONTRACT-086, SERVER-151 |
 | SHARED-072 | A conversation gets its own agent, and keeps it | done | P0 | fable | — |
+
+## Phase 47 — You choose which agent answers, and when one runs at all (2026-08-25, v0.23.0 scope)
+
+The user's P0 batch, decomposed against the five riders signed 2026-08-25.
+
+**One sentence covers it**: a conversation gets its own agent, that agent's work
+is never done by another, the orchestrator starts agents instead of covering for
+them, and the automatic reflection has an off switch.
+
+`SERVER-152` is the load-bearing issue and the one that proves the livelock is
+fixed. The orchestrate skill defers launching a listener while it holds that
+lane's work, so a conversation somebody keeps using never gets its agent. The
+skill's own text names the cause — the deferral rule is "the one collision the
+fallback can actually produce" — so removing the fallback removes the reason for
+the rule, and `AGENT-053` deletes it as a consequence rather than as a fix.
+
+The reflection switch (`SHARED-071` and its three) is in the same release because
+it is the same sentence: when an agent runs on its own is the other half of which
+agent runs at all.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-087 | A roster row cannot say a lane has work waiting | todo | P0 | opus | SHARED-072 |
+| CONTRACT-088 | A thread is created with its resident already designated | todo | P0 | opus | SHARED-072 |
+| CONTRACT-089 | Designating into a drain is refused, with its reason | todo | P0 | opus | SHARED-072 |
+| SERVER-152 | The fallback is removed — every claim sees its own lane and no other | todo | P0 | fable | SHARED-072 |
+| SERVER-153 | Release drains the lane, and a draining thread refuses designation | todo | P0 | opus | SERVER-152, CONTRACT-089 |
+| SERVER-154 | A new standalone thread designates a general resident | todo | P0 | opus | CONTRACT-088 |
+| SERVER-155 | A roster row carries its lane's pending count | todo | P0 | opus | CONTRACT-087 |
+| AGENT-053 | The orchestrate skill launches before it dispatches, and never takes a lane's work | todo | P0 | fable | SERVER-152, SERVER-155 |
+| AGENT-054 | A listener starts with work already waiting, and that is now ordinary | todo | P0 | fable | SERVER-152 |
+| UI-173 | Ask and Capture offer a new resident | todo | P0 | opus | CONTRACT-088 |
+| UI-174 | A row says no agent is running, not merely that work is queued | todo | P0 | opus | CONTRACT-087, SERVER-155 |
+
+**Also in the release, filed under Phase 46**: CONTRACT-086, SERVER-151 and
+UI-172 — the reflection switch's wire, server and control. `SHARED-071` and
+`SHARED-072` are the signed riders and are already done.
+
+**Left for v0.24.0**: the technical-debt scope proposed 2026-08-25 — sixteen
+issues under "you should not have to work out what the product already knows".
+It is a different sentence, so it is a different release.
