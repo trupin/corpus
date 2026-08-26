@@ -159,26 +159,37 @@ failures later.
      about a release, exit without claiming anything and log why**: the listener already
      there is the lane's answer, it has the context, and two of you would
      split the conversation's story in half.
-   - **`waiting for a listener` or `lapsed`** — take the lane, and take two cautions with you.
-     `lapsed` means a listener parked here once and has been gone long enough that the
-     orchestrator has been covering; `waiting` means the server has observed no park on this
-     lane at all, which is also what every lane reads for a while after the server restarts.
-     Neither is a fault to report.
+   - **`waiting for a listener` or `lapsed`** — take the lane, and take one caution with you.
+     `lapsed` means a listener parked here once and has been gone a while; `waiting` means the
+     server has observed no park on this lane at all, which is also what every lane reads for
+     a while after the server restarts. Neither is a fault to report, and **neither means
+     anybody has been covering for you** — since SPEC.md §7's rider signed 2026-08-25 there is
+     no fallback, so this conversation's work has been sitting here waiting for you and for
+     nobody else.
 
-     **Neither says nobody is here, either.** Presence is the parked request, so a listener in
-     the middle of a turn — which is where a resident spends most of its time — holds no park
-     and reads exactly like one that crashed. `live` is the only reading on this row with a
-     definite meaning; every other reading means *nobody is parked at this instant*, and no
-     more. So this check can tell you a listener **is** here and can never tell you one is
-     not, and you must not try to make it: the line printed after the state is a summary for a
-     person to read, whose length is promised and whose content is not, so anything you decide
-     from it is decided from a string that may change without notice. Take the lane — an
-     unattended one is much the commoner case, and the fallback covers the other — and let the
-     first contested claim settle it (*The loop*).
+     That is also why you were launched. A lane that is not live **with work waiting** is what
+     the orchestrator starts a listener for, so arriving to a backlog is not a recovery case:
+     **it is the ordinary way this skill begins.** Claim, read what is there, and work it in
+     order.
 
-     The second caution is the orchestrator's: both states are states in which its claim could
-     see this lane's pending work, so it may be **holding some of it right now**. Your first
-     claim will report that, and adopts none of it (*Settling your own lane*).
+     **So you will often be new to a conversation that is not new**, and that is a chosen
+     cost rather than an oversight. A listener starts when work arrives and ends when the
+     conversation goes quiet, so it does not carry the conversation in its head between
+     messages — it reads it. §7 already says the thread's turns *are* the conversation, and
+     `corpus thread context` is the briefing. The alternative was a listener parked on every
+     conversation anybody has ever started, warm and idle, and the count was the reason
+     against it.
+
+     **Neither reading says nobody is here, either.** Presence is the parked request, so a
+     listener in the middle of a turn — which is where a resident spends most of its time —
+     holds no park and reads exactly like one that crashed. `live` is the only reading on this
+     row with a definite meaning; every other reading means *nobody is parked at this
+     instant*, and no more. So this check can tell you a listener **is** here and can never
+     tell you one is not, and you must not try to make it: the line printed after the state is
+     a summary for a person to read, whose length is promised and whose content is not, so
+     anything you decide from it is decided from a string that may change without notice. Take
+     the lane — an unattended one is much the commoner case — and let the first contested
+     claim settle it (*The loop*).
 
 3. **Bind a persona, if the designation named one.** Your launch carries the announcement's
    `resident`: two fields, `name` and `docId`, read together. Most designations name no
@@ -242,11 +253,15 @@ failures later.
 
 6. **Park before you claim anything.** `corpus queue idle --thread th_4b8e2c` is the last
    step of starting up, and the loop below then begins at its step 1 with whatever parking
-   returned. The order is not a formality: parking is what makes the lane read `live`, and
-   until it does, the orchestrator's own claim can still take this lane's pending work under
-   the fallback. Claiming first leaves a window in which the same conversation is being
-   handed to two places, and it is a window you opened. If work is already pending the park
-   returns at once and costs nothing; if not, you had nothing to claim.
+   returned. The order is no longer about safety — since SPEC.md §7's rider signed 2026-08-25
+   nobody else can take this lane's work whether you are parked or not — and it is still the
+   order, for two smaller reasons that are enough. Parking is what makes the lane read `live`,
+   so a person watching the board sees you arrive before you start writing in their
+   conversation. And a park that is **refused** tells you the designation ended before you
+   have claimed anything, which is the cheapest possible way to find that out.
+
+   If work is already pending the park returns at once and costs nothing, which is the
+   ordinary case: you were launched **because** work was waiting.
 
    **A park refused here is step 2's missing row, one step later.** `422 unknown_recipient`
    at exit `5` means the designation ended between your roster read and your park. You are
@@ -265,10 +280,13 @@ order, indefinitely:
 1. **Claim your lane.** `corpus queue claim-all --thread th_4b8e2c` prints one payload with
    two lists: `events`, the batch you just claimed, and `inProgress`, what the server still
    thinks you are doing. Nothing else happens until you have read both.
-2. **Reconcile the held list** (*Settling your own lane* below), beginning with which of its
-   rows are yours at all. It is your **lane's** held work, which is not the same thing as
-   your own: the orchestrator does not see this list and you never see its, but it may be
-   holding work off this one, under the fallback, while you read it.
+2. **Reconcile the held list** (*Settling your own lane* below). It is your **lane's** held
+   work — and since SPEC.md §7's rider signed 2026-08-25 that is the same thing as your own:
+   nobody else can claim this lane, so every row in it was claimed by a listener on this
+   conversation. Where that listener was **you before a restart**, the row is yours to finish;
+   where it was a predecessor that died, the row is abandoned work on your conversation and is
+   yours to finish too. The reconciliation is simpler than it was, and it is simpler because
+   the ambiguity it used to carry — *is this the orchestrator mid-dispatch?* — cannot arise.
 3. **Work each claimed event one at a time, in the order the conversation has them.** They
    are messages in one conversation, and the order that governs is the thread's rather than
    the batch's. The later message was written by somebody who had read the earlier one's
@@ -305,8 +323,8 @@ a live lane's events. **One such id is the whole of the evidence. Exit.**
 **Two other held rows look like it and are neither**, and reading one of them as a peer costs
 the conversation the listener it really had — where both of you do it, it costs the
 conversation both. A row **your own park did not name** is the ordinary case *Settling your own
-lane* describes: most often the orchestrator mid-dispatch, holding work the fallback handed it
-while your lane had nobody. And a row **you claimed yourself in this session** is yours however
+lane* describes: work a predecessor on this conversation claimed and did not finish. And a row
+**you claimed yourself in this session** is yours however
 often it comes back — it sits in `in-progress/` until you settle it, so any later claim reports
 it to you. Ask the same first-person question reconciliation asks, *did I claim this event, in
 this session?*, before you read any row as a peer's. That is also why this test belongs to the
@@ -526,14 +544,18 @@ session the answer is no for every row, necessarily: the list is `in-progress/` 
 nothing. `heldSince` is the same test in mechanical form, for a row you half-recognise — an
 instant earlier than your session's own first claim is an instant at which you held nothing.
 
-**What you are usually looking at is the orchestrator, mid-dispatch.** While your lane had no
-listener — before the first one started, or after one lapsed — its pending work was visible
-to the orchestrator's unscoped claim under the fallback, and a lane stamp is written once and
-never rewritten. So what the orchestrator took stays stamped for your lane and appears in
-your held list the moment you park. That is deliberate rather than a leak: reported on strict
-lane equality instead, the list would hide from the orchestrator exactly the work the fallback
-had just handed it. A person re-designating this thread, or starting a listener by hand, is
-all it takes to put you here.
+**What you are usually looking at is a predecessor that died mid-turn.** Since SPEC.md §7's
+rider signed 2026-08-25 nobody but a listener on this conversation can claim this lane, so a
+held row is always a listener's — yours before a restart, or one that crashed with work in
+hand. That is a narrower set than it used to be: the orchestrator could once be holding your
+lane's work under the fallback, and telling *its live dispatch* from *abandoned work* was the
+hard part of this whole section. It cannot be holding any now.
+
+**One exception, and a person made it happen.** A conversation whose resident was **released**
+hands its pending work to the orchestrator, and the stamp is never rewritten — so if somebody
+released this thread and then designated it again, rows the orchestrator took may still carry
+your lane. The server refuses that re-designation while any of them are outstanding, so the
+window is narrow, and it closes on its own.
 
 **A row that is not yours is left exactly where it is.** Do not settle it, do not read the
 thread against it, and above all do not do the work. One kind of not-yours row says more than
@@ -656,7 +678,7 @@ Everything you might be tempted to do about it is wrong:
   If one of them got something wrong, correct it the way you would correct anything — say what
   changed and why, in a turn of your own.
 - **Do not adopt what the orchestrator is still holding.** Arriving is the moment your held
-  list is most likely to be somebody else's work: what the fallback handed over is stamped
+  list is most likely to be a dead predecessor's work: what it claimed is stamped
   with your lane, so your first claim reports it to you with nothing on the row to say it is
   in flight. *A held row older than your first claim on this lane is not yours* — leave it,
   and let the agent that claimed it settle it. This is the same rule as the bullet above, one
@@ -670,7 +692,7 @@ Everything you might be tempted to do about it is wrong:
 You are long-lived and your context is not. A resident that keeps going on a context it can
 no longer work well in produces worse answers than the same conversation would get from a
 fresh one, and it does something worse than that: while it is parked it is **present**, and
-presence is what keeps the fallback from firing. A degraded listener holding a lane is worse
+presence is what tells a person somebody is here. A degraded listener holding a lane is worse
 than no listener at all, because the lane still looks answered.
 
 So when your context is running out, stop cleanly rather than continuing:
