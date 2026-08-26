@@ -294,8 +294,24 @@ order, indefinitely:
    second message against a corpus where the first has not happened is worse than answering
    it a minute later.
 4. **Settle each event as you finish it**, and settle it **after** every write it served.
-5. **Check the lane still exists.** `corpus agents`, one read per pass. A designation can end
-   with no event to tell you (*Retirement* below), so this is the only thing that will.
+5. **Check the lane is still yours.** `corpus agents`, one read per pass. A designation can end
+   with no event to tell you (*Retirement* below), so this is the only thing that will — and
+   *ending* is not the only way it stops being yours.
+
+   **Compare `resident.designationId` on your row with the one your launch named.** A
+   designation carries an identity, and a re-designation mints a new one, so a row whose id is
+   not yours is a designation that is not yours however familiar the rest of it looks. Your row
+   being **present** proves nothing: a person can release this conversation and designate it
+   again — to a different profile, or the same one — between two of your passes, and every
+   other field on that row can come back reading exactly as it did.
+
+   Where the id differs, you have been replaced. Take *Retirement*'s reading of that and go:
+   finish the turn you are in, settle everything you claimed, and exit without a goodbye.
+
+   **Two nulls are not a match.** A designation made before this field existed reports `null`,
+   and a listener whose own id is also `null` has learned nothing — behave exactly as you did
+   before the field existed, which is to say fall through to the checks below. Only a
+   *difference between two ids* is evidence, and an absence is not a difference.
 6. **Park, alone.** `corpus queue idle --thread th_4b8e2c` is the entire command — never
    appended to the claim above it, never combined with a settling call, never launched twice
    over. It returns the instant something lands on your lane, or on its own rearm.
@@ -767,15 +783,27 @@ coming back held by a caller it cannot identify, is the one thing a listener sta
 (*The loop*) — and the row says nothing about who holds it or that they are leaving, so it
 cannot read your departure as anything but a peer. Your last act would be to evict the healthy
 listener that replaced you. So **read the roster immediately before you drain**, and read a row
-for your thread as what it now is: a designation that is not yours. The events stay `pending/`
+for your thread as what it now is: a designation that is not yours.
+
+**Here the test is the row's presence, and that is not the same test as step 5's.** Comparing
+ids would answer a question this moment does not ask: you are leaving either way, and what you
+need to know is whether *anybody* now holds this lane — a row at all means somebody does, and
+whether their id matches yours is beside the point, since a row bearing your own id would mean
+a listener launched for the designation you are retiring from and it is still not you. One
+comparison for *am I still the resident*, one for *is anybody*, and they are two questions. The events stay `pending/`
 on the lane, which is exactly where the successor's own claim is about to look for them.
 
-**A weight that changed on your row ends your run of it, and the designation stands.** Your
-launch names the weight you are running at. Your row names the weight this lane is
-designated at now. Where the two differ, somebody has asked for this conversation to be
-worked at a weight this session cannot become. No running agent becomes another one without
-discarding the conversation it is holding. So take the reading the paragraph above
-gives you: your row is a designation that is not yours. Finish the turn you are in, settle
+**A weight that changed on your row is one instance of that, not a rule of its own.** A
+re-designation at a different weight is a *different designation* and mints a different id,
+so *The loop*'s comparison catches it along with every other kind of replacement — a profile
+swapped, a profile added, a profile removed — and there is one test rather than a list of the
+ways a row can change.
+
+The reason is unchanged and is why the act is what it is: **no running agent becomes another
+one without discarding the conversation it is holding.** Somebody has asked for this
+conversation to be worked at a weight this session cannot become, and the only way to give
+them that is to stop. So take the reading the paragraph above gives you: your row is a
+designation that is not yours. Finish the turn you are in, settle
 everything you claimed, and exit. Write no goodbye and claim nothing further — the
 conversation is not going back to the general agent, and a farewell would say something
 untrue about where it went. The lane is taken again from the roster as soon as you stop

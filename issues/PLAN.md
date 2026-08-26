@@ -1592,7 +1592,7 @@ suite cannot confirm. Both halves stand without it.
 | UI-166 | What full screen does to a turn's leading and measure | done | P2 | opus | UI-156 |
 | INFRA-032 | A tampered generated artifact survives a green local run | done | P2 | opus | — |
 | SERVER-147 | A designation is written without its identity | done | P1 | opus | CONTRACT-071 |
-| AGENT-050 | A listener does not check which designation it serves | todo | P1 | fable | CONTRACT-071, SERVER-147 |
+| AGENT-050 | A listener does not check which designation it serves | done | P1 | fable | CONTRACT-071, SERVER-147 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | done | P1 | fable | CLI-060 |
 | CLI-064 | A batch verb needs a decided exit code before it is worth building | done | P1 | fable | CLI-057, CLI-058 |
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
