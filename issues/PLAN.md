@@ -1690,7 +1690,7 @@ agent runs at all.
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-087 | A roster row cannot say a lane has work waiting | done | P0 | opus | SHARED-072 |
 | CONTRACT-088 | A thread is created with its resident already designated | done | P0 | opus | SHARED-072 |
-| CONTRACT-089 | Designating into a drain is refused, with its reason | todo | P0 | opus | SHARED-072 |
+| CONTRACT-089 | Designating into a drain is refused, with its reason | done | P0 | opus | SHARED-072 |
 | SERVER-152 | The fallback is removed — every claim sees its own lane and no other | todo | P0 | fable | SHARED-072 |
 | SERVER-153 | Release drains the lane, and a draining thread refuses designation | todo | P0 | opus | SERVER-152, CONTRACT-089 |
 | SERVER-154 | A new standalone thread designates a general resident | todo | P0 | opus | CONTRACT-088 |

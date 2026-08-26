@@ -2699,6 +2699,8 @@ export interface paths {
          *
          *     **Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409` — and a replacement is a release of the old occupant, so it enqueues a `resident.released` with `reason: "replaced"` beside the newcomer's `resident.designated`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
          *
+         *     **A second `409`, and it is the opposite of that one** (SPEC.md §7, rider signed 2026-08-25). Releasing a resident hands its lane's pending events to the orchestrator, and designating again before those settle would put a listener on the same lane while the orchestrator is working them — the same turns answered twice, which is the one seam the no-fallback rule leaves. So a thread whose release is **still draining** refuses, with `code: "draining"` and `outstanding`, the number of events still being worked. The two refusals are told apart at the `code` and never at the status, because a thread with a parent can *never* have a resident while this one is about to have one again in seconds: the condition is transient, self-clearing, and a fact about outstanding work rather than a state of the thread.
+         *
          *     **A replacement is identified, not only announced** (CONTRACT-071). Every designation that changes what the thread has gets a fresh `Resident.designationId`, and one that asks for the state already in force writes nothing and keeps the id it had. That is what lets the listener launched by an earlier designation find out it was replaced: it compares the id it was launched with against the id the lane carries now. Before this field the comparison had no honest input — a replacement naming a different profile at the same weight leaves the lane live and the roster row in place, and the row's rendered resident cell is written for a person and must never be parsed.
          *
          *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).
@@ -2772,13 +2774,13 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
-                /** @description The request conflicts with state that already exists. */
+                /** @description Two opposite refusals, told apart by `reason`. `has-parent`: the thread is on a document and may never have a resident. `draining`: its released resident left `outstanding` events the orchestrator is still working, and designating now would hand the same turns to two agents — which clears by itself in seconds. */
                 409: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ConflictError"];
+                        "application/json": components["schemas"]["DesignateConflictError"];
                     };
                 };
             };
@@ -6323,6 +6325,18 @@ export interface components {
             };
             /** @description The bytes the caller believes the range currently holds — a **guard, not the stored selector**. The server compares it against the parent's live body and refuses with `409` (`range-changed`) if they differ, because a document edited between the person seeing the range and choosing it would otherwise re-attach the thread to whatever slid into those offsets. Its length must equal `end - start`, which is checked at validation time. Never written: the selector is read off the document's own bytes (SERVER-071). */
             expectedText: string;
+        };
+        DesignateConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            /**
+             * @description Which refusal this is, and they are opposites. **`has-parent`** — the thread is on a document, so it may never have a resident (SPEC.md §7: a resident owns a conversation rather than a passage). **`draining`** — the thread's released resident left work the orchestrator is still doing, so designating now would hand the same turns to two agents; it clears by itself in seconds. Branch on this rather than on the status: one can never succeed and the other is about to.
+             * @enum {string}
+             */
+            reason: "has-parent" | "draining";
+            /** @description **How many of the released resident's events the orchestrator is still working.** At least one under `draining`, and `0` under `has-parent`, where nothing is outstanding and nothing ever will be. A field rather than a number inside `message` for the reason this package keeps everywhere — a client must never parse prose to decide anything — and it is what tells a person whether waiting means a moment or a while. */
+            outstanding: number;
         };
         DesignateResidentRequest: {
             /**

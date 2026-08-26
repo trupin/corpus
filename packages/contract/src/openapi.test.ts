@@ -5652,6 +5652,63 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
   });
 
   /**
+   * CONTRACT-089. Release hands a lane's pending events to the orchestrator,
+   * and designating again before they settle is the one door left open by which
+   * the same turns get answered twice.
+   */
+  describe("designating into a drain is refused (CONTRACT-089)", () => {
+    const body = (): Record<string, { enum?: string[]; minimum?: number; description?: string }> =>
+      componentSchemas?.["DesignateConflictError"]?.properties ?? {};
+
+    /**
+     * The decision this pins is the one *not* taken: a third error code. This
+     * package settled that twice — the re-attach and patch refusals are both
+     * `conflict`, narrowed by non-overlapping `reason` vocabularies — and
+     * `unknown_recipient`'s own test forbids minting a code for a fact that
+     * already has one.
+     */
+    it("narrows `conflict` with a reason rather than minting a code", () => {
+      expect(body()["code"]?.enum).toEqual(["conflict"]);
+      expect(body()["reason"]?.enum).toEqual(["has-parent", "draining"]);
+      expect([...ERROR_CODES]).not.toContain("draining");
+    });
+
+    it("does not overlap the other two conflict vocabularies", () => {
+      const reasonsOf = (name: string): string[] =>
+        componentSchemas?.[name]?.properties?.["reason"]?.enum ?? [];
+      const mine = reasonsOf("DesignateConflictError");
+      expect(mine.filter((reason) => reasonsOf("PatchConflictError").includes(reason))).toEqual([]);
+      expect(mine.filter((reason) => reasonsOf("ReattachConflictError").includes(reason))).toEqual(
+        [],
+      );
+    });
+
+    /**
+     * "Try again later" tells a person nothing about whether later is a second
+     * or an hour, and a client that scraped the number out of `message` would
+     * be parsing prose the server may reword. `PatchConflictError.matches` is
+     * the same idea for the same reason.
+     */
+    it("carries the outstanding count as a field, never only in the message", () => {
+      expect(body()["outstanding"]?.minimum).toBe(0);
+      expect(body()["outstanding"]?.description).toContain("never parse prose");
+    });
+
+    it("says the two refusals are opposites, where a caller branches", () => {
+      const reason = body()["reason"]?.description ?? "";
+      expect(reason).toContain("they are opposites");
+      expect(reason).toContain("one can never succeed and the other is about to");
+    });
+
+    it("states the rule and its reason on the route a caller meets it on", () => {
+      const description = operation("/api/threads/{id}/resident", "post").description ?? "";
+      expect(description).toContain("still draining");
+      expect(description).toContain("the same turns answered twice");
+      expect(description).toContain("transient, self-clearing");
+    });
+  });
+
+  /**
    * CONTRACT-088. §7's rider A makes a resident what a new standalone thread
    * gets when nobody chose, and §10's rider B puts the choice on both composer
    * submits. The wire has to express three states, and one of them — *present,
