@@ -135,6 +135,7 @@ export function renderLane(lane: AgentLane, now: number): string {
     laneLabel(lane),
     ...residentCell(lane),
     presenceCell(lane, now),
+    ...workingCell(lane),
     ...waitingCell(lane),
   ];
   const row = cells.join(" · ");
@@ -161,6 +162,28 @@ export function renderLane(lane: AgentLane, now: number): string {
  * needs both — a row that merged them would be a third fact neither field
  * states.
  */
+/**
+ * **Whether this lane is holding work it claimed** (CLI-071, for AGENT-055).
+ *
+ * The third of the three the launch decision needs, and the one that reads
+ * strangest until you know why it is here: it appears **beside a not-live row**,
+ * which looks like a contradiction and is the whole point. A resident works its
+ * conversation inline and holds no park while it does, so `not live · working`
+ * is a busy agent — and launching a second listener onto it is what this cell
+ * exists to prevent.
+ *
+ * It sits **before** the waiting count rather than after, so the row reads in
+ * the order a reader decides in: is anybody there, is anything being done, is
+ * anything waiting. `lapsed · working · 2 waiting` is patience; the same row
+ * without `working` is a launch.
+ *
+ * Absent when the lane holds nothing, on CLI-070's principle — a column of
+ * states nobody reads is a column nobody reads.
+ */
+function workingCell(lane: AgentLane): string[] {
+  return lane.working ? ["working"] : [];
+}
+
 function waitingCell(lane: AgentLane): string[] {
   if (lane.pending === 0) return [];
   return [`${String(lane.pending)} waiting`];

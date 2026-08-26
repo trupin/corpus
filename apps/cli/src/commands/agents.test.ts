@@ -32,6 +32,7 @@ const ORCHESTRATOR_ROW = {
   live: true,
   since: ago(120),
   pending: 0,
+  working: false,
   summary: "working the Q3 draft",
   origin: null,
 };
@@ -42,6 +43,7 @@ const LIVE_LANE = {
   live: true,
   since: ago(12),
   pending: 0,
+  working: false,
   summary: "reading the mortgage docs",
   origin: { id: "th_4b8e2c", title: "Q3 planning" },
 };
@@ -55,6 +57,7 @@ const LAPSED_LANE = {
   // waiting (CLI-070). The lapsed fixture carries it because that is the row a
   // reader most needs to be able to act on.
   pending: 3,
+  working: false,
   summary: null,
   origin: { id: "th_9f1a2b", title: "Rate check" },
 };
@@ -65,6 +68,7 @@ const WAITING_LANE = {
   live: false,
   since: null,
   pending: 0,
+  working: false,
   summary: null,
   origin: { id: "th_c0ffee", title: "New idea" },
 };
@@ -89,6 +93,54 @@ describe("corpus agents", () => {
       'th_9f1a2b "Rate check" · analyst (doc_a7) · lapsed, last parked 41m ago · 3 waiting',
       'th_c0ffee "New idea" · scribe (doc_s3) · waiting for a listener',
     ]);
+  });
+
+  /**
+   * CLI-071. The third field of the launch decision, and the one that reads
+   * strangest until you know why: it appears beside a **not-live** row, which
+   * looks like a contradiction and is exactly the case it exists for.
+   */
+  describe("a lane that is holding work", () => {
+    it("says so beside a not-live row, which is the pair that means patience", async () => {
+      const busy = { ...LAPSED_LANE, working: true };
+      const stub = await startStubServer(jsonResponder(200, { agents: [busy] }));
+
+      const harness = stubContext(stub);
+      await runAgents(harness.context, NOW);
+
+      const row = harness.stdout().split("\n").filter(Boolean)[0] ?? "";
+      expect(row).toContain("lapsed");
+      expect(row).toContain("working");
+      // Order is the order a reader decides in: is anybody there, is anything
+      // being done, is anything waiting.
+      expect(row.indexOf("working")).toBeLessThan(row.indexOf("3 waiting"));
+    });
+
+    it("says nothing for a lane holding nothing", async () => {
+      const stub = await startStubServer(jsonResponder(200, { agents: [LAPSED_LANE] }));
+
+      const harness = stubContext(stub);
+      await runAgents(harness.context, NOW);
+
+      expect(harness.stdout()).not.toContain("working");
+    });
+
+    /**
+     * The three are three facts and the row keeps them apart. A reader that
+     * took `working` for presence would leave a dead lane unlaunched forever,
+     * since a listener that died mid-event holds its event until reap-stale.
+     */
+    it("keeps working and live as separate cells, never one verdict", async () => {
+      const busy = { ...LAPSED_LANE, working: true };
+      const stub = await startStubServer(jsonResponder(200, { agents: [busy] }));
+
+      const harness = stubContext(stub);
+      await runAgents(harness.context, NOW);
+
+      const row = harness.stdout().split("\n").filter(Boolean)[0] ?? "";
+      expect(row).not.toContain("live,");
+      expect(row).toMatch(/lapsed[^·]*· working/u);
+    });
   });
 
   /**
@@ -117,6 +169,7 @@ describe("corpus agents", () => {
       live: true,
       since: ago(30),
       pending: 0,
+      working: false,
       summary: null,
       origin: { id: "th_11aa22", title: "Kitchen rebuild" },
     };

@@ -1732,7 +1732,7 @@ contract forbids deciding from it — into a field.
 | --- | --- | --- | --- | --- | --- |
 | SERVER-156 | A job carries the lane it was stamped with | done | P1 | opus | CONTRACT-056 |
 | SERVER-157 | A roster row says a lane is working | done | P1 | opus | CONTRACT-057 |
-| CLI-071 | The roster cannot say a lane is busy | todo | P1 | opus | CONTRACT-057, SERVER-157 |
+| CLI-071 | The roster cannot say a lane is busy | done | P1 | opus | CONTRACT-057, SERVER-157 |
 | AGENT-055 | Do not launch onto an agent that is working | todo | P1 | fable | CLI-071, SERVER-157 |
 | UI-176 | The pending row reads the lane instead of walking to it | todo | P1 | opus | SERVER-156, SERVER-157 |
 
