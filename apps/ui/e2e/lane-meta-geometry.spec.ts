@@ -83,6 +83,7 @@ function lane(id: string, over: Partial<AgentLane>): AgentLane {
     resident: { name: null, docId: null, weight: null, designationId: null },
     live: false,
     since: null,
+    pending: 0,
     summary: null,
     origin: { id, title: LONG_TITLE },
     ...over,

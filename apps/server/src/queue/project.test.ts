@@ -82,22 +82,30 @@ describe("the queue's invalidation key table", () => {
    * of call sites each deciding for itself: a table that covers every pair
    * leaves no pair for a future transition to decide differently.
    */
-  it("names the roster for exactly the pairs that touch `in-progress`", () => {
+  it("names the roster for exactly the pairs that touch `pending` or `in-progress`", () => {
+    const moves = (status: (typeof QUEUE_EVENT_STATUSES)[number] | undefined): boolean =>
+      status === "in-progress" || status === "pending";
     const ends = [...QUEUE_EVENT_STATUSES, undefined];
     for (const from of ends) {
       for (const to of ends) {
-        const expected =
-          from === "in-progress" || to === "in-progress"
-            ? QUEUE_TRANSITION_QUERY_KEYS
-            : QUEUE_QUERY_KEYS;
+        const expected = moves(from) || moves(to) ? QUEUE_TRANSITION_QUERY_KEYS : QUEUE_QUERY_KEYS;
         expect(queueTransitionKeys(from, to)).toEqual(expected);
       }
     }
     // The one-ended form the reaper uses: everything it moves comes out of
     // `in-progress/`, whatever it moves into.
     expect(queueTransitionKeys("in-progress")).toEqual(QUEUE_TRANSITION_QUERY_KEYS);
-    // An enqueue: no event on the `from` side, `pending` on the `to` side.
-    expect(queueTransitionKeys(undefined, "pending")).toEqual(QUEUE_QUERY_KEYS);
+    /*
+     * An enqueue — no event on the `from` side, `pending` on the `to` side — and
+     * it now names the roster (SERVER-155), which reverses SERVER-115.
+     *
+     * That decision was right when a row reported only the work a lane was
+     * *holding*. A row now carries its lane's `pending` count, and since SPEC.md
+     * §7's rider removed the fallback that count is the only thing telling the
+     * orchestrator a conversation needs a listener started. An unannounced
+     * enqueue would leave it waiting indefinitely.
+     */
+    expect(queueTransitionKeys(undefined, "pending")).toEqual(QUEUE_TRANSITION_QUERY_KEYS);
   });
 
   it("names the roster for an append to a held job's log, and not to a finished one's", () => {
@@ -155,14 +163,20 @@ describe("what the contract publishes about the roster, held against the emitter
     }
   });
 
-  // The other half of the same rule: an *enqueue* is not a transition into or
-  // out of `in-progress`, so it names no roster — but it does name `["queue"]`,
-  // so it names `["reflect"]`. A reflection going on the queue is precisely the
-  // moment the Reflect control has to start saying "reflecting…".
-  it("names the reflection clock on a plain enqueue, and never the roster", () => {
+  /*
+   * An enqueue names `["queue"]`, so it names `["reflect"]` — a reflection going
+   * on the queue is precisely the moment the Reflect control has to start saying
+   * "reflecting…".
+   *
+   * It now names `["agents"]` too (SERVER-155). The comment here used to say
+   * "and never the roster", which was the rule while a row reported only held
+   * work; a row carries its lane's `pending` count now, and that count is what
+   * the orchestrator launches a listener from.
+   */
+  it("names the reflection clock and the roster on a plain enqueue", () => {
     const frame = withReflectKey(queueTransitionKeys(undefined, "pending"));
     expect(frame).toContainEqual(REFLECT_KEY);
-    expect(frame).not.toContainEqual(AGENTS_KEY);
+    expect(frame).toContainEqual(AGENTS_KEY);
   });
 
   it("carries the coupling the `queue` and `jobs` entries spell out in prose", () => {

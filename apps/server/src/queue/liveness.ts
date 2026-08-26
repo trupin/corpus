@@ -174,11 +174,6 @@ export interface LaneTrackerOptions {
    * as data.
    */
   readonly onPresenceChanged?: ((lane: Lane) => void) | undefined;
-  /**
-   * A lane went past the grace window. Fired **after** the lane already reads
-   * lapsed, so whatever this wakes sees the fallback the lapse creates.
-   */
-  readonly onLapsed?: ((lane: Lane) => void) | undefined;
 }
 
 interface LaneRecord {
@@ -214,7 +209,6 @@ export function createLaneTracker(options: LaneTrackerOptions = {}): LaneTracker
   const now = options.now ?? Date.now;
   const graceMs = options.graceMs ?? LANE_GRACE_MS;
   const onPresenceChanged = options.onPresenceChanged ?? (() => undefined);
-  const onLapsed = options.onLapsed ?? (() => undefined);
 
   /**
    * One record per lane something has parked on since boot, kept after it
@@ -286,7 +280,6 @@ export function createLaneTracker(options: LaneTrackerOptions = {}): LaneTracker
     // fallback against the state it was called to report.
     for (const lane of lapsed) {
       onPresenceChanged(lane);
-      onLapsed(lane);
     }
   };
 

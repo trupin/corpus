@@ -11,7 +11,10 @@ import {
   handleComposerKeyDown,
   PendingAttachments,
   useAttachmentIntake,
+  MENTION_DOC_TYPE,
+  rowToken,
   useAutocomplete,
+  useDocs,
   useComposerRecipient,
   useComposerWeight,
   type PendingAttachment,
@@ -21,6 +24,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -86,6 +90,32 @@ export interface ComposeOverlayProps {
   readonly onNotify: (notice: RowNotice) => void;
 }
 
+/**
+ * The sentinel for *no resident at all* in the `<select>`'s value space
+ * (UI-173).
+ *
+ * A `<select>` value is a string and cannot be `null`, so the three states need
+ * three strings: `""` is the default, this is nobody, and anything else is a
+ * profile name. The value is chosen to be one no profile can have —
+ * `AgentNameSchema` refuses a blank or whitespace-only name, and a leading
+ * `@` is not part of the invocable name it validates.
+ */
+const NO_RESIDENT_VALUE = "@none";
+
+/** The same bound the `@` menu uses, for the same directory. */
+const RESIDENT_CHOICE_LIMIT = 50;
+
+/** What the default option says. It names the outcome, not the absence of a choice. */
+const DEFAULT_RESIDENT_LABEL = "its own agent";
+
+/** …and what choosing nobody says, in terms of who answers instead. */
+const NO_RESIDENT_LABEL = "no owner — the main agent";
+
+const RESIDENT_TITLE =
+  "Who owns this conversation and everything that grows out of it (SPEC.md §7). " +
+  "A new conversation gets its own agent unless you choose otherwise. This is not the " +
+  "recipient beside it: a recipient routes this one message and changes nothing else.";
+
 export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): ReactElement {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -108,6 +138,51 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * scope boundary — and it routes this message and nothing else.
    */
   const recipient = useComposerRecipient({ start: null });
+  /**
+   * **Who will own the conversation** (UI-173; SPEC.md §7's rider A, §10's
+   * rider B).
+   *
+   * `undefined` is the default — a general resident — and it is deliberately
+   * the state the control starts in, because rider A makes owning the
+   * conversation what happens when nobody chose. `null` is *nobody*, and a
+   * string is a profile name.
+   *
+   * **A separate piece of state from `recipient`, and it must stay one.** They
+   * are different acts: a recipient routes one message and rewires nothing,
+   * while a designation hands over the conversation and everything that grows
+   * out of it. Both may be set at once, and a control that made picking one
+   * imply the other would be the collapse §10's rider rules out.
+   */
+  const [resident, setResident] = useState<string | null | undefined>(undefined);
+  /*
+   * The profiles the picker offers — the same `type: agent-def` directory the
+   * `@` autocomplete draws from, at the same bound, rather than a second query
+   * with its own idea of what an invocable persona is.
+   *
+   * §7 says an **archived** profile is still designatable but is withdrawn from
+   * the choices a workspace offers, and `useDocs` excludes archived documents by
+   * default — so the offer is right without a filter of its own.
+   */
+  const profileDocs = useDocs({ type: MENTION_DOC_TYPE, limit: RESIDENT_CHOICE_LIMIT });
+  /*
+   * `rowToken` is **the** predicate both offer surfaces apply, and using it here
+   * rather than reading a field is the point of its existing: the `@`
+   * autocomplete and the designate menu each derived their own idea of what an
+   * agent-def answers to once, and when the server changed its mind both were
+   * wrong in the same way and neither noticed. A third reading here would be
+   * that bug, restored.
+   *
+   * It also gates the offer: a row it cannot name is one the server would not
+   * resolve, so offering it would promise a resolution that fails.
+   */
+  const profiles = useMemo(
+    () =>
+      (profileDocs.data?.items ?? []).flatMap((row) => {
+        const name = rowToken(row);
+        return name === null ? [] : [{ id: row.id, name }];
+      }),
+    [profileDocs.data],
+  );
   /*
    * The address (UI-126). Both submits send `requestsAgent: true`, so it is
    * always live here. The weight rides `address.weightRequest` — stated only
@@ -172,6 +247,12 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
           files: attachments.map((attachment) => attachment.file),
           weight: address.weightRequest,
           recipient: recipient.request,
+          // Absence is the default, so it is spelled by leaving the key out —
+          // and `null` is a value here rather than another absence.
+          resident:
+            resident === undefined
+              ? {}
+              : { resident: resident === null ? null : { name: resident } },
         });
         if (outcome.ok) {
           // An override routes the message it was set on and never the next one
@@ -260,6 +341,45 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         <div className="compose-actions">
           <AttachButton surface="compose" onFiles={intake.add} />
           <ComposerAddress address={address} surface="compose" />
+          {/*
+           * **Who will own the conversation** (UI-173).
+           *
+           * Beside the address rather than inside it, because they are two
+           * different acts and §10's rider says so: naming a recipient routes
+           * one message and rewires nothing, while designating hands over the
+           * conversation and everything that grows out of it. Both may be set,
+           * and a single control would have made choosing one imply the other.
+           *
+           * **It shows the default rather than an unchosen state.** Rider A
+           * makes a general resident what happens if a person does nothing, so
+           * a control reading "choose an owner…" would misdescribe what
+           * pressing Ask is about to do.
+           *
+           * Ask only. A capture's thread has a parent, and §7 lets only a
+           * standalone thread designate (SHARED-073).
+           */}
+          <label className="compose-resident">
+            <span className="compose-resident-label">owner</span>
+            <select
+              aria-label="Who will own this conversation"
+              value={resident === undefined ? "" : (resident ?? NO_RESIDENT_VALUE)}
+              title={RESIDENT_TITLE}
+              onChange={(event) => {
+                const picked = event.currentTarget.value;
+                setResident(
+                  picked === "" ? undefined : picked === NO_RESIDENT_VALUE ? null : picked,
+                );
+              }}
+            >
+              <option value="">{DEFAULT_RESIDENT_LABEL}</option>
+              <option value={NO_RESIDENT_VALUE}>{NO_RESIDENT_LABEL}</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.name}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
           <button

@@ -37,7 +37,7 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
-import { askReflection, getReflectStatus } from "./reflect.js";
+import { askReflection, getReflectStatus, setReflectQuiet } from "./reflect.js";
 import { searchCorpus } from "./search.js";
 import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
@@ -221,6 +221,7 @@ export const contractRoutes = {
 
   askReflection,
   getReflectStatus,
+  setReflectQuiet,
 
   listJobs,
   getJobLog,

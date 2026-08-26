@@ -174,7 +174,9 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     const frames = await framesDuring(async () => {
       id = (await createThread(ws, { body: "asking" })).id;
     });
-    expect(frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["reflect"]]]);
+    // `["agents"]` joins it with SERVER-154: a standalone thread designates a
+    // general resident on creation, so a lane appeared and the roster moved.
+    expect(frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["agents"], ["reflect"]]]);
   });
 
   // The media type is a wire detail; what the board has to refetch is not. Both
@@ -208,12 +210,13 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     );
 
     // The write's own frame, then the queue service's — enqueue announces the
-    // queue, the job list and the document collection, which is
-    // `QUEUE_QUERY_KEYS`, not this module's (`["docs"]` because the
-    // `failed-job` needs reason reads `events.status`, SERVER-028).
+    // queue, the job list, the document collection (`["docs"]` because the
+    // `failed-job` needs reason reads `events.status`, SERVER-028) and, since
+    // SERVER-155, the roster: the event lands in `pending/` and moves its lane's
+    // count, which is what the orchestrator starts a listener from.
     expect(frames).toEqual([
       [["docs"], ["docs", created.id], ["threads", created.id], ["reflect"]],
-      [["queue"], ["jobs"], ["docs"], ["reflect"]],
+      [["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]],
     ]);
   });
 
@@ -250,7 +253,11 @@ describe("the queue and the auto-commit", () => {
   // the service notifies waiters, and a parked `idle` is what the agent's loop
   // is blocked on (SPEC.md §7).
   it("wakes a parked long-poll", async () => {
-    const created = await createThread(ws, { body: "first" });
+    // Undesignated, so the turn below lands on the orchestrator's own lane and
+    // the unscoped park can see it. Since SPEC.md §7's rider A a plain create
+    // designates a resident, and since the rider that removed the fallback an
+    // unscoped park is never woken by another lane's arrival (SERVER-152).
+    const created = await createThread(ws, { body: "first", resident: null });
     const parked = ws.server.queue.idle({ timeoutMs: 5_000 });
     // `idle` scans the queue directory before it parks, so the waiter appears a
     // tick later; waiting for it is what makes this a wake rather than a poll.

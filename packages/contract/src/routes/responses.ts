@@ -1,5 +1,4 @@
 import { z } from "zod";
-
 import {
   ConflictErrorSchema,
   ForbiddenErrorSchema,
@@ -9,6 +8,7 @@ import {
   ValidationErrorSchema,
   UnknownJobErrorSchema,
   UnknownRecipientErrorSchema,
+  DesignateConflictErrorSchema,
 } from "../schemas/error.js";
 
 /** Wraps a schema as a single-content-type JSON response entry for `createRoute`. */
@@ -132,6 +132,23 @@ export const UNKNOWN_SCOPE_RESPONSE = jsonContent(
     "silently parked because parking is what presence *is*: a park the server admitted on a " +
     "non-lane would report an agent listening on a lane the roster does not list, for as long as " +
     "the loop kept re-parking.",
+);
+
+/**
+ * The refusal a designation meets while a released resident's work is still
+ * draining (CONTRACT-089).
+ *
+ * Its own response rather than a second meaning for {@link CONFLICT_RESPONSE},
+ * because the two `409`s on the designate route are opposites in the only way a
+ * caller cares about: *a thread with a parent may never have a resident*, and
+ * *this thread is about to be able to have one again*.
+ */
+export const DESIGNATE_CONFLICT_RESPONSE = jsonContent(
+  DesignateConflictErrorSchema,
+  "Two opposite refusals, told apart by `reason`. `has-parent`: the thread is on a document and " +
+    "may never have a resident. `draining`: its released resident left `outstanding` events the " +
+    "orchestrator is still working, and designating now would hand the same turns to two agents " +
+    "— which clears by itself in seconds.",
 );
 
 export const CONFLICT_RESPONSE = jsonContent(

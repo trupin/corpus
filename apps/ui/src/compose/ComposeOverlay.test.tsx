@@ -82,12 +82,15 @@ describe("ComposeOverlay", () => {
       const actions = [...(panel?.querySelectorAll(".compose-actions > *") ?? [])].map(
         (node) => node.className || node.tagName.toLowerCase(),
       );
-      // The address line (UI-126) sits between the 📎 and the hint; the two
+      // The address line (UI-126) sits between the 📎 and the hint, and the
+      // owner picker (UI-173) beside it — two acts, two controls, adjacent
+      // because a person choosing one is deciding about the other. The two
       // submits keep the bar's tail, which is the key contract's order.
       expect(actions).toEqual([
         "clip",
         "input",
         "composer-address",
+        "compose-resident",
         "hint",
         "spacer",
         "btn-capture",
@@ -485,6 +488,67 @@ describe("ComposeOverlay", () => {
       expect(onClose).not.toHaveBeenCalled();
       fireEvent.mouseDown(container.querySelector(".overlay") as Element);
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * Who will own the conversation (UI-173; SPEC.md §7's rider A, §10's rider B).
+   */
+  describe("the owner picker", () => {
+    const picker = (container: HTMLElement): HTMLSelectElement => {
+      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+      if (found === null) throw new Error("no owner picker");
+      return found;
+    };
+
+    /**
+     * Rider A makes a general resident what happens if a person does nothing,
+     * so the control shows that rather than an unchosen state. A picker reading
+     * "choose an owner…" would misdescribe what pressing Ask is about to do.
+     */
+    it("shows the default as the default, not as an empty choice", () => {
+      const { container } = mount(composeTransport());
+      expect(picker(container).value).toBe("");
+      expect(picker(container).options[0]?.textContent).toBe("its own agent");
+    });
+
+    it("sends nothing at all when the default stands", async () => {
+      const wire = composeTransport();
+      const { container } = mount(wire);
+      type(container, "a question");
+      fireEvent.click(button(container, "btn-ask"));
+
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      // Absence is the spelling of the default, so the key is not on the body.
+      expect(Object.keys(wire.to("/api/threads")[0]?.json ?? {})).not.toContain("resident");
+    });
+
+    it("sends an explicit null for no owner, which is a value and not an absence", async () => {
+      const wire = composeTransport();
+      const { container } = mount(wire);
+      fireEvent.change(picker(container), { target: { value: "@none" } });
+      type(container, "a question");
+      fireEvent.click(button(container, "btn-ask"));
+
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      expect(wire.to("/api/threads")[0]?.json).toMatchObject({ resident: null });
+    });
+
+    /**
+     * The two are different acts and are never collapsed (§10's rider): a
+     * recipient routes one message and rewires nothing, a designation hands
+     * over the conversation. Both may ride one request, and this is what says
+     * the controls did not learn to imply each other.
+     */
+    it("is a separate control from the recipient, and neither implies the other", () => {
+      const { container } = mount(composeTransport());
+      expect(container.querySelector(".composer-address")).not.toBeNull();
+      expect(container.querySelector(".compose-resident")).not.toBeNull();
+      expect(picker(container).getAttribute("aria-label")).toBe("Who will own this conversation");
     });
   });
 });

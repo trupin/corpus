@@ -31,6 +31,7 @@ const ORCHESTRATOR_ROW = {
   resident: null,
   live: true,
   since: ago(120),
+  pending: 0,
   summary: "working the Q3 draft",
   origin: null,
 };
@@ -40,6 +41,7 @@ const LIVE_LANE = {
   resident: { name: "researcher", docId: "doc_r1", weight: null, designationId: null },
   live: true,
   since: ago(12),
+  pending: 0,
   summary: "reading the mortgage docs",
   origin: { id: "th_4b8e2c", title: "Q3 planning" },
 };
@@ -49,6 +51,10 @@ const LAPSED_LANE = {
   resident: { name: "analyst", docId: "doc_a7", weight: null, designationId: null },
   live: false,
   since: ago(41 * 60),
+  // The pair the orchestrate skill launches from: not live, and something
+  // waiting (CLI-070). The lapsed fixture carries it because that is the row a
+  // reader most needs to be able to act on.
+  pending: 3,
   summary: null,
   origin: { id: "th_9f1a2b", title: "Rate check" },
 };
@@ -58,6 +64,7 @@ const WAITING_LANE = {
   resident: { name: "scribe", docId: "doc_s3", weight: null, designationId: null },
   live: false,
   since: null,
+  pending: 0,
   summary: null,
   origin: { id: "th_c0ffee", title: "New idea" },
 };
@@ -77,9 +84,30 @@ describe("corpus agents", () => {
     expect(harness.stdout().split("\n").filter(Boolean)).toEqual([
       "orchestrator · live, parked 2m ago — working the Q3 draft",
       'th_4b8e2c "Q3 planning" · researcher (doc_r1) · live, parked 12s ago — reading the mortgage docs',
-      'th_9f1a2b "Rate check" · analyst (doc_a7) · lapsed, last parked 41m ago',
+      // Not live, and something waiting: the pair the orchestrate skill launches
+      // from, and the reason this cell exists (CLI-070).
+      'th_9f1a2b "Rate check" · analyst (doc_a7) · lapsed, last parked 41m ago · 3 waiting',
       'th_c0ffee "New idea" · scribe (doc_s3) · waiting for a listener',
     ]);
+  });
+
+  /**
+   * CLI-070. The orchestrate skill launches a listener for a lane that is not
+   * live and has work waiting, and reads both off this row — so the cell has to
+   * be here, and has to be absent when there is nothing to say.
+   */
+  it("prints the waiting count only for a lane that has one", async () => {
+    const quiet = { ...LAPSED_LANE, pending: 0 };
+    const stub = await startStubServer(jsonResponder(200, { agents: [LAPSED_LANE, quiet] }));
+
+    const harness = stubContext(stub);
+    await runAgents(harness.context, NOW);
+
+    const [waiting, idle] = harness.stdout().split("\n").filter(Boolean);
+    expect(waiting).toContain("3 waiting");
+    // Absent, not `0 waiting`: a column of zeroes is a column nobody reads, and
+    // the pair that matters is loud because it is rare.
+    expect(idle).not.toContain("waiting");
   });
 
   it("prints a mixed roster legibly: the orchestrator, a general lane, a profiled lane", async () => {
@@ -88,6 +116,7 @@ describe("corpus agents", () => {
       resident: { name: null, docId: null, weight: null, designationId: null },
       live: true,
       since: ago(30),
+      pending: 0,
       summary: null,
       origin: { id: "th_11aa22", title: "Kitchen rebuild" },
     };

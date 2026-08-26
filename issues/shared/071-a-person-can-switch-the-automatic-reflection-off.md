@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -46,10 +46,10 @@ So this is not a new mechanism. It is a write path to a switch the spec already
 describes, and a control that flips it. The spec sentence that must change is
 the one naming who can reach the value.
 
-## The rider, drafted and unsigned
+## The rider, signed 2026-08-25 and applied
 
-**This issue does not edit SPEC.md.** Appended to §7's `workspace.reflect`
-paragraph, after the sentence beginning _"Or the dust settles"_:
+Signed as drafted and applied to §7's `workspace.reflect` paragraph, after the
+sentence beginning _"Ten changes in five minutes are one reflection"_:
 
 > **A person may switch the automatic path off where they see it.** The board
 > bar's Reflect control carries the switch beside the ask, because the two are
@@ -59,11 +59,11 @@ paragraph, after the sentence beginning _"Or the dust settles"_:
 > person edits directly. Switching it on writes the default window. The control
 > names the window it will restore before it restores it, because a person whose
 > config carried a different one is owed the number rather than a surprise.
-> _(Rider signed <date>.)_
+> _(Rider signed 2026-08-25.)_
 
 ## Acceptance Criteria
 
-- [ ] The rider is put to the user, quoted, and applied only once signed
+- [x] The rider is put to the user, quoted, and applied only once signed
 - [ ] No second way to disable the automatic path is introduced — `quiet: 0`
       stays the one rule, and no `reflect.auto` boolean is added
 - [ ] The three implementing issues are filed and depend on this one

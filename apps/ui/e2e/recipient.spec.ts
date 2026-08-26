@@ -69,6 +69,7 @@ const RESIDENT_LANE: AgentLane = {
   },
   live: true,
   since: JUST_NOW,
+  pending: 0,
   summary: "reading the policy",
   origin: { id: "th_res", title: "The claims conversation" },
 };

@@ -1734,6 +1734,10 @@ export interface paths {
          *     **The stored anchor's context is the server's, not the caller's.** `exact` is stored verbatim, but `prefix`/`suffix` on the request are used for one thing only — saying which occurrence a repeated quote means — and are never written as sent: the server reads the context off the parent's own bytes around the quote, so the anchor is byte-faithful to the file even when the caller could not produce context (SERVER-071). A quote occurring more than once with nothing to tell the occurrences apart is a `400`, because guessing one would attach the conversation to a passage nobody chose; a quote the document does not contain is **not** refused, since §6 calls that anchor orphaned and orphaned is a normal state of a living corpus rather than a bad request.
          *
          *     Send `application/json` for a plain thread, or `multipart/form-data` to attach files to the first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
+         *
+         *     **A standalone thread is created with a resident, unless the caller says otherwise** (SPEC.md §7, rider signed 2026-08-25). Omitting `resident` designates a **general resident**, because a conversation is a thing an agent owns and owning it is what happens when nobody chose. `{name}` designates that profile, resolved exactly as `POST /api/threads/{id}/resident` resolves it. **`null` means no resident at all**, and it is the one field on this body where `null` and omitted differ — `parent` and `selector` treat them alike, this does not, and a caller spelling a missing variable as `null` gets the opposite of the default.
+         *
+         *     **`resident` is not `recipient`.** A recipient routes one message and rewires nothing; a designation hands over the conversation and everything that grows out of it. Both may ride one request. **A `resident` on a thread with a `parent` is a `400`**: §7 lets only a standalone thread designate, since a thread on a document is about that document and a resident owns a conversation rather than a passage.
          */
         post: {
             parameters: {
@@ -2693,6 +2697,8 @@ export interface paths {
          *
          *     **Single-valued, so designating again replaces.** A thread has one resident or none, and nothing has to arbitrate between two; designating a thread that already has one is a replacement rather than a `409` — and a replacement is a release of the old occupant, so it enqueues a `resident.released` with `reason: "replaced"` beside the newcomer's `resident.designated`. What is refused is designating a thread that may not have a resident at all: `409` for a thread with a parent — anchored or whole-document — because a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
          *
+         *     **A second `409`, and it is the opposite of that one** (SPEC.md §7, rider signed 2026-08-25). Releasing a resident hands its lane's pending events to the orchestrator, and designating again before those settle would put a listener on the same lane while the orchestrator is working them — the same turns answered twice, which is the one seam the no-fallback rule leaves. So a thread whose release is **still draining** refuses, with `code: "draining"` and `outstanding`, the number of events still being worked. The two refusals are told apart at the `code` and never at the status, because a thread with a parent can *never* have a resident while this one is about to have one again in seconds: the condition is transient, self-clearing, and a fact about outstanding work rather than a state of the thread.
+         *
          *     **A replacement is identified, not only announced** (CONTRACT-071). Every designation that changes what the thread has gets a fresh `Resident.designationId`, and one that asks for the state already in force writes nothing and keeps the id it had. That is what lets the listener launched by an earlier designation find out it was replaced: it compares the id it was launched with against the id the lane carries now. Before this field the comparison had no honest input — a replacement naming a different profile at the same weight leaves the lane live and the roster row in place, and the row's rendered resident cell is written for a person and must never be parsed.
          *
          *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. A resident claims a conversation and every artifact that grows out of it, and an agent that could designate would be choosing who answers a person's messages (SPEC.md §7 — designation is user-only state).
@@ -2766,13 +2772,13 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
-                /** @description The request conflicts with state that already exists. */
+                /** @description Two opposite refusals, told apart by `reason`. `has-parent`: the thread is on a document and may never have a resident. `draining`: its released resident left `outstanding` events the orchestrator is still working, and designating now would hand the same turns to two agents — which clears by itself in seconds. */
                 409: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ConflictError"];
+                        "application/json": components["schemas"]["DesignateConflictError"];
                     };
                 };
             };
@@ -3744,6 +3750,77 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/reflect/quiet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the quiet window, or switch the automatic path off
+         * @description Writes `reflect.quiet` into the workspace config (SPEC.md §7, rider signed 2026-08-25: *a person may switch the automatic path off where they see it*). This is the board bar's Reflect control; the file remains what a person may edit directly, and the server re-reads it on every use, so nothing has to restart.
+         *
+         *     **`0` disables the automatic path** and leaves asking as the only way a reflection happens — the Reflect control becomes the only thing that starts one. That is the spelling §7 has always given to *off*, and it is deliberately the only one: there is no separate boolean, because two keys with one effect are two ways to say the same thing.
+         *
+         *     **It answers the whole `ReflectStatus`**, exactly as `GET` does, so a caller that switches the path off learns in the same round trip what is still pending and how many documents are unreflected. A bare acknowledgement would make every caller read again to find out what it had just done.
+         *
+         *     `PUT` rather than `PATCH`: one field, wholly replaced, and setting the same value twice is the same state. It writes config and no document, so it makes no commit, and it carries the acting party like every other write.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The quiet window in minutes. `0` disables the automatic path and leaves asking as the only way a reflection happens. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReflectQuietRequest"];
+                };
+            };
+            responses: {
+                /** @description The clock, the pending reflection, the unreflected count, the last digest, and the window as it now stands. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReflectStatus"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5799,6 +5876,22 @@ export interface components {
             model?: string;
             /** @description The weight this request's work should be done at (SPEC.md §7) — **a directive, not a hint**. The value is a **level's key from the workspace's own agent guidance, verbatim** — the key column of the guidance's tier table, not the label beside it, because the label is prose a person may reword and the key is what survives that (AGENT-015). This contract never enumerates the levels: §7 keeps model tiers in the orchestrate skill, and §2.4 lets a workspace edit that document on its own schedule, so a published enum would reject a workspace's own vocabulary and could only be fixed by a release. The value is therefore validated for **shape only** — non-blank, single line, at most 100 characters — and never for meaning: the server records it and interprets nothing about it. **Honoured, not weighed again**: the work is dispatched at the stated weight rather than at the one the orchestrator would have picked, and is **never silently substituted in either direction** — running stronger than asked spends against an explicit instruction exactly as running weaker falls short of one. When a stated weight **cannot be honoured** (the installed agent does not offer that model, the level no longer exists in the guidance) the work is still done, at what the orchestrator judges best, and the deviation is stated: in the job's log while it runs, and in the reply the request receives. It **rides with the request to whatever does the work** (§10) — onto the queue event this call enqueues, under the payload key `weight`, which is what the dispatch reads. **Omit it to state no weight, which means the orchestrator decides** — its own judgment, unchanged, and never a default level: absence of a choice is the ordinary case, and this field has no default and takes no `null`. An empty string is a `400` rather than a second spelling of silence. A weight is **inert** on a request that enqueues nothing (an explicit `requestsAgent: false`): it is not rejected there — §8 alone decides what reaches the agent, and stating a weight neither asks the agent nor stops it being asked — it simply governs no work. */
             weight?: string;
+            /**
+             * @description **Who will own this conversation** (SPEC.md §7, rider signed 2026-08-25). **Three states, and `null` is not the same as omitting this field** — unlike `parent` and `selector` on this same body, where omitted and null mean one thing. **Omit it** for the default: a general resident, because a new standalone thread designates one unless the person chose otherwise. **Send `{name}`** to designate that profile. **Send `null`** for a thread with no resident at all, which belongs to the orchestrator as every thread did before this rider.
+             *
+             *     **This is not `recipient`, and the two are never collapsed.** Naming a recipient routes **one message** and rewires nothing (SPEC.md §7's summons); designating hands over the conversation **and everything that grows out of it**. Both may be sent on one request, and they mean different things.
+             *
+             *     **Refused on a thread with a parent.** §7 lets only a standalone thread designate: a thread on a document is *about* that document, and a resident owns a conversation rather than a passage.
+             */
+            resident?: {
+                /**
+                 * @description The profile to designate, by the invocable name `@<subagent>` mentions use (SPEC.md §8). Omitted designates a **general resident** — an agent with no persona document, which §7 calls the ordinary case. Resolution and its `404` are exactly the designate route's.
+                 * @example researcher
+                 */
+                name?: string;
+                /** @description The model tier this resident works at (SPEC.md §7's rider signed 2026-08-19), the same level-key vocabulary the designate route takes. Omitted leaves it to the launcher. */
+                weight?: string;
+            } | null;
         };
         MultipartCreateThreadRequest: {
             /**
@@ -5825,6 +5918,8 @@ export interface components {
             model?: string;
             /** @description The weight this request's work should be done at (SPEC.md §7) — **a directive, not a hint**. The value is a **level's key from the workspace's own agent guidance, verbatim** — the key column of the guidance's tier table, not the label beside it, because the label is prose a person may reword and the key is what survives that (AGENT-015). This contract never enumerates the levels: §7 keeps model tiers in the orchestrate skill, and §2.4 lets a workspace edit that document on its own schedule, so a published enum would reject a workspace's own vocabulary and could only be fixed by a release. The value is therefore validated for **shape only** — non-blank, single line, at most 100 characters — and never for meaning: the server records it and interprets nothing about it. **Honoured, not weighed again**: the work is dispatched at the stated weight rather than at the one the orchestrator would have picked, and is **never silently substituted in either direction** — running stronger than asked spends against an explicit instruction exactly as running weaker falls short of one. When a stated weight **cannot be honoured** (the installed agent does not offer that model, the level no longer exists in the guidance) the work is still done, at what the orchestrator judges best, and the deviation is stated: in the job's log while it runs, and in the reply the request receives. It **rides with the request to whatever does the work** (§10) — onto the queue event this call enqueues, under the payload key `weight`, which is what the dispatch reads. **Omit it to state no weight, which means the orchestrator decides** — its own judgment, unchanged, and never a default level: absence of a choice is the ordinary case, and this field has no default and takes no `null`. An empty string is a `400` rather than a second spelling of silence. A weight is **inert** on a request that enqueues nothing (an explicit `requestsAgent: false`): it is not rejected there — §8 alone decides what reaches the agent, and stating a weight neither asks the agent nor stops it being asked — it simply governs no work. */
             weight?: string;
+            /** @description Who will own this conversation, as a JSON value encoded into one part (SPEC.md §7's rider signed 2026-08-25). Same three states as the JSON body's `resident`: **omit the part** for the default — a general resident — send `null` for a thread with no resident at all, or send an object such as `{"name":"researcher"}` to designate a profile. **An omitted part and a `null` one mean different things here**, which is why this is one encoded value rather than flat parts: flat parts cannot say *present, and explicitly nobody*. */
+            resident?: string;
             /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
             files?: string[];
         };
@@ -6227,6 +6322,18 @@ export interface components {
             /** @description The bytes the caller believes the range currently holds — a **guard, not the stored selector**. The server compares it against the parent's live body and refuses with `409` (`range-changed`) if they differ, because a document edited between the person seeing the range and choosing it would otherwise re-attach the thread to whatever slid into those offsets. Its length must equal `end - start`, which is checked at validation time. Never written: the selector is read off the document's own bytes (SERVER-071). */
             expectedText: string;
         };
+        DesignateConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            /**
+             * @description Which refusal this is, and they are opposites. **`has-parent`** — the thread is on a document, so it may never have a resident (SPEC.md §7: a resident owns a conversation rather than a passage). **`draining`** — the thread's released resident left work the orchestrator is still doing, so designating now would hand the same turns to two agents; it clears by itself in seconds. Branch on this rather than on the status: one can never succeed and the other is about to.
+             * @enum {string}
+             */
+            reason: "has-parent" | "draining";
+            /** @description **How many of the released resident's events the orchestrator is still working.** At least one under `draining`, and `0` under `has-parent`, where nothing is outstanding and nothing ever will be. A field rather than a number inside `message` for the reason this package keeps everywhere — a client must never parse prose to decide anything — and it is what tells a person whether waiting means a moment or a while. */
+            outstanding: number;
+        };
         DesignateResidentRequest: {
             /**
              * @description The **profile** to designate, by the invocable name `@<subagent>` mentions already use (SPEC.md §8): for a `type: agent-def` document **under `.claude/agents/`**, its filename stem or its title, matched case-insensitively — and the two routinely differ, since a persona created with the title `Legacy Analyst` is written to `legacy-analyst.md`. **Not a document id, and not an `agent-def` filed outside that root**: one under `data/docs/` is a document *about* a persona, nothing loads it as a subagent, and it answers to neither spelling. A name that resolves to no agent-def in this workspace is a `404` — a typo is refused rather than degraded to a general resident, because a typo that looked like it worked is the worse outcome — and where an off-root `agent-def` is titled the name given, that `404` names its path, because moving the file into `.claude/agents/` is what makes it designatable.
@@ -6255,6 +6362,8 @@ export interface components {
              * @example 2026-07-19T10:05:00Z
              */
             since: string | null;
+            /** @description **How many events are pending on this lane** (SPEC.md §7, rider signed 2026-08-25). `pending` only — never `in-progress`, which is work already being done rather than work waiting, and never `deferred`, which is waiting on a person's edit session and returns to pending by itself. **A lane with `pending > 0` and `live: false` is a conversation nobody is answering**, and that pair is the whole signal: since the rider there is no fallback, so no other agent will take this work and the only thing that changes it is a listener starting. Neither field means it alone — a lane with no work and no listener is idle and healthy. **Decide from this rather than from `summary`**, which is display-only and says so. `0` where nothing is waiting, never null and never absent. */
+            pending: number;
             /** @description A short line about what this lane is doing, or null when there is nothing to say. **The contract promises its bound and nothing about its content**: it is derived server-side, capped at 200 characters and trimmed there, and how it is derived may change without a contract change. So it is for display only — a client must never parse it, key on it, or decide anything from it, and everything a client needs to decide from is a field of its own on this row. */
             summary: string | null;
             /** @description The conversation this lane belongs to — its id and current title — or null for the `orchestrator` lane, which belongs to none. **Not a document's `origin` (SPEC.md §9.2)**: that is the conversation a document was written *from*, while this is the conversation a lane *is*. Where `lane` is a thread id, `origin.id` repeats it — the field is here for the title beside it, so a recipient picker can name the conversation without a second read. */
@@ -6421,7 +6530,11 @@ export interface components {
              * @example th_x9y8
              */
             lastDigest: string | null;
-            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens. */
+            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30, maximum 10080 — seven days, past which nobody is choosing a cadence). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens: the Reflect control becomes the only thing that starts one. */
+            quiet: number;
+        };
+        ReflectQuietRequest: {
+            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30, maximum 10080 — seven days, past which nobody is choosing a cadence). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens: the Reflect control becomes the only thing that starts one. */
             quiet: number;
         };
         JobList: {

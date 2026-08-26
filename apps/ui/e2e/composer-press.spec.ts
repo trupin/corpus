@@ -86,6 +86,7 @@ const LANES: readonly AgentLane[] = [0, 1].map((index) => ({
   },
   live: false,
   since: "2026-08-17T10:00:00.000Z",
+  pending: 0,
   summary: null,
   origin: { id: `th_lane_${String(index)}`, title: `Conversation ${String(index)}` },
 }));

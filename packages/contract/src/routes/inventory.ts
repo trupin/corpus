@@ -204,6 +204,15 @@
  * signed 2026-08-22) rather than from §9.2. **§9.2 gained a catalogue line for
  * them on 2026-08-23**, stating only what the rider mandates; it is
  * unratified and says so.
+ *
+ * `PUT /api/workspace/reflect/quiet` (CONTRACT-086) is derived the same way,
+ * from §7's rider signed 2026-08-25: *a person may switch the automatic path off
+ * where they see it*. §7 has always given the value its meaning — `reflect.quiet`
+ * in minutes, `0` disabling the automatic path — and always left it in a config
+ * file, so the only thing the rider adds is the reach. It is a sub-resource
+ * rather than a `PATCH` of the pair above, because the `GET` there answers a
+ * report whose other four fields are not settable by anybody.
+ *
  * The derivation is short because the rider is explicit. It says a person asks
  * for a reflection from "the board bar's Reflect control, or `corpus reflect`",
  * and a person reaches the workspace only through the server (Architecture
@@ -285,6 +294,7 @@ export const ENDPOINT_INVENTORY = [
 
   "POST /api/workspace/reflect",
   "GET /api/workspace/reflect",
+  "PUT /api/workspace/reflect/quiet",
 
   "GET /api/jobs",
   "GET /api/jobs/{id}/log",

@@ -85,3 +85,55 @@
   color: var(--accent-ink);
   text-decoration: underline;
 }
+
+/*
+ * The automatic-reflection switch (UI-172; SPEC.md §7's rider signed
+ * 2026-08-25), between the ask and the clock.
+ *
+ * **Its slot is reserved and the switch inside it is not.** The control cannot
+ * say whether the automatic path is on until the status arrives, and saying
+ * "off" meanwhile would be a claim about the workspace made on the strength of
+ * not knowing (UI-098). So the wrapper always renders at a fixed width and the
+ * button appears inside it — the arrival paints, and moves nothing beside it,
+ * which is §10's "nothing resizes because of what it holds" applied to a value
+ * that shows up late rather than to one that grows.
+ *
+ * Both labels are sized for the wider of the two (`auto off`), so flipping the
+ * switch never re-widths the bar either.
+ */
+.reflect-auto {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+  width: 7ch;
+  margin-left: 8px;
+}
+
+.reflect-auto-switch {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.reflect-auto-switch[aria-checked="true"] {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.reflect-auto-switch:hover:not([disabled]) {
+  color: var(--ink);
+}
+
+.reflect-auto-switch[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}

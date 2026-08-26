@@ -127,6 +127,79 @@ export const StaleKeyErrorSchema = openapi(
 );
 
 /**
+ * **This conversation was released, and the work it left is still being done**
+ * (CONTRACT-089; SPEC.md §7's rider signed 2026-08-25).
+ *
+ * ## `conflict` narrowed by a `reason`, not a code of its own
+ *
+ * This package has settled that question twice — {@link
+ * ReattachConflictErrorSchema} and `PatchConflictError` are both `conflict`,
+ * told apart by `reason` vocabularies that do not overlap, so *"one `code` never
+ * means two things"* survives without minting one per refusal. A third code here
+ * would have been the same fact wearing a new name, which is what
+ * `unknown_recipient`'s own test forbids.
+ *
+ * The vocabulary is one word and does not overlap either neighbour's, so a
+ * caller that reaches the wrong route's narrowing gets a failed match rather
+ * than a plausible wrong answer.
+ *
+ * ## Why it carries a count
+ *
+ * The rule `AgentLane.summary` states and this package keeps: **everything a
+ * client needs to decide from is a field of its own.** A person told *"try again
+ * later"* cannot tell whether later is a second or an hour, and a client that
+ * scraped the number out of `message` would be parsing prose the server is free
+ * to reword. `PatchConflictError.matches` is the same idea for the same reason.
+ *
+ * ## Why the refusal exists at all
+ *
+ * It is the one seam the no-fallback rule leaves. Release hands a lane's pending
+ * events to the orchestrator; designating again before those settle would put a
+ * listener on the lane while the orchestrator works them, and the turns get
+ * answered twice. SHARED-072 rejected abandoning the drain — work already in
+ * flight is still an orchestrator's answer in a resident's conversation, so the
+ * seam narrows without closing — and rejected keying lanes by `designationId`,
+ * which closes it by construction and rewrites what a lane *is* throughout §7.
+ *
+ * **Transient and self-clearing.** Nothing is reset, nothing expires on a timer,
+ * and the condition is a fact about outstanding work rather than a state of the
+ * thread: a thread released long ago whose drain completed is not draining.
+ */
+export const DESIGNATE_REFUSAL_REASONS = ["has-parent", "draining"] as const;
+
+export const DesignateRefusalReasonSchema = z
+  .enum(DESIGNATE_REFUSAL_REASONS)
+  .describe(
+    "Which refusal this is, and they are opposites. **`has-parent`** — the thread is on a " +
+      "document, so it may never have a resident (SPEC.md §7: a resident owns a conversation " +
+      "rather than a passage). **`draining`** — the thread's released resident left work the " +
+      "orchestrator is still doing, so designating now would hand the same turns to two agents; " +
+      "it clears by itself in seconds. Branch on this rather than on the status: one can never " +
+      "succeed and the other is about to.",
+  );
+
+export const DesignateConflictErrorSchema = openapi(
+  z.object({
+    code: z.literal("conflict"),
+    message: z.string(),
+    reason: DesignateRefusalReasonSchema,
+    outstanding: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "**How many of the released resident's events the orchestrator is still working.** " +
+          "At least one under `draining`, and `0` under `has-parent`, where nothing is " +
+          "outstanding and nothing ever will be. A field rather than a number inside `message` " +
+          "for the reason this package keeps everywhere — a client must never parse prose to " +
+          "decide anything — and it is what tells a person whether waiting means a moment or a " +
+          "while.",
+      ),
+  }),
+  "DesignateConflictError",
+);
+
+/**
  * The catch-all body for an unexpected `500` — a bug, not a modelled outcome.
  *
  * Deliberately asymmetric with every other variant: the code exists so that a
@@ -258,6 +331,8 @@ export type ConflictError = z.infer<typeof ConflictErrorSchema>;
 export type StaleKeyError = z.infer<typeof StaleKeyErrorSchema>;
 export type UnknownJobError = z.infer<typeof UnknownJobErrorSchema>;
 export type UnknownRecipientError = z.infer<typeof UnknownRecipientErrorSchema>;
+export type DesignateConflictError = z.infer<typeof DesignateConflictErrorSchema>;
+export type DesignateRefusalReason = z.infer<typeof DesignateRefusalReasonSchema>;
 export type InternalError = z.infer<typeof InternalErrorSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 

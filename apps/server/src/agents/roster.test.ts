@@ -68,7 +68,16 @@ const laneRow = async (lane: string): Promise<AgentLane> => {
 
 /** A designated standalone thread, which is what makes a lane. */
 async function designatedThread(body: string): Promise<string> {
-  const created = await createThread(ws, { body });
+  /*
+   * Created **explicitly undesignated**, then designated (SERVER-154).
+   *
+   * Since SPEC.md §7's rider A a plain create already designates a general
+   * resident, so designating a profile on top would be a *replacement* — one
+   * `resident.released` and one `resident.designated` where these cases count
+   * on exactly one announcement. The two steps here are what the helper has
+   * always meant: a thread, then one designation.
+   */
+  const created = await createThread(ws, { body, resident: null });
   expect(
     (await ws.post(`/api/threads/${created.id}/resident`, { name: "researcher" })).status,
   ).toBe(200);
@@ -131,6 +140,9 @@ describe("the shape of the roster", () => {
       resident: null,
       live: false,
       since: null,
+      // A real count, not a special case: the orchestrator's lane is a lane
+      // (SERVER-155). Nothing is queued in a workspace this fresh.
+      pending: 0,
       summary: null,
       origin: null,
     });
@@ -439,7 +451,19 @@ describe("the fallback a lapse creates", () => {
     );
   };
 
-  it("hides a live lane's work from the orchestrator and hands it over once lapsed", async () => {
+  /**
+   * **The end of this test is what SERVER-152 changed**, through the real HTTP
+   * surface rather than through the predicate.
+   *
+   * It used to advance past the grace window and assert the orchestrator was
+   * handed the resident's work. SPEC.md §7's rider signed 2026-08-25 removes
+   * that: a listener's departure surrenders nothing, however long it stays away,
+   * and the only things that return work are release and resolution.
+   *
+   * The lapse is still exercised, because it still has an effect — on the roster
+   * row a person reads, and on nothing else.
+   */
+  it("hides a live lane's work from the orchestrator, and keeps hiding it after a lapse", async () => {
     const id = await designatedThread("the resident's own conversation");
     // A designation announces itself on the *orchestrator's* lane whoever is
     // designated (§7's carve-out), so that event is the orchestrator's and has
@@ -455,12 +479,20 @@ describe("the fallback a lapse creates", () => {
 
     parked.leave();
     await parked.done;
-    // Inside the grace window a rearm is still a rearm, not a departure.
     ws.advance(LANE_GRACE_MS - 1_000);
     expect(await claimed()).toEqual([]);
 
+    // Past the window, and still nothing. Before the rider this returned the
+    // event, and the orchestrator's holding it is what starved the listener.
     ws.advance(2_000);
-    expect(await claimed()).toHaveLength(1);
+    expect(await claimed()).toEqual([]);
+
+    // The lapse is not invisible — it is visible where it belongs. The lane
+    // reads as not live, and says work is waiting on it, which is the pair the
+    // orchestrator launches a listener from.
+    const lane = (await roster()).find((entry) => entry.lane === id);
+    expect(lane?.live).toBe(false);
+    expect(lane?.pending).toBe(1);
   });
 
   it("leaves the lane exactly as it was, so a resident that comes back sees its own work", async () => {
@@ -568,7 +600,10 @@ describe("a scope that names no lane", () => {
   };
 
   it("refuses a park on a standalone thread that holds no resident", async () => {
-    const { id } = await createThread(ws, { body: "nobody is resident here" });
+    // Explicitly undesignated: since SPEC.md §7's rider A a plain create
+    // designates a general resident (SERVER-154), which is the very thing this
+    // case is about not having.
+    const { id } = await createThread(ws, { body: "nobody is resident here", resident: null });
 
     const response = await parkAndRead(id);
 
@@ -580,7 +615,7 @@ describe("a scope that names no lane", () => {
 
   it("refuses a park on a thread this workspace does not hold, identically", async () => {
     const missing = await parkAndRead("th_deadbeef");
-    const { id } = await createThread(ws, { body: "no resident" });
+    const { id } = await createThread(ws, { body: "no resident", resident: null });
     const undesignated = await parkAndRead(id);
 
     expect(missing.status).toBe(422);
@@ -595,7 +630,7 @@ describe("a scope that names no lane", () => {
   // **The one that matters.** A park the server never admitted leaves no record,
   // so the aggregate has nothing to be true about.
   it("leaves agent.live false and the roster untouched", async () => {
-    const { id } = await createThread(ws, { body: "a typo'd --thread" });
+    const { id } = await createThread(ws, { body: "a typo'd --thread", resident: null });
     expect(await agent()).toEqual({ live: false, since: null });
 
     // Presence is read while the attempt is outstanding rather than after it,

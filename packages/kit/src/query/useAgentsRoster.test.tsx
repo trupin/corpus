@@ -10,12 +10,21 @@ afterEach(cleanup);
 
 const ROSTER: AgentRoster = {
   agents: [
-    { lane: "orchestrator", resident: null, live: true, since: null, summary: null, origin: null },
+    {
+      lane: "orchestrator",
+      resident: null,
+      live: true,
+      since: null,
+      pending: 0,
+      summary: null,
+      origin: null,
+    },
     {
       lane: "th_root",
       resident: { name: "claims-review", docId: "doc_agent", weight: null, designationId: null },
       live: false,
       since: "2026-08-16T11:40:00Z",
+      pending: 0,
       summary: null,
       origin: { id: "th_root", title: "The claims conversation" },
     },

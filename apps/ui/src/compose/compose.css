@@ -153,3 +153,45 @@
   border-color: var(--line-strong);
   color: var(--ink-2);
 }
+
+/*
+ * Who will own the conversation (UI-173; SPEC.md §7's rider A, §10's rider B).
+ *
+ * Beside the address rather than inside it, because they are two acts: a
+ * recipient routes one message, a designation hands over the conversation. Both
+ * may be set, so both need somewhere of their own to be set from.
+ *
+ * `flex: none` and a fixed width, so the longest profile name in a workspace
+ * cannot push the Ask and Capture buttons around — §10's rule, applied to a
+ * control whose contents come from the corpus.
+ */
+.compose-resident {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.compose-resident-label {
+  white-space: nowrap;
+}
+
+.compose-resident select {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 4px;
+  max-width: 16ch;
+}
+
+.compose-resident select:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}

@@ -38,14 +38,23 @@ export const NOTHING_HELD: HeldSet = { events: [], total: 0, truncated: false };
  * with lanes that pronoun has a referent: a resident never sees the
  * orchestrator's held list and the orchestrator never sees a live lane's.
  *
- * It is the **same** predicate the claim uses, deliberately, rather than a
- * stricter equality. Under §7's fallback the orchestrator claims a lapsed lane's
- * pending events, and the stamp is never rewritten — so the work it is then
- * holding is stamped with that lane. A held report filtered on equality would
- * hide exactly the work the fallback had just handed over, which is the
- * discrepancy the report exists to surface. `total` and `truncated` count the
- * filtered set, so the contract's `total === events.length` invariant is about
- * what this caller can see, which is the only set it can reconcile.
+ * It is the **same** predicate the claim uses, deliberately, and that used to be
+ * a substantive choice rather than a tautology. Under the fallback SPEC.md §7's
+ * rider signed 2026-08-25 removed, the orchestrator could claim a lapsed lane's
+ * pending events without their stamp being rewritten, so the work it then held
+ * was stamped with a lane that was not its own — and a held report filtered on
+ * plain equality would have hidden exactly the work the fallback had just handed
+ * over, which is the discrepancy the report exists to surface.
+ *
+ * With no fallback the claim predicate **is** equality, so the two now coincide
+ * (SERVER-152). Sharing the predicate is kept rather than inlined: it is what
+ * guarantees the held report and the claim can never disagree about what a
+ * caller owns, and that guarantee is worth keeping expressible if the visibility
+ * rule ever grows a second clause again.
+ *
+ * `total` and `truncated` count the filtered set, so the contract's
+ * `total === events.length` invariant is about what this caller can see, which
+ * is the only set it can reconcile.
  */
 export type HeldFilter = (event: StoredEvent) => boolean;
 

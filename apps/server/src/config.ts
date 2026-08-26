@@ -1,10 +1,14 @@
 // Workspace resolution and `.corpus/config.json` parsing (SPEC.md §4).
 //
-// The server never *writes* this file — `corpus init` (CLI-002) owns creating
-// it. Everything ambient (env vars, cwd, argv) is read here and nowhere else, so
-// `createServer` can stay a pure function of its config.
+// The server writes this file in exactly one place — `writeQuietMinutes`, the
+// reflection switch SPEC.md §7's rider signed 2026-08-25 puts on the board
+// (SERVER-151). `corpus init` (CLI-002) still owns creating it, and every other
+// key here is read-only to the server. Everything ambient (env vars, cwd, argv)
+// is read here and nowhere else, so `createServer` can stay a pure function of
+// its config.
 
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_REFLECT_QUIET_MINUTES } from "@corpus/contract";
@@ -558,4 +562,87 @@ export function readQuietMinutes(configPath: string, fallback: number): number {
   const block = (parsed as Record<string, unknown>)["reflect"];
   const result = ReflectConfigSchema.safeParse(block ?? {});
   return result.success ? result.data.quiet : fallback;
+}
+
+/**
+ * What a write to `.corpus/config.json` can refuse to do (SERVER-151).
+ *
+ * `unreadable` is the one that matters and the one that is easy to get wrong.
+ * A config that will not parse is a config with a typo in it, and a typo is
+ * something a person has to find — so the write is refused and the file is left
+ * exactly as it is. Serialising our own object over the top would repair the
+ * syntax by deleting whatever the person was in the middle of writing, which
+ * hides the typo instead of reporting it and takes their work with it.
+ */
+export type ConfigWriteFailure = "unreadable";
+
+export interface ConfigWriteResult {
+  readonly ok: boolean;
+  readonly reason?: ConfigWriteFailure;
+}
+
+/**
+ * Set `reflect.quiet` in the workspace config (SPEC.md §7's rider signed
+ * 2026-08-25, via `PUT /api/workspace/reflect/quiet`).
+ *
+ * ## Every other key survives, including ones this build does not know
+ *
+ * The file is read as an opaque object, one key inside `reflect` is set, and the
+ * whole object is written back. It is deliberately **not** parsed through a
+ * schema and re-serialised: this is a file a person edits, and a round trip
+ * through a schema that dropped unrecognised keys would eat settings a newer or
+ * older build put there. `readQuietMinutes` reads through a schema because
+ * reading through one is safe; writing through one is not.
+ *
+ * ## What it does cost, chosen rather than discovered
+ *
+ * `JSON.parse` then `JSON.stringify` **loses formatting** — a hand-indented
+ * file comes back two-space indented, and key order is preserved only because
+ * V8 preserves insertion order for string keys. JSON has no comments to lose.
+ * The alternative was a targeted textual edit of the one line, which survives
+ * formatting and fails the moment the key is absent, nested differently, or
+ * spelled across two lines. Reformatting is visible and harmless; a textual
+ * edit that matched the wrong line would not be either.
+ *
+ * ## Atomic, by the idiom the queue store already uses
+ *
+ * Temp file beside the target, then rename. A crash mid-write leaves the old
+ * config intact rather than a truncated one — and an unparseable config
+ * degrades far more than reflection does, since it is read at boot.
+ *
+ * An **absent** file is created. An **unreadable** one is refused untouched.
+ */
+export function writeQuietMinutes(configPath: string, quiet: number): ConfigWriteResult {
+  let parsed: unknown = {};
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (error) {
+    // Absent is not a fault: a workspace may never have written one.
+    const absent = (error as NodeJS.ErrnoException).code === "ENOENT";
+    if (!absent) return { ok: false, reason: "unreadable" };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, reason: "unreadable" };
+  }
+  const object = parsed as Record<string, unknown>;
+  const block = object["reflect"];
+  const reflect =
+    block !== null && typeof block === "object" && !Array.isArray(block)
+      ? { ...(block as Record<string, unknown>) }
+      : {};
+  reflect["quiet"] = quiet;
+  const body = `${JSON.stringify({ ...object, reflect }, null, 2)}\n`;
+  const tmpPath = `${configPath}.tmp-${randomBytes(4).toString("hex")}`;
+  try {
+    writeFileSync(tmpPath, body, { encoding: "utf8", mode: 0o600 });
+    renameSync(tmpPath, configPath);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // The temp file may never have been created; nothing to clean.
+    }
+    throw error;
+  }
+  return { ok: true };
 }

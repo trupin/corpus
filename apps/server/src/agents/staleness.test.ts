@@ -165,13 +165,27 @@ describe("a queue transition and the roster", () => {
   });
 
   /**
-   * The other half of the acceptance criterion: an enqueue is a queue frame that
-   * must **not** name the roster. A lane reports the work it is *holding*, and
-   * nobody is holding a `pending` event — so adding `["agents"]` to every queue
-   * frame would send every open client to refetch a response that cannot have
-   * moved. Falsified rather than assumed: the roster body is compared.
+   * **This test asserted the opposite until SERVER-155, and the reversal is the
+   * feature.**
+   *
+   * Its reasoning was sound at the time: a lane reported the work it was
+   * *holding*, nobody holds a `pending` event, so naming `["agents"]` on every
+   * queue frame would have sent every open client to refetch a response that
+   * could not have moved.
+   *
+   * A roster row now carries `pending`, so an enqueue **does** move it — and it
+   * has to be announced. Since SPEC.md §7's rider signed 2026-08-25 there is no
+   * fallback, so a conversation whose listener is not running waits for one to
+   * start, and `pending > 0 && !live` is the only thing that tells the
+   * orchestrator to start it. A roster that stayed stale here would leave that
+   * conversation waiting indefinitely with nothing to announce that anything had
+   * changed.
+   *
+   * The cost the old reasoning named is real and is now worth paying: an enqueue
+   * is not a hot path, and the refetch is a bounded read over the designated
+   * lanes.
    */
-  it("does not name it for an enqueue, which leaves the event unheld", async () => {
+  it("names the roster for an enqueue, because a lane's pending count moved", async () => {
     const id = await designatedThread("nothing claimed yet");
     ws.advance(61_000);
 
@@ -179,8 +193,16 @@ describe("a queue transition and the roster", () => {
       await enqueueOn(id);
     });
 
-    expect(observed.frames).toContainEqual([["queue"], ["jobs"], ["docs"], ["reflect"]]);
-    expect(observed.rosterMoved).toBe(false);
+    expect(observed.frames).toContainEqual([
+      ["queue"],
+      ["jobs"],
+      ["docs"],
+      ["agents"],
+      ["reflect"],
+    ]);
+    // Falsified rather than assumed: the roster body is compared, so this is a
+    // measurement of the response and not of the frame that announced it.
+    expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);
   });
 
@@ -297,9 +319,15 @@ describe("a document write and the roster", () => {
    *
    * **Two frames since SERVER-128**: the write's, then the `resident.released`
    * enqueue's. The second is the ordinary enqueue frame — the same one a
-   * mention's `comment.created` produces, and it names no `["agents"]` for the
-   * same reason: the event lands in `pending/`, and a lane's row reports the
-   * work it is *holding*.
+   * mention's `comment.created` produces — and since SERVER-155 that frame
+   * names `["agents"]` too, because the event lands in `pending/` on the
+   * orchestrator's lane and moves that lane's count.
+   *
+   * So the roster is named in **both** frames now. That is not a doubling to
+   * fix: the two say different things. The first is *this thread no longer has
+   * a resident*, and the second is *the orchestrator has one more thing
+   * waiting* — which, since the fallback is gone, is the news that matters,
+   * because a release is exactly when work becomes the orchestrator's.
    */
   it("names it once when a resident is released", async () => {
     const id = await designatedThread("released");
@@ -311,7 +339,7 @@ describe("a document write and the roster", () => {
 
     expect(observed.frames).toEqual([
       [["docs"], ["docs", id], ["threads", id], ["agents"], ["reflect"]],
-      [["queue"], ["jobs"], ["docs"], ["reflect"]],
+      [["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]],
     ]);
     expect(observed.rosterMoved).toBe(true);
     expectLawful(observed);

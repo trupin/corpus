@@ -60,3 +60,38 @@ export function useAskReflection(): UseMutationResult<ReflectAskResult, Error, v
     },
   });
 }
+
+/**
+ * `PUT /api/workspace/reflect/quiet` — the switch on the board bar (UI-172;
+ * SPEC.md §7's rider signed 2026-08-25).
+ *
+ * ## The response is taken, not invalidated
+ *
+ * The route answers the whole `ReflectStatus`, so `setQueryData` puts what the
+ * server just told us straight into the cache the control reads. Invalidating
+ * instead would flip the switch on a second round trip, and the switch is the
+ * one control here whose whole job is to answer immediately.
+ *
+ * Nothing else is invalidated, and that is the difference from
+ * {@link useAskReflection}. An ask writes a queue event, so it moves the
+ * console's job list and the queue's depth; this writes a config value and
+ * moves nothing but the window.
+ *
+ * ## A failure leaves the switch where the server says it is
+ *
+ * There is no optimistic update, deliberately. The switch reflects server state
+ * and nothing else, so a `PUT` that fails leaves the control showing what is
+ * actually configured rather than what somebody hoped for — and the toast is
+ * what says the ask did not land.
+ */
+export function useSetReflectQuiet(): UseMutationResult<ReflectStatus, Error, number> {
+  const client = useCorpusClient();
+  const queryClient = useQueryClient();
+
+  return useMutation<ReflectStatus, Error, number>({
+    mutationFn: (quiet) => client.setReflectQuiet(quiet),
+    onSuccess(status) {
+      queryClient.setQueryData(REFLECT_KEY, status);
+    },
+  });
+}

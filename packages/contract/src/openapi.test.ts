@@ -4897,7 +4897,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(25);
+    expect(bodies).toHaveLength(26);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -4976,6 +4976,11 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/folders/rename": true,
       "POST /api/folders/unarchive": true,
       "PUT /api/docs/{id}": false,
+      // CONTRACT-086: the one settable field of the reflection report, and the
+      // request is nothing but that field — so a bare `PUT` would be a request
+      // to set the window to nothing in particular. `0` is how a caller asks
+      // for the automatic path to stop, and it is a value, not an absence.
+      "PUT /api/workspace/reflect/quiet": true,
     });
   });
 
@@ -5637,24 +5642,196 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
   });
 
-  it("shapes a roster row as the rider's six fields", () => {
-    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual([
-      "lane",
-      "resident",
-      "live",
-      "since",
-      "summary",
-      "origin",
-    ]);
-    expect(componentSchemas?.["AgentLane"]?.required).toEqual([
-      "lane",
-      "resident",
-      "live",
-      "since",
-      "summary",
-      "origin",
-    ]);
+  it("shapes a roster row as the rider's seven fields", () => {
+    // `pending` joined them in CONTRACT-087, beside `live` because the two are
+    // read together: it is the half of the launch decision `live` cannot make.
+    const shape = ["lane", "resident", "live", "since", "pending", "summary", "origin"];
+    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual(shape);
+    expect(componentSchemas?.["AgentLane"]?.required).toEqual(shape);
     expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
+  });
+
+  /**
+   * CONTRACT-089. Release hands a lane's pending events to the orchestrator,
+   * and designating again before they settle is the one door left open by which
+   * the same turns get answered twice.
+   */
+  describe("designating into a drain is refused (CONTRACT-089)", () => {
+    const body = (): Record<string, { enum?: string[]; minimum?: number; description?: string }> =>
+      componentSchemas?.["DesignateConflictError"]?.properties ?? {};
+
+    /**
+     * The decision this pins is the one *not* taken: a third error code. This
+     * package settled that twice — the re-attach and patch refusals are both
+     * `conflict`, narrowed by non-overlapping `reason` vocabularies — and
+     * `unknown_recipient`'s own test forbids minting a code for a fact that
+     * already has one.
+     */
+    it("narrows `conflict` with a reason rather than minting a code", () => {
+      expect(body()["code"]?.enum).toEqual(["conflict"]);
+      expect(body()["reason"]?.enum).toEqual(["has-parent", "draining"]);
+      expect([...ERROR_CODES]).not.toContain("draining");
+    });
+
+    it("does not overlap the other two conflict vocabularies", () => {
+      const reasonsOf = (name: string): string[] =>
+        componentSchemas?.[name]?.properties?.["reason"]?.enum ?? [];
+      const mine = reasonsOf("DesignateConflictError");
+      expect(mine.filter((reason) => reasonsOf("PatchConflictError").includes(reason))).toEqual([]);
+      expect(mine.filter((reason) => reasonsOf("ReattachConflictError").includes(reason))).toEqual(
+        [],
+      );
+    });
+
+    /**
+     * "Try again later" tells a person nothing about whether later is a second
+     * or an hour, and a client that scraped the number out of `message` would
+     * be parsing prose the server may reword. `PatchConflictError.matches` is
+     * the same idea for the same reason.
+     */
+    it("carries the outstanding count as a field, never only in the message", () => {
+      expect(body()["outstanding"]?.minimum).toBe(0);
+      expect(body()["outstanding"]?.description).toContain("never parse prose");
+    });
+
+    it("says the two refusals are opposites, where a caller branches", () => {
+      const reason = body()["reason"]?.description ?? "";
+      expect(reason).toContain("they are opposites");
+      expect(reason).toContain("one can never succeed and the other is about to");
+    });
+
+    it("states the rule and its reason on the route a caller meets it on", () => {
+      const description = operation("/api/threads/{id}/resident", "post").description ?? "";
+      expect(description).toContain("still draining");
+      expect(description).toContain("the same turns answered twice");
+      expect(description).toContain("transient, self-clearing");
+    });
+  });
+
+  /**
+   * CONTRACT-088. §7's rider A makes a resident what a new standalone thread
+   * gets when nobody chose, and §10's rider B puts the choice on both composer
+   * submits. The wire has to express three states, and one of them — *present,
+   * and explicitly nobody* — has no spelling anywhere else on this body.
+   */
+  describe("a thread is created with its resident (CONTRACT-088)", () => {
+    const created = (): Record<string, { description?: string }> =>
+      componentSchemas?.["CreateThreadRequest"]?.properties ?? {};
+
+    /**
+     * **Ask only, and Capture deliberately not** — §10's rider signed
+     * 2026-08-25 asked for both, and its premise about Capture was wrong.
+     *
+     * The thread a capture creates is the document's *filing* thread, written
+     * with a parent. §7 allows a designation only on a standalone thread, so a
+     * `resident` on this body could never succeed — and a wire field that can
+     * never succeed is worse than none, because it tells every reader of the
+     * contract that something is possible. SHARED-073 carries the decision.
+     */
+    it("carries the designation on Ask, and not on Capture, whose thread has a parent", () => {
+      expect(created()["resident"]).toBeDefined();
+      expect(componentSchemas?.["CaptureRequest"]?.properties?.["resident"]).toBeUndefined();
+      // The reason lives in the schema's source docblock rather than in the
+      // published description — a component's own prose is not emitted here —
+      // so what the wire promises is the absence itself.
+      expect(Object.keys(componentSchemas?.["CaptureRequest"]?.properties ?? {})).not.toContain(
+        "resident",
+      );
+    });
+
+    /**
+     * The trap this pins: `parent` and `selector` on this same body both read
+     * "Omitted or null" and mean one thing by the pair. A caller who learned
+     * that here would spell an unset variable as `null` and get the opposite of
+     * the default.
+     */
+    it("says outright that null and omitted differ, unlike its neighbours", () => {
+      const description = created()["resident"]?.description ?? "";
+      expect(description).toContain("`null` is not the same as omitting this field");
+      expect(description).toContain("unlike `parent` and `selector`");
+    });
+
+    it("keeps designating and routing apart, in the field's own words", () => {
+      const description = created()["resident"]?.description ?? "";
+      expect(description).toContain("This is not `recipient`");
+      expect(description).toContain("**one message**");
+      expect(description).toContain("everything that grows out of it");
+    });
+
+    it("states the three spellings where a caller sets them, on the route too", () => {
+      const description = operation("/api/threads", "post").description ?? "";
+      expect(description).toContain("**`null` means no resident at all**");
+      expect(description).toContain("designates a **general " + "resident**");
+    });
+
+    it("refuses a designation on a thread that has a parent", () => {
+      expect(operation("/api/threads", "post").description).toContain(
+        "**A `resident` on a thread with a `parent` is a `400`**",
+      );
+      expect(created()["resident"]?.description).toContain("Refused on a thread with a parent");
+    });
+
+    /**
+     * A capture has no `recipient` for a documented reason, and gaining a
+     * designation looks like a contradiction until the two are told apart.
+     * The route says which is which so the next reader does not re-open it.
+     */
+
+    /**
+     * Flat `resident.name` parts cannot express *present, and explicitly
+     * nobody*, so the multipart twin carries one encoded value — the same
+     * choice `selector` made, for a reason that binds harder here.
+     */
+    it("carries one encoded part through multipart, not flattened fields", () => {
+      const multipart =
+        componentSchemas?.["MultipartCreateThreadRequest"]?.properties?.["resident"];
+      expect(multipart?.type).toBe("string");
+      expect(multipart?.description).toContain("An omitted " + "part and a `null` one mean");
+      expect(
+        Object.keys(componentSchemas?.["MultipartCreateThreadRequest"]?.properties ?? {}).filter(
+          (key) => key.startsWith("resident."),
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  /**
+   * CONTRACT-087. The field exists because SPEC.md §7's rider signed 2026-08-25
+   * removed the fallback: until then a lane whose listener was absent had its
+   * work folded into the orchestrator's claim, so the work arriving *was* the
+   * signal. It no longer arrives, so the fact has to be readable.
+   */
+  describe("a lane says how much is waiting on it (CONTRACT-087)", () => {
+    const pending = (): SchemaNode =>
+      componentSchemas?.["AgentLane"]?.properties?.["pending"] ?? {};
+    const prose = (): string => String(pending().description ?? "");
+
+    it("is a non-negative integer, never null and never absent", () => {
+      expect(pending().type).toBe("integer");
+      expect(pending().minimum).toBe(0);
+    });
+
+    it("counts pending alone, and says why in-progress and deferred are excluded", () => {
+      const description = prose();
+      expect(description).toContain("never `in-progress`");
+      expect(description).toContain("never `deferred`");
+    });
+
+    /**
+     * The pair is the decision, and publishing only half of it would leave a
+     * reader to invent the other half — most likely "not live means launch",
+     * which gives a workspace one agent per conversation that ever existed.
+     */
+    it("names the decision it exists for, as a pair with `live`", () => {
+      const description = prose();
+      expect(description).toContain("`pending > 0` and `live: false`");
+      expect(description).toContain("idle and healthy");
+      expect(description).toContain("no fallback");
+    });
+
+    it("tells a reader to decide from it rather than from `summary`", () => {
+      expect(prose()).toContain("Decide from this rather than from `summary`");
+    });
   });
 
   /**
@@ -6043,6 +6220,64 @@ describe("workspace.reflect (CONTRACT-076)", () => {
     expect(componentSchemas?.["ReflectStatus"]?.properties?.["quiet"]?.description).toContain(
       "**`0` disables the automatic path**",
     );
+  });
+
+  /**
+   * CONTRACT-086. §7's rider signed 2026-08-25 lets a person switch the
+   * automatic path off from the board, and until this route nothing on the wire
+   * could set the value the `GET` above has always reported.
+   */
+  describe("setting the quiet window (CONTRACT-086)", () => {
+    const QUIET_PATH = "/api/workspace/reflect/quiet";
+
+    it("is a sub-resource under PUT, not a PATCH of the report", () => {
+      expect(operation(QUIET_PATH, "put")).toBeDefined();
+      expect(document.paths?.[REFLECT_PATH]?.["patch"]).toBeUndefined();
+      expect(document.paths?.[QUIET_PATH]?.["patch"]).toBeUndefined();
+    });
+
+    it("answers the whole status, so a caller never re-reads to learn what it did", () => {
+      const ok = operation(QUIET_PATH, "put").responses?.["200"];
+      const schema = (ok as { content?: Record<string, { schema?: { $ref?: string } }> })
+        ?.content?.["application/json"]?.schema;
+      expect(schema?.$ref).toBe("#/components/schemas/ReflectStatus");
+    });
+
+    it("carries exactly one settable field, and it is the minutes", () => {
+      expect(componentSchemas?.["ReflectQuietRequest"]?.required).toEqual(["quiet"]);
+      expect(Object.keys(componentSchemas?.["ReflectQuietRequest"]?.properties ?? {})).toEqual([
+        "quiet",
+      ]);
+    });
+
+    /**
+     * The bound is the whole reason this field stopped being open: it is
+     * writable now, and one mistyped digit would otherwise configure a window
+     * measured in years — armed to look at, and never firing.
+     */
+    it("bounds the window rather than accepting any integer", () => {
+      const quiet = componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"] as
+        { minimum?: number; maximum?: number } | undefined;
+      expect(quiet?.minimum).toBe(0);
+      expect(quiet?.maximum).toBe(7 * 24 * 60);
+    });
+
+    it("says what `0` means on the route a caller sets it from, not only on the report", () => {
+      const description = operation(QUIET_PATH, "put").description ?? "";
+      expect(description).toContain("**`0` disables the automatic path**");
+      expect(description).toContain("there is no separate boolean");
+    });
+
+    /**
+     * The two uses of `reflect.quiet` are the same field, so a reader who
+     * learned what `0` means from one must find the same sentence on the other.
+     * They are one factory in the schema; this is what says so on the wire.
+     */
+    it("describes the field identically wherever it appears", () => {
+      expect(componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"]?.description).toBe(
+        componentSchemas?.["ReflectStatus"]?.properties?.["quiet"]?.description,
+      );
+    });
   });
 
   /**

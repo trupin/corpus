@@ -24,6 +24,7 @@ const RESIDENT_LANE: AgentLane = {
   resident: { name: "Ana", docId: "doc_ana", weight: null, designationId: null },
   live: true,
   since: JUST_NOW,
+  pending: 0,
   summary: null,
   origin: { id: "th_root", title: "Ana's conversation" },
 };
@@ -33,6 +34,7 @@ const ORCHESTRATOR_ROW: AgentLane = {
   resident: null,
   live: true,
   since: JUST_NOW,
+  pending: 0,
   summary: null,
   origin: null,
 };

@@ -44,6 +44,10 @@ const orchestratorLane = {
   resident: null,
   live: true,
   since: "2026-07-19T10:00:00Z",
+  // CONTRACT-087: the orchestrator's row carries a real count like any other.
+  // It is not special, and special-casing it would re-derive a rule the field
+  // does not have.
+  pending: 0,
   summary: "parked",
   origin: null,
 };
@@ -53,6 +57,10 @@ const residentLane = {
   resident,
   live: false,
   since: "2026-07-19T09:40:00Z",
+  // `pending > 0` with `live: false` is the pair CONTRACT-087 exists for: a
+  // conversation nobody is answering, and since SPEC.md §7's rider signed
+  // 2026-08-25 nobody else will, so this row is a launch and not a note.
+  pending: 2,
   summary: null,
   origin: { id: "th_x9y8", title: "Mortgage options" },
 };

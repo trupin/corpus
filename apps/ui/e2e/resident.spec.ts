@@ -452,6 +452,7 @@ test.describe("designating a resident", () => {
           resident: { name: "researcher", docId: null, weight: null, designationId: null },
           live: false,
           since: null,
+          pending: 0,
           summary: null,
           origin: { id: "th_solo", title: "Q3 planning" },
         },

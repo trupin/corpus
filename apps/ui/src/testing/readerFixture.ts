@@ -276,6 +276,7 @@ const ORCHESTRATOR_ROW: AgentLane = {
   resident: null,
   live: false,
   since: null,
+  pending: 0,
   summary: null,
   origin: null,
 };
@@ -377,6 +378,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
         resident,
         live: false,
         since: null,
+        pending: 0,
         summary: null,
         origin: { id: threadId, title: "Fixture thread" },
       }));

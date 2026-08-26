@@ -580,13 +580,15 @@ describe("runServerProcess — boot", () => {
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       // One frame per transition and none from the watcher, which is what this
-      // test is about — and each frame is the table its transition owes
-      // (SERVER-115): the enqueue leaves the event in `pending/`, held by
-      // nobody, so it names no roster; the claim takes it into `in-progress/`
-      // and the completion out again, and both move what `GET /api/agents`
-      // reports the lane is doing.
+      // test is about — and each frame is the table its transition owes. All
+      // three name the roster now (SERVER-155): the enqueue because it moves the
+      // lane's `pending` count, the claim and the completion because they move
+      // what `GET /api/agents` reports the lane is holding.
+      //
+      // The enqueue's frame is the one that changed. SERVER-115 had it name no
+      // roster, correctly, while a row reported only held work.
       expect(batches).toEqual([
-        '[["queue"],["jobs"],["docs"],["reflect"]]',
+        '[["queue"],["jobs"],["docs"],["agents"],["reflect"]]',
         '[["queue"],["jobs"],["docs"],["agents"],["reflect"]]',
         '[["queue"],["jobs"],["docs"],["agents"],["reflect"]]',
       ]);

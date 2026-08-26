@@ -63,7 +63,20 @@ const createThreadRoute = (required: boolean) =>
       "attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are " +
       "built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises " +
       "JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which " +
-      "dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.",
+      "dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.\n\n" +
+      "**A standalone thread is created with a resident, unless the caller says otherwise** " +
+      "(SPEC.md §7, rider signed 2026-08-25). Omitting `resident` designates a **general " +
+      "resident**, because a conversation is a thing an agent owns and owning it is what happens " +
+      "when nobody chose. `{name}` designates that profile, resolved exactly as " +
+      "`POST /api/threads/{id}/resident` resolves it. **`null` means no resident at all**, and it " +
+      "is the one field on this body where `null` and omitted differ — `parent` and `selector` " +
+      "treat them alike, this does not, and a caller spelling a missing variable as `null` gets " +
+      "the opposite of the default.\n\n" +
+      "**`resident` is not `recipient`.** A recipient routes one message and rewires nothing; a " +
+      "designation hands over the conversation and everything that grows out of it. Both may ride " +
+      "one request. **A `resident` on a thread with a `parent` is a `400`**: §7 lets only a " +
+      "standalone thread designate, since a thread on a document is about that document and a " +
+      "resident owns a conversation rather than a passage.",
     request: {
       headers: ActorHeaderSchema,
       body: {

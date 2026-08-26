@@ -155,6 +155,7 @@ const agentRoster = {
       resident: null,
       live: true,
       since: "2026-07-19T10:00:00Z",
+      pending: 0,
       summary: "parked",
       origin: null,
     },
@@ -168,6 +169,7 @@ const agentRoster = {
       },
       live: false,
       since: "2026-07-19T09:40:00Z",
+      pending: 0,
       summary: null,
       origin: { id: "th_x9y8", title: "Re: 30-year fixed assumption" },
     },
@@ -870,6 +872,22 @@ function createStubApp() {
         changed: 3,
         lastDigest: "th_x9y8",
         quiet: DEFAULT_REFLECT_QUIET_MINUTES,
+      },
+      200,
+    ),
+  );
+  // CONTRACT-086: setting the window answers the whole status, so the caller
+  // that switched the automatic path off learns what is still pending in the
+  // same round trip. The stub echoes the value it was given, which is what
+  // makes the round trip through the generated client meaningful.
+  app.openapi(contractRoutes.setReflectQuiet, (c) =>
+    c.json(
+      {
+        reflected: REFLECTED_AT,
+        pending: null,
+        changed: 3,
+        lastDigest: "th_x9y8",
+        quiet: c.req.valid("json").quiet,
       },
       200,
     ),
