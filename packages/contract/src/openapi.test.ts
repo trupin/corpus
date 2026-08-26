@@ -5802,9 +5802,9 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
    * signal. It no longer arrives, so the fact has to be readable.
    */
   describe("a lane says how much is waiting on it (CONTRACT-087)", () => {
-    const pending = (): { type?: string; minimum?: number; description?: string } =>
+    const pending = (): SchemaNode =>
       componentSchemas?.["AgentLane"]?.properties?.["pending"] ?? {};
-    const prose = (): string => pending().description ?? "";
+    const prose = (): string => String(pending().description ?? "");
 
     it("is a non-negative integer, never null and never absent", () => {
       expect(pending().type).toBe("integer");
@@ -6256,7 +6256,8 @@ describe("workspace.reflect (CONTRACT-076)", () => {
      * measured in years — armed to look at, and never firing.
      */
     it("bounds the window rather than accepting any integer", () => {
-      const quiet = componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"];
+      const quiet = componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"] as
+        { minimum?: number; maximum?: number } | undefined;
       expect(quiet?.minimum).toBe(0);
       expect(quiet?.maximum).toBe(7 * 24 * 60);
     });

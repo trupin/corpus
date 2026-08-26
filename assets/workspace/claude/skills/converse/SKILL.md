@@ -163,9 +163,8 @@ failures later.
      `lapsed` means a listener parked here once and has been gone a while; `waiting` means the
      server has observed no park on this lane at all, which is also what every lane reads for
      a while after the server restarts. Neither is a fault to report, and **neither means
-     anybody has been covering for you** — since SPEC.md §7's rider signed 2026-08-25 there is
-     no fallback, so this conversation's work has been sitting here waiting for you and for
-     nobody else.
+     anybody has been covering for you** — nobody covers a lane that has no listener, so this conversation's work has been sitting
+     here waiting for you and for nobody else.
 
      That is also why you were launched. A lane that is not live **with work waiting** is what
      the orchestrator starts a listener for, so arriving to a backlog is not a recovery case:
@@ -253,9 +252,8 @@ failures later.
 
 6. **Park before you claim anything.** `corpus queue idle --thread th_4b8e2c` is the last
    step of starting up, and the loop below then begins at its step 1 with whatever parking
-   returned. The order is no longer about safety — since SPEC.md §7's rider signed 2026-08-25
-   nobody else can take this lane's work whether you are parked or not — and it is still the
-   order, for two smaller reasons that are enough. Parking is what makes the lane read `live`,
+   returned. The order is not about safety — nobody else can take this lane's work whether you are
+   parked or not — and it is still the order, for two smaller reasons that are enough. Parking is what makes the lane read `live`,
    so a person watching the board sees you arrive before you start writing in their
    conversation. And a park that is **refused** tells you the designation ended before you
    have claimed anything, which is the cheapest possible way to find that out.
@@ -281,7 +279,7 @@ order, indefinitely:
    two lists: `events`, the batch you just claimed, and `inProgress`, what the server still
    thinks you are doing. Nothing else happens until you have read both.
 2. **Reconcile the held list** (*Settling your own lane* below). It is your **lane's** held
-   work — and since SPEC.md §7's rider signed 2026-08-25 that is the same thing as your own:
+   work, and that is the same thing as your own:
    nobody else can claim this lane, so every row in it was claimed by a listener on this
    conversation. Where that listener was **you before a restart**, the row is yours to finish;
    where it was a predecessor that died, the row is abandoned work on your conversation and is
@@ -544,8 +542,8 @@ session the answer is no for every row, necessarily: the list is `in-progress/` 
 nothing. `heldSince` is the same test in mechanical form, for a row you half-recognise — an
 instant earlier than your session's own first claim is an instant at which you held nothing.
 
-**What you are usually looking at is a predecessor that died mid-turn.** Since SPEC.md §7's
-rider signed 2026-08-25 nobody but a listener on this conversation can claim this lane, so a
+**What you are usually looking at is a predecessor that died mid-turn.** Nobody but a
+listener on this conversation can claim this lane, so a
 held row is always a listener's — yours before a restart, or one that crashed with work in
 hand. That is a narrower set than it used to be: the orchestrator could once be holding your
 lane's work under the fallback, and telling *its live dispatch* from *abandoned work* was the

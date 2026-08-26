@@ -456,7 +456,7 @@ describe("the scope pane", () => {
       const head = document.querySelector('[data-lane-statement="th_gone"]');
       // §7's fallback, in the words `laneRows` gives every surface: a lapse is
       // slower work, never work silently not done.
-      expect(head?.textContent).toContain("the orchestrator will answer until it returns");
+      expect(head?.textContent).toContain("no listener right now");
     });
     expect(within(laneRow("th_gone")).queryByText(MISSING_PROFILE_MARK)).not.toBeNull();
   });

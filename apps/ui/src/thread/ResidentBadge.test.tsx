@@ -69,12 +69,8 @@ describe("ResidentBadge", () => {
     await waitFor(() => {
       expect(badge(container)?.dataset["residentLiveness"]).toBe("lapsed");
     });
-    expect(badge(container)?.getAttribute("title")).toContain(
-      "the orchestrator will answer until it returns",
-    );
-    expect(badge(container)?.textContent).toContain(
-      "the orchestrator will answer until it returns",
-    );
+    expect(badge(container)?.getAttribute("title")).toContain("no listener right now");
+    expect(badge(container)?.textContent).toContain("no listener right now");
     expect(container.querySelector(".lane-dot")?.getAttribute("aria-hidden")).toBe("true");
   });
 

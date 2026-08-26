@@ -31,8 +31,7 @@ what the single-claimant rule was doing; lanes are what made the difference visi
 claim-all` and `corpus queue idle` with no `--thread` are the orchestrator's lane. There is no
 second spelling and you never pass `--thread` for yourself — that flag names somebody else's
 conversation, and passing one would park you on it. What the unscoped claim hands you is your
-own lane's work, and — since SPEC.md §7's rider signed 2026-08-25 — **nothing else while a
-conversation still has its resident**. A listener that is absent, crashed, or never started
+own lane's work, and **nothing else while a conversation still has its resident**. A listener that is absent, crashed, or never started
 keeps its lane's work: no timer hands it to you, however long the absence lasts.
 
 **So a conversation nobody is answering is not your work to do. It is your listener to
