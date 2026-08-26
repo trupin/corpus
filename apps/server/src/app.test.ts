@@ -128,7 +128,7 @@ describe("createServer — the mounted surface", () => {
     expect(parsed.success && parsed.data.version).toBe("9.9.9");
   });
 
-  it("mounts health and the queue surface; every other declared path 404s", async () => {
+  it("mounts health, the queue surface and the upgrade pair; every other declared path 404s", async () => {
     const { app } = createServer(makeConfig());
 
     for (const route of ALL_CONTRACT_ROUTES) {
@@ -137,6 +137,13 @@ describe("createServer — the mounted surface", () => {
       // open. Both surfaces are asserted by their own specs.
       if (route.path.startsWith("/api/queue")) continue;
       if (route.path === "/events") continue;
+      // `/api/upgrade*` is mounted (SERVER-050) and needs no projection, like
+      // health — but unlike health it must not be *called* here. With no
+      // injected `spawn` the trigger would start a real `corpus upgrade` on
+      // whatever machine is running the suite, and in a source checkout the CLI
+      // is right where it looks. Asserted in `upgrade/routes.test.ts`, against
+      // a spawn that records instead of installing.
+      if (route.path.startsWith("/api/upgrade")) continue;
       const path = route.path.replace(/\{[^}]+\}/g, "sample");
       const response = await app.request(path, {
         method: route.method.toUpperCase(),

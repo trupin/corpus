@@ -181,7 +181,7 @@ export async function withUndeclaredStatus<T>(reason: string, body: () => Promis
  * Throws when a response carries a status its operation does not declare, in
  * words that name the fix — which is a contract change, in another domain.
  */
-function assertDeclaredStatus(
+export function assertDeclaredStatus(
   input: RequestTarget,
   init: RequestInit | undefined,
   status: number,
@@ -232,6 +232,53 @@ export function checkDeclaredStatuses(server: CorpusServer): void {
     const response = await dispatch(input, init, env, executionCtx);
     assertDeclaredStatus(input, init, response.status);
     return response;
+  };
+}
+
+/**
+ * Two routes a fixture must never actually call, and what happens if it does.
+ *
+ * `POST /api/upgrade` spawns a **real detached `corpus upgrade`** (SERVER-050).
+ * In a source checkout the CLI is exactly where the trigger looks, so a sweep
+ * that walks declared routes starts an installer on the machine running the
+ * suite — with `npm install -g` in its future and no test watching it. That is
+ * not hypothetical: `json-body.test.ts`'s mutating sweep and
+ * `write-fixture.test.ts` both hit this path the moment the routes were mounted,
+ * and the only reason nothing was installed is that the running version happened
+ * to equal the latest release.
+ *
+ * `GET /api/upgrade/check` reaches GitHub. A unit suite that makes a real
+ * network request is a suite that fails on a train.
+ *
+ * So the fixture refuses both, by path, before dispatch. Neither is untested —
+ * `upgrade/routes.test.ts` builds its own server with a `spawn` that records and
+ * a `fetch` that answers — and a refusal here is a sentence naming that file,
+ * rather than a mystery in someone's npm prefix.
+ */
+const REFUSED_IN_A_FIXTURE: ReadonlyMap<string, string> = new Map([
+  ["POST /api/upgrade", "it spawns a real, detached `corpus upgrade` on this machine"],
+  ["GET /api/upgrade/check", "it makes a real request to the GitHub Releases API"],
+]);
+
+/**
+ * Installs the refusal on one server, in place. Wraps `app.request` for
+ * {@link checkDeclaredStatuses}'s reason: suites reach past the fixture's four
+ * helpers, so the helpers are the wrong seam.
+ */
+export function refuseRealWorldRoutes(server: CorpusServer): void {
+  const dispatch = server.app.request.bind(server.app);
+  server.app.request = async (input, init, env, executionCtx): Promise<Response> => {
+    const key = `${requestMethod(input, init)} ${requestPath(input)}`;
+    const why = REFUSED_IN_A_FIXTURE.get(key);
+    if (why !== undefined) {
+      throw new Error(
+        `${key} must not be called from a fixture: ${why}. ` +
+          "Test the upgrade routes in apps/server/src/upgrade/routes.test.ts, which builds a " +
+          "server with an injected `spawn` and `fetch`. If a sweep reached this path, exclude " +
+          "it there rather than removing this guard.",
+      );
+    }
+    return dispatch(input, init, env, executionCtx);
   };
 }
 
@@ -386,6 +433,7 @@ export function createWriteWorkspace(
     heartbeatMs: 0,
   });
   checkDeclaredStatuses(server);
+  refuseRealWorldRoutes(server);
   // What `attachProjection` does in production: the queue's `events` table is a
   // mirror bound after construction, so without this an enqueue lands on disk
   // and never reaches the projection — a difference a thread test would

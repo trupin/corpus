@@ -12,12 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ALL_CONTRACT_ROUTES, ApiErrorSchema } from "@corpus/contract";
-import {
-  AUTH,
-  createWriteWorkspace,
-  withUndeclaredStatus,
-  type WriteWorkspace,
-} from "./docs/write-fixture.js";
+import { AUTH, createWriteWorkspace, type WriteWorkspace } from "./docs/write-fixture.js";
 
 /**
  * Path parameters filled with **well-formed but nonexistent** values, so param
@@ -65,8 +60,22 @@ const describeRoute = (route: { readonly method: string; readonly path: string }
 
 const MUTATING_METHODS = ["post", "put", "patch"];
 
+/**
+ * `POST /api/upgrade` is left out, and it is the only exclusion.
+ *
+ * It takes no body at all, so it has nothing to prove here — and calling it
+ * spawns a real detached `corpus upgrade` on the machine running the suite
+ * (SERVER-050). The fixture refuses the path outright for that reason, so
+ * including it would fail the sweep rather than start an installer, but the
+ * sweep exists to walk every route and a filter that says why is better than a
+ * throw that says where.
+ */
+const REAL_WORLD_ROUTES = new Set(["POST /api/upgrade"]);
+
 const mutatingRoutes = (): BodyRoute[] =>
-  ALL_CONTRACT_ROUTES.filter((route) => MUTATING_METHODS.includes(route.method)).map(describeRoute);
+  ALL_CONTRACT_ROUTES.filter((route) => MUTATING_METHODS.includes(route.method))
+    .map(describeRoute)
+    .filter((route) => !REAL_WORLD_ROUTES.has(route.signature));
 
 /** The routes that declare a JSON request body — the ones a bad body must 400. */
 const jsonBodyRoutes = (): BodyRoute[] =>
@@ -135,22 +144,21 @@ describe("an unreadable JSON body is a 400 on every route that takes one", () =>
 
   it("never answers 500 on any mutating route, whatever the body says", async () => {
     await withWorkspace(async (ws) => {
-      // This sweep walks *declared* routes, and two of them — the upgrade
-      // pair — are declared and not mounted (CONTRACT-058), so they answer the
-      // app's `404` rather than anything their own declaration names. That is
-      // the mirror-image gap SERVER-119's check cannot see, met head on here.
-      await withUndeclaredStatus("declared-but-unmounted routes answer 404", async () => {
-        for (const route of mutatingRoutes()) {
-          for (const body of ["", "{", "[1,2"]) {
-            const response = await send(ws, route, body);
-            expect([route.signature, body, response.status >= 500]).toEqual([
-              route.signature,
-              body,
-              false,
-            ]);
-          }
+      // Every declared route in the sweep is now mounted, so nothing here
+      // answers a status its own declaration does not name and the
+      // `withUndeclaredStatus` opt-out this used to carry is gone. It was for
+      // the upgrade pair, which SERVER-050 mounted; the check that would have
+      // caught its staleness is what said so.
+      for (const route of mutatingRoutes()) {
+        for (const body of ["", "{", "[1,2"]) {
+          const response = await send(ws, route, body);
+          expect([route.signature, body, response.status >= 500]).toEqual([
+            route.signature,
+            body,
+            false,
+          ]);
         }
-      });
+      }
     });
   });
 
