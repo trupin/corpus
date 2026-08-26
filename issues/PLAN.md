@@ -1650,3 +1650,18 @@ user, not work).
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
 | SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |
 | SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | todo | P2 | opus | INFRA-020 |
+
+## Phase 46 — Reported after v0.22.0 (2026-08-25, user reports)
+
+Issues the user reported against the shipped build. They do not belong to any
+release scope yet.
+
+`UI-171` is in this phase too and its row lives on PR #62's branch, so this
+table and that one both append here and will conflict on merge. Keep both rows.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-071 | A person can switch the automatic reflection off, from the board | todo | P0 | fable | — |
+| CONTRACT-086 | Nothing on the wire sets the quiet window | todo | P0 | opus | SHARED-071 |
+| SERVER-151 | The server writes the quiet window it already reads | todo | P0 | opus | SHARED-071, CONTRACT-086 |
+| UI-172 | The Reflect control carries the switch | todo | P0 | opus | SHARED-071, CONTRACT-086, SERVER-151 |
