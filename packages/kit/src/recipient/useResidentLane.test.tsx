@@ -13,6 +13,7 @@ const ORCHESTRATOR: AgentLane = {
   live: false,
   since: null,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };
@@ -24,6 +25,7 @@ function designated(overrides: Partial<AgentLane> = {}): AgentLane {
     live: true,
     since: "2026-08-16T12:00:00Z",
     pending: 0,
+    working: false,
     summary: "reading the policy",
     origin: { id: "th_root", title: "The claims conversation" },
     ...overrides,
@@ -125,6 +127,7 @@ describe("useLaneRow", () => {
         lane: "th_root",
         name: "claims-review",
         liveness: "live",
+        working: false,
         line: "reading the policy",
         kind: "profiled",
         profile: "claims-review",

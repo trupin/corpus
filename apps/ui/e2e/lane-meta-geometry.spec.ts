@@ -84,6 +84,7 @@ function lane(id: string, over: Partial<AgentLane>): AgentLane {
     live: false,
     since: null,
     pending: 0,
+    working: false,
     summary: null,
     origin: { id, title: LONG_TITLE },
     ...over,

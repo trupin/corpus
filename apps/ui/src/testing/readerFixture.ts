@@ -277,6 +277,7 @@ const ORCHESTRATOR_ROW: AgentLane = {
   live: false,
   since: null,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };
@@ -379,6 +380,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
         live: false,
         since: null,
         pending: 0,
+        working: false,
         summary: null,
         origin: { id: threadId, title: "Fixture thread" },
       }));
@@ -675,6 +677,10 @@ export function jobFixture(overrides: Partial<Job> = {}): Job {
     eventId: "evt_1",
     type: "comment.created",
     status: "pending",
+    // The stamp the event carries (CONTRACT-056). The orchestrator's by
+    // default, which is what an undesignated conversation's event is; a case
+    // exercising §7's carve-outs overrides it, because nothing derives them.
+    lane: "orchestrator",
     // Three instants, each meaning one thing (CONTRACT-029). The default row is
     // `pending`, and a pending job has written no log line, so `started` is
     // null — the enqueue instant is the one that is always known.

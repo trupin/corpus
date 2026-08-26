@@ -596,6 +596,13 @@ export interface StubJob {
   readonly type: string;
   /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
   readonly status: QueueEventStatus;
+  /**
+   * The lane the event was stamped with (CONTRACT-056). Omitted is the
+   * orchestrator's, which is what an undesignated conversation's event really
+   * is — and what a spec must **override** to exercise the carve-outs, since a
+   * client cannot derive them.
+   */
+  readonly lane?: string;
   /** When the event was enqueued — what the pending indicator counts from. */
   readonly enqueued: string;
   /**
@@ -1136,6 +1143,7 @@ export async function stubCorpus(
       live: false,
       since: null,
       pending: 0,
+      working: false,
       summary: null,
       origin: { id, title: store.get(id)?.title ?? id },
     });
@@ -1324,6 +1332,10 @@ export async function stubCorpus(
   const asJob = (job: StubJob): Job => ({
     eventId: job.eventId,
     type: job.type,
+    // CONTRACT-056: the stamp the event carries. The stub answers the
+    // orchestrator's unless a fixture says otherwise, which is what an
+    // undesignated conversation's event really is.
+    lane: job.lane ?? "orchestrator",
     status: job.status,
     enqueued: job.enqueued,
     started: job.started ?? null,
@@ -2017,6 +2029,7 @@ export async function stubCorpus(
         live: options.agent?.live ?? false,
         since: options.agent?.since ?? null,
         pending: 0,
+        working: false,
         summary: null,
         origin: null,
       };

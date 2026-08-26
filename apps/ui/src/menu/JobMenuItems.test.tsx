@@ -35,6 +35,7 @@ const FAILED: Job = {
   eventId: "evt_9f2",
   type: "comment.created",
   status: "failed",
+  lane: "orchestrator",
   enqueued: "2026-07-27T09:12:00Z",
   started: "2026-07-27T09:12:04Z",
   updated: "2026-07-27T09:12:09Z",

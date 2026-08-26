@@ -55,6 +55,7 @@ function job(overrides: Partial<Job> = {}): Job {
     eventId: "evt_9f2",
     type: "comment.created",
     status: "in-progress",
+    lane: "orchestrator",
     // Three instants, each meaning one thing (CONTRACT-029): the enqueue, the
     // first log line, the last one. This row is in progress and has spoken.
     enqueued: "2026-07-27T09:12:00Z",

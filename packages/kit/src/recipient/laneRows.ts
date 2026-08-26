@@ -73,6 +73,19 @@ export interface LaneRow {
   /** The name a person reads: the resident's, or {@link ORCHESTRATOR_LABEL}. */
   readonly name: string;
   readonly liveness: LaneLiveness;
+  /**
+   * **Whether this lane is holding work it claimed** (CONTRACT-057).
+   *
+   * A sibling of {@link liveness}, never folded into it: a resident works its
+   * conversation inline and holds no park while it does, so `{liveness:
+   * "lapsed", working: true}` is a **busy agent** and the same row without it
+   * is an absent one. Collapsing the two into a fifth liveness value would make
+   * a surface choose between them, and both are true at once.
+   *
+   * **It is not presence.** A listener that died mid-event leaves its event
+   * held until the queue reaps it, so this outlives the agent that earned it.
+   */
+  readonly working: boolean;
   /** The one line beside the name. Empty only for `unknown`, which has nothing to say. */
   readonly line: string;
   /** Which kind of resident this lane has — see {@link LaneResidentKind}. */
@@ -237,6 +250,15 @@ export const MISSING_PROFILE_MARK = "profile gone";
 /** A live lane the server had nothing else to say about. */
 export const LIVE_WITHOUT_SUMMARY = "listening";
 
+/**
+ * A lane holding claimed work, where the server had nothing else to say
+ * (CONTRACT-057).
+ *
+ * Deliberately not *"listening"*: it may not be, and that is the point of the
+ * field. What is true is that something is being done here.
+ */
+export const WORKING_WITHOUT_SUMMARY = "working";
+
 /** A lane nothing has ever parked on (SPEC.md §7 — presence is the parked idle, and nothing else). */
 export const NEVER_SEEN_LINE = "no listener yet";
 
@@ -358,6 +380,19 @@ function lastSeen(since: string, now: Date): string | null {
 export function laneLine(row: AgentLane, liveness: LaneLiveness, now: Date): string {
   if (liveness === "live") return row.summary ?? LIVE_WITHOUT_SUMMARY;
   /*
+   * **A lane holding work is working, whatever presence says** (CONTRACT-057).
+   *
+   * Checked before every absence line below, because those lines all describe a
+   * lane where nothing is happening — and here something is. A resident thinking
+   * for two minutes holds no park, so without this the row would tell a person
+   * their agent is gone while it is mid-answer.
+   *
+   * `summary` is preferred where the server had something to say, exactly as a
+   * live row prefers it: the fact is the same fact, and the wording it already
+   * has is better than a word invented here.
+   */
+  if (row.working) return row.summary ?? WORKING_WITHOUT_SUMMARY;
+  /*
    * **Work waiting outranks the age, in both not-live states** (UI-174).
    *
    * A lane nobody has ever parked on normally says so and nothing more. But a
@@ -379,6 +414,7 @@ export function laneRow(row: AgentLane, now: Date): LaneRow {
     lane: row.lane,
     name: laneName(row),
     liveness,
+    working: row.working,
     line: laneLine(row, liveness, now),
     kind,
     profile: row.resident?.name ?? null,
@@ -401,6 +437,10 @@ export function unknownLaneRow(lane: Lane): LaneRow {
     lane,
     name: lane === ORCHESTRATOR_LANE ? ORCHESTRATOR_LABEL : UNNAMED_RESIDENT_LABEL,
     liveness: "unknown",
+    // False rather than unknown, and the asymmetry is deliberate: this field
+    // only ever *withholds* a launch, so a lane nobody has described must not
+    // withhold one. Not knowing is not evidence anything is being done.
+    working: false,
     line: "",
     // Not `general`, which is a designation somebody made: a lane nobody has
     // described says nothing about who is on it, in either direction.

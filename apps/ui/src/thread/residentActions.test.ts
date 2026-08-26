@@ -24,6 +24,7 @@ const RESIDENT: LaneRow = {
   lane: "th_root",
   name: "researcher",
   liveness: "live",
+  working: false,
   line: "reading the policy",
   kind: "profiled",
   profile: "researcher",

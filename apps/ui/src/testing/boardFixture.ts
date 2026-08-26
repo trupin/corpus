@@ -191,6 +191,7 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
             live: false,
             since: null,
             pending: 0,
+            working: false,
             summary: null,
             origin: null,
           },

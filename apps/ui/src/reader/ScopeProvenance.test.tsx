@@ -16,6 +16,7 @@ const LANE: AgentLane = {
   live: false,
   since: null,
   pending: 0,
+  working: false,
   summary: null,
   origin: { id: "th_root", title: "Q3 planning" },
 };

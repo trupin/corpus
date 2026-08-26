@@ -16,6 +16,7 @@ const BODIES: Record<string, unknown> = {
   "/api/queue/status": {
     halted: false,
     pending: 0,
+    working: false,
     inProgress: 0,
     deferred: 0,
     processed: 0,

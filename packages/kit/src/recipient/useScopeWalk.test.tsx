@@ -25,6 +25,7 @@ const RESIDENT_LANE: AgentLane = {
   live: true,
   since: JUST_NOW,
   pending: 0,
+  working: false,
   summary: null,
   origin: { id: "th_root", title: "Ana's conversation" },
 };
@@ -35,6 +36,7 @@ const ORCHESTRATOR_ROW: AgentLane = {
   live: true,
   since: JUST_NOW,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };

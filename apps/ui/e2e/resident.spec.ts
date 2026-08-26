@@ -453,6 +453,7 @@ test.describe("designating a resident", () => {
           live: false,
           since: null,
           pending: 0,
+          working: false,
           summary: null,
           origin: { id: "th_solo", title: "Q3 planning" },
         },

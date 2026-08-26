@@ -1734,7 +1734,7 @@ contract forbids deciding from it — into a field.
 | SERVER-157 | A roster row says a lane is working | done | P1 | opus | CONTRACT-057 |
 | CLI-071 | The roster cannot say a lane is busy | done | P1 | opus | CONTRACT-057, SERVER-157 |
 | AGENT-055 | Do not launch onto an agent that is working | done | P1 | fable | CLI-071, SERVER-157 |
-| UI-176 | The pending row reads the lane instead of walking to it | todo | P1 | opus | SERVER-156, SERVER-157 |
+| UI-176 | The pending row reads the lane instead of walking to it | done | P1 | opus | SERVER-156, SERVER-157 |
 
 `UI-175`, `AGENT-050` and `AGENT-043` keep their existing rows above;
 `scripts/check-issues.ts` allows one row per id, so they are named here in prose
