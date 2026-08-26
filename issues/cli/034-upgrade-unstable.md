@@ -293,6 +293,11 @@ corpus: --unstable needs a GitHub token with `actions: read`, and none was found
 
 Exit 7, nothing downloaded, and no fallback to a release.
 
+After the follow-up push produced a second artifact for the same pull request, a
+bare `--unstable --check` chose the **newer** one — `corpus-0.24.0-pr65-ca99d5c`
+over `corpus-0.24.0-pr65-7eb8396` — which is the "newest by build time" rule
+exercised against two real builds rather than two fixtures.
+
 **Two defects the real run found, that no review had.**
 
 1. `--check` printed the raw ISO timestamp where the acceptance criterion asks

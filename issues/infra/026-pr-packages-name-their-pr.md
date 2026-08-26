@@ -140,24 +140,42 @@ because that is where CLI-034 was told to look.
 Run by the orchestrator on **opus** (Claude Opus 5), 2026-08-26.
 
 A workflow change cannot be unit-tested, and this repository's own issue says so:
-the acceptance evidence is the run. The evidence is on this phase's pull request
-— the Package job's artifact name, and the sticky comment naming it — and is
-recorded in the phase PR rather than duplicated here, because a link to a run
-that has since expired is worse than a pointer to the PR that produced it.
+the acceptance evidence is the run. It ran on this phase's pull request, #65.
 
-What was checked before pushing: the pack step's guard fails loudly on an empty
-PR number rather than producing `corpus-<version>-pr-<sha>`, the artifact `name:`
-reads from the same step output the comment does (so the two cannot disagree),
-and nothing in the packing or auditing steps changed — `npm pack` produces the
-same tarball it did before; only its label moved.
+**Two pushes, two artifacts, both named for the PR:**
 
-## Completion Checklist (domain agent)
+```
+corpus-0.24.0-pr65-7eb8396   created 2026-08-26T23:00:36Z, expired=false
+corpus-0.24.0-pr65-ca99d5c   created after the follow-up push
+```
 
-- [x] `/lint` passes
-- [x] E2E verification log filled in with links to real runs
-- [x] Naming scheme documented for CLI-034
-- [x] Acceptance criteria verified
+**The sticky comment names the artifact it produced**, and points at the command
+that installs it:
 
-## Completion Checklist (orchestrator)
+```
+| Artifact | `corpus-0.24.0-pr65-ca99d5c` |
+| Tarball  | `corpus-0.24.0.tgz`          |
+| Version  | `0.24.0`                     |
+| Download | corpus-0.24.0-pr65-ca99d5c → …/artifacts/9627134510 |
 
-- [ ] Committed with `[INFRA-026]` prefix
+Install it with `npm install -g <path-to-tgz>`, or with `corpus upgrade --unstable 65`.
+```
+
+**The tarball inside is unchanged**: still `corpus-0.24.0.tgz`, still the version
+this branch carries. Only the label moved, which is what this issue promised.
+`pack:check` ran ahead of the upload on both runs and passed — the job's ordering
+makes that a precondition rather than a coincidence.
+
+**And CLI-034 consumes it, live.** `corpus upgrade --unstable --check` read the
+list, matched the scheme, skipped the coverage artifacts sharing the namespace,
+and chose the newer of the two:
+
+```
+corpus 0.24.0 → PR #65 — corpus 0.24.0, commit ca99d5c, built 10 minutes ago
+  artifact: corpus-0.24.0-pr65-ca99d5c
+```
+
+**Runs that are not pull requests** were not observed, because there are none:
+`package.yml` triggers on `pull_request` alone and the pack step now fails rather
+than inventing a name when the PR number is empty. That guard is the answer to
+the criterion rather than a name a non-PR run would carry.
