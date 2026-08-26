@@ -142,25 +142,44 @@ Appended to §10's global composer text:
 > because the reason it carries none — that a capture is in no scope by
 > construction — is a statement about routing and not about ownership.
 
-### Rider C — a resident's work waits for it
+### Rider C — a resident's work waits for it, and nobody else does it
+
+**Sharpened by the user, 2026-08-25**, after the first draft left the fallback in
+place for a lapse:
+
+> I do not want messages to go to the orchestrator when they are meant to go to
+> a resident agent. If the resident agent isn't started, then the orchestrator
+> should be working on starting it. That is the only viable way to recover a
+> situation. Making the orchestrator agent treat another agent's messages is
+> unacceptable and should be avoided at all cost.
 
 **Replaces** §7's *"A lapsed lane falls back to the orchestrator, at claim
 time"* sentence and the three sentences after it:
 
-> **A lane's work waits for its lane.** A listener that is absent — crashed,
-> killed, or not yet started — does not surrender its pending events. They stay
-> on the lane and the resident works them when it returns, because the reason a
-> conversation has a resident is that the same agent answers it, and an answer
-> from somebody else arriving sooner is not the thing that was asked for.
-> **Release is what returns work to the orchestrator.** When a person releases a
-> resident, or a thread is resolved and releases its own, that lane's pending
-> events become the orchestrator's, and it works them as ordinary work.
-> Releasing is therefore the escape hatch for a listener that will never come
-> back, and it is a thing a person does deliberately rather than a thing that
-> happens to them after a timer. **The cost is stated rather than hidden**: work
-> addressed to a resident that never starts is not done until the listener
-> starts or the resident is released, and the board is where a person sees that
-> — a lane that is not live, holding events, is the whole of that signal.
+> **A lane's work is done by that lane's agent, and by nobody else.** A listener
+> that is absent — crashed, killed, or not yet started — does not surrender its
+> pending events, and no amount of absence makes them somebody else's. There is
+> no fallback and no timer: an unscoped claim never sees another lane's events,
+> whether that lane is live or not. The reason a conversation has a resident is
+> that the same agent answers it, and an answer from somebody else arriving
+> sooner is not the thing that was asked for — it is a different agent with none
+> of the conversation writing in its name.
+>
+> **The recovery for an absent listener is to start it, never to take its work.**
+> That is stated as the rule and not as a preference, because the alternative is
+> available at every moment and looks like helping.
+>
+> **Release is the one thing that returns work, and a person does it on
+> purpose.** When a person releases a resident, or a thread is resolved and
+> releases its own, that lane's pending events become the orchestrator's. They
+> are no longer a resident's messages, because the person removed the resident.
+> Nothing else has this effect, and in particular no duration does.
+>
+> **The cost is stated rather than hidden**: work addressed to a resident whose
+> listener never starts is not done until it starts or the resident is released.
+> The board is where a person sees that, and §7 owes them a signal that says it
+> in those words rather than leaving them to infer it from a lane that is merely
+> not live.
 
 ### Rider D — starting a listener outranks everything else
 
@@ -168,9 +187,45 @@ Appended to §7's Orchestrator skill paragraph:
 
 > **Launching a listener is the orchestrator's first work, ahead of every job it
 > claimed.** A conversation whose listener has not started is a conversation
-> nothing will answer, so the delay is not one turn's latency but a whole line of
-> work stopped. The orchestrator reconciles the roster before it dispatches, not
-> after, and a batch is never the reason a listener waits.
+> nothing will answer, so the delay is not one turn's latency but a whole line
+> of work stopped. The orchestrator reconciles the roster before it dispatches,
+> not after, and a batch is never the reason a listener waits.
+>
+> **It is told which lanes are waiting, rather than guessing.** A roster row
+> says whether its lane is live and **how much work is pending on it**, so
+> "somebody is waiting and nobody is listening" is a fact the orchestrator reads
+> rather than a state it infers from absence. That is what makes rider C's rule
+> actionable: the orchestrator cannot take the work, so it must be able to see
+> precisely which lane to start.
+
+## The mechanism rider C is missing, found while drafting rider D
+
+**A roster row cannot say a lane has work waiting.** `AgentLane`
+(`packages/contract/src/schemas/agents.ts`) carries `lane`, `resident`, `live`,
+`since`, `summary` and `origin`. There is no pending count. `summary` is the only
+field that could carry the fact, and the contract forbids using it: *"it is for
+display only — a client must never parse it, key on it, or decide anything from
+it, and everything a client needs to decide from is a field of its own on this
+row."*
+
+So today the orchestrator can see that a lane is not live. It cannot see whether
+anyone is waiting on it. Under the current design that gap does not matter,
+because the fallback hands it the work and the work itself is the signal. **Rider
+C removes the work, so the signal has to be built.**
+
+Without it, rider D degrades into launching a listener for every non-live lane on
+every pass, whether or not anything is waiting — which is both wasteful and the
+shape the orchestrate skill already warns against (*"a conversation that queued
+eight messages while it was unattended gets eight listeners"*).
+
+**This is a contract and server change, and it is not optional.** It is the
+difference between rider D being a rule the orchestrator can follow and a rule it
+can only approximate.
+
+**A simplification comes with it.** §7's grace window exists to compute the
+fallback at claim time. With no fallback, nothing routes on it, and its only
+remaining job is deciding what `live` says on a roster row — one purpose instead
+of two, and the one that has a person looking at it.
 
 ## Two risks, named rather than discovered
 
@@ -207,7 +262,8 @@ A ships.
 ## One edge case rider C does not settle
 
 **A re-designation while the orchestrator is draining.** Release hands a lane's
-pending events to the orchestrator. If the person designates again before that
+pending events to the orchestrator — the one carve-out the user named, and the
+one place rider C's absolute rule has a seam. If the person designates again before that
 drain finishes, the orchestrator is mid-work on events the new listener may see
 — the same collision, arriving by the one door rider C leaves open. §7 says a
 stamp is made once and never rewritten, so whether the new designation produces
@@ -228,6 +284,13 @@ another name.
       and green after. A bug found in production and fixed without a
       reproduction is a bug nobody proved was fixed
 - [ ] The re-designation-during-drain question is answered before rider C ships
+- [ ] A roster row carries its lane's pending count, and the orchestrate skill
+      decides what to launch from that field rather than from `summary` or from
+      absence alone
+- [ ] **No path remains by which the orchestrator works a designated lane's
+      events**, other than release. Proved by a test that asserts an unscoped
+      claim returns nothing for an absent lane's pending event, and returns it
+      after the resident is released
 
 ## Technical Design
 
