@@ -10,7 +10,7 @@ import {
 } from "@corpus/contract";
 import { HttpError } from "../errors.js";
 import type { QueueMirror } from "./project.js";
-import { QUEUE_QUERY_KEYS, QUEUE_TRANSITION_QUERY_KEYS } from "./project.js";
+import { QUEUE_TRANSITION_QUERY_KEYS } from "./project.js";
 import { formatInstant } from "../core/time.js";
 import { LANE_GRACE_MS, createLaneTracker } from "./liveness.js";
 import {
@@ -98,7 +98,9 @@ describe("enqueue", () => {
       payload: { threadId: "th_x9y8" },
     });
     expect(mirror.upserts.at(-1)?.id).toBe(event.id);
-    expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
+    // Every one of these lands an event in `pending/`, which moves a lane's
+    // `pending` count and so names the roster too (SERVER-155).
+    expect(invalidations).toEqual([QUEUE_TRANSITION_QUERY_KEYS]);
   });
 
   it("overwrites rather than duplicating when the same id is enqueued twice", async () => {
@@ -793,7 +795,9 @@ describe("requeueDeferredFor", () => {
     expect(requeued.sort()).toEqual([first.id, second.id].sort());
     expect((await service.store.listIds("pending")).sort()).toEqual([first.id, second.id].sort());
     expect(await service.store.listIds("deferred")).toEqual([elsewhere.id]);
-    expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
+    // Every one of these lands an event in `pending/`, which moves a lane's
+    // `pending` count and so names the roster too (SERVER-155).
+    expect(invalidations).toEqual([QUEUE_TRANSITION_QUERY_KEYS]);
     expect((await parked)?.events.map((event) => event.id).sort()).toEqual(
       [first.id, second.id].sort(),
     );
@@ -916,7 +920,9 @@ describe("requeue", () => {
     );
     expect(onDisk).toMatchObject({ status: "pending", attempts: 0 });
     expect(onDisk).not.toHaveProperty("error");
-    expect(invalidations).toContainEqual(QUEUE_QUERY_KEYS);
+    // Every one of these lands an event in `pending/`, which moves a lane's
+    // `pending` count and so names the roster too (SERVER-155).
+    expect(invalidations).toContainEqual(QUEUE_TRANSITION_QUERY_KEYS);
     expect((await parked)?.events.map((pending) => pending.id)).toEqual([event.id]);
   });
 
@@ -1474,9 +1480,8 @@ describe("lanes", () => {
       expect(await service.store.listIds("pending")).toHaveLength(1);
     });
 
-    it("never shows the orchestrator a live lane's events", async () => {
+    it("never shows the orchestrator another lane's events", async () => {
       const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness((lane) => lane === RESIDENT);
       await post(service, "th_resident");
       const mine = await post(service, "th_elsewhere");
 
@@ -1484,28 +1489,42 @@ describe("lanes", () => {
       expect(claimed.events.map((event) => event.id)).toEqual([mine.id]);
     });
 
-    it("shows the orchestrator a lapsed lane's events, without rewriting them", async () => {
+    /**
+     * **The reproduction** (SERVER-152). SPEC.md §7's rider signed 2026-08-25
+     * removed the lapse fallback, and this is what it removed: no listener has
+     * ever parked on `RESIDENT` here, which before the rider made its work the
+     * orchestrator's after a grace window.
+     *
+     * That fallback is what starved listeners. The orchestrator held the lane's
+     * events in `in-progress/`, so its own skill forbade launching that lane's
+     * listener in the same pass; a conversation somebody kept using never had a
+     * clear pass, and never got its agent.
+     */
+    it("leaves an absent lane's work alone, however long nobody listens", async () => {
       const service = routing({ th_resident: RESIDENT });
-      let live = true;
-      service.attachLaneLiveness((lane) => live && lane === RESIDENT);
+      const theirs = await post(service, "th_resident");
+
+      expect((await service.claimAll()).events).toHaveLength(0);
+      expect((await service.claimAll()).events).toHaveLength(0);
+      // Untouched, and still pending — not claimed, not deferred, not moved.
+      expect(await service.store.listIds("pending")).toEqual([theirs.id]);
+    });
+
+    /**
+     * The converse, and the reason the assertion above is worth anything.
+     * "Nothing was returned" is also what a wholly broken queue produces, so the
+     * same fixture has to be claimable by the lane that owns it.
+     */
+    it("hands that identical event to the resident the moment it claims", async () => {
+      const service = routing({ th_resident: RESIDENT });
       const theirs = await post(service, "th_resident");
       expect((await service.claimAll()).events).toHaveLength(0);
 
-      live = false;
-      const claimed = await service.claimAll();
-      expect(claimed.events.map((event) => event.id)).toEqual([theirs.id]);
-      // The stamp survives the fallback: a returning resident finds its lane
-      // intact, because nothing about the lapse was written down.
-      expect(claimed.events[0]?.lane).toBe(RESIDENT);
-    });
-
-    it("still shows a returning resident its own lane while it reads as lapsed", async () => {
-      const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness(() => false);
-      const theirs = await post(service, "th_resident");
-
       const claimed = await service.claimAll({ scope: RESIDENT });
       expect(claimed.events.map((event) => event.id)).toEqual([theirs.id]);
+      // The stamp was never rewritten by anything the orchestrator did or did
+      // not do, because it never had a way to touch this lane.
+      expect(claimed.events[0]?.lane).toBe(RESIDENT);
     });
 
     it("reads an unstamped legacy file as the orchestrator's", async () => {
@@ -1528,7 +1547,6 @@ describe("lanes", () => {
 
     it("scopes the held report the way it scopes the claim", async () => {
       const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness((lane) => lane === RESIDENT);
       await post(service, "th_resident");
       await post(service, "th_elsewhere");
       await service.claimAll({ scope: RESIDENT });
@@ -1552,7 +1570,6 @@ describe("lanes", () => {
     // the observable difference is this one.
     it("ends a scoped park on its own lane, and expires one that cannot see the event", async () => {
       const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness((lane) => lane === RESIDENT);
       const orchestrator = service.idle({ timeoutMs: 100 });
       const resident = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
       await vi.waitFor(() => {
@@ -1568,7 +1585,6 @@ describe("lanes", () => {
 
     it("reports availability per lane, matching what the next claim would hand over", async () => {
       const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness((lane) => lane === RESIDENT);
       await post(service, "th_resident");
 
       expect(await service.idle({ timeoutMs: 20 })).toBeUndefined();
@@ -1657,25 +1673,38 @@ describe("lanes", () => {
       expect(tracker.isLive(RESIDENT)).toBe(true);
     });
 
-    it("binds the claim path's predicate with the same call", async () => {
+    /**
+     * This test used to assert the opposite (SERVER-152): that binding the
+     * tracker bound the claim path's predicate, proved by claiming a lane's work
+     * once it lapsed.
+     *
+     * SPEC.md §7's rider signed 2026-08-25 severs that wire. The tracker still
+     * feeds the park observation and the status aggregate — both of which are
+     * what a person reads on a roster — and feeds the claim nothing. So the
+     * guarantee worth pinning is the **independence**: the same claim answers
+     * the same way on both sides of a lapse, and only the roster changes.
+     */
+    it("feeds the roster and never the claim, on both sides of a lapse", async () => {
       const service = routing({ th_resident: RESIDENT });
       const tracker = createLaneTracker({ now: () => clock });
       service.attachLaneTracker(tracker);
-      const theirs = await post(service, "th_resident");
+      await post(service, "th_resident");
 
-      // Asserted in the *live* direction: hiding a lapsed lane's work is what a
-      // queue with no tracker at all already does, so only this says the tracker
-      // reached the predicate.
       const parked = service.idle({ timeoutMs: 5_000, scope: RESIDENT });
       await vi.waitFor(() => {
         expect(tracker.isLive(RESIDENT)).toBe(true);
       });
+      // Live: the orchestrator sees nothing of this lane.
       expect((await service.claimAll()).events).toHaveLength(0);
 
       service.close();
       await parked;
       clock += LANE_GRACE_MS;
-      expect((await service.claimAll()).events.map((event) => event.id)).toEqual([theirs.id]);
+
+      // Lapsed: the roster's answer changed, and the claim's did not. Before
+      // the rider this second claim returned the event.
+      expect(tracker.isLive(RESIDENT)).toBe(false);
+      expect((await service.claimAll()).events).toHaveLength(0);
     });
 
     it("reports the aggregate on the queue status, from the same observation", async () => {
@@ -1694,34 +1723,36 @@ describe("lanes", () => {
       await parked;
     });
 
-    // The lapse hook's other half: a parked orchestrator is released the moment
-    // a lane falls back, rather than waiting for the registry's next poll.
-    it("wakes a parked orchestrator when a lane lapses", async () => {
-      // The poll is turned off for the length of this window, so the only thing
-      // that can end the park is the wake itself: with the registry's ordinary
-      // tick running, a no-op here would find the same work a moment later and
-      // the test would pass against nothing.
+    /**
+     * The test that used to live here asserted the opposite (SERVER-152): a
+     * parked orchestrator was released the moment a lane lapsed, because the
+     * lapse had just made that lane's work its own.
+     *
+     * SPEC.md §7's rider signed 2026-08-25 removes the fallback, so a lapse
+     * hands nobody anything and there is nothing to wake for. This asserts the
+     * silence, and pins the park staying parked rather than merely not
+     * erroring — a wake that fired and found nothing would look identical from
+     * outside if the park had already ended.
+     */
+    it("wakes nobody when a lane's listener goes away, because nothing moved", async () => {
       const service = makeService({ pollIntervalMs: 60_000 });
       service.attachScopeLookup(() => RESIDENT);
-      let live = true;
-      service.attachLaneLiveness((lane) => live && lane === RESIDENT);
       await post(service, "th_resident");
 
-      const orchestrator = service.idle({ timeoutMs: 2_000 });
+      const orchestrator = service.idle({ timeoutMs: 150 });
       await vi.waitFor(() => {
         expect(service.parked).toBe(1);
       });
 
-      live = false;
-      service.notifyLaneLapsed(RESIDENT);
-      expect((await orchestrator)?.events).toHaveLength(1);
+      // Nothing here can hand that event over: no lapse hook exists, and the
+      // orchestrator's claim could not see the lane even if one did.
+      expect(await orchestrator).toBeUndefined();
     });
   });
 
   describe("halt", () => {
     it("applies to every lane, and resume wakes them all", async () => {
       const service = routing({ th_resident: RESIDENT });
-      service.attachLaneLiveness((lane) => lane === RESIDENT);
       await post(service, "th_resident");
       await post(service, "th_elsewhere");
       await service.halt("stop");

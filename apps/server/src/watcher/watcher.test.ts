@@ -621,17 +621,25 @@ describe("the watcher — §7's roster", () => {
     }, WAIT);
   });
 
-  it("does not name it for an event dropped straight into pending/", async () => {
+  /**
+   * The watcher measures the roster signature rather than deciding per verb, so
+   * this reverses on its own once `pending` is in that signature (SERVER-155) —
+   * which is what makes the measured scheme worth having: an out-of-band file
+   * drop is announced correctly without anybody remembering to add a key.
+   *
+   * A pending event is held by nobody, which is why this used to name no roster.
+   * A lane's row now says how much is *waiting* on it as well as what it holds,
+   * and since SPEC.md §7's rider removed the fallback, that count is what tells
+   * the orchestrator to start a listener.
+   */
+  it("names it for an event dropped straight into pending/, because a count moved", async () => {
     seedLane();
     await startWatching();
 
     write(".corpus/queue/pending/evt_lane0000000a.json", event("pending"));
 
     await waitForKey(["queue"]);
-    // A lane reports the work it is *holding*; a pending event is held by
-    // nobody, so this frame is the queue's own table and nothing more.
-    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["reflect"]]);
-    expect(flat()).not.toContain(JSON.stringify(["agents"]));
+    expect(batches).toContainEqual([["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]]);
   });
 
   it("names it for a log line appended to the job a lane is holding", async () => {

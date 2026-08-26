@@ -208,12 +208,13 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     );
 
     // The write's own frame, then the queue service's — enqueue announces the
-    // queue, the job list and the document collection, which is
-    // `QUEUE_QUERY_KEYS`, not this module's (`["docs"]` because the
-    // `failed-job` needs reason reads `events.status`, SERVER-028).
+    // queue, the job list, the document collection (`["docs"]` because the
+    // `failed-job` needs reason reads `events.status`, SERVER-028) and, since
+    // SERVER-155, the roster: the event lands in `pending/` and moves its lane's
+    // count, which is what the orchestrator starts a listener from.
     expect(frames).toEqual([
       [["docs"], ["docs", created.id], ["threads", created.id], ["reflect"]],
-      [["queue"], ["jobs"], ["docs"], ["reflect"]],
+      [["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]],
     ]);
   });
 

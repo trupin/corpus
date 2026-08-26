@@ -10,15 +10,7 @@ import { formatInstant } from "../core/time.js";
 import { conflict, notFound, type HttpError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import { readHeldInProgress, type HeldSet } from "./held.js";
-import {
-  NOTHING_LIVE,
-  NO_SCOPE_LOOKUP,
-  laneFor,
-  laneOf,
-  visibleTo,
-  type LaneLiveness,
-  type ScopeRootLookup,
-} from "./lanes.js";
+import { NO_SCOPE_LOOKUP, laneFor, laneOf, visibleTo, type ScopeRootLookup } from "./lanes.js";
 import { NOTHING_PARKED, type LaneTracker } from "./liveness.js";
 import {
   NOOP_INVALIDATE,
@@ -333,8 +325,6 @@ export class QueueService {
   private settlementObserver: QueueSettlementObserver | undefined;
   /** Late-bound: see {@link attachScopeLookup}. Routes everything to the orchestrator until bound. */
   private findScopeRoot: ScopeRootLookup = NO_SCOPE_LOOKUP;
-  /** Late-bound: see {@link attachLaneLiveness}. Nothing is live until bound. */
-  private laneIsLive: LaneLiveness = NOTHING_LIVE;
   /** Late-bound: see {@link attachLaneTracker}. Observes no park until bound. */
   private laneTracker: LaneTracker = NOTHING_PARKED;
   private readonly invalidate: QueueInvalidate;
@@ -448,64 +438,21 @@ export class QueueService {
   }
 
   /**
-   * Binds the lane liveness predicate the claim path asks (SERVER-111's seam).
-   *
-   * Until it is bound, {@link NOTHING_LIVE} holds and every thread lane reads as
-   * lapsed, so the orchestrator's unscoped claim sees the whole queue exactly as
-   * it did before lanes existed. That is deliberate and is the safe direction:
-   * §7 says the cost of a lapse is that the orchestrator does the work, never
-   * that it is silently not done.
-   *
-   * Nothing on the claim path changes when the real predicate arrives — the
-   * fallback is computed here, at claim time, and never written into an event.
-   *
-   * In production the predicate arrives through {@link attachLaneTracker}, which
-   * calls this. It stays a seam of its own because a stub predicate is the
-   * honest way to state a claim-visibility case: such a test is about
-   * `visibleTo`, and giving it a whole tracker would make it depend on how
-   * presence is *observed* to assert what a claim *sees*.
-   */
-  attachLaneLiveness(isLive: LaneLiveness): void {
-    this.laneIsLive = isLive;
-  }
-
-  /**
    * Binds SPEC.md §7's presence tracker (SERVER-112) — the one that observes
    * parked scoped `idle` requests, which is what presence *is*.
    *
-   * One call binds all three of its consumers: the claim path's predicate
-   * (delegated to {@link attachLaneLiveness}, so there is exactly one place that
-   * decides), the park observation {@link idle} feeds it, and the aggregate
-   * {@link status} publishes as `QueueStatus.agent`. They are bound together
-   * because a queue that observed parks and answered a stale predicate — or
-   * answered a live predicate while observing nothing — is not a state anything
-   * wants to be able to reach.
+   * **The claim path is no longer one of its consumers** (SERVER-152). SPEC.md
+   * §7's rider signed 2026-08-25 removed the lapse fallback, so what a claim
+   * sees is decided by the two lanes alone and never by whether one of them is
+   * live. What the tracker still feeds is the park observation {@link idle}
+   * gives it and the aggregate {@link status} publishes as `QueueStatus.agent` —
+   * both of which are what a person reads on a roster.
    *
    * Late-bound like every other seam here: `createServer` builds the queue
    * before it builds the things a lapse has to notify.
    */
   attachLaneTracker(tracker: LaneTracker): void {
     this.laneTracker = tracker;
-    this.attachLaneLiveness(tracker.isLive);
-  }
-
-  /**
-   * A lane went past §7's grace window: release every parked request that can
-   * now see its events.
-   *
-   * Called by the tracker's lapse hook, and it is exactly {@link wake} for the
-   * lapsed lane — the same predicate, so the wake and the claim that follows it
-   * cannot disagree about what fell back. What it reaches in practice is a
-   * parked orchestrator, because a lane with a parked listener of its own is not
-   * a lane that lapsed.
-   *
-   * The wake is a convenience and never the mechanism: the fallback is computed
-   * at claim time, and the waiter registry's poll would find the same work on
-   * its next tick. What this buys is that a lapse is noticed the instant it
-   * happens rather than up to a tick later.
-   */
-  notifyLaneLapsed(lane: Lane): void {
-    this.wake(lane);
   }
 
   /**
@@ -590,8 +537,10 @@ export class QueueService {
     // before the wake, so a line about the job precedes anything the woken agent
     // appends to the same log.
     await this.notifyEnqueued(event);
-    // No `["agents"]`: the event lands in `pending/`, and a lane's row reports
-    // the work it is **holding** — nobody is holding this yet (SERVER-115).
+    // This *does* name `["agents"]` (SERVER-155), reversing SERVER-115. A row
+    // now carries its lane's `pending` count, and that count is what the
+    // orchestrator launches a listener from — so an enqueue nobody announced
+    // would leave a conversation waiting with nothing to say it had changed.
     this.invalidate(queueTransitionKeys(undefined, "pending"));
     this.wake(laneOf(event));
     this.evictReleasedLane(event);
@@ -686,7 +635,7 @@ export class QueueService {
   /** {@link wake} for a batch: woken once, for the union of what those lanes reach. */
   private wakeLanes(lanes: readonly Lane[]): void {
     if (lanes.length === 0) return;
-    this.waiters.notify((scope) => lanes.some((lane) => visibleTo(scope, lane, this.laneIsLive)));
+    this.waiters.notify((scope) => lanes.some((lane) => visibleTo(scope, lane)));
   }
 
   /**
@@ -1264,16 +1213,18 @@ export class QueueService {
   }
 
   /**
-   * SPEC.md §7's visibility rule, with this server's current picture of which
-   * lanes are live: `queue/lanes.ts` decides, and the liveness it asks is the
-   * bound predicate — {@link NOTHING_LIVE} until SERVER-112 binds a real one.
+   * SPEC.md §7's visibility rule: `queue/lanes.ts` decides, from the two lanes
+   * and nothing else.
    *
-   * Read at the moment of the claim and never written down, which is what makes
-   * a lapse recoverable: a resident that comes back finds its lane exactly as it
-   * left it, because nothing about the lapse was ever recorded on an event.
+   * **It asks no question about liveness, and that is the change** (SERVER-152).
+   * A claim used to widen for a lapsed lane; the rider signed 2026-08-25 ends
+   * that, so a listener's absence strands nothing and surrenders nothing. A
+   * resident that comes back finds its lane exactly as it left it — which was
+   * true before too, and is now true for the simpler reason that nobody else
+   * could ever have touched it.
    */
   private visible(scope: Lane, event: StoredEvent): boolean {
-    return visibleTo(scope, laneOf(event), this.laneIsLive);
+    return visibleTo(scope, laneOf(event));
   }
 
   private async transition(

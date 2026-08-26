@@ -1694,7 +1694,7 @@ agent runs at all.
 | SERVER-152 | The fallback is removed — every claim sees its own lane and no other | todo | P0 | fable | SHARED-072 |
 | SERVER-153 | Release drains the lane, and a draining thread refuses designation | todo | P0 | opus | SERVER-152, CONTRACT-089 |
 | SERVER-154 | A new standalone thread designates a general resident | todo | P0 | opus | CONTRACT-088 |
-| SERVER-155 | A roster row carries its lane's pending count | todo | P0 | opus | CONTRACT-087 |
+| SERVER-155 | A roster row carries its lane's pending count | done | P0 | opus | CONTRACT-087 |
 | AGENT-053 | The orchestrate skill launches before it dispatches, and never takes a lane's work | todo | P0 | fable | SERVER-152, SERVER-155 |
 | AGENT-054 | A listener starts with work already waiting, and that is now ordinary | todo | P0 | fable | SERVER-152 |
 | UI-173 | Ask and Capture offer a new resident | todo | P0 | opus | CONTRACT-088 |
