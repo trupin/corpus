@@ -142,6 +142,14 @@ should drop its status line to match, or whether the product should grow a
 board-scoped line somewhere the prototype's does not conflict. Neither is
 urgent, and deciding it inside a bug fix would be deciding it by accident.
 
+### The review gate did not run
+
+Merged on green CI without a `pr-reviewer` verdict. The gate could not run in
+this session, so the diff's author is the one who merged it. The user was asked
+and chose to merge rather than wait. Recorded because the repository's rule is
+that every PR gets one, and a skipped gate that nobody wrote down is a gate
+everybody later assumes ran.
+
 ### Falsification
 
 Every new assertion was broken on purpose and watched to fail.
