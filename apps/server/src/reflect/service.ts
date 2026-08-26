@@ -15,6 +15,7 @@
 import type { Actor, ReflectAskResult, ReflectStatus } from "@corpus/contract";
 import { WORKSPACE_REFLECT_EVENT_TYPE } from "@corpus/contract";
 import { silentLogger, type Logger } from "../logger.js";
+import type { ConfigWriteResult } from "../config.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { EnqueueInput } from "../queue/service.js";
 import type { StoredEvent } from "../queue/store.js";
@@ -60,6 +61,17 @@ export interface ReflectServiceOptions {
   /** SPEC.md §7's window, re-read on every use — see `readQuietMinutes`. */
   readonly quietMinutes: () => number;
   /**
+   * Write SPEC.md §7's window (SERVER-151), for the switch its rider signed
+   * 2026-08-25 puts on the board bar.
+   *
+   * A seam rather than a direct `writeQuietMinutes` call, for the reason
+   * {@link quietMinutes} is one: this service owns *when* a reflection happens
+   * and knows nothing about where the workspace keeps its config. It also lets a
+   * test state the refusal case — an unreadable file — without writing a broken
+   * config to disk to provoke it.
+   */
+  readonly setQuietMinutes?: ((quiet: number) => ConfigWriteResult) | undefined;
+  /**
    * The reflection's own job log, written to twice.
    *
    * **Who asked**: the route takes an actor header and the contract says the
@@ -80,6 +92,16 @@ export interface ReflectService {
   ask(actor: Actor): Promise<ReflectAskResult>;
   /** `GET /api/workspace/reflect`. */
   status(): ReflectStatus;
+  /**
+   * `PUT /api/workspace/reflect/quiet` — set the window, or switch the automatic
+   * path off with `0` (SPEC.md §7).
+   *
+   * Answers the whole status rather than an acknowledgement, so a caller that
+   * switched the path off learns in the same round trip what is still pending.
+   * `null` when the workspace config could not be read: the file has a typo in
+   * it, which is a thing a person has to find, so nothing is written over it.
+   */
+  setQuiet(quiet: number): ReflectStatus | null;
   /** A mutation landed, by this party. Restarts the quiet window unless it is the agent's. */
   observeWrite(actor: Actor): void;
   /**
@@ -101,7 +123,7 @@ export interface ReflectService {
 }
 
 export function createReflectService(options: ReflectServiceOptions): ReflectService {
-  const { corpusDir, projection, enqueue, quietMinutes } = options;
+  const { corpusDir, projection, enqueue, quietMinutes, setQuietMinutes } = options;
   const logger = options.logger ?? silentLogger;
 
   /**
@@ -221,6 +243,24 @@ export function createReflectService(options: ReflectServiceOptions): ReflectSer
         lastDigest: resolveDigest(projection, state.digest),
         quiet: quietMinutes(),
       };
+    },
+
+    setQuiet(quiet) {
+      const written = setQuietMinutes?.(quiet) ?? { ok: false, reason: "unreadable" as const };
+      if (!written.ok) return null;
+      /*
+       * Re-armed from the value now on disk, not from the argument.
+       *
+       * `quietMinutes` re-reads the file on every use, so the scheduler would
+       * pick this up on its own eventually — but "eventually" here means at the
+       * next write, and switching the automatic path off has to take effect
+       * before one. Re-arming makes the switch immediate in both directions:
+       * `0` disarms now, and a non-zero value arms now.
+       */
+      scheduler.rearm();
+      // The whole status, from the same read every `GET` does — so what a caller
+      // is told it set is what a caller would be told if it asked again.
+      return this.status();
     },
 
     observeWrite(actor) {

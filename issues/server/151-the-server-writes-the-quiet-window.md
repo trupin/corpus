@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -37,24 +37,24 @@ config file and answers with the same `ReflectStatus` a `GET` returns.
 
 ## Acceptance Criteria
 
-- [ ] `PUT /api/workspace/reflect/quiet` writes `reflect.quiet` and answers the
+- [x] `PUT /api/workspace/reflect/quiet` writes `reflect.quiet` and answers the
       full `ReflectStatus`
-- [ ] The write is **atomic** — a crash mid-write must not leave a truncated
+- [x] The write is **atomic** — a crash mid-write must not leave a truncated
       `.corpus/config.json`, because an unparseable config degrades far more than
       reflection
-- [ ] **Every other key in the file survives** the write, including keys this
+- [x] **Every other key in the file survives** the write, including keys this
       server does not know about. The config is a file a person edits, and a
       round trip through a schema that dropped unrecognised keys would eat them
-- [ ] Comments and formatting loss is acknowledged rather than discovered: state
+- [x] Comments and formatting loss is acknowledged rather than discovered: state
       in the issue what the write does to a hand-formatted file, and pick the
       behaviour deliberately
-- [ ] A config file that is **absent** is created. One that is **unparseable** is
+- [x] A config file that is **absent** is created. One that is **unparseable** is
       refused with a reason naming the file, and is not overwritten — a person
       with a broken config has a typo to find, and destroying it hides the typo
-- [ ] Setting `0` stops the automatic path, proved by a test that lets the quiet
+- [x] Setting `0` stops the automatic path, proved by a test that lets the quiet
       window elapse with changes outstanding and asserts **nothing was enqueued**
-- [ ] Setting it back to a non-zero value re-arms it, proved the same way
-- [ ] A reflection already pending is **not** cancelled by switching the path off
+- [x] Setting it back to a non-zero value re-arms it, proved the same way
+- [x] A reflection already pending is **not** cancelled by switching the path off
 
 ## Technical Design
 
@@ -100,16 +100,76 @@ kept its other keys, make a change, wait out the window, and confirm no
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25, in the same commit as
+SERVER-152 — `app.ts` carries a line from each, and splitting them would produce
+a commit that does not build.
+
+### Read as an opaque object, written back whole
+
+`writeQuietMinutes` parses the file, sets one key inside `reflect`, and
+serialises the whole object. **Deliberately not through a schema**: this is a
+file a person edits, and a round trip through one that dropped unrecognised keys
+would eat settings a newer or older build put there. `readQuietMinutes` reads
+through a schema because reading through one is safe. Writing through one is not.
+
+### The formatting cost, chosen rather than discovered
+
+`JSON.parse` then `JSON.stringify` loses hand-indentation. Key order survives
+only because V8 preserves insertion order for string keys, and JSON has no
+comments to lose.
+
+The alternative — a targeted textual edit of the one line — survives formatting
+and fails the moment the key is absent, nested differently, or spelled across two
+lines. **Reformatting is visible and harmless; a textual edit that matched the
+wrong line is neither.**
+
+### An unreadable config is refused, not repaired
+
+A config that will not parse has a typo in it, and a typo is something a person
+has to find. Serialising our own object over the top would repair the syntax by
+deleting whatever they were in the middle of writing — hiding the fault and
+taking their work with it. The refusal names the file, because the caller cannot
+see the server's disk and the path is the whole diagnostic.
+
+An **absent** file is created: a workspace may never have written one.
+
+### The scheduler re-arms, and that is not incidental
+
+`quietMinutes` is a thunk, so a changed window would be picked up on the next
+write anyway. That is not soon enough for a **switch**: a person who turns the
+automatic path off expects it off, not off after the next thing they type.
+`ReflectScheduler.rearm()` makes it immediate in both directions — `0` disarms
+now, a non-zero value arms now.
+
+### It answers the whole status, from the same read `GET` does
+
+So what a caller is told it set is what it would be told if it asked again, and
+switching the path off reports what is still pending in the same round trip.
+
+### The surface's own gate found the missing mount
+
+Before the route was wired, `json-body.test.ts` failed on four cases with a
+message naming the exact fault: *"PUT /api/workspace/reflect/quiet answered 404,
+which the contract does not declare"*. A declared route with no handler is
+caught by construction here, which is why CONTRACT-086 could land first.
+
+### Checks
+
+```
+vitest run apps/server            205 files, 4674 tests passed   exit 0
+eslint apps/server/src                          0 problems       exit 0
+tsc --noEmit -p apps/server                                      exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SERVER-151]` prefix
+- [x] Committed with `[SERVER-151]` prefix

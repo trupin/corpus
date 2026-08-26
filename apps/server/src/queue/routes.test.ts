@@ -227,10 +227,16 @@ describe("POST /api/queue/claim-all", () => {
 // service and its absence means the orchestrator's lane — the same lane, never a
 // third behaviour, so a caller written before lanes existed keeps its meaning.
 describe("the scope parameter", () => {
-  /** Routes every event to `th_resident`, and reports that lane live. */
+  /**
+   * Routes every event to `th_resident`.
+   *
+   * It used to report that lane live as well, because the orchestrator's claim
+   * would otherwise have swept the events up under the fallback. SPEC.md §7's
+   * rider signed 2026-08-25 removed that, so a lane's liveness has nothing to do
+   * with what any claim sees and the stub is one line shorter (SERVER-152).
+   */
   const partition = (): void => {
     server.queue.attachScopeLookup(() => "th_resident");
-    server.queue.attachLaneLiveness((lane) => lane === "th_resident");
   };
 
   it("hands a scoped claim its own lane, and the orchestrator's call nothing", async () => {

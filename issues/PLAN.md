@@ -1663,7 +1663,7 @@ table and that one both append here and will conflict on merge. Keep both rows.
 | --- | --- | --- | --- | --- | --- |
 | SHARED-071 | A person can switch the automatic reflection off, from the board | done | P0 | fable | — |
 | CONTRACT-086 | Nothing on the wire sets the quiet window | done | P0 | opus | SHARED-071 |
-| SERVER-151 | The server writes the quiet window it already reads | todo | P0 | opus | SHARED-071, CONTRACT-086 |
+| SERVER-151 | The server writes the quiet window it already reads | done | P0 | opus | SHARED-071, CONTRACT-086 |
 | UI-172 | The Reflect control carries the switch | todo | P0 | opus | SHARED-071, CONTRACT-086, SERVER-151 |
 | SHARED-072 | A conversation gets its own agent, and keeps it | done | P0 | fable | — |
 
@@ -1691,7 +1691,7 @@ agent runs at all.
 | CONTRACT-087 | A roster row cannot say a lane has work waiting | done | P0 | opus | SHARED-072 |
 | CONTRACT-088 | A thread is created with its resident already designated | done | P0 | opus | SHARED-072 |
 | CONTRACT-089 | Designating into a drain is refused, with its reason | done | P0 | opus | SHARED-072 |
-| SERVER-152 | The fallback is removed — every claim sees its own lane and no other | todo | P0 | fable | SHARED-072 |
+| SERVER-152 | The fallback is removed — every claim sees its own lane and no other | done | P0 | fable | SHARED-072 |
 | SERVER-153 | Release drains the lane, and a draining thread refuses designation | todo | P0 | opus | SERVER-152, CONTRACT-089 |
 | SERVER-154 | A new standalone thread designates a general resident | todo | P0 | opus | CONTRACT-088 |
 | SERVER-155 | A roster row carries its lane's pending count | done | P0 | opus | CONTRACT-087 |

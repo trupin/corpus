@@ -19,6 +19,7 @@ import {
   isLoopbackHost,
   nonLoopbackBindError,
   readQuietMinutes,
+  writeQuietMinutes,
   type ServerConfig,
 } from "./config.js";
 import {
@@ -428,12 +429,6 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     onPresenceChanged: () => {
       (deps.invalidate ?? invalidate)(PRESENCE_QUERY_KEYS);
     },
-    // The lapse made this lane's pending events visible to the orchestrator's
-    // unscoped claim. Waking it is what turns "visible at the next claim" into
-    // "claimed now" rather than at the waiter registry's next poll.
-    onLapsed: (lane) => {
-      queue.notifyLaneLapsed(lane);
-    },
   });
   queue.attachLaneTracker(laneTracker);
   registerDisposer(() => {
@@ -493,6 +488,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // takes effect without a restart. See `readQuietMinutes`.
       quietMinutes: () =>
         readQuietMinutes(config.configPath, config.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES),
+      // The one place the server writes `.corpus/config.json` (SERVER-151).
+      setQuietMinutes: (quiet) => writeQuietMinutes(config.configPath, quiet),
       // Where "who asked" and "no digest landed" are recorded: the payload is
       // `{ since }` and a stored event has no actor field, so the job log is the
       // honest home for both.

@@ -1693,7 +1693,20 @@ describe("what a designation routes", () => {
       await parked.done;
     });
 
-    it("lapses to the orchestrator when nobody is parked on it", async () => {
+    /**
+     * This asserted the opposite until SERVER-152, quoting §7's own words: the
+     * cost of a lapse was that the work is done by the orchestrator, never that
+     * it is silently not done.
+     *
+     * The rider signed 2026-08-25 reverses the trade. An answer from the wrong
+     * agent is not a slower version of the right one, and the fallback had a
+     * second cost: it is what kept the orchestrator from launching this lane's
+     * listener at all.
+     *
+     * A general resident is not a special case here, which is the point of the
+     * enclosing block — it routes exactly as a profiled one does.
+     */
+    it("keeps its work when nobody is parked on it, however long that lasts", async () => {
       const created = await createThread(ws, { body: "start" });
       await designateGeneral(created.id);
       ws.advance(61_000);
@@ -1701,9 +1714,10 @@ describe("what a designation routes", () => {
       await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
       ws.advance(LANE_GRACE_MS * 2);
 
-      // Never live, so long lapsed: §7's cost of a lapse is that the work is
-      // done by the orchestrator, never that it is silently not done.
-      expect(await claimed()).toHaveLength(1);
+      expect(await claimed()).toEqual([]);
+      // The converse, without which the assertion above would also pass against
+      // a queue that had lost the event entirely.
+      expect(await claimed(created.id)).toHaveLength(1);
     });
 
     // §7: presence is asked at the request and never re-asked of one already

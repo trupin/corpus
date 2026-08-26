@@ -252,91 +252,101 @@ describe("the announcement", () => {
   });
 
   /** A tracker on the fake timers' own clock, so the timer and `now` agree. */
-  const trackerOnFakeClock = (
-    onPresenceChanged: (lane: string) => void,
-    onLapsed: (lane: string) => void,
-  ) => createLaneTracker({ now: () => Date.now(), onPresenceChanged, onLapsed });
+  const trackerOnFakeClock = (onPresenceChanged: (lane: string) => void) =>
+    createLaneTracker({ now: () => Date.now(), onPresenceChanged });
 
+  /**
+   * One hook, not two (SERVER-152). `onLapsed` existed to wake a parked
+   * orchestrator the instant a lane's work fell to it, and SPEC.md §7's rider
+   * signed 2026-08-25 means no work ever falls to it — so a lapse is now only a
+   * change to what a roster row says, which is exactly what
+   * `onPresenceChanged` already announced.
+   */
   it("announces every transition of a lane's row: park, release, lapse", () => {
     const changed: string[] = [];
-    const lapsed: string[] = [];
-    const tracker = trackerOnFakeClock(
-      (lane) => changed.push(lane),
-      (lane) => lapsed.push(lane),
-    );
+    const tracker = trackerOnFakeClock((lane) => changed.push(lane));
 
     const release = tracker.observePark(LANE);
     expect(changed).toEqual([LANE]);
     release();
     expect(changed).toEqual([LANE, LANE]);
-    expect(lapsed).toEqual([]);
+    // Released, still inside the grace window: a healthy listener is un-parked
+    // for a moment on every rearm, which is the whole reason for the window.
+    expect(tracker.isLive(LANE)).toBe(true);
 
     vi.advanceTimersByTime(LANE_GRACE_MS);
-    expect(lapsed).toEqual([LANE]);
+    expect(tracker.isLive(LANE)).toBe(false);
     expect(changed).toEqual([LANE, LANE, LANE]);
     tracker.close();
   });
 
+  /**
+   * A lapse is announced through `onPresenceChanged` like every other change to
+   * a lane's row (SERVER-152 removed the separate `onLapsed`), so what these
+   * three pin is unchanged and is read one announcement later: **once**, per
+   * lane, at that lane's own deadline.
+   *
+   * It still matters, and what it costs if it breaks has changed. A repeated or
+   * missed announcement used to mean work handed to the wrong agent. It now
+   * means a roster that blinks, and an orchestrator launching a second listener
+   * for a conversation whose first one is merely between parks.
+   */
+  const lapsesOf = (lanes: readonly string[], isLive: (lane: string) => boolean): string[] =>
+    lanes.filter((lane) => !isLive(lane));
+
   it("announces a lapse once, however long the lane stays quiet", () => {
-    const lapsed: string[] = [];
-    const tracker = trackerOnFakeClock(
-      () => undefined,
-      (lane) => lapsed.push(lane),
-    );
+    const changed: string[] = [];
+    const tracker = trackerOnFakeClock((lane) => changed.push(lane));
     tracker.observePark(LANE)();
+    const before = changed.length;
 
     vi.advanceTimersByTime(LANE_GRACE_MS * 5);
-    expect(lapsed).toEqual([LANE]);
+    // Exactly one announcement after the release, and the lane reads lapsed.
+    expect(changed.slice(before)).toEqual([LANE]);
+    expect(tracker.isLive(LANE)).toBe(false);
     tracker.close();
   });
 
   it("announces a lapse per lane, at each lane's own deadline", () => {
-    const lapsed: string[] = [];
-    const tracker = trackerOnFakeClock(
-      () => undefined,
-      (lane) => lapsed.push(lane),
-    );
+    const changed: string[] = [];
+    const tracker = trackerOnFakeClock((lane) => changed.push(lane));
     tracker.observePark(LANE)();
     vi.advanceTimersByTime(60_000);
     tracker.observePark(OTHER)();
 
     vi.advanceTimersByTime(LANE_GRACE_MS - 60_000);
-    expect(lapsed).toEqual([LANE]);
+    expect(lapsesOf([LANE, OTHER], tracker.isLive)).toEqual([LANE]);
     vi.advanceTimersByTime(60_000);
-    expect(lapsed).toEqual([LANE, OTHER]);
+    expect(lapsesOf([LANE, OTHER], tracker.isLive)).toEqual([LANE, OTHER]);
+    expect(changed).toContain(OTHER);
     tracker.close();
   });
 
   it("does not announce a lapse for a lane that came back", () => {
-    const lapsed: string[] = [];
-    const tracker = trackerOnFakeClock(
-      () => undefined,
-      (lane) => lapsed.push(lane),
-    );
+    const tracker = trackerOnFakeClock(() => undefined);
     tracker.observePark(LANE)();
     vi.advanceTimersByTime(LANE_GRACE_MS - 1);
     const back = tracker.observePark(LANE);
 
     vi.advanceTimersByTime(LANE_GRACE_MS * 2);
-    expect(lapsed).toEqual([]);
+    // Still parked, so still live however long the timers run.
+    expect(tracker.isLive(LANE)).toBe(true);
     back();
     tracker.close();
   });
 
   // The timer decides nothing: it announces. A tracker whose announcements are
-  // shut off still answers every question the same way, which is what makes the
-  // fallback safe to compute at claim time.
+  // shut off still answers every question the same way, which is what makes a
+  // roster row honest even when nothing told it to refetch.
   it("still lapses for a reader after close, which only stops the announcing", () => {
-    const lapsed: string[] = [];
-    const tracker = trackerOnFakeClock(
-      () => undefined,
-      (lane) => lapsed.push(lane),
-    );
+    const changed: string[] = [];
+    const tracker = trackerOnFakeClock((lane) => changed.push(lane));
     tracker.observePark(LANE)();
+    const before = changed.length;
     tracker.close();
 
     vi.advanceTimersByTime(LANE_GRACE_MS * 3);
-    expect(lapsed).toEqual([]);
+    expect(changed.slice(before)).toEqual([]);
     expect(tracker.isLive(LANE)).toBe(false);
   });
 });

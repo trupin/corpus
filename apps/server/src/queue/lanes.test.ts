@@ -6,7 +6,6 @@
 import { describe, expect, it } from "vitest";
 import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import {
-  NOTHING_LIVE,
   NO_SCOPE_LOOKUP,
   RESIDENT_DESIGNATED,
   laneFor,
@@ -94,40 +93,66 @@ describe("laneFor", () => {
   });
 });
 
+/**
+ * SPEC.md §7's visibility rule after the rider signed 2026-08-25 (SERVER-152):
+ * **exact equality, for every claim**.
+ *
+ * The suite is written as a pair of halves that used to differ and no longer
+ * do. That shape is deliberate: the thing worth pinning is not that a claim sees
+ * its own lane — it always did — but that the orchestrator's claim has stopped
+ * being the exception, and that no argument about liveness can make it one
+ * again.
+ */
 describe("visibleTo", () => {
-  const live = (lane: Lane): boolean => lane === RESIDENT;
-
   it("shows a scoped claim its own lane", () => {
-    expect(visibleTo(RESIDENT, RESIDENT, live)).toBe(true);
+    expect(visibleTo(RESIDENT, RESIDENT)).toBe(true);
   });
 
   it("hides every other lane from a scoped claim, the orchestrator's included", () => {
-    expect(visibleTo(RESIDENT, OTHER, live)).toBe(false);
-    expect(visibleTo(RESIDENT, ORCHESTRATOR_LANE, live)).toBe(false);
-  });
-
-  // The guarantee that makes two agents safe: disjoint sets, not a race.
-  it("hides a live lane's events from the orchestrator's unscoped claim", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT, live)).toBe(false);
-  });
-
-  it("shows the orchestrator a lapsed lane's events", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, OTHER, live)).toBe(true);
+    expect(visibleTo(RESIDENT, OTHER)).toBe(false);
+    expect(visibleTo(RESIDENT, ORCHESTRATOR_LANE)).toBe(false);
   });
 
   it("always shows the orchestrator its own lane", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, ORCHESTRATOR_LANE, live)).toBe(true);
+    expect(visibleTo(ORCHESTRATOR_LANE, ORCHESTRATOR_LANE)).toBe(true);
   });
 
-  // A returning resident is not narrowed by the fallback: the scoped branch
-  // never consults liveness at all.
-  it("shows a lapsed resident its own lane regardless", () => {
-    expect(visibleTo(OTHER, OTHER, live)).toBe(true);
+  /**
+   * The reproduction, at the level where it is provable.
+   *
+   * A listener that is absent — crashed, killed, or never started — does not
+   * surrender its pending events. Before the rider this returned `true` for a
+   * lapsed lane, and the orchestrator's holding that work is what made its own
+   * skill defer launching the listener: a conversation somebody kept using never
+   * had a clear pass, so it never got its agent.
+   */
+  it("hides another lane's events from the orchestrator, absent listener or not", () => {
+    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT)).toBe(false);
+    expect(visibleTo(ORCHESTRATOR_LANE, OTHER)).toBe(false);
   });
 
-  // The shipped default, until SERVER-112 binds a tracker: with nothing live the
-  // orchestrator sees the whole queue, exactly as it did before lanes existed.
-  it("hides nothing from the orchestrator while nothing is live", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT, NOTHING_LIVE)).toBe(true);
+  /**
+   * The converse, and it is not optional. "Nothing was returned" is what a
+   * wholly broken queue also produces, so the absence above is worth nothing
+   * without a case proving the same lane is claimable by its owner.
+   */
+  it("still shows that same lane to a claim scoped to it", () => {
+    expect(visibleTo(RESIDENT, RESIDENT)).toBe(true);
+    expect(visibleTo(OTHER, OTHER)).toBe(true);
+  });
+
+  /**
+   * Nothing about presence reaches this function any more. The signature is the
+   * guarantee — there is no argument to pass — and this states it as a fact
+   * about behaviour rather than about the type, so a later change that threaded
+   * liveness back in through a module-level lookup would have to break it.
+   */
+  it("answers from the two lanes alone, whatever a listener is doing", () => {
+    const answers = new Set([
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
+    ]);
+    expect([...answers]).toEqual([false]);
   });
 });

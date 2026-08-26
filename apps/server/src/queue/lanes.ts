@@ -83,35 +83,22 @@ export const NO_SCOPE_LOOKUP: ScopeRootLookup = () => ORCHESTRATOR_LANE;
  * Is this lane's listener present right now? (SPEC.md §7's "presence is the
  * parked request, and nothing else".)
  *
- * **SERVER-112 supplies this.** It is a seam and not an implementation because
- * liveness is an observation over time — a lane is live while a scoped `idle` is
- * parked on it, and stays live across the rearm gap between one park and the
- * next — and that tracker is its own issue. What plugs in here is the tracker's
- * `isLive(lane)`, bound through {@link QueueService.attachLaneLiveness}; nothing
- * else in the claim path changes when it does.
+ * **It decides what a roster row says, and nothing else.** Until the rider
+ * signed 2026-08-25 this predicate also decided what an unscoped claim could
+ * see: a lane past the grace window had its work folded into the orchestrator's
+ * claim. That fallback is gone — {@link visibleTo} is exact equality now — so
+ * liveness routes nothing and is a display fact.
  *
- * The lane is never *written* anywhere on the strength of this: it is asked at
- * claim time and only at claim time, so a resident that comes back finds its
- * lane exactly as it left it.
+ * That is a narrowing worth stating rather than leaving to be inferred, because
+ * it changes what a wrong answer costs. A liveness verdict that flickered used
+ * to mean a conversation intermittently answered by the wrong agent. Now it
+ * means a roster that blinks, and an orchestrator that launches a second
+ * listener for a lane whose first is merely between parks — which is why the
+ * grace window still has to outlast a rearm gap.
+ *
+ * The lane is never *written* anywhere on the strength of it.
  */
 export type LaneLiveness = (lane: Lane) => boolean;
-
-/**
- * The liveness of a server that has no liveness tracker yet: **nothing is live**.
- *
- * That is the safe half of the fallback, not a neutral one, and the direction
- * matters. With nothing live, every thread lane counts as lapsed and its pending
- * events are visible to the orchestrator's unscoped claim — which is precisely
- * how the queue behaved before lanes existed, so no event can be stranded by
- * shipping the partition before the tracker. The opposite default would hide a
- * designated lane's events from the only agent actually running, and §7 is
- * explicit that the cost of a lapse is "that the work is done by the
- * orchestrator instead … and never that it is silently not done".
- *
- * A scoped claim is unaffected either way: the fallback widens the
- * orchestrator's view and never narrows the owner's.
- */
-export const NOTHING_LIVE: LaneLiveness = () => false;
 
 /** What {@link laneFor} needs to know about an event being enqueued. */
 export interface LaneInput {
@@ -160,25 +147,43 @@ export function laneFor(input: LaneInput, findScopeRoot: ScopeRootLookup): Lane 
 /**
  * May a claim scoped to `scope` see an event stamped `lane`? (SPEC.md §7.)
  *
- * Two clauses, and they are not symmetric:
+ * **One clause, and it is exact equality** — for every claim, the
+ * orchestrator's included. SPEC.md §7's rider signed 2026-08-25 replaced the
+ * lapse fallback: *"A lane's work is done by that lane's agent, and by nobody
+ * else… There is no fallback and no timer: an unscoped claim never sees another
+ * lane's events, whether that lane is live or not."*
  *
- * - **A scoped claim sees only its own lane.** Exact equality, with no fallback
- *   of any kind — the fallback widens the orchestrator's view, it never narrows
- *   or widens an owner's. A resident that comes back mid-lapse still sees
- *   everything it left.
- * - **The orchestrator's claim sees its own lane, plus every lane that is not
- *   live.** That is the whole of §7's "an unscoped claim never sees a live
- *   lane's events": what makes two agents safe is disjoint sets, and the sets
- *   are disjoint precisely while the other lane has a listener. When it does
- *   not, the work falls to the orchestrator rather than waiting for an agent
- *   that is not there.
+ * ## What this function used to do, and why it stopped
  *
- * The orchestrator's lane is never subject to liveness: `scope === orchestrator`
- * *is* the unscoped call (the contract defaults the parameter to it), so asking
- * whether the orchestrator is live in order to decide what the orchestrator may
- * claim would be asking a question of the caller about itself.
+ * The orchestrator's clause used to widen: its claim saw its own lane **plus
+ * every lane that was not live**, so a listener that crashed did not strand its
+ * conversation. The cost §7 accepted was that the work was done *"slower, and
+ * without the conversation's warmth"*, and never that it was silently not done.
+ *
+ * The rider reverses that trade for a reason measured rather than argued.
+ * Answering in the resident's place is not a slower version of the same answer —
+ * it is a different agent, with none of the conversation, writing in its name.
+ * And the fallback had a second cost nobody had priced: because the orchestrator
+ * held a lapsed lane's events in `in-progress/`, its own skill forbade launching
+ * that lane's listener in the same pass, so a conversation somebody kept using
+ * never had a clear pass and **never got its agent at all**. The busier the
+ * conversation, the more certain the starvation. Removing the widening removes
+ * the collision, and the deferral rule with it.
+ *
+ * ## Liveness is not a parameter of this question any more
+ *
+ * It was the only reason this function needed one. §7's grace window survives
+ * with one job instead of two — it decides what a roster row's `live` says — and
+ * routes nothing. A claim is now answerable from the two lanes alone, which is
+ * also why nothing here can drift out of step with the presence tracker: it no
+ * longer consults it.
+ *
+ * The orchestrator's lane was never subject to liveness anyway: `scope ===
+ * orchestrator` *is* the unscoped call (the contract defaults the parameter to
+ * it), so asking whether the orchestrator is live in order to decide what the
+ * orchestrator may claim would have been asking a question of the caller about
+ * itself.
  */
-export function visibleTo(scope: Lane, lane: Lane, isLive: LaneLiveness): boolean {
-  if (scope !== ORCHESTRATOR_LANE) return lane === scope;
-  return lane === ORCHESTRATOR_LANE || !isLive(lane);
+export function visibleTo(scope: Lane, lane: Lane): boolean {
+  return lane === scope;
 }
