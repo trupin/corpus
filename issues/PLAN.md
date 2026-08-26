@@ -1656,11 +1656,9 @@ user, not work).
 Issues the user reported against the shipped build. They do not belong to any
 release scope yet.
 
-`UI-171` is in this phase too and its row lives on PR #62's branch, so this
-table and that one both append here and will conflict on merge. Keep both rows.
-
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
+| UI-171 | The board bar restates what the columns already say | done | P2 | opus | — |
 | SHARED-071 | A person can switch the automatic reflection off, from the board | done | P0 | fable | — |
 | CONTRACT-086 | Nothing on the wire sets the quiet window | done | P0 | opus | SHARED-071 |
 | SERVER-151 | The server writes the quiet window it already reads | done | P0 | opus | SHARED-071, CONTRACT-086 |

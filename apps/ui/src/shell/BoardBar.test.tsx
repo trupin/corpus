@@ -343,4 +343,83 @@ describe("the board bar", () => {
     });
     expect(container.querySelector(".board-tab[disabled]")).toBeNull();
   });
+
+  /**
+   * The tab strip holds tabs (UI-171).
+   *
+   * The bar used to print `kanban over <field> · <drag rule>` between the `+`
+   * button and the paths pill. SPEC.md §10 puts the drag affordance on the
+   * columns — "each column shows where it leads" — and the tab's own tag says
+   * the board is a kanban, so the line paraphrased two surfaces that were
+   * already drawn. It is a tooltip on that tag now.
+   */
+  describe("what a kanban says on the bar", () => {
+    const SPEC = { field: "stage", stages: ["triage", "visiting", "done"] } as const;
+    const KANBAN = boardRow({
+      id: "b_house",
+      title: "House hunt",
+      order: 1,
+      columns: null,
+      kanban: { field: SPEC.field, stages: [...SPEC.stages] },
+    });
+
+    const tagOf = (container: HTMLElement): HTMLElement | null =>
+      container.querySelector('.board-tab[data-board="b_house"] .tag');
+
+    it("prints no clause of its own in the tab strip", async () => {
+      const { container } = renderBar(boardTransport({ boards: [KANBAN] }));
+      await settle(container, 1);
+      expect(container.querySelector(".board-hint")).toBeNull();
+    });
+
+    it("carries the field and the funnel rule on the tab's tag", async () => {
+      const { container } = renderBar(boardTransport({ boards: [KANBAN] }));
+      await settle(container, 1);
+      const tag = tagOf(container);
+      expect(tag?.textContent).toBe("kanban");
+      expect(tag?.getAttribute("title")).toContain("A kanban over stage");
+      expect(tag?.getAttribute("title")).toContain("a drag moves one stage left or right");
+    });
+
+    it("says the graph rule instead when the board declares transitions", async () => {
+      const graph = boardRow({
+        ...KANBAN,
+        kanban: {
+          field: SPEC.field,
+          stages: [...SPEC.stages],
+          transitions: { triage: ["visiting"], visiting: [], done: [] },
+        },
+      });
+      const { container } = renderBar(boardTransport({ boards: [graph] }));
+      await settle(container, 1);
+      const title = tagOf(container)?.getAttribute("title") ?? "";
+      expect(title).toContain("a drag follows the board\u2019s transitions");
+      expect(title).not.toContain("one stage left or right");
+    });
+
+    it("gives an ordinary board no tag and therefore no rule", async () => {
+      const plain = boardRow({ id: "b_plain", title: "Plain", order: 1, columns: [] });
+      const { container } = renderBar(boardTransport({ boards: [plain] }));
+      await settle(container, 1);
+      expect(container.querySelector('.board-tab[data-board="b_plain"] .tag')).toBeNull();
+      expect(container.querySelector(".board-hint")).toBeNull();
+    });
+
+    /**
+     * Absent, never empty. `useStrayStages` answers `null` until its requests
+     * land and `0` when the board draws a column for everything in scope, and
+     * an element that materialised on either would re-width this row on the
+     * frame the answer arrived (SPEC.md §10). The non-zero branch is exercised
+     * against the real app in `apps/ui/e2e/kanban.spec.ts`, which is where a
+     * stray document can be seeded.
+     */
+    it("renders no stray pill when nothing in scope is off the board", async () => {
+      const { container } = renderBar(boardTransport({ boards: [KANBAN] }));
+      await settle(container, 1);
+      await waitFor(() => {
+        expect(container.querySelector(".paths-pill")).not.toBeNull();
+      });
+      expect(container.querySelector(".stray-pill")).toBeNull();
+    });
+  });
 });

@@ -269,21 +269,30 @@
 }
 
 /*
- * What a drag on the showing board does (SPEC.md §10, rider 6) — the
- * prototype's status line, in the bar.
+ * Documents in the showing kanban's scope that none of its columns draw
+ * (UI-171). It replaces `.board-hint`, whose other two clauses moved to the
+ * tab's own `kanban` tag as a tooltip — the columns already say where they
+ * lead (SPEC.md §10), so the bar had been paraphrasing them.
  *
- * It sits left of `.boardbar-spacer`, so a hint that grows a clause eats slack
- * instead of moving a tab (§10: "nothing resizes because of what it holds"), and
- * it truncates rather than wrapping: the bar is one fixed-height row and the
- * whole sentence is in the tooltip.
+ * Shaped like `.paths-pill`, beside which it sits, and warning-toned because it
+ * reports a fault in the board document rather than a count. It is rendered
+ * only for a non-zero answer, so nothing here reserves width: the row's
+ * fixed height and the spacer's slack are what keep a late answer from moving
+ * a tab (§10, "nothing resizes because of what it holds").
  */
-.board-hint {
-  flex: 0 1 auto;
-  min-width: 0;
+.stray-pill {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--signal);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: help;
+}
+
+.stray-pill b {
+  font-weight: 600;
 }
