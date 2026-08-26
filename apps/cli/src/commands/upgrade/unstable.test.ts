@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { stubFetch } from "../../testing/fetch.js";
+import { refuseUndetectable, refuseUnwritable } from "./install.js";
 import {
   ARTIFACT_RETENTION_DAYS,
   buildAge,
@@ -332,5 +333,56 @@ describe("unzipSingleTarball", () => {
     expect(() => unzipSingleTarball(Buffer.from("not a zip"), "artifact")).toThrow(
       /not a zip archive/,
     );
+  });
+});
+
+/**
+ * The by-hand instruction, which is where "instructions that are not runnable
+ * are not instructions" met a second reader.
+ *
+ * A release's URL is a tarball, so `npm install -g <url>` pastes and works. A
+ * pull-request build's URL is an artifact **zip behind an authenticated API**,
+ * and the same line cannot work — a refusal carrying it would hand somebody a
+ * command that fails, which is worse than handing them none. Caught by the real
+ * E2E run, not by a review.
+ */
+describe("the refusals' by-hand instruction", () => {
+  const undetectable = {
+    kind: "undetectable",
+    packageRoot: "/home/me/code/corpus/apps/cli",
+    reason: "a source checkout",
+  } as const;
+
+  it("pastes a command for a release", () => {
+    const refusal = refuseUndetectable(undetectable, "https://example.test/corpus-0.4.0.tgz");
+    expect(refusal.hint).toContain("`npm install -g https://example.test/corpus-0.4.0.tgz`");
+  });
+
+  it("describes the two steps for a PR build, and offers no unrunnable line", () => {
+    const refusal = refuseUndetectable(
+      undetectable,
+      "https://api.github.test/artifacts/900/zip",
+      "by downloading corpus-0.4.0-pr63-a1b2c3d from pull request #63 and running `npm install -g <path-to-tgz>` on the tarball inside it",
+    );
+    expect(refusal.hint).toContain("pull request #63");
+    expect(refusal.hint).toContain("<path-to-tgz>");
+    // The zip URL never appears as something to install.
+    expect(refusal.hint).not.toContain("/zip");
+  });
+
+  it("does the same for an unwritable prefix", () => {
+    const refusal = refuseUnwritable(
+      {
+        kind: "npm-global",
+        packageRoot: "/usr/lib/node_modules/corpus",
+        packageName: "corpus",
+        prefix: "/usr",
+        globalRoot: "/usr/lib/node_modules",
+      },
+      "https://api.github.test/artifacts/900/zip",
+      "by downloading it from pull request #63",
+    );
+    expect(refusal.hint).toContain("pull request #63");
+    expect(refusal.hint).not.toContain("/zip");
   });
 });

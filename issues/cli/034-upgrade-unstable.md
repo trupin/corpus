@@ -259,21 +259,53 @@ and reaches no artifact API at all. `result.unstable` is `null` and
 `check.verifiable` is `true`.
 
 **Against a real pull request** — this phase's own PR #65, whose Package run
-produced `corpus-0.25.0-pr65-<sha>`:
+produced `corpus-0.24.0-pr65-7eb8396` (INFRA-026's scheme, verified live):
 
 ```
 $ corpus upgrade --unstable --check
-corpus 0.25.0 → PR #65 — corpus 0.25.0, commit <sha>, built <n> minutes ago
-  artifact: corpus-0.25.0-pr65-<sha>
+corpus 0.24.0 → PR #65 — corpus 0.24.0, commit 7eb8396, built 10 minutes ago
+  artifact: corpus-0.24.0-pr65-7eb8396
   This is a pre-release build from CI, not a published release. It carries no
   checksum, so the verification `corpus upgrade` performs did not run.
   `corpus upgrade` reinstalls the newest stable release.
+  NOT installable here: it is not installed under a node_modules directory
+  (a source checkout, or an unpacked build)
 nothing was downloaded, installed or written (--check).
 ```
 
-and with no token in the environment and `gh` unavailable, the refusal names
-`CORPUS_GITHUB_TOKEN`, `gh auth login` and the fact that plain `corpus upgrade`
-needs none — and installs nothing.
+`--unstable 65 --check --json` carries the whole choice as data —
+`{"pr":65,"version":"0.24.0","sha":"7eb8396","artifactName":"corpus-0.24.0-pr65-7eb8396",
+"createdAt":"2026-08-26T23:00:36Z","checksumVerified":false}` — with `check.reachable`
+false and its detail saying the release list *was not consulted*, and
+`tool.installed` false.
+
+With `gh` off `PATH` and neither variable set:
+
+```
+$ corpus upgrade --unstable
+corpus: --unstable needs a GitHub token with `actions: read`, and none was found
+  Workflow artifacts are not anonymously downloadable, even on a public
+  repository. Sign in with `gh auth login`, or set CORPUS_GITHUB_TOKEN (or
+  GITHUB_TOKEN) to a token with `actions: read`. Nothing was downloaded or
+  installed. `corpus upgrade` without the flag installs the newest published
+  release and needs no token.
+```
+
+Exit 7, nothing downloaded, and no fallback to a release.
+
+**Two defects the real run found, that no review had.**
+
+1. `--check` printed the raw ISO timestamp where the acceptance criterion asks
+   for the build's **age**. It now says *"built 10 minutes ago"* in the human
+   line and keeps `createdAt` absolute in the JSON, where a machine wants an
+   instant rather than a phrase.
+2. The undetectable-install refusal offered
+   `npm install -g <artifact zip URL>` — a line that **cannot work**, because a
+   PR build's URL is an artifact zip behind an authenticated API rather than a
+   tarball. `refuseUndetectable` and `refuseUnwritable` now take an override, and
+   the unstable path hands over the two steps that do work. "Instructions that
+   are not runnable are not instructions" was already written in that function's
+   own doc comment; it had acquired a second reader.
 
 **A real install was deliberately not performed on this machine.** It would
 replace the operator's global `corpus` with an unreleased build mid-release, and

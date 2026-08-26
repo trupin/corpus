@@ -55,6 +55,7 @@ import {
 } from "./release.js";
 import {
   ARTIFACT_RETENTION_DAYS,
+  buildAge,
   describeBuild,
   downloadPrBuild,
   lookupPrBuilds,
@@ -586,7 +587,7 @@ async function reportCheck(context: CommandContext, stage: Stage): Promise<void>
   };
 
   context.out.emit(result);
-  renderCheck(context.out, result, stage.method);
+  renderCheck(context.out, result, stage.method, (stage.effects.now ?? (() => new Date()))());
 }
 
 interface RunStage extends Stage {
@@ -658,10 +659,21 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     );
   }
 
-  // The same two refusals, decided before anything is downloaded, on both paths.
+  /*
+   * The same two refusals, decided before anything is downloaded, on both paths
+   * — with one difference that matters. A release's URL is a tarball, so `npm
+   * install -g <url>` is a line somebody can paste. A pull-request build's URL is
+   * an artifact **zip behind an authenticated API**, and the same line would not
+   * work; the unstable path therefore hands over the two steps that do, rather
+   * than a runnable-looking command that is not.
+   */
   const byHand = unstable?.build.downloadUrl ?? assets?.tarball.url ?? "";
-  if (method.kind === "undetectable") throw refuseUndetectable(method, byHand);
-  if (!isWritable(method.globalRoot)) throw refuseUnwritable(method, byHand);
+  const installable =
+    unstable === undefined
+      ? undefined
+      : `by downloading ${unstable.build.artifactName} from pull request #${String(unstable.build.pr)} and running \`npm install -g <path-to-tgz>\` on the tarball inside it`;
+  if (method.kind === "undetectable") throw refuseUndetectable(method, byHand, installable);
+  if (!isWritable(method.globalRoot)) throw refuseUnwritable(method, byHand, installable);
 
   /** What the report names as the thing that was installed, on either path. */
   let tarballName: string;
@@ -1113,13 +1125,16 @@ function renderConflicts(
   }
 }
 
-function renderCheck(out: Output, result: UpgradeResult, method: InstallMethod): void {
+function renderCheck(out: Output, result: UpgradeResult, method: InstallMethod, now: Date): void {
   const { check } = result;
   const unstable = result.unstable;
   if (unstable !== null) {
+    // The age, not the timestamp — "built 40 minutes ago" is what tells a person
+    // whether this is the build they just pushed. `createdAt` stays absolute in
+    // the JSON, where a machine wants an instant rather than a phrase.
     out.line(
       `corpus ${check.installed} → PR #${String(unstable.pr)} — corpus ${unstable.version}, ` +
-        `commit ${unstable.sha}, built ${unstable.createdAt}`,
+        `commit ${unstable.sha}, built ${buildAge(unstable.createdAt, now)}`,
     );
     out.line(`  artifact: ${unstable.artifactName}`);
     out.line(`  ${UNVERIFIED_NOTICE}`);
