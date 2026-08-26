@@ -18,6 +18,7 @@ const job = {
   eventId: "evt_7c1d",
   type: "comment.created",
   status: "in-progress",
+  lane: "orchestrator",
   enqueued: "2026-07-19T10:05:00Z",
   started: "2026-07-19T10:05:02Z",
   updated: "2026-07-19T10:05:40Z",
@@ -84,6 +85,7 @@ describe("Job", () => {
     const deferred = {
       ...job,
       status: "deferred",
+      lane: "orchestrator",
       blockedOn: "doc_a1b2c3",
       blockedOnTitle: "Mortgage options",
     };

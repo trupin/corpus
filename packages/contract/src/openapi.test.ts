@@ -4472,6 +4472,53 @@ describe("the CONTRACT-007 riders", () => {
     expect(componentSchemas?.["ThreadSummary"]?.properties?.["warnings"]).toBeUndefined();
   });
 
+  /**
+   * CONTRACT-056. `Job` carried no lane, so a surface saying *who is waiting on
+   * this* re-derived it by walking the scope from the payload's thread — and
+   * the walk is wrong for exactly the two cases §7 carves out.
+   */
+  describe("a job carries the lane it was stamped with (CONTRACT-056)", () => {
+    const lane = (): { description?: string } =>
+      componentSchemas?.["Job"]?.properties?.["lane"] ?? {};
+
+    it("is the lane vocabulary, not a free string", () => {
+      expect(componentSchemas?.["Job"]?.properties?.["lane"]).toBeDefined();
+      // Same spelling as `recipient` and `scope`: the orchestrator, or a thread.
+      expect(String(lane().description ?? "")).toContain("SPEC.md §7");
+    });
+
+    /**
+     * The decisive half. A reader who does not know *why* a client cannot
+     * compute this will eventually compute it — so both carve-outs are named,
+     * and the recipient one is called out as the unrecoverable one.
+     */
+    it("names both carve-outs, and which of them cannot be worked around", () => {
+      const prose = String(lane().description ?? "");
+      expect(prose).toContain("`resident.designated`");
+      expect(prose).toContain("named a recipient");
+      expect(prose).toContain("not recoverable from the scope at all");
+      expect(prose).toContain("it can only be replaced");
+    });
+
+    /**
+     * It bounds a sentence, not a route. A reader who thought this steered
+     * delivery might try to change it.
+     */
+    it("says it is display material and never routing", () => {
+      const prose = String(lane().description ?? "");
+      expect(prose).toContain("display material, never routing");
+      expect(prose).toContain("wrong sentence rather than a misdelivered event");
+    });
+
+    /**
+     * One reading of a missing stamp, not two — the claim path already treats
+     * an unstamped legacy event as the orchestrator's.
+     */
+    it("gives a legacy event the same reading the claim path gives it", () => {
+      expect(String(lane().description ?? "")).toContain("the same way the claim path reads it");
+    });
+  });
+
   it("gives Job a nullable origin title without making the component nullable", () => {
     const job = componentSchemas?.["Job"];
     expect(job?.type).toBe("object");
@@ -4479,6 +4526,10 @@ describe("the CONTRACT-007 riders", () => {
       "eventId",
       "type",
       "status",
+      // CONTRACT-056: the lane the event was stamped with, beside `status`,
+      // because both are facts about the event rather than about its progress.
+      // A client cannot derive it — the walk is wrong for §7's two carve-outs.
+      "lane",
       // CONTRACT-029 split the overloaded `started` into the enqueue instant and
       // the first-log instant. Both are required keys; only `started` is nullable.
       "enqueued",

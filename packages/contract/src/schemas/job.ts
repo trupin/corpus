@@ -8,6 +8,7 @@ import {
   type QueueEventStatus,
 } from "./queue.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { LaneSchema } from "./lane.js";
 import { openapi } from "./openapi-metadata.js";
 
 /**
@@ -53,6 +54,24 @@ export const JobSchema = openapi(
           "what it is running on (SPEC.md §10).",
       ),
     status: QueueEventStatusSchema,
+    lane: LaneSchema.describe(
+      "**Which lane this job's event was stamped with** (SPEC.md §7), read from the projection " +
+        "rather than re-derived. It is the stamp made once at enqueue time and never rewritten, " +
+        "so it is a fact about the event and not a computation over the corpus as it now stands.\n\n" +
+        "**A client cannot work this out, which is why it is here** (CONTRACT-056). Walking the " +
+        "scope from the payload's thread gets the right answer for the ordinary event and the " +
+        "wrong one for exactly the two cases §7 carves out: a `resident.designated`, which takes " +
+        "the **orchestrator's** lane whoever is designated — a resident does not announce itself " +
+        "to itself — and a message that **named a recipient**, which takes that recipient's lane " +
+        "and is not recoverable from the scope at all. The second is the decisive one: the walk " +
+        "cannot be made right, it can only be replaced.\n\n" +
+        "**It is display material, never routing.** The server stamps the lane and claims on it; " +
+        "nothing a client decides changes where an event goes. What this fixes is a surface " +
+        "saying *waiting for researcher* about work the orchestrator is holding, which is a wrong " +
+        "sentence rather than a misdelivered event. An event written before lanes existed reads " +
+        "as the orchestrator's, the same way the claim path reads it — one interpretation of a " +
+        "missing stamp, not two.",
+    ),
     enqueued: IsoDateTimeSchema.describe(
       "**When this event entered the queue** (SPEC.md §7) — the `created` instant of the queue " +
         "event that is this job. Written once and never moved, whatever the job goes on to do. " +
