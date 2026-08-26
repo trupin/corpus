@@ -119,9 +119,32 @@ const PENDING_BY_LANE_SQL = `
   WHERE status = 'pending'
   GROUP BY lane`;
 
+/**
+ * **Which lanes are holding work they claimed, in the same shape and the same
+ * one pass** (SERVER-157; SPEC.md §7).
+ *
+ * `in-progress` rather than `pending`, and the pair is the point: a lane that is
+ * not live wants a listener when it is **waiting** and wants patience when it is
+ * **working**. A resident works its conversation inline and holds no park while
+ * it does, so without this a long turn is indistinguishable from a dead lane and
+ * the orchestrator starts a second listener on top of a busy agent.
+ *
+ * **It is not presence.** A listener that died mid-event leaves its event here
+ * until `reap-stale` requeues it, so this outlives the agent that earned it. It
+ * bounds a launch; it never asserts anybody is there.
+ */
+const WORKING_BY_LANE_SQL = `
+  SELECT DISTINCT lane
+  FROM events
+  WHERE status = 'in-progress'`;
+
 interface PendingRow {
   readonly lane: string | null;
   readonly pending: number;
+}
+
+interface WorkingRow {
+  readonly lane: string | null;
 }
 
 /**
@@ -139,6 +162,18 @@ function pendingByLane(projection: ProjectionDb): Map<string, number> {
     counts.set(lane, (counts.get(lane) ?? 0) + entry.pending);
   }
   return counts;
+}
+
+/**
+ * The lanes holding claimed work, as a set — {@link pendingByLane}'s sibling,
+ * with the unstamped folded into the orchestrator's for the same reason.
+ */
+function workingLanes(projection: ProjectionDb): Set<string> {
+  const lanes = new Set<string>();
+  for (const entry of projection.prepare(WORKING_BY_LANE_SQL).all() as WorkingRow[]) {
+    lanes.add(entry.lane ?? ORCHESTRATOR_LANE);
+  }
+  return lanes;
 }
 
 interface LaneWorkRow {
@@ -234,6 +269,7 @@ function row(
   lane: Lane,
   identity: LaneIdentity,
   pending: ReadonlyMap<string, number>,
+  working: ReadonlySet<string>,
 ): AgentLane {
   const presence = deps.tracker.presenceOf(lane);
   return {
@@ -244,6 +280,10 @@ function row(
     // Absent from the map means none, never unknown: the query returns a row
     // only for a lane that has something (SERVER-155).
     pending: pending.get(lane) ?? 0,
+    // Holding claimed work (SERVER-157). Read together with `live`: not-live
+    // and working is a resident mid-turn, which wants patience rather than a
+    // second listener.
+    working: working.has(lane),
     summary: summarize(deps, lane, presence.since),
     origin: identity.origin,
   };
@@ -294,7 +334,14 @@ function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | 
 export function buildRoster(deps: RosterDeps): AgentRoster {
   // One grouped query for every lane's count, before any row is built.
   const pending = pendingByLane(deps.projection);
-  const orchestrator = row(deps, ORCHESTRATOR_LANE, { resident: null, origin: null }, pending);
+  const working = workingLanes(deps.projection);
+  const orchestrator = row(
+    deps,
+    ORCHESTRATOR_LANE,
+    { resident: null, origin: null },
+    pending,
+    working,
+  );
   const designated = (deps.projection.prepare(DESIGNATED_LANES_SQL).all() as DesignatedRow[]).map(
     (entry) =>
       row(
@@ -305,6 +352,7 @@ export function buildRoster(deps: RosterDeps): AgentRoster {
           origin: { id: entry.id, title: entry.title },
         },
         pending,
+        working,
       ),
   );
   return { agents: [orchestrator, ...designated] };
@@ -357,15 +405,25 @@ export function rosterSignature(projection: ProjectionDb): string {
    * of an unchanged workspace still agree.
    */
   const pending = pendingByLane(projection);
+  /*
+   * `working` is in the signature for the reason `pending` is (SERVER-157): the
+   * orchestrator decides from it, so a roster that went stale on it would leave
+   * a busy resident looking dead — or a finished one looking busy, which is the
+   * direction that costs an answer. It moves with a claim and a settlement,
+   * both of which are writes, so it qualifies on the same test.
+   */
+  const working = workingLanes(projection);
   return JSON.stringify([
     workSummary(projection, ORCHESTRATOR_LANE),
     pending.get(ORCHESTRATOR_LANE) ?? 0,
+    working.has(ORCHESTRATOR_LANE),
     ...lanes.map((entry) => [
       entry.id,
       entry.title,
       residentOf(projection, entry),
       workSummary(projection, entry.id),
       pending.get(entry.id) ?? 0,
+      working.has(entry.id),
     ]),
   ]);
 }

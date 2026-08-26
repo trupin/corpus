@@ -16,6 +16,7 @@ const ORCHESTRATOR_ROW: AgentLane = {
   live: false,
   since: null,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };

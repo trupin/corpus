@@ -35,6 +35,7 @@ const ORCHESTRATOR: AgentLane = {
   live: true,
   since: NOW,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };
@@ -45,6 +46,7 @@ const RESIDENT: AgentLane = {
   live: true,
   since: NOW,
   pending: 0,
+  working: false,
   summary: "reviewing the draft",
   origin: { id: "th_a", title: "The claims conversation" },
 };

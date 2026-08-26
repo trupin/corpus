@@ -134,6 +134,9 @@ describe("listJobPage", () => {
       // `<type> · <originTitle>` row says the job actually is (CONTRACT-012).
       type: "comment.created",
       status: "pending",
+      // An unstamped event reads as the orchestrator's, exactly as `laneOf`
+      // reads it — one interpretation of a missing stamp (SERVER-156).
+      lane: "orchestrator",
       // Two instants that used to be one (CONTRACT-029): this job entered the
       // queue at 09:00 and did not speak until 09:02, and both facts survive.
       enqueued: "2026-07-27T09:00:00Z",
@@ -483,6 +486,61 @@ describe("a deferred job (SERVER-030)", () => {
       status: "pending",
       blockedOn: null,
       blockedOnTitle: null,
+    });
+  });
+
+  /**
+   * SERVER-156. The lane is mirrored from `events.lane`, and the two cases that
+   * matter are exactly the ones a scope walk gets wrong — which is why the field
+   * exists at all rather than being computed by whoever needs it.
+   */
+  describe("the lane a job carries", () => {
+    /** An event written straight into the mirror, with the stamp under test. */
+    const stamped = (id: string, type: string, lane: string | null): void => {
+      ws.db
+        .prepare(
+          "INSERT INTO events (id, type, status, lane, created, payload_json) VALUES (?,?,?,?,?,?)",
+        )
+        .run(
+          id,
+          type,
+          "pending",
+          lane,
+          "2026-07-27T09:00:00Z",
+          JSON.stringify({ threadId: THREAD }),
+        );
+    };
+
+    it("is the orchestrator's for a designation, whoever was designated", () => {
+      // §7's carve-out: `resident.designated` takes the orchestrator's lane
+      // whoever is designated, because a resident does not announce itself to
+      // itself. A walk from the payload's thread would answer the thread.
+      stamped("evt_designation", "resident.designated", "orchestrator");
+      expect(readJobRow(ws.db, "evt_designation")).toMatchObject({ lane: "orchestrator" });
+    });
+
+    it("is the recipient's for a summons, which no walk could recover", () => {
+      // The decisive carve-out: the recipient is a fact about how the event was
+      // enqueued and is nowhere in the scope, so this is the case that makes the
+      // field a contract change rather than a client fix. The payload names
+      // THREAD; the stamp names another lane, and the stamp is the answer.
+      stamped("evt_summonsxxx", "comment.created", "th_elsewhere00");
+      expect(readJobRow(ws.db, "evt_summonsxxx")).toMatchObject({ lane: "th_elsewhere00" });
+    });
+
+    /**
+     * **One spelling of "no stamp", and it is the column's.** `events.lane` is
+     * `NOT NULL DEFAULT 'orchestrator'`, and its comment says the default is
+     * there so the reading is written down rather than repeated. This inserts a
+     * row without the column at all — the shape a pre-lanes event mirrors as —
+     * and asserts the projection carries what the default wrote, with no
+     * second fallback of its own to disagree with it.
+     */
+    it("takes the column's default for an event written before lanes existed", () => {
+      ws.db
+        .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
+        .run("evt_legacylane", "comment.created", "pending", "2026-07-27T09:00:00Z", "{}");
+      expect(readJobRow(ws.db, "evt_legacylane")).toMatchObject({ lane: "orchestrator" });
     });
   });
 });

@@ -2979,8 +2979,22 @@ describe("orchestrate skill body", () => {
       expect(routing).toMatch(
         /\*\*A lane with work waiting and nobody on it gets a listener, once a pass\.\*\*/,
       );
-      expect(routing).toMatch(/does not read `live`, and \*\*has something pending\*\*/);
+      /*
+       * AGENT-055 made it three fields. `working` is the one easy to leave out
+       * and the one that costs an agent when you do: a resident working inline
+       * holds no park, so a long turn reads exactly like a dead lane and a
+       * launch puts a second listener on a conversation already thinking.
+       */
+      expect(routing).toMatch(
+        /does not read `live`, \*\*has something pending\*\*, and is\s+\*\*not working\*\*/,
+      );
+      expect(routing).toMatch(/Those three fields together are the decision/);
       expect(routing).toMatch(/idle and perfectly healthy/);
+      expect(routing).toMatch(/is a \*\*busy agent\*\*/);
+      // And the bound: `working` outlives a dead agent until the reap, which is
+      // why the reap is step 2 and the roster read is step 3.
+      expect(routing).toMatch(/\*\*Working is not presence, and must never be read as it\.\*\*/);
+      expect(routing).toMatch(/reaping is what closes that/);
       expect(routing).toMatch(/\*\*once per pass,\s+per lane, and never per event\*\*/);
       expect(routing).toMatch(
         /where every designation is still sitting on its thread and every listener\s+is gone/,
@@ -3083,27 +3097,57 @@ describe("orchestrate skill body", () => {
      * that separates the cases is `summary`, which the contract publishes for
      * display and refuses to promise the content of.
      */
-    it("knows a not-live row is ambiguous, launches anyway, and invents no separator", () => {
+    /**
+     * AGENT-055's own guard. The tolerance for duplicates is the **fallback
+     * position**, not the rule, and it must survive: `working` can be stale for
+     * the same reason `live` can, so launching under what is left of the
+     * uncertainty is still right.
+     */
+    it("keeps launching under uncertainty right, and says why the asymmetry decides it", () => {
+      expect(routing).toMatch(/a duplicate resolves itself at\s+the first message/);
+      expect(routing).toMatch(/launching costs a wasted session, occasionally/);
+      // The comparison that settles it, in the terms v0.23.0 made true.
+      expect(routing).toMatch(/it is not answered/);
       expect(routing).toMatch(
-        /\*\*A row that does not read `live` does not mean nobody is there — and you launch anyway\.\*\*/,
+        /`working` narrows this rule and does not reverse it|narrows this rule and does not reverse it/,
+      );
+      expect(routing).toMatch(
+        /a wasted session against an unanswered conversation is not\s+a close call/,
+      );
+    });
+
+    it("knows a not-live row is ambiguous, launches anyway, and invents no separator", () => {
+      /*
+       * **AGENT-055 narrowed this rule and did not reverse it**, which is the
+       * distinction the whole bullet now turns on. `working` answers one of the
+       * three things a not-live row could mean; the other two — a crashed
+       * listener and one unobserved since a restart — are still
+       * indistinguishable, and still want the same thing.
+       */
+      expect(routing).toMatch(
+        /\*\*A row that does not read `live` still does not mean nobody is there/,
       );
       expect(routing).toMatch(/\*\*and for one in the middle of a\s+turn\*\*/);
+      expect(routing).toMatch(/indistinguishable\s+from an empty lane \*by presence alone\*/);
       expect(routing).toMatch(
-        /any turn\s+longer than the grace window is indistinguishable from an empty lane/,
+        /\*\*`working` separates the third of those, and only the third\.\*\*/,
       );
-      expect(routing).toMatch(/`live` is the only\s+reading with a definite meaning/);
-      // The forbidden separators, by name — each is a plausible "fix".
+      expect(routing).toMatch(/it does not need to, because both want the same thing/);
+      // The forbidden separators survive by name — each is a plausible "fix",
+      // and answering one uncertainty must not read as licence to probe for the
+      // rest.
+      expect(routing).toMatch(/\*\*Everything the old argument forbade, it still forbids\.\*\*/);
       expect(routing).toMatch(
-        /no probe, no\s+holding back a pass to see what happens, no reading the lane's busyness/,
+        /no probe, no holding back a pass to see what happens, and above all no reading the/,
       );
-      expect(routing).toMatch(/whose length is promised and whose content is not/);
+      expect(routing).toMatch(/whose length is promised and whose content\s+is\s+not/);
       // Where the duplicate is resolved instead. AGENT-032: the mechanism was
       // restated here and then maintained only in `converse`, so the two
       // disagreed — this skill now carries the outcome it relies on and a
       // pointer, and the restatement is deleted rather than synchronised. The
       // negative matcher runs against the shipped sentence in "one rule, one
       // skill", which is also where the general form of the rule is pinned.
-      expect(routing).toMatch(/\*\*Launch, and let\s+the lane settle it\.\*\*/);
+      expect(routing).toMatch(/\*\*launch, and let the lane settle it\.\*\*/);
       expect(routing).toMatch(
         /one of the two finds out it is\s+second and goes — nothing posted, nothing worked, and nobody answered twice/,
       );
@@ -4525,15 +4569,81 @@ describe("converse skill body", () => {
       expect(body).toMatch(wrapped("It is never repeated on a later answer"));
     });
 
-    it("ends the run when the designation's weight changed, without a goodbye", () => {
+    /**
+     * **AGENT-050.** A designation carries an identity, and a re-designation
+     * mints a new one. Before this, a listener replaced by a re-designation that
+     * named a different profile **at the same weight** had no signal at all: its
+     * row was present and every field on it read as before.
+     */
+    it("compares the designation's identity, because a present row proves nothing", () => {
+      expect(body).toMatch(wrapped("**Check the lane is still yours.**"));
+      expect(body).toMatch(
+        wrapped("**Compare `resident.designationId` on your row with the one your launch named.**"),
+      );
+      // The trap: the row comes back looking identical.
+      expect(body).toMatch(wrapped("Your row being **present** proves nothing"));
+      expect(body).toMatch(
+        wrapped("every\nother field on that row can come back reading exactly as it did"),
+      );
+    });
+
+    /**
+     * The contract states this on the field itself, and the skill must not
+     * quietly improve on it: a listener launched before the field existed has
+     * learned nothing from `null === null`, and must behave as it did before.
+     */
+    it("refuses to read two nulls as a match", () => {
+      expect(body).toMatch(wrapped("**Two nulls are not a match.**"));
+      expect(body).toMatch(wrapped("behave exactly as you did\n   before the field existed"));
       expect(body).toMatch(
         wrapped(
-          "**A weight that changed on your row ends your run of it, and the designation stands.**",
+          "Only a\n   *difference between two ids* is evidence, and an absence is not a difference",
+        ),
+      );
+    });
+
+    /**
+     * Two comparisons in this skill, asking two questions, and the retirement
+     * one is deliberately **not** the identity check — a row bearing your own
+     * id at that moment would still not be you.
+     */
+    it("keeps the retirement test about presence, not identity, and says why", () => {
+      expect(body).toMatch(
+        wrapped("**Here the test is the row's presence, and that is not the same test as step"),
+      );
+      expect(body).toMatch(
+        wrapped(
+          "a row bearing your own id would mean\na listener launched for the designation you are retiring from and it is still not you",
+        ),
+      );
+      expect(body).toMatch(wrapped("they are two questions"));
+    });
+
+    it("ends the run when the designation's weight changed, without a goodbye", () => {
+      /*
+       * AGENT-050 collapsed this into one comparison. A re-designation at a
+       * different weight is a *different designation* and mints a different id,
+       * so *The loop*'s check catches it along with every other kind of
+       * replacement — and there is one test rather than a list of the ways a
+       * row can change.
+       */
+      expect(body).toMatch(
+        wrapped("**A weight that changed on your row is one instance of that, not a rule of"),
+      );
+      /*
+       * **What must not be lost with the second reading**: the reason the act
+       * is what it is. Collapsing two mechanisms into one is the point; losing
+       * the sentence that explains why a listener stops rather than adjusts is
+       * not (CONTRACT-071's decision 4).
+       */
+      expect(body).toMatch(
+        wrapped(
+          "**no running agent becomes another one without discarding the conversation it is holding.**",
         ),
       );
       expect(body).toMatch(
         wrapped(
-          "somebody has asked for this conversation to be worked at a weight this session cannot become",
+          "Somebody has asked for this conversation to be worked at a weight this session cannot become",
         ),
       );
       // The same ending as a release, reached one read later — and the same

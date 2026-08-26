@@ -12,7 +12,7 @@ import {
   DEFERRED_TIERS_UNNAMED,
   deferredLabel,
   ELAPSED_AFTER_MS,
-  LANE_FALLBACK_CLAUSE,
+  LANE_ABSENT_CLAUSE,
   laneAwayClause,
   laneWaitingLabel,
   laneWorkingLabel,
@@ -29,9 +29,19 @@ import {
   type PendingState,
 } from "./PendingIndicator";
 
-/** A lane as `laneRow` hands it over — the composer's own vocabulary. */
-function lane(liveness: PendingLane["liveness"], name = "researcher"): PendingLane {
-  return { lane: "th_root", name, liveness };
+/**
+ * A lane as `laneRow` hands it over — the composer's own vocabulary.
+ *
+ * `working` defaults false because that is the ordinary case and the one every
+ * pre-existing case here means. The busy-resident cases pass it explicitly,
+ * which is what makes them read as the exception they are.
+ */
+function lane(
+  liveness: PendingLane["liveness"],
+  name = "researcher",
+  working = false,
+): PendingLane {
+  return { lane: "th_root", name, liveness, working };
 }
 
 afterEach(() => {
@@ -199,10 +209,53 @@ describe("pendingLabel", () => {
 describe("the lane's own wording", () => {
   describe("laneAwayClause", () => {
     it("tells a resident that left from one that never arrived, and says what happens either way", () => {
-      expect(laneAwayClause(lane("lapsed"))).toBe(`researcher is away, ${LANE_FALLBACK_CLAUSE}`);
+      expect(laneAwayClause(lane("lapsed"))).toBe(`researcher is away — ${LANE_ABSENT_CLAUSE}`);
       expect(laneAwayClause(lane("waiting"))).toBe(
-        `researcher is not running, ${LANE_FALLBACK_CLAUSE}`,
+        `researcher is not running — ${LANE_ABSENT_CLAUSE}`,
       );
+    });
+
+    /**
+     * **The defect UI-175 exists for.** This clause read *"the agent will pick
+     * this up"* until v0.24.0 — true under §7's fallback, and false since
+     * v0.23.0 removed it. It was showing on the surface a person reads *while
+     * they are waiting*, which is the worst place in the product to promise an
+     * answer that is not coming.
+     */
+    it("promises nobody else, because since v0.23.0 there is nobody else", () => {
+      for (const state of ["lapsed", "waiting"] as const) {
+        const said = laneAwayClause(lane(state)) ?? "";
+        expect(said).not.toContain("will pick this up");
+        expect(said).not.toMatch(/the agent will|orchestrator will/u);
+        // What it says instead: waiting is what happens next, so the silence is
+        // not read as the message having been lost.
+        expect(said).toContain("nothing will answer until it starts");
+      }
+    });
+
+    /**
+     * It names the fact and stops. Not why the listener is gone — this row
+     * cannot know — and not an instruction to start one, which the product
+     * gives nobody a way to follow.
+     */
+    it("neither diagnoses the absence nor tells anybody to fix it", () => {
+      const said = laneAwayClause(lane("lapsed")) ?? "";
+      expect(said).not.toMatch(/crash|restart|start it|run `|try again/iu);
+    });
+
+    /**
+     * **UI-176.** A resident works its conversation inline and holds no park
+     * while it does, so a turn longer than the grace window reads `lapsed`. The
+     * row must not tell a person their agent is gone and nothing is coming
+     * while it is mid-answer — which is the most misleading thing this row
+     * could say.
+     */
+    it("says nothing about absence for a lane that is holding work", () => {
+      expect(laneAwayClause(lane("lapsed", "researcher", true))).toBeNull();
+      expect(laneAwayClause(lane("waiting", "researcher", true))).toBeNull();
+      // …and still does for the same lane once it is not working, which is
+      // what keeps the clause reachable at all.
+      expect(laneAwayClause(lane("lapsed"))).not.toBeNull();
     });
 
     it("has nothing to say about a lane somebody is on, or one it has not heard about", () => {
@@ -235,23 +288,44 @@ describe("the lane's own wording", () => {
     });
 
     /**
-     * §8's rider of 2026-08-13: a message on a lapsed lane "reads as waiting to
-     * be picked up until something claims it — the resident returning, or the
-     * orchestrator after the fallback". Both halves are said, and from the first
-     * tier: the roster has *already* told us this listener is gone, so the
-     * three-minute delay the workspace-grained row uses would be withholding a
-     * fact we hold.
+     * §8's rider of 2026-08-13 said a message on a lapsed lane reads as waiting
+     * "until something claims it — the resident returning, or the orchestrator
+     * after the fallback". **The rider was amended on 2026-08-25 and the second
+     * half of that is gone**: the resident returning is the only way now.
+     *
+     * The timing is unchanged and is still the interesting part. This says the
+     * lane is absent from the *first* tier, where the workspace-grained row
+     * waits three minutes — because the roster has already told us this listener
+     * is gone, and withholding a fact we hold would be its own dishonesty. That
+     * argument got stronger, not weaker: the wait is now open-ended.
      */
-    it("says a lapsed lane is away, and that the work still gets done", () => {
+    it("says a lapsed lane is away, and that nothing else is coming", () => {
       expect(laneWaitingLabel(0, lane("lapsed"))).toBe(
-        "waiting — researcher is away, the agent will pick this up",
+        "waiting — researcher is away — nothing will answer until it starts",
       );
       expect(laneWaitingLabel(SLOW_AFTER_MS, lane("lapsed"))).toBe(
-        "still waiting — researcher is away, the agent will pick this up",
+        "still waiting — researcher is away — nothing will answer until it starts",
       );
       expect(laneWaitingLabel(22 * 60_000, lane("lapsed"))).toBe(
-        "still waiting — 22m, researcher is away, the agent will pick this up",
+        "still waiting — 22m, researcher is away — nothing will answer until it starts",
       );
+    });
+
+    /**
+     * The other half of UI-176: a busy resident is **named**, where before it
+     * fell through to the workspace-grained line and stopped being named at all
+     * — at exactly the moment a person most wants to know who is on it.
+     *
+     * The old test for this was `liveness === "live"`, justified by the
+     * fallback: a claim on an away lane might have been taken by the
+     * orchestrator, so the resident was named only where the claim was
+     * certainly theirs. Nobody else can hold this lane now, and `working` says
+     * the lane holds work — the fact presence was approximating.
+     */
+    it("names a resident that is working, even on a lane presence calls away", () => {
+      const busy = lane("lapsed", "researcher", true);
+      expect(pendingLabel("working", 0, true, busy)).toBe(laneWorkingLabel(0, busy));
+      expect(pendingLabel("working", 0, true, busy)).toContain("researcher");
     });
 
     it("never claims a wait on any lane is somebody working", () => {
@@ -298,7 +372,12 @@ describe("the lane's own wording", () => {
      * the fallback agree there rather than one overriding the other.
      */
     it("leaves the orchestrator's lane to the tiers that already name it", () => {
-      const orchestrator: PendingLane = { lane: "orchestrator", name: "agent", liveness: "live" };
+      const orchestrator: PendingLane = {
+        lane: "orchestrator",
+        name: "agent",
+        liveness: "live",
+        working: false,
+      };
       expect(pendingLabel("working", 0, true, orchestrator)).toBe(WORKING_TIERS.fresh);
       expect(pendingLabel("waiting", LONGER_AFTER_MS, false, orchestrator)).toBe(
         WAITING_TIERS.absent,

@@ -7,7 +7,7 @@ import {
   useDoc,
   useDocs,
   useMarkSeenOnce,
-  useResidentLane,
+  useLaneRow,
   useSetThreadStatus,
   useThread,
   type RevealTarget,
@@ -248,8 +248,20 @@ export function ThreadCard({
    * narrower question — *is this conversation itself a lane* — and asks it
    * directly, because a card deep inside a scope is not the conversation that
    * has the resident.
+   *
+   * **The lane comes off the job, not off a walk from this thread** (UI-176,
+   * CONTRACT-056). The walk is right for the ordinary event and wrong for
+   * exactly the two cases §7 carves out — a `resident.designated`, which is the
+   * orchestrator's whoever was designated, and a message that named a recipient,
+   * which is not recoverable from the scope at all. UI-109 saw the first live:
+   * for the seconds after designating a thread the card read *waiting for
+   * researcher* about work the orchestrator was holding.
+   *
+   * `undefined` while nothing is outstanding, which is also when the row is not
+   * drawn — so nothing here asks the roster a question about a lane nobody is
+   * waiting on.
    */
-  const { row: laneRow } = useResidentLane(threadId);
+  const laneRow = useLaneRow(outstanding?.job.lane);
 
   const classes = [
     "thread-card",

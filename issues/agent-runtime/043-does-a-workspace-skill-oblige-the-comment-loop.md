@@ -4,7 +4,7 @@
 agent-runtime
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -95,14 +95,14 @@ put to the user: it is a scoping call inside a decision already made.
 
 ## Acceptance Criteria
 - [x] Decision 1 answered from observed behaviour, not assumption
-- [ ] `comment/SKILL.md` states, once and near *Routing directives*, that an
-      undirected turn needs no search of its own
-- [ ] `comment/references/skill-genesis.md` requires a description that names
+- [ ] ~~`comment/SKILL.md` states it near *Routing directives*~~ — **moved**, see
+      below. The body had four words of budget left
+- [x] `comment/references/skill-genesis.md` requires a description that names
       **when** to reach for the skill, citing `profile` as the pattern, and
       exempts a skill invoked only by name
-- [ ] No discovery step, no tie-break rule, and no second mechanism beside the
+- [x] No discovery step, no tie-break rule, and no second mechanism beside the
       runtime's own invocation
-- [ ] The stated cost — that the skill text cannot enforce this — is written
+- [x] The stated cost — that the skill text cannot enforce this — is written
       down where the rule is, not only in this issue
 
 ## E2E Verification Log

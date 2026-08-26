@@ -385,6 +385,10 @@ describe("GET /api/jobs", () => {
       // (CONTRACT-029). Both are on the row now, and they mean two things.
       "enqueued",
       "eventId",
+      // The lane the event was stamped with (SERVER-156, CONTRACT-056). A
+      // client cannot derive it — the scope walk is wrong for §7's two
+      // carve-outs — so it rides the row it is about.
+      "lane",
       "lastLine",
       "originId",
       "originTitle",

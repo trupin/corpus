@@ -40,6 +40,7 @@ interface JobJoinRow {
   readonly event_id: string;
   readonly type: string;
   readonly status: string;
+  readonly lane: string;
   readonly created: string | null;
   readonly payload_json: string;
   readonly blocked_on: string | null;
@@ -171,6 +172,21 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
     // what the mirror recorded; an unrecognised value can only come from a
     // hand-made row, and `pending` is the harmless reading.
     status: status.success ? status.data : ("pending" satisfies QueueEventStatus),
+    /*
+     * The lane the event was stamped with, mirrored rather than re-derived
+     * (SERVER-156, CONTRACT-056).
+     *
+     * **No fallback here, deliberately.** `events.lane` is `NOT NULL DEFAULT
+     * 'orchestrator'`, and that column's own comment says why: *"an event file
+     * with no stamp reads as the orchestrator's, and the default writes that
+     * reading down rather than inventing a second spelling."* A `?? ORCHESTRATOR_LANE`
+     * on this line would be the second spelling — one more place that would have
+     * to be found and changed if the reading of an unstamped event ever moved.
+     *
+     * Never walked from the payload. The walk is right for the ordinary event
+     * and wrong for §7's two carve-outs, which is the defect this replaces.
+     */
+    lane: row.lane,
     enqueued,
     // Null until the job writes its first line — `pending`, and claimed but
     // still silent, both read null rather than borrowing `enqueued`.
@@ -202,7 +218,7 @@ const FROM_JOBS = `
   LEFT JOIN jobs j ON j.event_id = e.id`;
 
 const SELECT_JOBS = `
-  SELECT e.id AS event_id, e.type AS type, e.status AS status, e.created AS created,
+  SELECT e.id AS event_id, e.type AS type, e.status AS status, e.lane AS lane, e.created AS created,
          e.payload_json AS payload_json, e.blocked_on AS blocked_on,
          j.started AS started, j.updated AS updated, j.last_line AS last_line
   ${FROM_JOBS}`;

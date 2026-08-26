@@ -19,6 +19,37 @@ any skill.
 - **Create a genuinely new skill when nothing installed fits**, with
   `corpus skill create <name> --description "$description" --from agent` and a heredoc body.
 
+**Nothing searches for a skill, so a description is the only way one is found.** An undirected
+turn runs no step that lists this workspace's skills and matches them against what was asked —
+the runtime invokes a skill whose description covers the request, exactly as it invoked the
+loop you are reading. **Do not add such a step.** It would be a second mechanism beside a
+working one, and it would be the expensive kind: a listing on every turn, in a loop whose whole
+discipline is that you retrieve rather than enumerate.
+
+Everything below follows from that.
+
+**A description says when to reach for the skill, not what the skill is.** It is the only text
+read when deciding whether to use one at all, so write it as the trigger: the occasions, in
+the words somebody would actually say. `profile` is the pattern to copy — *"Reach for this
+whenever somebody asks for an agent of their own, in whatever words they use — 'make me a
+proofreader', 'I want an agent that keeps the finances straight'"*. A description that says
+only what the skill **is** will be found only when somebody names it, which for a skill nobody
+knows about is never.
+
+This is the rule the whole arrangement rests on. Nothing lists your skills and matches them
+against a request — the comment loop says so outright — so a skill is reached for because its
+description said this was the occasion, and for no other reason.
+
+**The honest limit, so nobody is surprised by it later**: none of this is enforced by anything.
+The runtime invokes by description because that is what it does, and if it stops, the rule
+stops holding and nothing fails loudly. Writing a description that names its occasions is the
+whole of what you can do about that.
+
+**The three loop skills are the exception, and it is not a loophole.** Nothing discovers
+`comment`, `orchestrate` or `converse` — one invokes the next by name, and a person types
+`/orchestrate`. A trigger on them would be a rule applied where it cannot bite. Every skill
+anybody has to *find* is covered.
+
 **Creating one, in full.** The description is prose a person and another agent both read, and
 it comes out of what somebody kept telling you, so it is built the way a body is — in a
 heredoc, passed by name — and never quoted straight into the flag. Note where the fences sit:

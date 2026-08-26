@@ -202,6 +202,7 @@ function fixture(
         agent: { live: false, since: null },
         halted: false,
         pending: 0,
+        working: false,
         inProgress: 0,
         deferred: 0,
         processed: 0,
@@ -218,6 +219,7 @@ function fixture(
             live: false,
             since: null,
             pending: 0,
+            working: false,
             summary: null,
             origin: null,
           },
@@ -238,6 +240,7 @@ function fixture(
       return json({
         indexed: 0,
         pending: 0,
+        working: false,
         failed: 0,
         identity: "none",
         rebuilding: false,

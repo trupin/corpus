@@ -48,6 +48,7 @@ const orchestratorLane = {
   // It is not special, and special-casing it would re-derive a rule the field
   // does not have.
   pending: 0,
+  working: false,
   summary: "parked",
   origin: null,
 };
@@ -61,6 +62,9 @@ const residentLane = {
   // conversation nobody is answering, and since SPEC.md §7's rider signed
   // 2026-08-25 nobody else will, so this row is a launch and not a note.
   pending: 2,
+  // …and `working: false` is what makes it a launch rather than patience
+  // (CONTRACT-057). The same row with `working: true` is a busy resident.
+  working: false,
   summary: null,
   origin: { id: "th_x9y8", title: "Mortgage options" },
 };

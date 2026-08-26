@@ -10,6 +10,7 @@ afterEach(cleanup);
 const STATUS = {
   halted: false,
   pending: 2,
+  working: false,
   inProgress: 1,
   processed: 4,
   failed: 1,

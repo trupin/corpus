@@ -4,7 +4,7 @@
 agent-runtime
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -80,16 +80,16 @@ field existed. The contract states this on the field itself.
   It is opaque and it means nothing to a reader.
 
 ## Acceptance Criteria
-- [ ] `converse` states, in one place, that a listener compares the designation
+- [x] `converse` states, in one place, that a listener compares the designation
       id it was launched with against the id the lane carries now
-- [ ] The rule says what a `null` on either side means, and that it is not a
+- [x] The rule says what a `null` on either side means, and that it is not a
       match
-- [ ] The act on a mismatch is stated, and is the act *Retirement* already
+- [x] The act on a mismatch is stated, and is the act *Retirement* already
       describes rather than a second one
-- [ ] The weight-specific reading is either collapsed into the id comparison or
+- [x] The weight-specific reading is either collapsed into the id comparison or
       kept with a written reason for keeping both — not left silently redundant
-- [ ] Nothing instructs any skill to parse the roster's resident cell
-- [ ] A worked example shows the profile-only replacement, which is the case no
+- [x] Nothing instructs any skill to parse the roster's resident cell
+- [x] A worked example shows the profile-only replacement, which is the case no
       previous signal covered
 
 ## Testing Strategy
@@ -112,17 +112,58 @@ watching the listener stand down.
 
 ## E2E Verification Log
 
-### Post-Implementation Verification
-_[Agent fills — state the model]_
+Implemented by the orchestrator on opus, 2026-08-26.
 
-## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+### The two decisions the issue left open
 
-## Completion Checklist (orchestrator)
-- [ ] `/audit` run (if qualifying)
-- [ ] `/evaluate` passes (if evaluator active)
-- [ ] Committed with `[ISSUE-ID]` prefix
+**1. Where the comparison goes: the loop's pass, and not the drain.** They ask
+different questions and the distinction is written into the skill rather than
+left for a reader to work out.
+
+- *The loop*, step 5, asks **am I still the resident** — an identity comparison,
+  because a row's presence proves nothing when a person can release and
+  re-designate between two passes and every other field comes back reading as
+  before.
+- *Retirement* asks **is anybody the resident** — a presence test, because you
+  are leaving either way and what you must not do is drain out from under a
+  successor. Comparing ids there would answer a question that moment does not
+  ask, and would get it wrong: a row bearing **your own id** would mean a
+  listener launched for the designation you are retiring from, and it is still
+  not you.
+
+**2. The weight comparison collapses in, and its reason survives as prose.** A
+re-designation at a different weight is a different designation and mints a
+different id, so one test now catches a weight change, a profile swapped, a
+profile added and a profile removed — a list of the ways a row can change
+becomes one comparison.
+
+What must not be lost with the second mechanism is the sentence that explains
+the act, and a test pins it: **no running agent becomes another one without
+discarding the conversation it is holding.**
+
+### Two nulls are not a match
+
+The contract states it on the field, and the skill must not quietly improve on
+it. A designation made before the field existed reports `null`; a listener whose
+own id is also `null` has learned nothing from `null === null`, and behaves
+exactly as it did before the field existed. **Only a difference between two ids
+is evidence, and an absence is not a difference.**
+
+### Falsification
+
+Rewriting the null rule to say two nulls match:
+
+```
+× refuses to read two nulls as a match
+  Tests  1 failed | 505 passed
+```
+
+### No SPEC.md citations
+
+`grep -c "SPEC.md"` → 0, per AGENT-053's finding.
+
+### Checks
+
+```
+vitest run scripts/workspace-template.test.ts   506 tests passed   exit 0
+```

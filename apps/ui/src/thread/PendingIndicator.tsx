@@ -251,14 +251,31 @@ export function deferredLabel(elapsedMs: number, deferred: DeferredOn): string {
  * seconds before it settles the card reads "waiting for researcher".
  */
 
-/** What a lapsed lane's absence means for the message waiting on it (SPEC.md §7). */
-export const LANE_FALLBACK_CLAUSE = "the agent will pick this up";
+/**
+ * What a lane's absence means for the message waiting on it (SPEC.md §7).
+ *
+ * **This said `"the agent will pick this up"` until UI-175, and that stopped
+ * being true in v0.23.0.** §7's rider signed 2026-08-25 removed the fallback:
+ * a resident's conversation is answered by that resident and by nobody else, so
+ * nothing picks this up until its listener starts.
+ *
+ * A row that kept the old clause would be promising an answer that is not
+ * coming, on the one surface a person reads **while they are waiting** — which
+ * is the worst place in the product to be wrong about exactly this.
+ *
+ * **It names the fact and stops.** Not why the listener is gone, which this row
+ * cannot know, and not an instruction to go and start one, which the product
+ * gives nobody a way to follow. The one thing it adds is that waiting is what
+ * happens next, because the alternative reading — that the message was lost — is
+ * the one a person left with silence will reach for.
+ */
+export const LANE_ABSENT_CLAUSE = "nothing will answer until it starts";
 
 /**
  * The lane, reduced to what the wording needs — `LaneRow`'s own fields, so the
  * board and the composer cannot come to spell one resident two ways.
  */
-export type PendingLane = Pick<LaneRow, "lane" | "name" | "liveness">;
+export type PendingLane = Pick<LaneRow, "lane" | "name" | "liveness" | "working">;
 
 /**
  * Why this lane cannot answer right now, or `null` when it can.
@@ -266,11 +283,20 @@ export type PendingLane = Pick<LaneRow, "lane" | "name" | "liveness">;
  * Two absences rather than one, because they are different facts and a person
  * choosing what to do next needs them apart: a resident that has been here and
  * left may come back on its own, while one that has never parked is not running
- * at all. Both fall back the same way, which is the clause they share.
+ * at all. What they now share is the consequence, which since v0.23.0 is the
+ * same for both and is not that somebody else will cover.
  */
 export function laneAwayClause(lane: PendingLane): string | null {
-  if (lane.liveness === "lapsed") return `${lane.name} is away, ${LANE_FALLBACK_CLAUSE}`;
-  if (lane.liveness === "waiting") return `${lane.name} is not running, ${LANE_FALLBACK_CLAUSE}`;
+  /*
+   * **A lane holding work is not away, whatever presence says** (UI-176,
+   * CONTRACT-057). A resident works its conversation inline and holds no park
+   * while it does, so without this the row would tell a person their agent is
+   * gone and nothing is coming — while it is mid-answer, which is the most
+   * misleading thing this row could say.
+   */
+  if (lane.working) return null;
+  if (lane.liveness === "lapsed") return `${lane.name} is away — ${LANE_ABSENT_CLAUSE}`;
+  if (lane.liveness === "waiting") return `${lane.name} is not running — ${LANE_ABSENT_CLAUSE}`;
   return null;
 }
 
@@ -332,9 +358,22 @@ export function pendingLabel(
   }
   if (nameable(lane)) {
     if (state === "waiting") return laneWaitingLabel(elapsedMs, lane);
-    // A claimed event on an away lane may have been taken by the fallback, so
-    // the resident is named only where the claim is certainly theirs.
-    if (lane.liveness === "live") return laneWorkingLabel(elapsedMs, lane);
+    /*
+     * **Who is doing it, and the test for that stopped being `live`** (UI-176).
+     *
+     * This read `liveness === "live"` and said why: a claimed event on an away
+     * lane might have been taken by the fallback, so the resident was named only
+     * where the claim was certainly theirs. Two things changed. The fallback is
+     * gone, so **nobody else can be holding this lane's work** — and `working`
+     * now says the lane is holding some, which is the fact the old test was
+     * approximating with presence.
+     *
+     * So a resident mid-turn is named as working, which is what it is. Before
+     * this, a resident thinking longer than the grace window fell through to the
+     * workspace-grained line and stopped being named at all — at exactly the
+     * moment a person most wants to know who is on it.
+     */
+    if (lane.liveness === "live" || lane.working) return laneWorkingLabel(elapsedMs, lane);
   }
   return state === "working" ? workingLabel(elapsedMs) : waitingLabel(elapsedMs, agentPresent);
 }

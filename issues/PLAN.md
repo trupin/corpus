@@ -745,8 +745,8 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
-| CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | todo | P1 | — |
-| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
+| CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | done | P1 | — |
+| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | done | P1 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the
@@ -1280,7 +1280,7 @@ was written for.
 | INFRA-031 | Delete the plugins workspace, its tooling and its docs | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
 | SHARED-065 | Sweep every open issue clean of plugins and todos | done | P0 | — |
 | SHARED-066 | The `column` reference only ever named a plugin, and it spans four workspaces | done | P0 | UI-155, SERVER-139, CLI-062, CONTRACT-077 |
-| AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | todo | P2 | SHARED-067 |
+| AGENT-043 | Does a workspace skill covering a domain oblige the comment loop to apply it? | done | P2 | SHARED-067 |
 | AGENT-040 | A release and its designation need not share a claim, and the skill says they always do (dogfood, P0) | done | P0 | — |
 | AGENT-041 | Nothing tells the launch what model to run at, so a designation's weight is decorative (dogfood, P0) | done | P0 | — |
 
@@ -1592,7 +1592,7 @@ suite cannot confirm. Both halves stand without it.
 | UI-166 | What full screen does to a turn's leading and measure | done | P2 | opus | UI-156 |
 | INFRA-032 | A tampered generated artifact survives a green local run | done | P2 | opus | — |
 | SERVER-147 | A designation is written without its identity | done | P1 | opus | CONTRACT-071 |
-| AGENT-050 | A listener does not check which designation it serves | todo | P1 | fable | CONTRACT-071, SERVER-147 |
+| AGENT-050 | A listener does not check which designation it serves | done | P1 | fable | CONTRACT-071, SERVER-147 |
 | AGENT-046 | No skill names a folder verb, so bulk stewardship is written per document | done | P1 | fable | CLI-060 |
 | CLI-064 | A batch verb needs a decided exit code before it is worth building | done | P1 | fable | CLI-057, CLI-058 |
 | AGENT-047 | The comment skill is paid whole on every event — 56% of a day's tokens | done | P1 | fable | SHARED-070 |
@@ -1699,7 +1699,7 @@ agent runs at all.
 | UI-174 | A row says no agent is running, not merely that work is queued | done | P0 | opus | CONTRACT-087, SERVER-155 |
 | SHARED-073 | A capture cannot designate what it creates (rider B premise, found in SERVER-154) | todo | P1 | fable | SHARED-072 |
 | CLI-070 | The roster does not print what is waiting (AGENT-053 handoff) | done | P0 | opus | CONTRACT-087, SERVER-155 |
-| UI-175 | The pending row asks the workspace, not the lane (UI-174 finding) | todo | P1 | opus | UI-174 |
+| UI-175 | The pending row asks the workspace, not the lane (UI-174 finding) | done | P1 | opus | UI-174 |
 
 **Also in the release, filed under Phase 46**: CONTRACT-086, SERVER-151 and
 UI-172 — the reflection switch's wire, server and control. `SHARED-071` and
@@ -1708,3 +1708,40 @@ UI-172 — the reflection switch's wire, server and control. `SHARED-071` and
 **Left for v0.24.0**: the technical-debt scope proposed 2026-08-25 — sixteen
 issues under "you should not have to work out what the product already knows".
 It is a different sentence, so it is a different release.
+
+## Phase 48 — You can tell who is working, and nothing promises an answer that is not coming (2026-08-26, v0.24.0 scope)
+
+v0.23.0's own leftovers, and the two mechanisms that make its launch rule
+correct.
+
+**The defect this release exists for.** `PendingIndicator.tsx` still carries
+`LANE_FALLBACK_CLAUSE = "the agent will pick this up"`, so a thread whose
+resident is not running reads *"researcher is away, the agent will pick this
+up"*. Nobody is going to pick it up — v0.23.0 removed the fallback — and this is
+the surface a person watches **while they are waiting**. `UI-175` was filed
+against a less precise reading of the same code and is corrected here.
+
+**And the launch rule is one field short.** AGENT-053 launches a listener for a
+lane that is not live with work pending. A resident working its conversation
+inline holds no park (§7), so a long turn with a message queued behind it looks
+exactly like a dead lane, and the orchestrator launches a duplicate onto an agent
+that is busy. `CONTRACT-057` lifts the distinction out of `summary` — where the
+contract forbids deciding from it — into a field.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SERVER-156 | A job carries the lane it was stamped with | done | P1 | opus | CONTRACT-056 |
+| SERVER-157 | A roster row says a lane is working | done | P1 | opus | CONTRACT-057 |
+| CLI-071 | The roster cannot say a lane is busy | done | P1 | opus | CONTRACT-057, SERVER-157 |
+| AGENT-055 | Do not launch onto an agent that is working | done | P1 | fable | CLI-071, SERVER-157 |
+| UI-176 | The pending row reads the lane instead of walking to it | done | P1 | opus | SERVER-156, SERVER-157 |
+
+`UI-175`, `AGENT-050` and `AGENT-043` keep their existing rows above;
+`scripts/check-issues.ts` allows one row per id, so they are named here in prose
+and counted there.
+
+**Left out**: `SHARED-073` (a capture cannot designate what it creates) — it
+needs a decision that changes signed text, and the go-ahead did not carry one.
+The upgrade arc, and the debt scope proposed for v0.24.0 on 2026-08-25, both
+wait again: finishing what v0.23.0 started outranks both.
+

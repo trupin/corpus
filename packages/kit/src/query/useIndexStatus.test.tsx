@@ -10,6 +10,7 @@ afterEach(cleanup);
 const CAUGHT_UP = {
   indexed: 273,
   pending: 0,
+  working: false,
   failed: 0,
   identity: "ollama/nomic-embed-text@768",
   rebuilding: false,
@@ -19,6 +20,7 @@ const CAUGHT_UP = {
 const DRAINING = {
   indexed: 41,
   pending: 27,
+  working: false,
   failed: 2,
   identity: "ollama/nomic-embed-text@768",
   rebuilding: true,

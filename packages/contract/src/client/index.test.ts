@@ -496,6 +496,7 @@ function createServer() {
             live: true,
             since: "2026-07-19T10:00:00Z",
             pending: 0,
+            working: false,
             summary: "parked",
             origin: null,
           },

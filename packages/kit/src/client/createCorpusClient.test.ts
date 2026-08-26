@@ -155,6 +155,7 @@ describe("the operations map onto the contract's routes", () => {
     const recorder = recording({
       indexed: 273,
       pending: 0,
+      working: false,
       failed: 0,
       identity: "ollama/nomic-embed-text@768",
       rebuilding: false,

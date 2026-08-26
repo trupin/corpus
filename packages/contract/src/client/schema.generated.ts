@@ -6364,6 +6364,14 @@ export interface components {
             since: string | null;
             /** @description **How many events are pending on this lane** (SPEC.md §7, rider signed 2026-08-25). `pending` only — never `in-progress`, which is work already being done rather than work waiting, and never `deferred`, which is waiting on a person's edit session and returns to pending by itself. **A lane with `pending > 0` and `live: false` is a conversation nobody is answering**, and that pair is the whole signal: since the rider there is no fallback, so no other agent will take this work and the only thing that changes it is a listener starting. Neither field means it alone — a lane with no work and no listener is idle and healthy. **Decide from this rather than from `summary`**, which is display-only and says so. `0` where nothing is waiting, never null and never absent. */
             pending: number;
+            /**
+             * @description **Whether this lane is holding work it claimed** (SPEC.md §7). True while an event stamped for this lane sits in `in-progress/`.
+             *
+             *     **It is not presence and must never be read as it.** `live` is the parked request; this is held work, and the two come apart in both directions. A resident works its conversation inline and holds no park while it does, so a turn longer than the grace window reads `{live: false, working: true}` — which is the state this field exists for, and the one that tells a busy agent from a dead one. And a listener that died mid-event leaves its event held until `corpus queue reap-stale` requeues it, so `working: true` outlives the agent that earned it: **the field bounds a launch decision and is never evidence anybody is there**.
+             *
+             *     **The third of three, and the launch decision needs all three.** `live` answers *is anybody there*, `pending` answers *is anybody waiting*, and this answers *is anything being done*. **Decide from this rather than from `summary`**, which renders the same fact as prose and forbids deciding from it.
+             */
+            working: boolean;
             /** @description A short line about what this lane is doing, or null when there is nothing to say. **The contract promises its bound and nothing about its content**: it is derived server-side, capped at 200 characters and trimmed there, and how it is derived may change without a contract change. So it is for display only — a client must never parse it, key on it, or decide anything from it, and everything a client needs to decide from is a field of its own on this row. */
             summary: string | null;
             /** @description The conversation this lane belongs to — its id and current title — or null for the `orchestrator` lane, which belongs to none. **Not a document's `origin` (SPEC.md §9.2)**: that is the conversation a document was written *from*, while this is the conversation a lane *is*. Where `lane` is a thread id, `origin.id` repeats it — the field is here for the title beside it, so a recipient picker can name the conversation without a second read. */
@@ -6558,6 +6566,14 @@ export interface components {
              * @enum {string}
              */
             status: "pending" | "in-progress" | "deferred" | "processed" | "failed" | "abandoned";
+            /**
+             * @description **Which lane this job's event was stamped with** (SPEC.md §7), read from the projection rather than re-derived. It is the stamp made once at enqueue time and never rewritten, so it is a fact about the event and not a computation over the corpus as it now stands.
+             *
+             *     **A client cannot work this out, which is why it is here** (CONTRACT-056). Walking the scope from the payload's thread gets the right answer for the ordinary event and the wrong one for exactly the two cases §7 carves out: a `resident.designated`, which takes the **orchestrator's** lane whoever is designated — a resident does not announce itself to itself — and a message that **named a recipient**, which takes that recipient's lane and is not recoverable from the scope at all. The second is the decisive one: the walk cannot be made right, it can only be replaced.
+             *
+             *     **It is display material, never routing.** The server stamps the lane and claims on it; nothing a client decides changes where an event goes. What this fixes is a surface saying *waiting for researcher* about work the orchestrator is holding, which is a wrong sentence rather than a misdelivered event. An event written before lanes existed reads as the orchestrator's, the same way the claim path reads it — one interpretation of a missing stamp, not two.
+             */
+            lane: "orchestrator" | string;
             /**
              * Format: date-time
              * @description **When this event entered the queue** (SPEC.md §7) — the `created` instant of the queue event that is this job. Written once and never moved, whatever the job goes on to do. This is what an elapsed-time display counts from: a job that sat `pending` for ten minutes and then began talking has been waited on for ten minutes, and nothing here resets when it starts.

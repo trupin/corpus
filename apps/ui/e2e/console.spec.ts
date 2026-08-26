@@ -333,6 +333,7 @@ test.describe("the master-detail body", () => {
       eventId: "evt_e2e",
       type: "comment.created",
       status: "failed",
+      lane: "orchestrator",
       enqueued: "2026-07-27T09:12:00Z",
       started: "2026-07-27T09:12:04Z",
       updated: "2026-07-27T09:12:09Z",

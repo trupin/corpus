@@ -26,6 +26,7 @@ const RESIDENT_LANE: AgentLane = {
   live: true,
   since: JUST_NOW,
   pending: 0,
+  working: false,
   summary: "reviewing the draft",
   origin: { id: "th_root", title: "The claims conversation" },
 };
@@ -36,6 +37,7 @@ const ORCHESTRATOR_LANE_ROW: AgentLane = {
   live: true,
   since: JUST_NOW,
   pending: 0,
+  working: false,
   summary: null,
   origin: null,
 };
@@ -533,6 +535,7 @@ describe("the address line's recipient rows", () => {
       live: false,
       since: "2026-01-01T00:00:00Z",
       pending: 0,
+      working: false,
       summary: null,
     };
     pickerFor("th_root", { lanes: [lapsed], graph: { th_root: {} } });
@@ -562,6 +565,7 @@ describe("the address line's recipient rows", () => {
       live: false,
       since: "2026-01-01T00:00:00Z",
       pending: 2,
+      working: false,
       summary: null,
     };
     pickerFor("th_root", { lanes: [waiting], graph: { th_root: {} } });

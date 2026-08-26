@@ -67,6 +67,7 @@ test.describe("the console's residents tab", () => {
           // fresh against the wall clock rather than a fixed date that lapses.
           since: new Date().toISOString(),
           pending: 0,
+          working: false,
           summary: null,
           origin: { id: "th_solo", title: "Q3 planning" },
         },

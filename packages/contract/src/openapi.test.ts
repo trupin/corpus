@@ -4472,6 +4472,53 @@ describe("the CONTRACT-007 riders", () => {
     expect(componentSchemas?.["ThreadSummary"]?.properties?.["warnings"]).toBeUndefined();
   });
 
+  /**
+   * CONTRACT-056. `Job` carried no lane, so a surface saying *who is waiting on
+   * this* re-derived it by walking the scope from the payload's thread — and
+   * the walk is wrong for exactly the two cases §7 carves out.
+   */
+  describe("a job carries the lane it was stamped with (CONTRACT-056)", () => {
+    const lane = (): { description?: string } =>
+      componentSchemas?.["Job"]?.properties?.["lane"] ?? {};
+
+    it("is the lane vocabulary, not a free string", () => {
+      expect(componentSchemas?.["Job"]?.properties?.["lane"]).toBeDefined();
+      // Same spelling as `recipient` and `scope`: the orchestrator, or a thread.
+      expect(String(lane().description ?? "")).toContain("SPEC.md §7");
+    });
+
+    /**
+     * The decisive half. A reader who does not know *why* a client cannot
+     * compute this will eventually compute it — so both carve-outs are named,
+     * and the recipient one is called out as the unrecoverable one.
+     */
+    it("names both carve-outs, and which of them cannot be worked around", () => {
+      const prose = String(lane().description ?? "");
+      expect(prose).toContain("`resident.designated`");
+      expect(prose).toContain("named a recipient");
+      expect(prose).toContain("not recoverable from the scope at all");
+      expect(prose).toContain("it can only be replaced");
+    });
+
+    /**
+     * It bounds a sentence, not a route. A reader who thought this steered
+     * delivery might try to change it.
+     */
+    it("says it is display material and never routing", () => {
+      const prose = String(lane().description ?? "");
+      expect(prose).toContain("display material, never routing");
+      expect(prose).toContain("wrong sentence rather than a misdelivered event");
+    });
+
+    /**
+     * One reading of a missing stamp, not two — the claim path already treats
+     * an unstamped legacy event as the orchestrator's.
+     */
+    it("gives a legacy event the same reading the claim path gives it", () => {
+      expect(String(lane().description ?? "")).toContain("the same way the claim path reads it");
+    });
+  });
+
   it("gives Job a nullable origin title without making the component nullable", () => {
     const job = componentSchemas?.["Job"];
     expect(job?.type).toBe("object");
@@ -4479,6 +4526,10 @@ describe("the CONTRACT-007 riders", () => {
       "eventId",
       "type",
       "status",
+      // CONTRACT-056: the lane the event was stamped with, beside `status`,
+      // because both are facts about the event rather than about its progress.
+      // A client cannot derive it — the walk is wrong for §7's two carve-outs.
+      "lane",
       // CONTRACT-029 split the overloaded `started` into the enqueue instant and
       // the first-log instant. Both are required keys; only `started` is nullable.
       "enqueued",
@@ -5642,10 +5693,11 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
   });
 
-  it("shapes a roster row as the rider's seven fields", () => {
-    // `pending` joined them in CONTRACT-087, beside `live` because the two are
-    // read together: it is the half of the launch decision `live` cannot make.
-    const shape = ["lane", "resident", "live", "since", "pending", "summary", "origin"];
+  it("shapes a roster row as the rider's eight fields", () => {
+    // `pending` joined them in CONTRACT-087 and `working` in CONTRACT-057, both
+    // beside `live` because the three are one decision: is anybody there, is
+    // anybody waiting, is anything being done.
+    const shape = ["lane", "resident", "live", "since", "pending", "working", "summary", "origin"];
     expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual(shape);
     expect(componentSchemas?.["AgentLane"]?.required).toEqual(shape);
     expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
@@ -5705,6 +5757,62 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
       expect(description).toContain("still draining");
       expect(description).toContain("the same turns answered twice");
       expect(description).toContain("transient, self-clearing");
+    });
+  });
+
+  /**
+   * CONTRACT-057. `live: false` means three different things, and the third —
+   * a resident mid-turn — stopped being cosmetic when AGENT-053 started
+   * launching listeners from `pending > 0 && !live`.
+   */
+  describe("a lane says whether it is working (CONTRACT-057)", () => {
+    const working = (): SchemaNode =>
+      componentSchemas?.["AgentLane"]?.properties?.["working"] ?? {};
+    const prose = (): string => String(working().description ?? "");
+
+    it("is a boolean beside `live`, not a widening of it", () => {
+      expect(working().type).toBe("boolean");
+      // `live` keeps its meaning exactly; this is a sibling observation.
+      expect(componentSchemas?.["AgentLane"]?.properties?.["live"]?.type).toBe("boolean");
+    });
+
+    /**
+     * The pair the whole field exists for. A description that did not make it
+     * representable would leave a reader assuming the two agree.
+     */
+    it("names `{live: false, working: true}` as the state it exists for", () => {
+      expect(prose()).toContain("`{live: false, working: true}`");
+      expect(prose()).toContain("tells a busy agent from a dead one");
+    });
+
+    /**
+     * **The asymmetry a consumer must not get wrong.** A listener that died
+     * mid-event leaves its event held, so this outlives the agent. Read as
+     * presence it would suppress a launch onto a genuinely dead lane — forever.
+     */
+    it("says it is never evidence anybody is there, and why", () => {
+      expect(prose()).toContain("never be read as it");
+      expect(prose()).toContain("reap-stale");
+      expect(prose()).toContain("outlives the agent that earned it");
+      expect(prose()).toContain("bounds a launch decision");
+    });
+
+    it("tells a reader to decide from it rather than from `summary`", () => {
+      expect(prose()).toContain("Decide from this rather than from `summary`");
+      // And says where it sits among the three, so nobody reads one for all.
+      expect(prose()).toContain("The third of three");
+    });
+
+    /**
+     * `summary`'s own promise has to survive this landing, or the field it
+     * pointed at would be the one contradicting it.
+     */
+    it("leaves `summary`'s display-only promise standing", () => {
+      const summary = String(
+        componentSchemas?.["AgentLane"]?.properties?.["summary"]?.description ?? "",
+      );
+      expect(summary).toContain("display only");
+      expect(summary).toContain("everything a client needs to decide from is a field of its own");
     });
   });
 
