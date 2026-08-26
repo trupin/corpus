@@ -1708,3 +1708,40 @@ UI-172 — the reflection switch's wire, server and control. `SHARED-071` and
 **Left for v0.24.0**: the technical-debt scope proposed 2026-08-25 — sixteen
 issues under "you should not have to work out what the product already knows".
 It is a different sentence, so it is a different release.
+
+## Phase 48 — You can tell who is working, and nothing promises an answer that is not coming (2026-08-26, v0.24.0 scope)
+
+v0.23.0's own leftovers, and the two mechanisms that make its launch rule
+correct.
+
+**The defect this release exists for.** `PendingIndicator.tsx` still carries
+`LANE_FALLBACK_CLAUSE = "the agent will pick this up"`, so a thread whose
+resident is not running reads *"researcher is away, the agent will pick this
+up"*. Nobody is going to pick it up — v0.23.0 removed the fallback — and this is
+the surface a person watches **while they are waiting**. `UI-175` was filed
+against a less precise reading of the same code and is corrected here.
+
+**And the launch rule is one field short.** AGENT-053 launches a listener for a
+lane that is not live with work pending. A resident working its conversation
+inline holds no park (§7), so a long turn with a message queued behind it looks
+exactly like a dead lane, and the orchestrator launches a duplicate onto an agent
+that is busy. `CONTRACT-057` lifts the distinction out of `summary` — where the
+contract forbids deciding from it — into a field.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SERVER-156 | A job carries the lane it was stamped with | todo | P1 | opus | CONTRACT-056 |
+| SERVER-157 | A roster row says a lane is working | todo | P1 | opus | CONTRACT-057 |
+| CLI-071 | The roster cannot say a lane is busy | todo | P1 | opus | CONTRACT-057, SERVER-157 |
+| AGENT-055 | Do not launch onto an agent that is working | todo | P1 | fable | CLI-071, SERVER-157 |
+| UI-176 | The pending row reads the lane instead of walking to it | todo | P1 | opus | SERVER-156, SERVER-157 |
+
+`UI-175`, `AGENT-050` and `AGENT-043` keep their existing rows above;
+`scripts/check-issues.ts` allows one row per id, so they are named here in prose
+and counted there.
+
+**Left out**: `SHARED-073` (a capture cannot designate what it creates) — it
+needs a decision that changes signed text, and the go-ahead did not carry one.
+The upgrade arc, and the debt scope proposed for v0.24.0 on 2026-08-25, both
+wait again: finishing what v0.23.0 started outranks both.
+
