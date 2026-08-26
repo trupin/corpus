@@ -3750,6 +3750,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/reflect/quiet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the quiet window, or switch the automatic path off
+         * @description Writes `reflect.quiet` into the workspace config (SPEC.md §7, rider signed 2026-08-25: *a person may switch the automatic path off where they see it*). This is the board bar's Reflect control; the file remains what a person may edit directly, and the server re-reads it on every use, so nothing has to restart.
+         *
+         *     **`0` disables the automatic path** and leaves asking as the only way a reflection happens — the Reflect control becomes the only thing that starts one. That is the spelling §7 has always given to *off*, and it is deliberately the only one: there is no separate boolean, because two keys with one effect are two ways to say the same thing.
+         *
+         *     **It answers the whole `ReflectStatus`**, exactly as `GET` does, so a caller that switches the path off learns in the same round trip what is still pending and how many documents are unreflected. A bare acknowledgement would make every caller read again to find out what it had just done.
+         *
+         *     `PUT` rather than `PATCH`: one field, wholly replaced, and setting the same value twice is the same state. It writes config and no document, so it makes no commit, and it carries the acting party like every other write.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The quiet window in minutes. `0` disables the automatic path and leaves asking as the only way a reflection happens. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReflectQuietRequest"];
+                };
+            };
+            responses: {
+                /** @description The clock, the pending reflection, the unreflected count, the last digest, and the window as it now stands. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReflectStatus"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -6421,7 +6492,11 @@ export interface components {
              * @example th_x9y8
              */
             lastDigest: string | null;
-            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens. */
+            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30, maximum 10080 — seven days, past which nobody is choosing a cadence). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens: the Reflect control becomes the only thing that starts one. */
+            quiet: number;
+        };
+        ReflectQuietRequest: {
+            /** @description The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default 30, maximum 10080 — seven days, past which nobody is choosing a cadence). The server enqueues a reflection by itself when something changed after the clock, nothing has changed for this long, and no reflection is pending or running — so ten changes in five minutes are one reflection, this long after the last. **`0` disables the automatic path** and leaves asking as the only way one happens: the Reflect control becomes the only thing that starts one. */
             quiet: number;
         };
         JobList: {

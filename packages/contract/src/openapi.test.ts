@@ -4897,7 +4897,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(25);
+    expect(bodies).toHaveLength(26);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -4976,6 +4976,11 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/folders/rename": true,
       "POST /api/folders/unarchive": true,
       "PUT /api/docs/{id}": false,
+      // CONTRACT-086: the one settable field of the reflection report, and the
+      // request is nothing but that field — so a bare `PUT` would be a request
+      // to set the window to nothing in particular. `0` is how a caller asks
+      // for the automatic path to stop, and it is a value, not an absence.
+      "PUT /api/workspace/reflect/quiet": true,
     });
   });
 
@@ -6043,6 +6048,63 @@ describe("workspace.reflect (CONTRACT-076)", () => {
     expect(componentSchemas?.["ReflectStatus"]?.properties?.["quiet"]?.description).toContain(
       "**`0` disables the automatic path**",
     );
+  });
+
+  /**
+   * CONTRACT-086. §7's rider signed 2026-08-25 lets a person switch the
+   * automatic path off from the board, and until this route nothing on the wire
+   * could set the value the `GET` above has always reported.
+   */
+  describe("setting the quiet window (CONTRACT-086)", () => {
+    const QUIET_PATH = "/api/workspace/reflect/quiet";
+
+    it("is a sub-resource under PUT, not a PATCH of the report", () => {
+      expect(operation(QUIET_PATH, "put")).toBeDefined();
+      expect(document.paths?.[REFLECT_PATH]?.["patch"]).toBeUndefined();
+      expect(document.paths?.[QUIET_PATH]?.["patch"]).toBeUndefined();
+    });
+
+    it("answers the whole status, so a caller never re-reads to learn what it did", () => {
+      const ok = operation(QUIET_PATH, "put").responses?.["200"];
+      const schema = (ok as { content?: Record<string, { schema?: { $ref?: string } }> })
+        ?.content?.["application/json"]?.schema;
+      expect(schema?.$ref).toBe("#/components/schemas/ReflectStatus");
+    });
+
+    it("carries exactly one settable field, and it is the minutes", () => {
+      expect(componentSchemas?.["ReflectQuietRequest"]?.required).toEqual(["quiet"]);
+      expect(Object.keys(componentSchemas?.["ReflectQuietRequest"]?.properties ?? {})).toEqual([
+        "quiet",
+      ]);
+    });
+
+    /**
+     * The bound is the whole reason this field stopped being open: it is
+     * writable now, and one mistyped digit would otherwise configure a window
+     * measured in years — armed to look at, and never firing.
+     */
+    it("bounds the window rather than accepting any integer", () => {
+      const quiet = componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"];
+      expect(quiet?.minimum).toBe(0);
+      expect(quiet?.maximum).toBe(7 * 24 * 60);
+    });
+
+    it("says what `0` means on the route a caller sets it from, not only on the report", () => {
+      const description = operation(QUIET_PATH, "put").description ?? "";
+      expect(description).toContain("**`0` disables the automatic path**");
+      expect(description).toContain("there is no separate boolean");
+    });
+
+    /**
+     * The two uses of `reflect.quiet` are the same field, so a reader who
+     * learned what `0` means from one must find the same sentence on the other.
+     * They are one factory in the schema; this is what says so on the wire.
+     */
+    it("describes the field identically wherever it appears", () => {
+      expect(componentSchemas?.["ReflectQuietRequest"]?.properties?.["quiet"]?.description).toBe(
+        componentSchemas?.["ReflectStatus"]?.properties?.["quiet"]?.description,
+      );
+    });
   });
 
   /**

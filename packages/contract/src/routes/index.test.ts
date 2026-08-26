@@ -874,6 +874,22 @@ function createStubApp() {
       200,
     ),
   );
+  // CONTRACT-086: setting the window answers the whole status, so the caller
+  // that switched the automatic path off learns what is still pending in the
+  // same round trip. The stub echoes the value it was given, which is what
+  // makes the round trip through the generated client meaningful.
+  app.openapi(contractRoutes.setReflectQuiet, (c) =>
+    c.json(
+      {
+        reflected: REFLECTED_AT,
+        pending: null,
+        changed: 3,
+        lastDigest: "th_x9y8",
+        quiet: c.req.valid("json").quiet,
+      },
+      200,
+    ),
+  );
 
   app.openapi(contractRoutes.listJobs, (c) =>
     c.json({ jobs: [job], total: 1, truncated: false }, 200),
