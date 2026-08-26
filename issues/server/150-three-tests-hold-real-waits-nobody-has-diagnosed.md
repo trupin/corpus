@@ -25,6 +25,19 @@ opus
 
 - —
 
+
+## Carried, deliberately (user decision, 2026-08-26)
+
+Surveyed after v0.24.0, having gone untouched through three releases, and kept
+open rather than closed or forced into a scope. The reasoning is recorded here so
+it is not re-litigated every release: it is real, it is not urgent, and nothing
+is blocked by it.
+
+The alternative offered and declined was closing it on the grounds that the
+test has never failed. INFRA-020 exists because two things this repository
+carried as flakes turned out to be product defects a green suite could not see,
+so *it has not failed yet* is exactly the argument that rule refuses.
+
 ## Summary
 
 Filed out of INFRA-020, which established the rule and then declined to break it

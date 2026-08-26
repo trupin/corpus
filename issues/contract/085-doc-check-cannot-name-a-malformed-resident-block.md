@@ -26,6 +26,14 @@ opus
 - SPEC.md **§11** — the check vocabulary and its severity partition
 - SPEC.md **§7** — designation is user-only state on a standalone thread
 
+
+## Carried, deliberately (user decision, 2026-08-26)
+
+Surveyed after v0.24.0, having gone untouched through three releases, and kept
+open rather than closed or forced into a scope. The reasoning is recorded here so
+it is not re-litigated every release: it is real, it is not urgent, and nothing
+is blocked by it.
+
 ## Summary
 
 Filed out of SERVER-132, which shipped the right behaviour through the wrong

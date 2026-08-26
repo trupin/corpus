@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -57,7 +57,35 @@ something is possible.
 The reason is written into the schema's docblock and pinned by a test, so the
 absence reads as a decision rather than an oversight.
 
-## What has to be decided
+## Decided 2026-08-26 — option 1, the rider is amended
+
+The user chose to correct §10's rider rather than change what a capture is.
+**Applied to SPEC.md**, with the correction dated and its cause named:
+
+> **Capture does not**: the thread a capture creates is its document's filing
+> thread and has a parent, and §7 allows a designation only on a standalone
+> thread — a resident owns a conversation rather than a passage. A captured note
+> is therefore the ordinary agent's until somebody designates its thread, which
+> the control on the thread already does.
+> _(Rider signed 2026-08-25; its Capture half corrected 2026-08-26, having been
+> drafted on a premise about the filing thread that was never checked.)_
+
+**The cost, accepted rather than hidden**: a captured note starts as the
+ordinary agent's. Giving it an owner is a second act, on the thread, with a
+control that already exists.
+
+**Rejected: making the filing thread standalone.** It would deliver what the
+rider promised, and it changes what a capture *is* — the thread would stop being
+*about* its document and become a conversation that produced it, taking §10's
+description, the board's drawing of a capture, and everything assuming the
+parentage with it. A real arc, for a convenience.
+
+**Rejected: letting a whole-document thread designate.** It reverses §7's rule
+outright, so every comment thread on every document could hold its own lane. The
+reason §7 gives against it is not obviously wrong, and Capture is not a reason to
+test it.
+
+## What was decided (kept for the record)
 
 Three ways out, and the choice is the user's because two of them change signed
 text.
@@ -80,11 +108,11 @@ conversation that owns itself, which is a real thing to want and is option 2.
 
 ## Acceptance Criteria
 
-- [ ] The user chooses, with the three options and their costs stated
-- [ ] SPEC.md is amended to match whatever ships, so §7 and §10 agree
-- [ ] If option 1: the contract's absence is confirmed as final, and the
+- [x] The user chooses, with the three options and their costs stated
+- [x] SPEC.md is amended to match whatever ships, so §7 and §10 agree
+- [x] If option 1: the contract's absence is confirmed as final, and the
       schema's docblock cites the amended rider rather than this issue
-- [ ] If option 2 or 3: the work is decomposed, and the UI half of UI-173 gains
+- [x] If option 2 or 3: the work is decomposed, and the UI half of UI-173 gains
       the Capture control it does not have
 
 ## Technical Design
@@ -103,10 +131,20 @@ Per option.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Spec-only. The contract already matches the amended text — CONTRACT-088 removed
+`resident` from `CaptureRequest` during SERVER-154, before this was decided, and
+that removal is now what the spec describes rather than a gap it tolerates.
 
-## Completion Checklist (orchestrator)
+### The correction is dated in the rider itself
 
-- [ ] Decision recorded with its rejected alternatives
-- [ ] SPEC.md amended
-- [ ] Committed with `[SHARED-073]` prefix
+Not silently rewritten. A reader who finds this text later can see that a half of
+it was drafted wrongly and when it was repaired — which is the same rule the
+2026-08-15 correction in §7 follows, and it exists because a rider that quietly
+changes its meaning is worse than one that never held.
+
+### Checks
+
+```
+prettier --write SPEC.md   clean
+issues:check               663 rows and 663 files agree
+```

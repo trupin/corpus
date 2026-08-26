@@ -4158,6 +4158,28 @@ describe("comment skill body", () => {
 describe("progressive disclosure in the comment skill (AGENT-047)", () => {
   const body = documentAt("claude/skills/comment/SKILL.md").body;
 
+  /**
+   * **If this is failing, the fix is not the number** (user decision,
+   * 2026-08-26). The budget does its job by being tight, and it has been within
+   * a handful of words of the limit since AGENT-047 set it — so the next rule
+   * anybody wants in this body has to displace something.
+   *
+   * Two things to try, in order:
+   *
+   * 1. **Does it belong in `references/` instead?** Most rules do. AGENT-043's
+   *    was written for this body and went to `skill-genesis.md`, which turned
+   *    out to be the better home anyway: a prohibition against adding a
+   *    discovery step is read by whoever is about to add one, and they are
+   *    reading about how skills get found — not handling a turn.
+   * 2. **Is something here no longer true?** v0.23.0 removed §7's fallback and
+   *    v0.24.0 changed what a not-live lane means. Prose describing the world
+   *    before a doctrine change is the defect v0.22.0 was named for, and this
+   *    file has no test that reads it for truth.
+   *
+   * Raising the limit is the third option and wants evidence that the loop
+   * genuinely has more to say — not that it blocked the first thing somebody
+   * tried to add.
+   */
   it("keeps the body inside the budget the restructure bought", () => {
     const words = body.split(/\s+/).filter((word) => word !== "").length;
     expect(words).toBeLessThan(7000);
