@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -42,19 +42,19 @@ temporary state that is not temporary.
 
 ## Acceptance Criteria
 
-- [ ] A pending row on a lane with **no listener running** says so, in words
+- [x] A pending row on a lane with **no listener running** says so, in words
       about the agent rather than about the queue
-- [ ] It is distinguishable from **three** other states, which §8 already
+- [x] It is distinguishable from **three** other states, which §8 already
       separates: queued and claimable, being worked, and this one
-- [ ] The elapsed clock keeps running from when the request was written, as §8's
+- [x] The elapsed clock keeps running from when the request was written, as §8's
       2026-08-12 rider requires. The wait is the wait
-- [ ] **No fake diagnosis.** The UI says an agent is not running; it does not
+- [x] **No fake diagnosis.** The UI says an agent is not running; it does not
       guess why, and it does not tell the person to go and start one unless the
       product actually gives them a way to
-- [ ] The Residents tab (§11's console drawer) shows the pending count beside
+- [x] The Residents tab (§11's console drawer) shows the pending count beside
       each lane's liveness, since that pairing is the whole signal
-- [ ] Nothing resizes as a count arrives or changes (§10)
-- [ ] The wording is checked against the one thing rider C's own text worries
+- [x] Nothing resizes as a count arrives or changes (§10)
+- [x] The wording is checked against the one thing rider C's own text worries
       about: this must read as a fact a person can act on, never as the app
       apologising
 
@@ -98,16 +98,83 @@ and read the row. Start a listener and read it again. Screenshot both.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### The product was telling people something that is not so
+
+`laneRows.ts` carried this, and it rendered on every surface that draws a lane:
+
+```ts
+export const LAPSED_FALLBACK = "the orchestrator will answer until it returns";
+```
+
+True under §7's fallback. **False since the rider signed 2026-08-25** — nobody
+answers a resident's conversation now — and it was showing in the one place a
+person looks to find out whether anything is wrong.
+
+### One derivation, three surfaces
+
+The fix went into `laneLine` in `@corpus/kit`, so the recipient picker, the
+console's Residents tab and `ScopeProvenance` all changed together and cannot
+disagree. That is the `pending > 0 && !live` pair, derived once — the same pair
+the orchestrator launches from.
+
+Two lines replace the one:
+
+- **`no listener right now`** for a quiet unattended lane. Quiet is not a fault.
+- **`N messages waiting — its agent is not running`** when something is on it.
+  That is §8's amended rider: the row says *that*, not merely that work is
+  queued, because an agent that is not running is the reason nothing is
+  happening and it is the one thing a person can act on.
+
+### It states the fact and stops
+
+No diagnosis of *why* the listener is gone, and no instruction to go and start
+one — the product gives nobody a button that does, and an instruction nobody can
+follow reads as a demand. A test asserts the line matches none of
+`start|crash|restart`.
+
+### One wording sharpened beyond the issue
+
+`PendingIndicator`'s late tier said *"no agent is **connected**"*. *Connected*
+invites reading a wait as a network condition that passes on its own. It now
+says **running**, which is both true and actionable.
+
+### What was left, and filed
+
+`PendingIndicator` asks the **workspace** whether anybody is parked, not the
+**lane**. The two used to differ only in precision; they now differ in kind,
+because a workspace can have a busy orchestrator and a conversation nobody will
+ever answer. Filed as **UI-175**, with a note that its three-minute threshold
+was tuned for a world where somebody eventually took the work and should be
+re-judged rather than inherited.
+
+### Falsification
+
+Removing the waiting clause from `laneLine`:
+
+```
+× says an unattended lane's agent is not running, when something is waiting
+  Tests  1 failed | 90 passed
+```
+
+### Checks
+
+```
+vitest run apps/ui/src           179 files, 3743 tests passed   exit 0
+vitest run packages/kit           979 tests passed              exit 0
+tsc --noEmit -p apps/ui / kit                                   exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[UI-174]` prefix
+- [x] Committed with `[UI-174]` prefix

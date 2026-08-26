@@ -66,11 +66,19 @@ export const WAITING_TIERS = {
   /** 3 m – 15 m, with an agent connected. */
   longer: "still waiting — nothing has picked this up yet",
   /** 3 m – 15 m, with nobody parked on any lane. */
-  absent: "still waiting — no agent is connected",
+  absent: "still waiting — no agent is running",
 } as const;
 
-/** The clause the late tiers add when the roster says nobody is listening. */
-export const NO_AGENT_CLAUSE = "no agent is connected";
+/**
+ * The clause the late tiers add when the roster says nobody is listening.
+ *
+ * **"running", not "connected"** (UI-174). Since SPEC.md §7's rider signed
+ * 2026-08-25 there is no fallback, so nobody else picks this up — and
+ * *connected* invites reading the wait as a network condition that will pass on
+ * its own. What is true is that the agent is not running, which is also the one
+ * thing a person can act on.
+ */
+export const NO_AGENT_CLAUSE = "no agent is running";
 
 export const SLOW_AFTER_MS = 45_000;
 export const LONGER_AFTER_MS = 3 * 60_000;
@@ -94,7 +102,7 @@ export function workingLabel(elapsedMs: number): string {
  * unevidenced-urgency failure in the other direction.
  *
  * **Unknown counts as present.** The caller passes `true` while the queue status
- * has not answered, because "no agent is connected" is a claim like any other
+ * has not answered, because "no agent is running" is a claim like any other
  * and this row does not make claims it cannot support.
  */
 export function waitingLabel(elapsedMs: number, agentPresent: boolean): string {
