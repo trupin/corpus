@@ -145,13 +145,51 @@ export function laneFor(input: LaneInput, findScopeRoot: ScopeRootLookup): Lane 
 }
 
 /**
+ * Has this lane's conversation been **released** by a person? (SPEC.md §7's
+ * rider signed 2026-08-25, SERVER-153.)
+ *
+ * **This is not the fallback under another name, and the difference is the
+ * whole of what the rider decided.** A lapse is a listener that is absent —
+ * crashed, killed, or never started — and it now surrenders nothing, however
+ * long it lasts. A release is a person removing the resident, which is a
+ * deliberate act with a visible cause, and it is the *only* thing that returns
+ * work: the messages stop being a resident's because the person removed the
+ * resident.
+ *
+ * Read from the projection at claim time and never written into an event, for
+ * the reason the fallback was: §7 says the stamp is made once and never
+ * rewritten. So a thread designated again finds its lane exactly as it was —
+ * which is also why designating into an unfinished drain has to be refused
+ * rather than merely discouraged (CONTRACT-089).
+ */
+export type LaneReleased = (lane: Lane) => boolean;
+
+/**
+ * The lookup for a queue with no projection: nothing has been released.
+ *
+ * The safe direction, and unlike {@link NOTHING_LIVE} — which this replaces —
+ * safe now means *narrow*. Answering "released" for an unknown lane would hand
+ * a resident's conversation to the orchestrator on the strength of a lookup that
+ * had not been bound yet, which is the one outcome the rider rules out. Under
+ * the fallback the safe direction was the opposite, because the cost of guessing
+ * wrong was work done slowly rather than work done by the wrong agent.
+ */
+export const NOTHING_RELEASED: LaneReleased = () => false;
+
+/**
  * May a claim scoped to `scope` see an event stamped `lane`? (SPEC.md §7.)
  *
- * **One clause, and it is exact equality** — for every claim, the
- * orchestrator's included. SPEC.md §7's rider signed 2026-08-25 replaced the
- * lapse fallback: *"A lane's work is done by that lane's agent, and by nobody
- * else… There is no fallback and no timer: an unscoped claim never sees another
- * lane's events, whether that lane is live or not."*
+ * **Equality, plus the one thing a person does on purpose.** SPEC.md §7's rider
+ * signed 2026-08-25 replaced the lapse fallback: *"A lane's work is done by that
+ * lane's agent, and by nobody else… There is no fallback and no timer: an
+ * unscoped claim never sees another lane's events, whether that lane is live or
+ * not."* And in the same rider: *"Release is the one thing that returns work,
+ * and a person does it on purpose."*
+ *
+ * So the orchestrator's claim sees its own lane, plus any lane whose
+ * conversation **no longer has a resident**. Nothing about absence, presence or
+ * duration reaches this function — see {@link LaneReleased} for why that is a
+ * different question and not a softer version of the same one.
  *
  * ## What this function used to do, and why it stopped
  *
@@ -184,6 +222,10 @@ export function laneFor(input: LaneInput, findScopeRoot: ScopeRootLookup): Lane 
  * orchestrator may claim would have been asking a question of the caller about
  * itself.
  */
-export function visibleTo(scope: Lane, lane: Lane): boolean {
-  return lane === scope;
+export function visibleTo(scope: Lane, lane: Lane, isReleased: LaneReleased): boolean {
+  if (lane === scope) return true;
+  // A scoped claim sees its own lane and nothing else, in either direction: a
+  // resident is never handed another conversation's work, released or not.
+  if (scope !== ORCHESTRATOR_LANE) return false;
+  return isReleased(lane);
 }

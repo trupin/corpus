@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import {
   NO_SCOPE_LOOKUP,
+  NOTHING_RELEASED,
   RESIDENT_DESIGNATED,
   laneFor,
   laneOf,
@@ -105,16 +106,16 @@ describe("laneFor", () => {
  */
 describe("visibleTo", () => {
   it("shows a scoped claim its own lane", () => {
-    expect(visibleTo(RESIDENT, RESIDENT)).toBe(true);
+    expect(visibleTo(RESIDENT, RESIDENT, NOTHING_RELEASED)).toBe(true);
   });
 
   it("hides every other lane from a scoped claim, the orchestrator's included", () => {
-    expect(visibleTo(RESIDENT, OTHER)).toBe(false);
-    expect(visibleTo(RESIDENT, ORCHESTRATOR_LANE)).toBe(false);
+    expect(visibleTo(RESIDENT, OTHER, NOTHING_RELEASED)).toBe(false);
+    expect(visibleTo(RESIDENT, ORCHESTRATOR_LANE, NOTHING_RELEASED)).toBe(false);
   });
 
   it("always shows the orchestrator its own lane", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, ORCHESTRATOR_LANE)).toBe(true);
+    expect(visibleTo(ORCHESTRATOR_LANE, ORCHESTRATOR_LANE, NOTHING_RELEASED)).toBe(true);
   });
 
   /**
@@ -127,8 +128,8 @@ describe("visibleTo", () => {
    * had a clear pass, so it never got its agent.
    */
   it("hides another lane's events from the orchestrator, absent listener or not", () => {
-    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT)).toBe(false);
-    expect(visibleTo(ORCHESTRATOR_LANE, OTHER)).toBe(false);
+    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT, NOTHING_RELEASED)).toBe(false);
+    expect(visibleTo(ORCHESTRATOR_LANE, OTHER, NOTHING_RELEASED)).toBe(false);
   });
 
   /**
@@ -137,22 +138,49 @@ describe("visibleTo", () => {
    * without a case proving the same lane is claimable by its owner.
    */
   it("still shows that same lane to a claim scoped to it", () => {
-    expect(visibleTo(RESIDENT, RESIDENT)).toBe(true);
-    expect(visibleTo(OTHER, OTHER)).toBe(true);
+    expect(visibleTo(RESIDENT, RESIDENT, NOTHING_RELEASED)).toBe(true);
+    expect(visibleTo(OTHER, OTHER, NOTHING_RELEASED)).toBe(true);
   });
 
   /**
-   * Nothing about presence reaches this function any more. The signature is the
-   * guarantee — there is no argument to pass — and this states it as a fact
-   * about behaviour rather than about the type, so a later change that threaded
-   * liveness back in through a module-level lookup would have to break it.
+   * Nothing about presence reaches this function any more. The only third
+   * argument is release, which is a person's act rather than an observation, so
+   * this states as behaviour what the signature states as a type: a listener
+   * doing anything at all cannot change the answer.
    */
-  it("answers from the two lanes alone, whatever a listener is doing", () => {
+  it("answers the same however long a listener has been away", () => {
     const answers = new Set([
-      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
-      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
-      visibleTo(ORCHESTRATOR_LANE, RESIDENT),
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT, NOTHING_RELEASED),
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT, NOTHING_RELEASED),
+      visibleTo(ORCHESTRATOR_LANE, RESIDENT, NOTHING_RELEASED),
     ]);
     expect([...answers]).toEqual([false]);
+  });
+
+  /**
+   * The one deliberate widening (SERVER-153). A person released the resident, so
+   * the messages stopped being a resident's — which is why this is not the
+   * fallback under another name: it needs an act, and no amount of absence
+   * produces one.
+   */
+  it("shows the orchestrator a released lane's events", () => {
+    const released = (lane: Lane): boolean => lane === RESIDENT;
+    expect(visibleTo(ORCHESTRATOR_LANE, RESIDENT, released)).toBe(true);
+    // …and only that one. `OTHER` still has its resident.
+    expect(visibleTo(ORCHESTRATOR_LANE, OTHER, released)).toBe(false);
+  });
+
+  /**
+   * A resident is never handed another conversation's work, released or not.
+   * The widening is the orchestrator's alone, which is what keeps two agents
+   * reading disjoint sets.
+   */
+  it("never widens a scoped claim, whatever has been released", () => {
+    const everythingReleased = (): boolean => true;
+    expect(visibleTo(RESIDENT, OTHER, everythingReleased)).toBe(false);
+    expect(visibleTo(RESIDENT, ORCHESTRATOR_LANE, everythingReleased)).toBe(false);
+    // Its own lane, always — a released thread's resident that is still running
+    // finishes what it already had.
+    expect(visibleTo(RESIDENT, RESIDENT, everythingReleased)).toBe(true);
   });
 });

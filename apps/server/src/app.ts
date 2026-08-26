@@ -103,7 +103,7 @@ import {
   type QueueService,
 } from "./queue/index.js";
 import { createJobLookup } from "./queue/job-lookup.js";
-import { createLaneScopeLookup } from "./queue/scope.js";
+import { createLaneScopeLookup, createReleasedLaneLookup } from "./queue/scope.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
 import {
@@ -473,6 +473,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // the partition mean anything — with nothing live, every thread lane reads
     // as lapsed and the orchestrator's unscoped claim sees the whole queue.
     queue.attachScopeLookup(createLaneScopeLookup(deps.projection));
+    // SPEC.md §7's one deliberate widening (SERVER-153): a conversation whose
+    // resident a person released hands its pending work to the orchestrator.
+    // Read at claim time, never written into an event.
+    queue.attachReleasedLookup(createReleasedLaneLookup(deps.projection));
 
     // SPEC.md §7's reflection (rider 9, SERVER-137). Built early in this block
     // because everything after it wants to tell it something: the write

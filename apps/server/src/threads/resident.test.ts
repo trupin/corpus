@@ -1694,6 +1694,108 @@ describe("what a designation routes", () => {
     });
 
     /**
+     * **Release is the one thing that returns work** (SERVER-153; SPEC.md §7's
+     * rider signed 2026-08-25). A lapse surrenders nothing however long it
+     * lasts; a person removing the resident hands the lane over at once,
+     * because the messages stop being a resident's when the resident is gone.
+     */
+    it("hands a released lane's pending work to the orchestrator", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      expect(await claimed()).toHaveLength(1);
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+
+      // Still designated: nobody else may touch it, however long nobody listens.
+      ws.advance(LANE_GRACE_MS * 2);
+      expect(await claimed()).toEqual([]);
+
+      expect((await release(created.id)).status).toBe(200);
+      // The release's own `resident.released` is the orchestrator's by §7's
+      // carve-out, and the resident's turn is now the orchestrator's by this
+      // rider. Both arrive on one claim.
+      expect((await claimed()).length).toBe(2);
+    });
+
+    /**
+     * The seam, and the reason CONTRACT-089 exists. The orchestrator is mid-way
+     * through a released lane's work; designating now would put a listener
+     * beside it and the same turns would be answered twice.
+     */
+    it("refuses a designation while the released work is still being done", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      expect(await claimed()).toHaveLength(1);
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+      await release(created.id);
+      // Claimed, not settled: this is what "draining" is.
+      const held = await claimed();
+      expect(held.length).toBe(2);
+
+      const refused = await designateGeneral(created.id);
+      expect(refused.status).toBe(409);
+      const body = (await refused.json()) as {
+        code: string;
+        reason: string;
+        outstanding: number;
+      };
+      expect(body.code).toBe("conflict");
+      expect(body.reason).toBe("draining");
+      /*
+       * **One, not two, and the difference is the point.** The orchestrator is
+       * holding two events — the resident's turn and the `resident.released`
+       * announcement — but only the first is stamped for *this lane*. §7's
+       * carve-out puts a release on the orchestrator's own lane whoever is
+       * designated, so it was always the orchestrator's work and designating
+       * again cannot collide with it.
+       *
+       * The count is what a new listener would race for, not what the
+       * orchestrator happens to be busy with. A field, too, never a number
+       * scraped out of prose.
+       */
+      expect(body.outstanding).toBe(1);
+    });
+
+    /**
+     * It clears by itself. Nothing is reset and nothing expires on a timer — the
+     * condition is a fact about outstanding work, not a state of the thread.
+     */
+    it("allows the designation again once that work settles", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      await claimed();
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+      await release(created.id);
+      for (const id of await claimed()) {
+        expect((await ws.post(`/api/queue/${id}/complete`, {})).status).toBe(200);
+      }
+
+      expect((await designateGeneral(created.id)).status).toBe(200);
+    });
+
+    /**
+     * **A replacement can never be refused by this, and it is not a special
+     * case.** §7 makes designating a thread that already has a resident a
+     * replacement — and a thread that has one is not released, so the
+     * orchestrator cannot be holding its events at all. There is no sequence
+     * that deadlocks, and this is the case that would find one if there were.
+     */
+    it("never refuses a replacement, which is a designation on a thread that has one", async () => {
+      const created = await createThread(ws, { body: "start" });
+      await designateGeneral(created.id);
+      ws.advance(61_000);
+      await claimed();
+      await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
+
+      // Designating again while its own lane holds unclaimed work: a
+      // replacement, and allowed.
+      expect((await designateGeneral(created.id)).status).toBe(200);
+      expect((await designate(created.id, "researcher")).status).toBe(200);
+    });
+
+    /**
      * This asserted the opposite until SERVER-152, quoting §7's own words: the
      * cost of a lapse was that the work is done by the orchestrator, never that
      * it is silently not done.

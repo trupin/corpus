@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -41,22 +41,22 @@ same turns to two agents.
 
 ## Acceptance Criteria
 
-- [ ] On release — by a person, by resolution, or by a new designation replacing
+- [x] On release — by a person, by resolution, or by a new designation replacing
       one — that lane's **pending** events become claimable by the orchestrator
-- [ ] **In-progress and deferred events are not touched.** A deferred event
+- [x] **In-progress and deferred events are not touched.** A deferred event
       returns to pending when its edit session ends (§7), and it drains then
-- [ ] The mechanism does **not** rewrite the events' lane stamps. §7 is explicit:
+- [x] The mechanism does **not** rewrite the events' lane stamps. §7 is explicit:
       _"The stamp is made once and never rewritten."_ Whatever makes them visible
       is computed, as the fallback was
-- [ ] `POST /api/threads/:id/resident` returns CONTRACT-089's 409 while a drain
+- [x] `POST /api/threads/:id/resident` returns CONTRACT-089's 409 while a drain
       is outstanding, carrying the count
-- [ ] The refusal clears **by itself** as the orchestrator settles the events.
+- [x] The refusal clears **by itself** as the orchestrator settles the events.
       Nothing has to be reset and nothing expires on a timer
-- [ ] A release with **nothing pending** drains nothing and refuses nothing —
+- [x] A release with **nothing pending** drains nothing and refuses nothing —
       the common case costs no new state
-- [ ] Test: release with pending work, assert the orchestrator can claim it,
+- [x] Test: release with pending work, assert the orchestrator can claim it,
       assert designation is refused, settle the work, assert designation succeeds
-- [ ] **Falsified**: with the drain removed, the "orchestrator can claim it" test
+- [x] **Falsified**: with the drain removed, the "orchestrator can claim it" test
       goes red rather than the suite staying green
 
 ## Technical Design
@@ -102,16 +102,86 @@ both events, designate again successfully. Log every step's output.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### Computed, never restamped
+
+`createReleasedLaneLookup` is `isDesignatedRoot` negated, and that identity is
+the whole implementation. **A lane *is* a designated root thread**, so a lane
+that is no longer one is a lane whose designation went away — which is exactly
+what release means. No new column, no migration, no stored flag that could
+disagree with the designation it describes.
+
+A thread **deleted** outright answers the same way, and that is right rather
+than incidental: its events have no owner and nobody is coming for them, so they
+belong to the orchestrator by the same reasoning a release does.
+
+### It is not the fallback under another name
+
+`visibleTo` gained a third parameter again, and the type is named for the
+difference: `LaneReleased`, not `LaneLiveness`. A lapse is an **observation** —
+a listener absent — and surrenders nothing however long it lasts. A release is
+an **act**, with a visible cause and a person behind it.
+
+`NOTHING_RELEASED` defaults **narrow**, which inverts the removed
+`NOTHING_LIVE`. Safe used to mean wide, because guessing wrong cost work done
+slowly. It now costs work done by an agent the conversation did not ask for.
+
+### The deadlock the issue asked about cannot happen
+
+The issue flagged a sequence that could deadlock: a replacement is a release, so
+would a replacement refuse itself?
+
+**No, and it needs no special case.** §7 makes designating a thread that
+*already has* a resident a replacement — and a thread that has one is not
+released, so the orchestrator cannot be holding its events at all. The refusal
+fires only where the thread has no resident, which is precisely where a
+replacement is not what is happening. A test drives the sequence that would find
+a deadlock if one existed.
+
+### `outstanding` is 1 where the orchestrator holds 2
+
+The test expected 2 and got 1, and the 1 is correct. The orchestrator holds the
+resident's turn *and* the `resident.released` announcement — but §7's carve-out
+puts a release on the orchestrator's own lane whoever is designated, so that one
+was always its work and a new designation cannot collide with it.
+
+**The count is what a new listener would race for, not what the orchestrator
+happens to be busy with.** Recorded because the wrong reading is the plausible
+one.
+
+### Falsification
+
+Making the released clause return `false`:
+
+```
+× visibleTo > shows the orchestrator a released lane's events
+× hands a released lane's pending work to the orchestrator
+× refuses a designation while the released work is still being done
+  Tests  3 failed | 106 passed
+```
+
+The refusal test failing too is the useful part: it proves the refusal and the
+visibility read the same predicate, so they cannot disagree about what is
+draining.
+
+### Checks
+
+```
+vitest run apps/server            205 files, 4680 tests passed   exit 0
+eslint apps/server/src                          0 problems       exit 0
+tsc --noEmit -p apps/server                                      exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SERVER-153]` prefix
+- [x] Committed with `[SERVER-153]` prefix

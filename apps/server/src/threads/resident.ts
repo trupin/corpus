@@ -75,7 +75,9 @@ import {
   ResidentDesignatedPayloadSchema,
   ResidentReleasedPayloadSchema,
   type Actor,
+  type ConflictError,
   type DesignatedResident,
+  type DesignateRefusalReason,
   type DesignateResidentRequest,
   type Resident,
   type ResidentReleaseReason,
@@ -91,7 +93,8 @@ import {
   type MutationResult,
 } from "../docs/index.js";
 import { AGENTS_KEY, DOCS_KEY, docKey, threadKey } from "../events/index.js";
-import { conflict, forbidden, notFound } from "../errors.js";
+import { forbidden, notFound, HttpError } from "../errors.js";
+import { drainingCount } from "../queue/scope.js";
 import type { ProjectionDb } from "../projection/index.js";
 import { RESIDENT_DESIGNATED, RESIDENT_RELEASED } from "../queue/lanes.js";
 import { MENTION_TYPE, resolveMentionTarget, unaddressableTarget } from "./mentions.js";
@@ -160,10 +163,71 @@ export interface ResidentChange {
  */
 const residentKeys = (id: string) => [DOCS_KEY, docKey(id), threadKey(id), AGENTS_KEY];
 
+/**
+ * The designate route's `409`, in either of its two opposite senses
+ * (CONTRACT-089; SPEC.md §7's rider signed 2026-08-25).
+ *
+ * **One status, two refusals, told apart at `reason`** — the shape
+ * {@link reattachConflict} already uses, and for the reason its comment gives:
+ * an extra field on `{code, message}`, never a new `ERROR_CODES` member, so
+ * every consumer that switches on `code` keeps working unchanged.
+ *
+ * `has-parent` can never succeed — a thread on a document may not have a
+ * resident at all. `draining` is about to succeed, in seconds, once the
+ * orchestrator settles the work a release handed it. A client that could not
+ * tell them apart would offer *"try again"* where trying can never work, and
+ * *"this can never have a resident"* where it is about to have one.
+ *
+ * `outstanding` rides as a field rather than a number inside the message,
+ * because a person told *"try again later"* cannot tell whether later is a
+ * second or an hour, and a client that scraped it out of prose would parse text
+ * the server may reword. `0` under `has-parent`, where nothing is outstanding
+ * and nothing ever will be.
+ */
+function designateConflict(
+  message: string,
+  reason: DesignateRefusalReason,
+  outstanding: number,
+): HttpError {
+  const body: ConflictError & {
+    readonly reason: DesignateRefusalReason;
+    readonly outstanding: number;
+  } = { code: "conflict", message, reason, outstanding };
+  return new HttpError(409, body);
+}
+
 /** The thread, refused unless it may have a resident at all (§7). */
 function requireStandalone(thread: LoadedThread): LoadedThread {
-  if (thread.parent !== null) throw conflict(NOT_STANDALONE_MESSAGE);
+  if (thread.parent !== null) throw designateConflict(NOT_STANDALONE_MESSAGE, "has-parent", 0);
   return thread;
+}
+
+/**
+ * Refuses a designation while the released resident's work is still being done
+ * (SERVER-153; SPEC.md §7's rider signed 2026-08-25, CONTRACT-089).
+ *
+ * **The one seam the no-fallback rule leaves.** Release hands a lane's pending
+ * events to the orchestrator; designating again mid-drain would put a listener
+ * on the lane while the orchestrator works them, and the same turns get answered
+ * twice.
+ *
+ * The count comes from the same predicate the claim reads, so the refusal and
+ * the visibility cannot disagree — a designation refused while the orchestrator
+ * sees nothing, or allowed while it sees something, would be the worst possible
+ * pair. It clears by itself as those events settle: nothing is reset and nothing
+ * expires on a timer.
+ */
+function requireNotDraining(workspace: ThreadsWorkspace, id: string): void {
+  const outstanding = drainingCount(workspace.projection, id);
+  if (outstanding === 0) return;
+  throw designateConflict(
+    `This conversation was released and ${String(outstanding)} of its ` +
+      `${outstanding === 1 ? "events is" : "events are"} still being worked by the orchestrator. ` +
+      "Designating now would hand the same turns to two agents. It can be designated once those " +
+      "settle.",
+    "draining",
+    outstanding,
+  );
 }
 
 /**
@@ -405,9 +469,13 @@ export async function designateResident(
   // does not queue behind somebody's save — then read again inside it, because
   // that copy is the one this write acts on (SERVER-035's rule).
   requireStandalone(loadThread(workspace, id));
+  requireNotDraining(workspace, id);
 
   return mutex.run(id, async (): Promise<ResidentChange> => {
     const thread = requireStandalone(loadThread(workspace, id));
+    // Re-read inside the lane, per SERVER-035's rule: the drain may have
+    // finished, or a release may have landed, while this waited.
+    requireNotDraining(workspace, id);
     const resident = residentFor(workspace.projection, request.name, request.weight);
 
     // Every field compared, so replacing along any of them is a write: general →

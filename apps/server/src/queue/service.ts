@@ -10,7 +10,15 @@ import { formatInstant } from "../core/time.js";
 import { conflict, notFound, type HttpError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import { readHeldInProgress, type HeldSet } from "./held.js";
-import { NO_SCOPE_LOOKUP, laneFor, laneOf, visibleTo, type ScopeRootLookup } from "./lanes.js";
+import {
+  NO_SCOPE_LOOKUP,
+  NOTHING_RELEASED,
+  laneFor,
+  laneOf,
+  visibleTo,
+  type LaneReleased,
+  type ScopeRootLookup,
+} from "./lanes.js";
 import { NOTHING_PARKED, type LaneTracker } from "./liveness.js";
 import {
   NOOP_INVALIDATE,
@@ -325,6 +333,8 @@ export class QueueService {
   private settlementObserver: QueueSettlementObserver | undefined;
   /** Late-bound: see {@link attachScopeLookup}. Routes everything to the orchestrator until bound. */
   private findScopeRoot: ScopeRootLookup = NO_SCOPE_LOOKUP;
+  /** Late-bound: see {@link attachReleasedLookup}. Nothing is released until bound. */
+  private laneIsReleased: LaneReleased = NOTHING_RELEASED;
   /** Late-bound: see {@link attachLaneTracker}. Observes no park until bound. */
   private laneTracker: LaneTracker = NOTHING_PARKED;
   private readonly invalidate: QueueInvalidate;
@@ -435,6 +445,20 @@ export class QueueService {
    */
   attachScopeLookup(findScopeRoot: ScopeRootLookup): void {
     this.findScopeRoot = findScopeRoot;
+  }
+
+  /**
+   * Binds "has this conversation's resident been released?" (SERVER-153).
+   *
+   * The one predicate that widens a claim, and the seam exists so the queue can
+   * ask it without knowing what a designation is. Until it is bound nothing is
+   * released, which is the **narrow** direction — the opposite of what the
+   * removed liveness seam defaulted to, because the cost of guessing wrong
+   * changed with SPEC.md §7's rider: it used to be work done slowly, and is now
+   * work done by an agent the conversation did not ask for.
+   */
+  attachReleasedLookup(isReleased: LaneReleased): void {
+    this.laneIsReleased = isReleased;
   }
 
   /**
@@ -635,7 +659,9 @@ export class QueueService {
   /** {@link wake} for a batch: woken once, for the union of what those lanes reach. */
   private wakeLanes(lanes: readonly Lane[]): void {
     if (lanes.length === 0) return;
-    this.waiters.notify((scope) => lanes.some((lane) => visibleTo(scope, lane)));
+    this.waiters.notify((scope) =>
+      lanes.some((lane) => visibleTo(scope, lane, this.laneIsReleased)),
+    );
   }
 
   /**
@@ -1224,7 +1250,7 @@ export class QueueService {
    * could ever have touched it.
    */
   private visible(scope: Lane, event: StoredEvent): boolean {
-    return visibleTo(scope, laneOf(event));
+    return visibleTo(scope, laneOf(event), this.laneIsReleased);
   }
 
   private async transition(
