@@ -1661,8 +1661,8 @@ table and that one both append here and will conflict on merge. Keep both rows.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-071 | A person can switch the automatic reflection off, from the board | todo | P0 | fable | — |
+| SHARED-071 | A person can switch the automatic reflection off, from the board | done | P0 | fable | — |
 | CONTRACT-086 | Nothing on the wire sets the quiet window | todo | P0 | opus | SHARED-071 |
 | SERVER-151 | The server writes the quiet window it already reads | todo | P0 | opus | SHARED-071, CONTRACT-086 |
 | UI-172 | The Reflect control carries the switch | todo | P0 | opus | SHARED-071, CONTRACT-086, SERVER-151 |
-| SHARED-072 | A conversation gets its own agent, and keeps it | todo | P0 | fable | — |
+| SHARED-072 | A conversation gets its own agent, and keeps it | done | P0 | fable | — |

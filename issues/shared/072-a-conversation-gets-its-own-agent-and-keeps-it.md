@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -109,10 +109,66 @@ used.
 - **Scope is computed, never stored**, so a thread designated at creation owns
   everything that grows out of it with no extra bookkeeping.
 
-## The riders, drafted and unsigned
+## Signed 2026-08-25, and the two open questions answered
 
-**This issue does not edit SPEC.md.** Four riders, because they are four
-decisions and the user should be able to refuse one without refusing the rest.
+**All four riders signed as drafted** and applied to SPEC.md, alongside
+SHARED-071's. The text below is what was signed, and it is now in the spec.
+
+### The listener count: launch lazily, on pending work
+
+**Chosen**: the designation is made at thread creation and costs nothing. A
+listener starts only when its lane has work pending and none is running. An idle
+conversation runs no agent.
+
+It falls straight out of the pending-count field rider D already required, so it
+adds no mechanism:
+
+```
+for each roster row:
+    if row.pending > 0 and not row.live:
+        launch a listener for row.lane
+```
+
+**This dissolves the risk this issue flagged.** "Every conversation depends on
+its listener starting" becomes "a listener starts when there is something to do",
+which is the ordinary case rather than a hazard. The bound on concurrent
+listeners is conversations with work waiting **now**, not conversations that
+exist.
+
+**Rejected: one listener per designated conversation**, bounded only by
+resolution. It buys a resident that keeps the conversation in its own context
+between messages, and pays with a parked background subagent for every
+unresolved thread anyone has ever started. **Rejected: a configured maximum** — a
+number nobody can pick well, a new failure mode to explain, and behaviour that
+changes based on state the person was not looking at. Lazy launch gets the same
+protection with no knob.
+
+**The cost, chosen rather than stumbled into**: a resident does not retain the
+conversation between messages. It re-reads the thread when it starts. §7 already
+says the thread's turns *are* the conversation, so this is the briefing the
+system already assumes.
+
+### The drain seam: refuse the designation until it drains
+
+**Chosen**: a thread whose release is still draining refuses a new designation,
+naming the outstanding events. It is the only option that cannot double-answer.
+
+**Rejected: abandoning the drain** and pulling undrained events back. Whatever
+the orchestrator has in flight is still an answer written by the orchestrator in
+a resident's conversation, which is the exact thing rider C exists to prevent.
+The seam narrows and does not close. **Rejected: keying the lane by
+`designationId`** rather than by root thread — clean by construction, and
+CONTRACT-071 already ships the identity, but "a lane is the scope's root thread"
+is stated throughout §7 and is load-bearing in the queue's scope walk. It is the
+largest of the three changes and touches code nobody asked to touch.
+
+**The cost**: a brief window where a just-released thread cannot be
+re-designated, bounded by how long the orchestrator takes to settle what it took.
+
+## The riders, as signed
+
+Four riders, because they were four decisions and the user could have refused
+one without refusing the rest. All four were signed as drafted.
 
 ### Rider A — a new conversation gets its own resident
 
