@@ -1665,3 +1665,4 @@ table and that one both append here and will conflict on merge. Keep both rows.
 | CONTRACT-086 | Nothing on the wire sets the quiet window | todo | P0 | opus | SHARED-071 |
 | SERVER-151 | The server writes the quiet window it already reads | todo | P0 | opus | SHARED-071, CONTRACT-086 |
 | UI-172 | The Reflect control carries the switch | todo | P0 | opus | SHARED-071, CONTRACT-086, SERVER-151 |
+| SHARED-072 | A conversation gets its own agent, and keeps it | todo | P0 | fable | — |
