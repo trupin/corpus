@@ -18,6 +18,7 @@ import { useSteadyComposerPin } from "../thread/composerPin";
 import { Board } from "./Board";
 import { BoardBar } from "./BoardBar";
 import { ToastProvider, useToast } from "./Toasts";
+import { UpgradeProvider } from "../upgrade/UpgradeProvider";
 import { Topbar } from "./Topbar";
 import "./Shell.css";
 
@@ -62,7 +63,15 @@ export function Shell(): ReactElement {
                   board, in a thread and in focus mode, and the viewer opens over
                   all of them. */}
                 <ImageViewerHost>
-                  <ShellSurfaces />
+                  {/*
+                   * SPEC.md §2.4's updates panel. It wraps rather than joins for
+                   * the toast surface's reason: the console strip both opens it
+                   * and reads whether an upgrade is running, and the strip is
+                   * several components below here.
+                   */}
+                  <UpgradeProvider>
+                    <ShellSurfaces />
+                  </UpgradeProvider>
                 </ImageViewerHost>
               </ExplorerProvider>
             </ContextMenuProvider>

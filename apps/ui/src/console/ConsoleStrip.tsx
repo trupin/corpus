@@ -5,6 +5,8 @@ import { AgentPill } from "./AgentPill";
 import { UNKNOWN_QUEUE_STATUS, consoleCounts } from "./consoleModel";
 import { IndexPill } from "./IndexPill";
 import { NOTICES_UNREAD_HINT } from "./noticesModel";
+import { UPGRADING_SENTENCE } from "../upgrade/upgradeModel";
+import { useUpgradeSurface } from "../upgrade/UpgradeProvider";
 
 /**
  * The collapsed one-line strip (SPEC.md §10): caret, the word `console`, the
@@ -12,9 +14,32 @@ import { NOTICES_UNREAD_HINT } from "./noticesModel";
  * right. Clicking anywhere on it toggles the drawer.
  */
 
+/**
+ * The version, and the only affordance in the app that reaches SPEC.md §2.4.
+ *
+ * It is a **button** rather than a span because the version is exactly where a
+ * person looks to ask "am I current" — and it keeps the same words, the same
+ * class and therefore the same 24ch bound, so nothing about the strip moves for
+ * making it pressable. Pressing it opens the updates panel, which is what
+ * performs the check; nothing checks before that, because §2.4 says Corpus never
+ * looks unless asked.
+ *
+ * **While an upgrade is running it does not say "server unreachable".** It is
+ * true that the server cannot be reached — the upgrade's last act is replacing
+ * it — but a fault is not what is happening, and this is the line a person
+ * watches while they wait (UI-035).
+ */
 export function ServerStatus(): ReactElement {
   const health = useHealth();
+  const upgrade = useUpgradeSurface();
 
+  if (upgrade.inFlight) {
+    return (
+      <span className="c-status" role="status" title={UPGRADING_SENTENCE}>
+        upgrading…
+      </span>
+    );
+  }
   if (health.isError) {
     // Fail soft: the server being down is a fact to report, not a reason to
     // stop rendering the shell. The board and the top bar stay usable.
@@ -37,9 +62,22 @@ export function ServerStatus(): ReactElement {
    * it has to be reachable in place (SPEC.md §10's rider, clause 2).
    */
   return (
-    <span className="c-status" role="status" title={`corpus ${health.data.version}`}>
+    <button
+      type="button"
+      className="c-status c-status-button"
+      // No `role="status"` here, unlike the three spans above: an explicit role
+      // *replaces* the implicit one, and a `<button role="status">` is not a
+      // button to a screen reader. The live-region announcement belonged to the
+      // states that change under a person; this one is a control they press.
+      title={`corpus ${health.data.version} — check for updates`}
+      onClick={(event) => {
+        // The strip around it is itself a button that toggles the drawer.
+        event.stopPropagation();
+        upgrade.open();
+      }}
+    >
       corpus {health.data.version}
-    </span>
+    </button>
   );
 }
 

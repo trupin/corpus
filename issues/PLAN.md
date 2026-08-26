@@ -256,7 +256,7 @@ Note: the SPEC §10 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 | CONTRACT-027 | Upgrade routes: check + trigger | done | P1 | SHARED-007 |
 | SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | done | P1 | CONTRACT-027, CLI-025 |
 | CLI-027 | `corpus workspace diff <path>`: what the tool changed under an edited file | done | P1 | SHARED-007 |
-| UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | todo | P1 | CONTRACT-027, SERVER-050 |
+| UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | done | P1 | CONTRACT-027, SERVER-050 |
 
 Rider **amended 2026-08-03** (signed): `corpus upgrade` also runs the workspace
 template sync, and a file the workspace edited that the tool also changed is
