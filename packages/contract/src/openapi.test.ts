@@ -5642,24 +5642,52 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
   });
 
-  it("shapes a roster row as the rider's six fields", () => {
-    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual([
-      "lane",
-      "resident",
-      "live",
-      "since",
-      "summary",
-      "origin",
-    ]);
-    expect(componentSchemas?.["AgentLane"]?.required).toEqual([
-      "lane",
-      "resident",
-      "live",
-      "since",
-      "summary",
-      "origin",
-    ]);
+  it("shapes a roster row as the rider's seven fields", () => {
+    // `pending` joined them in CONTRACT-087, beside `live` because the two are
+    // read together: it is the half of the launch decision `live` cannot make.
+    const shape = ["lane", "resident", "live", "since", "pending", "summary", "origin"];
+    expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual(shape);
+    expect(componentSchemas?.["AgentLane"]?.required).toEqual(shape);
     expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
+  });
+
+  /**
+   * CONTRACT-087. The field exists because SPEC.md §7's rider signed 2026-08-25
+   * removed the fallback: until then a lane whose listener was absent had its
+   * work folded into the orchestrator's claim, so the work arriving *was* the
+   * signal. It no longer arrives, so the fact has to be readable.
+   */
+  describe("a lane says how much is waiting on it (CONTRACT-087)", () => {
+    const pending = (): { type?: string; minimum?: number; description?: string } =>
+      componentSchemas?.["AgentLane"]?.properties?.["pending"] ?? {};
+    const prose = (): string => pending().description ?? "";
+
+    it("is a non-negative integer, never null and never absent", () => {
+      expect(pending().type).toBe("integer");
+      expect(pending().minimum).toBe(0);
+    });
+
+    it("counts pending alone, and says why in-progress and deferred are excluded", () => {
+      const description = prose();
+      expect(description).toContain("never `in-progress`");
+      expect(description).toContain("never `deferred`");
+    });
+
+    /**
+     * The pair is the decision, and publishing only half of it would leave a
+     * reader to invent the other half — most likely "not live means launch",
+     * which gives a workspace one agent per conversation that ever existed.
+     */
+    it("names the decision it exists for, as a pair with `live`", () => {
+      const description = prose();
+      expect(description).toContain("`pending > 0` and `live: false`");
+      expect(description).toContain("idle and healthy");
+      expect(description).toContain("no fallback");
+    });
+
+    it("tells a reader to decide from it rather than from `summary`", () => {
+      expect(prose()).toContain("Decide from this rather than from `summary`");
+    });
   });
 
   /**

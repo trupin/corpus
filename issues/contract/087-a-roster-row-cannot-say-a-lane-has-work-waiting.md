@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -50,18 +50,18 @@ listeners."_
 
 ## Acceptance Criteria
 
-- [ ] `AgentLane` carries `pending`, a non-negative integer: how many events are
+- [x] `AgentLane` carries `pending`, a non-negative integer: how many events are
       **pending** on this lane
-- [ ] Its description states what it counts and what it does not — `pending`
+- [x] Its description states what it counts and what it does not — `pending`
       only, never `in-progress` or `deferred`, because the question it answers is
       "is anyone waiting", and an event already being worked is not waiting
-- [ ] The description names the decision it exists for, citing §7: a lane with
+- [x] The description names the decision it exists for, citing §7: a lane with
       `pending > 0` and `live: false` is a conversation nobody is answering, and
       that pair is what the orchestrator launches from
-- [ ] It says outright that this replaces reading `summary`, so a reader of the
+- [x] It says outright that this replaces reading `summary`, so a reader of the
       schema does not have to work out which field to trust
-- [ ] `openapi.json` and the generated client regenerate cleanly
-- [ ] No new route. The field rides the roster the orchestrator already reads
+- [x] `openapi.json` and the generated client regenerate cleanly
+- [x] No new route. The field rides the roster the orchestrator already reads
 
 ## Technical Design
 
@@ -105,16 +105,63 @@ rather than `corpus.api.*` passed while the contract was wrong in v0.22.0.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### Where it sits, and why that is the whole point
+
+`pending` goes **between `since` and `summary`**, immediately after `live`,
+because the two are one decision read together. A reader meeting `live` alone
+would most likely invent the missing half as *"not live means launch"*, which
+gives a workspace one background agent per conversation that has ever existed.
+The field's own prose states the pair — `pending > 0 && live: false` — and a
+test pins that sentence.
+
+### What the description had to carry
+
+Three things a reader must not have to derive:
+
+- **Why the field is new.** Until the rider signed 2026-08-25, a lane whose
+  listener was absent had its work folded into the orchestrator's claim, so the
+  work arriving *was* the signal. It no longer arrives.
+- **Why `in-progress` and `deferred` are excluded.** Counting in-progress would
+  keep a lane looking unattended for exactly as long as it is being attended to.
+- **That this replaces reading `summary`**, which is display-only and says so.
+  This is the field of its own that sentence already promised.
+
+### Falsification
+
+Cutting the pair sentence out of the description and regenerating:
+
+```
+× names the decision it exists for, as a pair with `live`
+  Tests  1 failed | 3 passed
+```
+
+### The fixtures say something on purpose
+
+`residentLane` carries `pending: 2` with `live: false` — the pair, in the
+fixture, so the shape a reader meets first is the one the field exists for.
+The orchestrator's row carries a real `0` rather than a null, because it is not
+special and special-casing it would re-derive a rule the field does not have.
+
+### Checks
+
+```
+vitest run packages/contract      70 files, 2993 tests passed   exit 0
+eslint packages/contract/src                                     exit 0
+tsc -p tsconfig.build.json                                       exit 0
+generate (openapi.json + client)                                 clean
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CONTRACT-087]` prefix
+- [x] Committed with `[CONTRACT-087]` prefix

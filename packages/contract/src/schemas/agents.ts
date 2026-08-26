@@ -441,6 +441,53 @@ export const LaneOriginSchema = openapi(
  * without it would flicker every eight minutes, and a console pill that
  * flickered would be the same lie this field exists to stop, just faster.
  */
+/**
+ * **How much work is waiting on this lane** (CONTRACT-087; SPEC.md §7's rider
+ * signed 2026-08-25).
+ *
+ * **The field exists because the fallback stopped existing.** Until that rider,
+ * a lane whose listener was absent had its pending events folded into the
+ * orchestrator's unscoped claim, so "somebody is waiting here and nobody is
+ * listening" needed no field: the work itself arrived, and arriving was the
+ * signal. The rider removes that — *"a lane's work is done by that lane's agent,
+ * and by nobody else"* — so the work no longer arrives, and the fact has to be
+ * readable instead.
+ *
+ * **It is half of one decision, and `live` is the other half.** A lane with
+ * `pending > 0` and `live: false` is a conversation nobody is answering, and
+ * that pair is what the orchestrator launches a listener from. Neither field
+ * decides it alone: a lane with no work and no listener is idle and perfectly
+ * healthy, and launching for it would give a workspace one agent per
+ * conversation that has ever existed.
+ *
+ * **Pending only.** Not `in-progress`, and not `deferred`. The question is *is
+ * anyone waiting*, and an event already being worked is not waiting — counting
+ * it would keep a lane looking unattended for exactly as long as it is being
+ * attended to. A deferred event is waiting on a person's edit session (§7) and
+ * returns to pending by itself when that ends, where it is counted like any
+ * other.
+ *
+ * **This is what replaces reading `AgentLane.summary`.** That field is
+ * display-only and says so — *"a client must never parse it, key on it, or
+ * decide anything from it"* — and this is the field of its own that the same
+ * sentence promises.
+ */
+export const lanePendingField = z
+  .number()
+  .int()
+  .min(0)
+  .describe(
+    "**How many events are pending on this lane** (SPEC.md §7, rider signed 2026-08-25). " +
+      "`pending` only — never `in-progress`, which is work already being done rather than work " +
+      "waiting, and never `deferred`, which is waiting on a person's edit session and returns to " +
+      "pending by itself. **A lane with `pending > 0` and `live: false` is a conversation nobody " +
+      "is answering**, and that pair is the whole signal: since the rider there is no fallback, " +
+      "so no other agent will take this work and the only thing that changes it is a listener " +
+      "starting. Neither field means it alone — a lane with no work and no listener is idle and " +
+      "healthy. **Decide from this rather than from `summary`**, which is display-only and says " +
+      "so. `0` where nothing is waiting, never null and never absent.",
+  );
+
 export const presenceLiveField = z
   .boolean()
   .describe(
@@ -538,6 +585,9 @@ export const AgentLaneSchema = openapi(
     // the same schema.
     live: presenceLiveField,
     since: presenceSinceField,
+    // The half of the launch decision `live` cannot make (CONTRACT-087). It sits
+    // beside it because the two are read together and mean nothing apart.
+    pending: lanePendingField,
     summary: z
       .string()
       .max(LANE_SUMMARY_MAX_LENGTH)
