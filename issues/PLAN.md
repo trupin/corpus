@@ -1697,7 +1697,7 @@ agent runs at all.
 | SERVER-155 | A roster row carries its lane's pending count | done | P0 | opus | CONTRACT-087 |
 | AGENT-053 | The orchestrate skill launches before it dispatches, and never takes a lane's work | done | P0 | fable | SERVER-152, SERVER-155 |
 | AGENT-054 | A listener starts with work already waiting, and that is now ordinary | done | P0 | fable | SERVER-152 |
-| UI-173 | Ask and Capture offer a new resident | todo | P0 | opus | CONTRACT-088 |
+| UI-173 | Ask and Capture offer a new resident | done | P0 | opus | CONTRACT-088 |
 | UI-174 | A row says no agent is running, not merely that work is queued | done | P0 | opus | CONTRACT-087, SERVER-155 |
 | SHARED-073 | A capture cannot designate what it creates (rider B premise, found in SERVER-154) | todo | P1 | fable | SHARED-072 |
 | CLI-070 | The roster does not print what is waiting (AGENT-053 handoff) | done | P0 | opus | CONTRACT-087, SERVER-155 |

@@ -53,8 +53,34 @@ export interface ComposeInput {
    * (CONTRACT-051), because a capture creates a standalone thread that is in no
    * scope by construction — offering a routing choice before there is a
    * conversation to route. So this rides the Ask branch only.
+   *
+   * `resident` rides the Ask branch only as well, and for a **different**
+   * reason — see it below. The two absences look alike and are not, which is
+   * exactly the confusion §10's rider fell into.
    */
   readonly recipient: { readonly recipient?: string };
+  /**
+   * **Who will own the conversation** (SPEC.md §7's rider A and §10's rider B,
+   * signed 2026-08-25) — three states, and they are not `recipient`'s two.
+   *
+   * - **`{}`** — the default: a general resident, because a conversation is a
+   *   thing an agent owns and owning it is what happens when nobody chose.
+   * - **`{resident: {name}}`** — that profile.
+   * - **`{resident: null}`** — no resident at all.
+   *
+   * Spread onto the body like {@link weight} and {@link recipient}, so absence
+   * has exactly one spelling on the way out. The difference from those two is
+   * that here `null` is a **value** rather than another absence, and the
+   * contract's own description calls that out because it is the one field of
+   * that body where the two differ.
+   *
+   * **Ask only, and Capture cannot.** Not for `recipient`'s reason — that a
+   * capture is in no scope, which is about routing — but for §7's: the thread a
+   * capture creates is its document's *filing* thread and has a parent, and only
+   * a standalone thread may designate. SHARED-073 carries the question of
+   * whether that should change.
+   */
+  readonly resident: { readonly resident?: { readonly name?: string } | null };
 }
 
 /**
@@ -107,6 +133,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             requestsAgent: true,
             ...input.weight,
             ...input.recipient,
+            ...input.resident,
             ...(files.length === 0 ? {} : { files }),
           });
           for (const notice of warningNotices(result.warnings)) notify(notice);
