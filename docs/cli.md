@@ -453,16 +453,24 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 Run outside a workspace it still upgrades the tool, and says that the template sync and the restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or a mirror instead of `trupin/corpus`.
 
 ```
-corpus upgrade [flags]
+corpus upgrade [pr] [flags]
 ```
 
 Runs outside a workspace: this command does not require one.
 
+**Arguments**
+
+| Argument | Required | Description                                                                                                                                                                                                                             |
+| -------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr`     | no       | A pull-request number, with `--unstable`: install that pull request's newest build instead of the newest across all of them. Without `--unstable` it is a usage error — `corpus upgrade` installs releases, which have no pull request. |
+
 **Flags**
 
-| Flag      | Type    | Default | Description                                                                                                                                                                                                                                                                                                                        |
-| --------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--check` | boolean | `false` | Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached. |
+| Flag           | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--check`      | boolean | `false` | Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached. With `--unstable`, reports the pull-request build that would be installed — its PR, version, commit and age — and installs nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `--unstable`   | boolean | `false` | Install a **pull-request build** — the tarball CI attaches to every PR — instead of a release (SPEC.md §2.4's rider). Bare, it takes the newest build across open pull requests and **names the PR it chose before installing**, because the newest build is not always yours; with a `<pr>` it takes that pull request's newest build and says so plainly when there is none, rather than falling back to another's. It states its deviations instead of hiding them: a GitHub token with `actions: read` is required (`CORPUS_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`) and the command refuses with instructions when none is usable rather than silently installing a release; builds expire on CI's 14-day retention, and an expired one is an ordinary answer naming the window; and a PR build carries **no published checksum**, so the verification `corpus upgrade` performs does not run and every install says so. Everything else is the stable path unchanged — same install-method detection, same refusals, same template sync, same conditional restart — and `corpus upgrade` without the flag is untouched. |
+| `--allow-fork` | boolean | `false` | Also consider builds produced from a fork's branch. Off by default and deliberately so: a fork's pull request runs the fork's code, and installing that build globally runs it on this machine. Only meaningful with `--unstable`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 **Examples**
 
@@ -476,6 +484,18 @@ Install the latest release, sync this workspace's template files, and restart th
 
 ```
 corpus upgrade
+```
+
+Install the newest pull-request build across all open PRs, naming the one it chose before it installs it.
+
+```
+corpus upgrade --unstable
+```
+
+Report PR #63's newest build — version, commit and age — without installing anything.
+
+```
+corpus upgrade --unstable 63 --check
 ```
 
 One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0","upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the sync report, `server` whether it was restarted, `reportPath` where the written report is — and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md","detail":"modified here — 3 lines only here, 1 line only in the new copy","resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`. `migrations` is the data half — what the installed tool no longer reads as it is written, each entry carrying the commands that perform it: `[{"id":"views-to-board","statement":"…","commands":["corpus doc create --type board --title Board --folder boards --columns doc_a,doc_b --default-open true","corpus doc edit doc_a --unset pinned --unset order"],"optional":[]}]`.

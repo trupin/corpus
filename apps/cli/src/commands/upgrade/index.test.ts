@@ -1035,3 +1035,300 @@ describe("the registry entry", () => {
     expect(upgradeCommand.requiresWorkspace).toBe(false);
   });
 });
+
+/**
+ * `corpus upgrade --unstable` through the whole command (CLI-034).
+ *
+ * The *lookup* is forked and tested on its own in `unstable.test.ts`; what is
+ * here is the half that had to stay shared — the install-method detection, the
+ * refusals, the npm path, the template sync, the conditional restart — plus the
+ * three places the shared half branches, and the assertion that matters most:
+ * **the stable path's requests are unchanged**.
+ */
+describe("corpus upgrade --unstable", () => {
+  const ZIPPED_TARBALL = "corpus-0.4.0-pr63.tgz";
+
+  /** A one-entry zip holding {@link TARBALL}, stored rather than deflated. */
+  function artifactZip(): Buffer {
+    const name = Buffer.from(ZIPPED_TARBALL, "utf8");
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(TARBALL.length, 18);
+    local.writeUInt32LE(TARBALL.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt32LE(TARBALL.length, 20);
+    central.writeUInt32LE(TARBALL.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 8);
+    eocd.writeUInt16LE(1, 10);
+    const localPart = Buffer.concat([local, name, TARBALL]);
+    eocd.writeUInt32LE(localPart.length + central.length + name.length, 12);
+    eocd.writeUInt32LE(localPart.length, 16);
+    return Buffer.concat([localPart, central, name, eocd]);
+  }
+
+  interface UnstableFixture {
+    readonly artifacts?: readonly unknown[];
+    readonly token?: string | undefined;
+    readonly gh?: string | null;
+    readonly flags?: Record<string, boolean>;
+    readonly args?: Record<string, string>;
+    readonly root?: string | null;
+  }
+
+  function prArtifact(overrides: Record<string, unknown> = {}): unknown {
+    return {
+      id: 900,
+      name: "corpus-0.4.0-pr63-a1b2c3d",
+      size_in_bytes: TARBALL.length,
+      archive_download_url: "https://api.github.test/artifacts/900/zip",
+      expired: false,
+      created_at: "2026-08-26T11:00:00Z",
+      workflow_run: { repository_id: 1, head_repository_id: 1, head_sha: "a1b2c3d" },
+      ...overrides,
+    };
+  }
+
+  interface UnstableHarness extends Harness {
+    readonly urls: readonly string[];
+    readonly journal: () => string;
+  }
+
+  async function runUnstable(
+    fixture: UnstableFixture & { readonly template: string },
+  ): Promise<UnstableHarness> {
+    const root = fixture.root === undefined ? await makeWorkspace(fixture.template) : fixture.root;
+    const base = createTestContext({
+      flags: { unstable: true, ...fixture.flags },
+      args: fixture.args ?? {},
+      json: true,
+      cwd: root ?? tempDir("nowhere"),
+      version: "0.3.0",
+      env: fixture.token === undefined ? {} : { CORPUS_GITHUB_TOKEN: fixture.token },
+      registry,
+    });
+    const urls: string[] = [];
+    const installs: string[] = [];
+    const lifecycle: string[] = [];
+
+    await runUpgrade(base.context, {
+      fetch: stubFetch((url) => {
+        urls.push(url);
+        if (url.includes("/actions/artifacts?")) {
+          return Response.json({ artifacts: fixture.artifacts ?? [prArtifact()] });
+        }
+        if (url.endsWith("/zip")) return new Response(new Uint8Array(artifactZip()));
+        throw new Error(`unexpected request: ${url}`);
+      }),
+      ghToken: () => fixture.gh ?? null,
+      template: { templateRoot: fixture.template },
+      installMethod: npmGlobal(),
+      npm: (npmOptions) => {
+        installs.push(npmOptions.tarballPath);
+        return Promise.resolve({ command: "npm install --global …", output: "" });
+      },
+      now: () => new Date("2026-08-26T12:00:00Z"),
+      serverRunning: () => Promise.resolve(false),
+      stopServer: () => {
+        lifecycle.push("stop");
+        return Promise.resolve();
+      },
+      startServer: () => {
+        lifecycle.push("start");
+        return Promise.resolve();
+      },
+    });
+
+    return {
+      urls,
+      installs,
+      lifecycle,
+      stdout: () => base.stdout(),
+      result: () => JSON.parse(base.stdout()) as UpgradeResult,
+      journal: () => (root === null ? "" : readFileSync(upgradeLogPath(root), "utf8")),
+    };
+  }
+
+  it("--check names the pull request, the version, the commit and the age, and installs nothing", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({ template, token: "tok", flags: { check: true } });
+
+    const result = harness.result();
+    expect(result.mode).toBe("check");
+    expect(result.unstable).toEqual({
+      pr: 63,
+      version: "0.4.0",
+      sha: "a1b2c3d",
+      artifactName: "corpus-0.4.0-pr63-a1b2c3d",
+      createdAt: "2026-08-26T11:00:00Z",
+      checksumVerified: false,
+    });
+    expect(harness.installs).toEqual([]);
+    // The release list was not consulted, and `check` says so rather than
+    // implying a network failure.
+    expect(result.check.reachable).toBe(false);
+    expect(result.check.detail).toContain("not consulted");
+    expect(harness.urls.some((url) => url.includes("/releases/latest"))).toBe(false);
+  });
+
+  it("installs through the same npm path, and records which build it was", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({ template, token: "tok" });
+
+    const result = harness.result();
+    expect(result.tool.installed).toBe(true);
+    expect(result.unstable?.pr).toBe(63);
+    expect(result.unstable?.checksumVerified).toBe(false);
+    expect(harness.installs).toHaveLength(1);
+    // The zip was unwrapped: what npm was handed is the tarball, not the archive.
+    expect(harness.installs[0]?.endsWith(ZIPPED_TARBALL)).toBe(true);
+
+    // "which build am I running" stays answerable after the fact, and the
+    // version alone cannot answer it — every open PR carries the same one.
+    const journal = harness.journal();
+    expect(journal).toContain("PR #63");
+    expect(journal).toContain("corpus-0.4.0-pr63-a1b2c3d");
+    expect(journal).toContain("no published checksum");
+  });
+
+  it("says it is unverified, every time, before it installs", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({ template, token: "tok", flags: { check: false } });
+    const journal = harness.journal();
+    expect(journal).toContain("no checksum");
+    expect(journal).toContain("`corpus upgrade` reinstalls");
+    // And "downloaded", never "verified": the word the stable path uses would be
+    // a claim this path cannot make.
+    expect(journal).toContain("unverified");
+    expect(journal).not.toContain("verified corpus-0.4.0-pr63");
+  });
+
+  it("refuses without a token, with instructions, and installs nothing", async () => {
+    const template = makeTemplate();
+    await expect(runUnstable({ template })).rejects.toMatchObject({
+      code: "upgrade_unstable_no_token",
+    });
+  });
+
+  it("never falls back to a release when it cannot find a build", async () => {
+    const template = makeTemplate();
+    let asked: readonly string[] = [];
+    try {
+      const harness = await runUnstable({ template, token: "tok", artifacts: [] });
+      asked = harness.urls;
+      expect.unreachable("a run with no build must refuse");
+    } catch (error) {
+      expect(isCliError(error) && error.code).toBe("upgrade_unstable_no_build");
+      expect(isCliError(error) && error.hint).toContain("14 days");
+    }
+    expect(asked.some((url) => url.includes("/releases/latest"))).toBe(false);
+  });
+
+  it("takes the pull request it was given rather than another's newer build", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({
+      template,
+      token: "tok",
+      args: { pr: "60" },
+      artifacts: [
+        prArtifact({
+          id: 1,
+          name: "corpus-0.4.0-pr60-aaaaaaa",
+          created_at: "2026-08-25T09:00:00Z",
+        }),
+        prArtifact({
+          id: 2,
+          name: "corpus-0.4.0-pr63-bbbbbbb",
+          created_at: "2026-08-26T09:00:00Z",
+        }),
+      ],
+    });
+    expect(harness.result().unstable?.pr).toBe(60);
+  });
+
+  /*
+   * `--unstable` is almost always a *sideways* move: a branch carries the same
+   * version as `main` until a release bumps it. Refusing to "downgrade" would
+   * refuse the ordinary case, so the version comparison does not apply here —
+   * and it cannot be reached implicitly, because the flag was typed.
+   */
+  it("installs a build older than what is installed, without calling it a downgrade", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({
+      template,
+      token: "tok",
+      artifacts: [prArtifact({ name: "corpus-0.2.0-pr63-a1b2c3d" })],
+    });
+    expect(harness.result().tool.installed).toBe(true);
+    expect(harness.result().unstable?.version).toBe("0.2.0");
+    expect(harness.stdout()).not.toContain("already the latest");
+  });
+
+  it("refuses a pull-request number without the flag", async () => {
+    const template = makeTemplate();
+    const base = createTestContext({
+      flags: {},
+      args: { pr: "63" },
+      json: true,
+      cwd: tempDir("nowhere"),
+      version: "0.3.0",
+      registry,
+    });
+    await expect(
+      runUpgrade(base.context, { template: { templateRoot: template } }),
+    ).rejects.toThrow(/only means something with --unstable/);
+  });
+
+  it("takes a token from the GitHub CLI when no variable names one", async () => {
+    const template = makeTemplate();
+    const harness = await runUnstable({ template, gh: "from-gh", flags: { check: true } });
+    expect(harness.result().unstable?.pr).toBe(63);
+  });
+});
+
+/**
+ * The promise CLI-034 makes to everyone who never types `--unstable`: their
+ * command did not change. Asserted as request equality rather than as a claim —
+ * a stable run must issue the same two requests it always did, to the same URLs,
+ * and reach no artifact API at all.
+ */
+describe("the stable path, unchanged", () => {
+  it("issues exactly the release lookup and the two asset downloads", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const urls: string[] = [];
+    const base = createTestContext({
+      flags: {},
+      json: true,
+      cwd: root,
+      version: "0.3.0",
+      registry,
+    });
+    const release = await releaseFetch({});
+
+    await runUpgrade(base.context, {
+      fetch: ((url: string, init?: RequestInit) => {
+        urls.push(String(url));
+        return release(url, init);
+      }) as unknown as typeof globalThis.fetch,
+      template: { templateRoot: template },
+      installMethod: npmGlobal(),
+      npm: () => Promise.resolve({ command: "npm install --global …", output: "" }),
+      serverRunning: () => Promise.resolve(false),
+    });
+
+    expect(urls).toEqual([
+      "https://api.github.com/repos/trupin/corpus/releases/latest",
+      "https://example.test/corpus-0.4.0.tgz.sha256",
+      "https://example.test/corpus-0.4.0.tgz",
+    ]);
+    expect(urls.some((url) => url.includes("/actions/artifacts"))).toBe(false);
+    const result = JSON.parse(base.stdout()) as UpgradeResult;
+    expect(result.unstable).toBeNull();
+    expect(result.check.verifiable).toBe(true);
+  });
+});

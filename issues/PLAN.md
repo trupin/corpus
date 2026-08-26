@@ -513,7 +513,7 @@ cheapest moment for that to happen.
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | done | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | done | P1 | — |
-| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
+| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | done | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | done | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
