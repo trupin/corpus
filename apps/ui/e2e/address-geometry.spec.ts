@@ -92,10 +92,10 @@ const ago = (ms: number): string => new Date(NOW.getTime() - ms).toISOString();
  *
  *     agent will answer — last seen 4m ago — nobody is listening        2 lines
  *     release-researcher will answer — last seen 17m ago —
- *       the orchestrator will answer until it returns                   4 lines
+ *       no listener right now                   4 lines
  *     claims-review will answer — its profile is gone — renamed,
  *       deleted, or moved out of .claude/agents/ since — last seen
- *       17m ago — the orchestrator will answer until it returns         6 lines
+ *       17m ago — no listener right now         6 lines
  *
  * A lapsed lane is ordinary: every agent that is not parked right now reads
  * that way.
@@ -119,6 +119,7 @@ const LANES: readonly AgentLane[] = [
     },
     live: false,
     since: ago(17 * 60_000),
+    pending: 0,
     summary: null,
     origin: { id: "th_host", title: "Q3 planning" },
   },
@@ -127,6 +128,7 @@ const LANES: readonly AgentLane[] = [
     resident: { name: "claims-review", docId: null, weight: null, designationId: null },
     live: false,
     since: ago(17 * 60_000),
+    pending: 0,
     summary: null,
     origin: { id: "th_gone", title: "The claims conversation" },
   },
@@ -359,7 +361,7 @@ test.describe("the address popover holds still while you read it", () => {
 
     // Revealed: the whole sentence is on the statement's own title, and
     // the row's has carried `name — note — line` since UI-126.
-    const whole = `claims-review will answer — ${MISSING_PROFILE_NOTE} — last seen 17m ago — the orchestrator will answer until it returns`;
+    const whole = `claims-review will answer — ${MISSING_PROFILE_NOTE} — last seen 17m ago — no listener right now`;
     await expect(says).toHaveAttribute("title", whole);
     await expect(gone).toHaveAttribute("title", new RegExp(MISSING_PROFILE_NOTE.slice(0, 24)));
 
@@ -482,6 +484,7 @@ const manyLanes = (count: number): readonly AgentLane[] =>
     },
     live: false,
     since: ago(17 * 60_000),
+    pending: 0,
     summary: null,
     origin: { id: `th_lane_${String(index)}`, title: `Conversation ${String(index)}` },
   }));
@@ -504,6 +507,7 @@ const FIVE_LANES: readonly AgentLane[] = [
     },
     live: false,
     since: ago(17 * 60_000),
+    pending: 0,
     summary: null,
     origin: { id: "th_lapsed", title: "The lapsed conversation" },
   },
@@ -512,6 +516,7 @@ const FIVE_LANES: readonly AgentLane[] = [
     resident: { name: null, docId: null, weight: null, designationId: null },
     live: false,
     since: null,
+    pending: 0,
     summary: null,
     origin: { id: "th_wait", title: "A conversation nobody has parked on" },
   },
@@ -917,6 +922,7 @@ const NAMED_LANES: readonly AgentLane[] = [
     },
     live: true,
     since: NOW.toISOString(),
+    pending: 0,
     summary: null,
     origin: { id: "th_host", title: "Q3 planning" },
   },
@@ -925,6 +931,7 @@ const NAMED_LANES: readonly AgentLane[] = [
     resident: { name: LONG_NAME, docId: "doc_long_agent", weight: HEAVY_KEY, designationId: null },
     live: true,
     since: NOW.toISOString(),
+    pending: 0,
     summary: null,
     origin: { id: "th_gone", title: "The claims conversation" },
   },

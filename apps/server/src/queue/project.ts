@@ -67,11 +67,30 @@ export const QUEUE_TRANSITION_QUERY_KEYS: readonly QueryKey[] = [...QUEUE_QUERY_
  * Total over the statuses rather than a judgement per verb: a caller states
  * what it did and the rule answers, so a new transition cannot be added with a
  * hand-picked key list the way the seven sites of SERVER-115 were.
+ *
+ * **`pending` joins `in-progress` here, and it is a reversal** (SERVER-155).
+ * SERVER-115 decided that an enqueue must not name the roster, and was right
+ * then: a lane's row reported the work it was *holding*, and nobody holds a
+ * pending event. A row now also carries `pending`, so an enqueue moves it.
+ *
+ * It is not a refinement of that decision but a change to what the roster is
+ * for. Since SPEC.md §7's rider signed 2026-08-25 there is no fallback, so a
+ * conversation whose listener is not running waits until one starts, and
+ * `pending > 0 && !live` is the only thing that tells the orchestrator to start
+ * it. A roster that stayed stale on an enqueue would leave that conversation
+ * waiting with nothing announcing that anything had changed — which is now
+ * indefinitely rather than merely slowly.
+ *
+ * The cost SERVER-115 named is real and now worth paying: an enqueue is not a
+ * hot path, and the refetch is a bounded read over the designated lanes.
  */
 export function queueTransitionKeys(
   ...statuses: readonly (QueueEventStatus | undefined)[]
 ): readonly QueryKey[] {
-  return statuses.includes("in-progress") ? QUEUE_TRANSITION_QUERY_KEYS : QUEUE_QUERY_KEYS;
+  const movesTheRoster = statuses.some(
+    (status) => status === "in-progress" || status === "pending",
+  );
+  return movesTheRoster ? QUEUE_TRANSITION_QUERY_KEYS : QUEUE_QUERY_KEYS;
 }
 
 /**

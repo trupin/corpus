@@ -369,6 +369,21 @@ export interface CorpusClient {
    * its own `since` would be asking for a different act than the one §7 defines.
    */
   askReflection(): Promise<ReflectAskResult>;
+  /**
+   * `PUT /api/workspace/reflect/quiet` — **set the quiet window, or switch the
+   * automatic path off** (SPEC.md §7's rider signed 2026-08-25).
+   *
+   * `0` disables the automatic path and leaves asking as the only way a
+   * reflection happens, which is the spelling §7 has always given to *off*.
+   * There is no separate boolean, because two keys with one effect are two ways
+   * to say the same thing.
+   *
+   * **It answers the whole `ReflectStatus`**, exactly as the `GET` does, so a
+   * caller that switches the path off learns in the same round trip what is
+   * still pending and how many documents are unreflected — and a cache can take
+   * the response rather than invalidating and reading again.
+   */
+  setReflectQuiet(quiet: number): Promise<ReflectStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
@@ -1089,6 +1104,13 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
 
     async askReflection() {
       return unwrap("POST /api/workspace/reflect", await api.POST("/api/workspace/reflect", {}));
+    },
+
+    async setReflectQuiet(quiet) {
+      return unwrap(
+        "PUT /api/workspace/reflect/quiet",
+        await api.PUT("/api/workspace/reflect/quiet", { body: { quiet } }),
+      );
     },
 
     async getHealth(options) {

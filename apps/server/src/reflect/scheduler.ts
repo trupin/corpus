@@ -58,6 +58,16 @@ export interface ReflectScheduler {
   start(): void;
   /** A mutation landed. `agent` is ignored; see the header. */
   noteWrite(actor: Actor): void;
+  /**
+   * The configured window changed (SERVER-151) — re-read it and arm from now.
+   *
+   * `quietMinutes` is a thunk, so a changed window would be picked up on the
+   * next write anyway. That is not soon enough for a switch: a person who turns
+   * the automatic path off expects it off, not off after the next thing they
+   * type. Re-arming makes it immediate in both directions — `0` disarms now, a
+   * non-zero value arms now.
+   */
+  rearm(): void;
   stop(): void;
   /** The window currently armed, in ms, or `null` when nothing is. Test seam. */
   readonly armedForMs: number | null;
@@ -118,6 +128,7 @@ export function createReflectScheduler(options: ReflectSchedulerOptions): Reflec
 
   return {
     start: arm,
+    rearm: arm,
     noteWrite(actor) {
       if (actor === "agent") return;
       arm();

@@ -66,6 +66,7 @@ test.describe("the console's residents tab", () => {
           // Presence is a park held **now** (SPEC.md §7), so the stamp has to be
           // fresh against the wall clock rather than a fixed date that lapses.
           since: new Date().toISOString(),
+          pending: 0,
           summary: null,
           origin: { id: "th_solo", title: "Q3 planning" },
         },

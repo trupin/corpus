@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -44,18 +44,18 @@ outstanding.
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/threads/:id/resident` declares a **409** for a thread whose
+- [x] `POST /api/threads/:id/resident` declares a **409** for a thread whose
       release is still draining
-- [ ] The refusal body carries **how many events are outstanding**, so the
+- [x] The refusal body carries **how many events are outstanding**, so the
       message a person reads is specific rather than "try again later"
-- [ ] The description states the rule and its reason, citing §7 — a reader of the
+- [x] The description states the rule and its reason, citing §7 — a reader of the
       contract must not have to open the spec to learn why this is refused
-- [ ] It says the condition is **transient and self-clearing**, so nothing treats
+- [x] It says the condition is **transient and self-clearing**, so nothing treats
       it as a permanent state of the thread
-- [ ] `409` and not `423` or `503`: the existing error vocabulary in this package
+- [x] `409` and not `423` or `503`: the existing error vocabulary in this package
       decides it. Match what the package already does for a conflicting state
       rather than introducing a code it does not use
-- [ ] `openapi.json` and the generated client regenerate cleanly
+- [x] `openapi.json` and the generated client regenerate cleanly
 
 ## Technical Design
 
@@ -95,16 +95,82 @@ designate again and succeed.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### I minted a new error code, and the repository's own tests refused it
+
+First attempt added `draining` to `ERROR_CODES` with a `DrainingError` body,
+reasoning from `StaleKeyError`'s docblock: *"two different refusals on one status
+must stay tellable apart at the place clients actually branch — the `code`."*
+
+Three existing tests went red, and they were right:
+
+```
+× did not mint a second code for the same fact          (CONTRACT-058)
+× gives the three 409s distinguishable codes
+× gives 413 the bad_request body, leaving the error union closed
+```
+
+The rule is more precise than the sentence I quoted. This package has settled the
+question **twice** — `ReattachConflictError` and `PatchConflictError` are *both*
+`code: "conflict"`, told apart by `reason` vocabularies that do not overlap — and
+its own comment says why: *"the two state refusals narrow `conflict` with a
+`reason` rather than each claiming a code of its own, and one `code` never means
+two things."*
+
+So this is `conflict` with `reason: "draining"`, beside `has-parent`. A third
+code would have been the same fact wearing a new name, which is exactly what
+`unknown_recipient`'s test forbids.
+
+**Worth keeping**: the guard that caught it was not a test of my change. It was
+the closed-union invariant, defending a rule I had read and misapplied.
+
+### The two refusals on this route are opposites
+
+`has-parent` can **never** succeed. `draining` is about to succeed, in seconds.
+A client that could not tell them apart would offer *"try again"* where trying
+can never work, and *"this thread can never have a resident"* where it is about
+to have one. The `reason` description says that in those words, and a test pins
+it.
+
+### The count is a field
+
+`PatchConflictError.matches` is the same idea for the same reason: *"try again
+later"* does not tell a person whether later is a second or an hour, and a client
+scraping a number out of `message` parses prose the server is free to reword.
+`0` under `has-parent`, at least one under `draining`.
+
+### Falsification
+
+Changing `draining` to `no-match`, which `PatchConflictError` already uses:
+
+```
+× narrows `conflict` with a reason rather than minting a code
+× does not overlap the other two conflict vocabularies
+  Tests  2 failed | 3 passed
+```
+
+The overlap guard is the one that matters — it is what stops a caller reaching
+the wrong route's narrowing and getting a plausible wrong answer.
+
+### Checks
+
+```
+vitest run packages/contract      70 files, 3005 tests passed   exit 0
+eslint packages/contract/src                      0 errors      exit 0
+tsc -p tsconfig.build.json                                      exit 0
+generate (openapi.json + client)                                clean
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CONTRACT-089]` prefix
+- [x] Committed with `[CONTRACT-089]` prefix

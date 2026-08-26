@@ -44,7 +44,10 @@ describe("reflection work stays in the scope of what it reflects on", () => {
       asUser,
     );
     const threadId = ((await thread.json()) as { thread: { id: string } }).thread.id;
-    const firstClaim = await ws.post("/api/queue/claim-all", {}, asAgent);
+    // Scoped, because SPEC.md §7's rider A designates a general resident on a
+    // new standalone thread (SERVER-154) and the fallback is gone: this turn is
+    // its lane's, and an unscoped claim never sees another lane's work.
+    const firstClaim = await ws.post(`/api/queue/claim-all?scope=${threadId}`, {}, asAgent);
     const commentJob = ((await firstClaim.json()) as { events: { id: string }[] }).events[0]?.id;
 
     const filed = await idOf(
@@ -61,7 +64,15 @@ describe("reflection work stays in the scope of what it reflects on", () => {
 
     ws.advance(IDLE_MS * 4);
     const reflection = await vi.waitFor(async () => {
-      const claimed = await ws.post("/api/queue/claim-all", {}, asAgent);
+      /*
+       * Scoped, and the reason is the property this whole case is about
+       * (SERVER-154). The filed document's `origin` reaches `threadId`, which
+       * is a designated lane since rider A, so the scope walk stamps its
+       * `doc.edited` for that lane — and with the fallback gone (SERVER-152) an
+       * unscoped claim never sees it. The resident owning the artifacts its
+       * conversation produced is exactly what §7 promises.
+       */
+      const claimed = await ws.post(`/api/queue/claim-all?scope=${threadId}`, {}, asAgent);
       const { events } = (await claimed.json()) as { events: { id: string; type: string }[] };
       const found = events.find((event) => event.type === "doc.edited");
       expect(found).toBeDefined();
@@ -96,6 +107,13 @@ describe("reflection work stays in the scope of what it reflects on", () => {
 
     ws.advance(IDLE_MS * 4);
     const reflection = await vi.waitFor(async () => {
+      /*
+       * **Unscoped, and that is the case** (SERVER-154). This document belongs
+       * to no conversation, so its `doc.edited` falls in no scope and takes the
+       * orchestrator's lane — the sibling above is scoped precisely because its
+       * document *does* reach a designated thread. The two together are what
+       * says the walk is doing the deciding.
+       */
       const claimed = await ws.post("/api/queue/claim-all", {}, asAgent);
       const { events } = (await claimed.json()) as { events: { id: string; type: string }[] };
       const found = events.find((event) => event.type === "doc.edited");

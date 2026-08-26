@@ -131,9 +131,39 @@ export async function runAgents(context: WorkspaceCommandContext, now = Date.now
  * change.
  */
 export function renderLane(lane: AgentLane, now: number): string {
-  const cells = [laneLabel(lane), ...residentCell(lane), presenceCell(lane, now)];
+  const cells = [
+    laneLabel(lane),
+    ...residentCell(lane),
+    presenceCell(lane, now),
+    ...waitingCell(lane),
+  ];
   const row = cells.join(" · ");
   return lane.summary === null ? row : `${row} — ${oneLine(lane.summary)}`;
+}
+
+/**
+ * **How much is waiting on this lane, printed only when something is**
+ * (CLI-070, for AGENT-053).
+ *
+ * The orchestrate skill launches a listener for a lane that is **not live** and
+ * **has something pending**, and reads both off this row. `live` was already
+ * here; without this cell the instruction names a fact the surface does not
+ * show, and the orchestrator would be left inferring it from absence — which
+ * launches an agent for every idle conversation in the workspace.
+ *
+ * **Absent at zero rather than `0 waiting`.** A roster is read by a person as
+ * often as by an agent, and a column of zeroes is a column nobody reads. The
+ * pair that matters is loud precisely because it is rare: `waiting for a
+ * listener · 3 waiting` is a row that says what to do about it.
+ *
+ * It is deliberately not folded into the presence cell. Presence answers *is
+ * anybody there*, this answers *is anybody waiting*, and the launch decision
+ * needs both — a row that merged them would be a third fact neither field
+ * states.
+ */
+function waitingCell(lane: AgentLane): string[] {
+  if (lane.pending === 0) return [];
+  return [`${String(lane.pending)} waiting`];
 }
 
 /**

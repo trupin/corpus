@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -49,35 +49,35 @@ collision the deferral rule guards against cannot occur.
 
 ## Acceptance Criteria
 
-- [ ] **The launch-deferral rule is deleted.** *"But never in the same pass you
+- [x] **The launch-deferral rule is deleted.** *"But never in the same pass you
       took that lane's work"* and everything under it goes. Its own text says it
       exists because of the fallback — _"it is the one collision the fallback can
       actually produce"_ — and there is no fallback
-- [ ] **Launching moves to the roster read**, ahead of dispatching, which is
+- [x] **Launching moves to the roster read**, ahead of dispatching, which is
       where that same rule says it would have been but for the fallback: _"This
       is why launching happens after the claim rather than at the roster read"_
-- [ ] The skill launches for a lane where **`pending > 0` and not `live`**,
+- [x] The skill launches for a lane where **`pending > 0` and not `live`**,
       reading SERVER-155's field. Not from `summary`, which the contract forbids
       deciding from, and not from absence alone, which launches for every idle
       conversation
-- [ ] **One listener per lane per pass**, still. The *"a conversation that queued
+- [x] **One listener per lane per pass**, still. The *"a conversation that queued
       eight messages gets eight listeners"* hazard is unchanged by any of this
-- [ ] *"What the claim hands you is yours, and you do not audit it"* is rewritten.
+- [x] *"What the claim hands you is yours, and you do not audit it"* is rewritten.
       Its conclusion survives and its reason does not: the claim is still not
       audited, but no longer because the server folded lapsed lanes in
-- [ ] *"A lapsed lane's work is ordinary work"* is **deleted entirely.** There is
+- [x] *"A lapsed lane's work is ordinary work"* is **deleted entirely.** There is
       no such work. With it goes the instruction *"do not hold work back for an
       agent that might come back"*, which rider C inverts, and the `corpus job
       log … "claimed under the fallback"` example
-- [ ] **The never-apologise rule survives, and its reason is restated.** *"Never
+- [x] **The never-apologise rule survives, and its reason is restated.** *"Never
       apologise for a resident and never announce that one is missing"* was right
       for the fallback and is more right now — the orchestrator is not in that
       conversation at all. But its old rationale (the lapse costs warmth and
       speed) is now false, and the reproduction above is an orchestrator
       apologising at length in somebody's thread
-- [ ] **A held row leaving the list** section is re-read against the new rules and
+- [x] **A held row leaving the list** section is re-read against the new rules and
       repaired or deleted
-- [ ] Every deleted argument is deleted **with its conclusion re-derived**, never
+- [x] Every deleted argument is deleted **with its conclusion re-derived**, never
       left as a conclusion whose reason has gone
 
 ## Technical Design
@@ -131,16 +131,99 @@ Then keep posting while the listener works, and confirm nothing defers.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### Writing the instruction found a hole in the surface
+
+Rider D has the orchestrator launch from a lane that is **not live** with **work
+pending**, read off `corpus agents`. CONTRACT-087 put `pending` on the wire and
+SERVER-155 fills it — and `renderLane` never printed it. The skill would have
+named a fact the surface does not show, and an orchestrator left inferring it
+from absence launches an agent for every idle conversation in the workspace.
+
+Filed and fixed as **CLI-070**. A row now reads:
+
+```
+th_9f1a2b "Rate check" · analyst (doc_a7) · lapsed, last parked 41m ago · 3 waiting
+```
+
+Absent at zero, and a cell of its own rather than folded into presence: presence
+answers *is anybody there*, this answers *is anybody waiting*, and the decision
+needs both stated separately.
+
+### The deferral rule is deleted, with its own reason as the epitaph
+
+The text that produced the user's transcript is gone. What replaces it says why
+it was right, why it cannot bite any more, and what it cost:
+
+> Deferring the launch until the lane was clear meant a conversation somebody
+> kept using **never had a clear pass** — you claimed, so you deferred; they
+> replied, so you claimed again. The busier the conversation, the more certain
+> it was that the agent that owned it never started at all. Nothing in the old
+> text was wrong; the outcome was.
+
+### Every deleted argument had its conclusion re-derived
+
+Not one was left standing without its reason.
+
+- **"What the claim hands you is yours, and you do not audit it"** keeps its
+  conclusion. Its reason changes, and the instruction *"do not hold work back
+  for an agent that might come back"* is now true for the opposite reason — the
+  server is already holding it.
+- **"A lapsed lane's work is ordinary work"** is deleted outright. There is no
+  such work.
+- **"Never apologise for a resident"** survives and is *stronger*. Its old reason
+  was that the work still got done slowly. The new one: you are not in that
+  conversation at all, and **the fix is a launch, not an explanation.** The
+  transcript that prompted this issue is an orchestrator writing a paragraph
+  where it should have started an agent, so the rule is aimed at exactly what
+  went wrong.
+- **The reaper**, the **broken-`converse` diagnosis** and the **held-row** rule
+  each named the fallback and each was repaired rather than deleted. The
+  broken-`converse` symptom is now *a climbing pending count*, which is both
+  more precise and the only symptom left.
+
+### Falsification, as far as prose admits it
+
+There is no unit test for a skill. What stands in for one is a walk of the new
+text against the user's own transcript, sentence by sentence, checking that each
+step it describes is now prevented by a named passage:
+
+```
+OK   the deferral rule is gone
+OK   launch outranks dispatch
+OK   the pair is the decision
+OK   no work falls to the orchestrator
+OK   do not explain, launch
+OK   starvation named
+```
+
+And a grep sweep for `fallback` / `lapse`: **three hits remain, all deliberate
+history** — sentences that say what was removed and why, which is the one form
+in which the word should survive.
+
+### What no test can hold, restated
+
+Rider D is an instruction. If a model reads it and dispatches first anyway, a
+conversation goes unanswered — where before it went answered by the wrong agent.
+SHARED-072 records this as the whole of the mitigation, and it still is.
+
+### Checks
+
+```
+vitest run apps/cli              2129 tests passed   exit 0
+generated artifacts drift        openapi + docs/cli.md up to date
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[AGENT-053]` prefix
+- [x] Committed with `[AGENT-053]` prefix

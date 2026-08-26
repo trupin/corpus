@@ -31,9 +31,14 @@ what the single-claimant rule was doing; lanes are what made the difference visi
 claim-all` and `corpus queue idle` with no `--thread` are the orchestrator's lane. There is no
 second spelling and you never pass `--thread` for yourself — that flag names somebody else's
 conversation, and passing one would park you on it. What the unscoped claim hands you is your
-own lane's work **plus** the pending work of every lane whose listener has lapsed, which is
-the fallback in *Claiming and batching*. It never hands you a live lane's work, so nothing you
-are given is being worked by somebody else at the same time.
+own lane's work, and **nothing else while a conversation still has its resident**. A listener that is absent, crashed, or never started
+keeps its lane's work: no timer hands it to you, however long the absence lasts.
+
+**So a conversation nobody is answering is not your work to do. It is your listener to
+launch.** That is the whole shape of this loop now, and the alternative is available at every
+moment and looks like helping. The one thing that returns work to you is a person **releasing**
+a resident, which is a deliberate act with a visible cause — after that the conversation has no
+resident, and its pending events arrive on your claim like anything else.
 
 Run one orchestrating session at a time. The server never hands one event to two claimants —
 that guarantee is unchanged and now holds per lane — but a second loop on this lane would
@@ -234,22 +239,33 @@ in the console to show for it. Run these steps in order, indefinitely:
    Run it every pass: after a clean park it reaps nothing and stays silent, and after an
    unclean stop it is what returns stranded work to `pending/`.
 3. **Read the roster.** `corpus agents`, one read, naming every lane: yours, and one for each
-   conversation that has a resident, with whether anybody is listening on it. Keep what it
-   printed — the dispatch step is what acts on it. It is the only thing that tells you a
-   listener needs launching, because nothing announces one stopping, and it is the whole of
-   your restart recovery: designations live on their threads and survive, while listeners are
-   processes and do not.
+   conversation that has a resident, with **whether anybody is listening on it and how much
+   work is waiting there**. Keep what it printed — step 6 is what acts on it.
+
+   **Those two fields together are the launch decision**: a lane that is **not live** and has
+   **something pending** is a conversation somebody is waiting on and nobody is answering. You
+   cannot take that work, so this row is the only thing that tells you it exists. A lane that
+   is not live with nothing pending is idle and perfectly healthy — launching for it would
+   give this workspace one agent per conversation that has ever existed.
+
+   It is also the whole of your restart recovery: designations live on their threads and
+   survive, while listeners are processes and do not.
 4. **Claim, then read what it printed.** `corpus queue claim-all` prints the pending batch
    and what the server still holds in-progress, as one payload. Nothing else happens until
    you have read it.
 5. **Reconcile that held list against your own work** (Claiming and batching below). It is
    the loop's own check on itself, and it only checks anything if you act on it here.
-6. **Dispatch every claimed event to a subagent, and launch the listeners the roster asked
-   for** (Routing and Delegation below). **This step is work, not a command** — one background
-   subagent per event, the whole batch out before you go on, and then one listener for each
-   unattended lane this batch took no work from. Launching comes **after** the claim rather
-   than before it, and *Routing* says why. It is the step a chained command line has nowhere to
-   put, which is why that chain is forbidden rather than discouraged.
+6. **Launch the listeners the roster asked for, and then dispatch every claimed event**
+   (Routing and Delegation below). **This step is work, not a command** — the listeners
+   **first**, then one background subagent per event, the whole batch out before you go on.
+
+   **Launching outranks dispatching, and it is not a preference.** A conversation whose
+   listener has not started is a conversation nothing will answer — nobody else can take that
+   work now — so the delay is not one turn's latency but a whole line of work stopped. A batch
+   is never the reason a listener waits.
+
+   It is the step a chained command line has nowhere to put, which is why that chain is
+   forbidden rather than discouraged.
 7. **Park, alone.** `corpus queue idle` is the entire command — never appended to the claim
    above it, never combined with the settling below it, never launched a second time while
    an earlier one is still parked. It returns on a new event or on its ~8-minute rearm.
@@ -311,43 +327,47 @@ the empty one is the shortcut that loses the next real event.
 
 **What the claim hands you is yours, and you do not audit it.** Your claim is scoped to your
 lane by being unscoped, and the server has already worked out what falls in it: your own
-lane's events, plus the pending events of every lane whose listener has **lapsed** — been
-absent longer than a grace window the server owns and this skill does not restate. A live
-lane's events are never in it. So there is no classification step here, and inventing one is a
-mistake in both directions: do not check whether an event's thread has a resident, do not
-compare payload ids against the roster, do not hold work back for an agent that might come
-back. Scope membership is a **walk** the server makes when the event is enqueued, following a
-thread's parents and a document's `origin` — you cannot reproduce it and nothing asks you to.
-The event arrived on your claim, so it is yours to work. That is the whole test.
+lane's events, and the pending events of any conversation whose resident a person has
+**released**. A lane that still has its resident is never in it — not while its listener is
+running, and **not while it is absent either**.
 
-**A lapsed lane's work is ordinary work, and the lapse is not something you say in the
-thread.** Those events arrive as `comment.created` like any other and go down the same routing
-row to the same comment-skill subagent, briefed the same way. What they lack is the resident's
-own memory of the conversation, and the honest answer to that is to gather it as any subagent
-does — the thread's turns *are* the conversation, and `corpus thread context` is the briefing.
-**Never apologise for a resident and never announce that one is missing.** The person can see
-their lane's state on the board; a turn saying "your agent is not running" is an operator's
-diagnostic posted into somebody's conversation, and it is the one thing that turns a lapse —
-which costs some warmth and some speed — into something that reads like a breakdown. The lapse
-belongs in the job's log, where the operator is already looking:
+So there is no classification step here, and inventing one is a mistake in both directions: do
+not check whether an event's thread has a resident, do not compare payload ids against the
+roster, and — the instruction that used to say the opposite — **do not hold work back for an
+agent that might come back**, because the server is already holding it. Scope membership is a
+**walk** the server makes when the event is enqueued, following a thread's parents and a
+document's `origin` — you cannot reproduce it and nothing asks you to. The event arrived on
+your claim, so it is yours to work. That is the whole test.
 
-```bash
-corpus job log evt_2e4f8b "claimed comment.created on th_4b8e2c under the fallback — that lane has no listener"
-```
+**There is no such thing as a lapsed lane's work any more, and this is where that used to be
+explained.** A conversation whose listener is absent keeps its own work. You will not be
+handed it, you cannot claim it, and the thing that gets it answered is the listener you launch
+in step 6.
 
-The courtesy that *is* owed is a listener, and it comes from the roster rather than from the
-batch: launch one for that lane, once, as *Routing* prescribes. Do it from step 3 and not from
-the events, or a conversation that queued eight messages while it was unattended gets eight
-listeners.
+**Never apologise for a resident and never announce that one is missing.** This rule survives
+the fallback that produced it, and it matters more now, not less. You are not in that
+conversation at all — you have not claimed anything there and you will not — so a turn saying
+"your agent is not running" is an operator's diagnostic posted into somebody else's
+conversation by an agent with no business writing in it. The person can see their lane's state
+on the board, where it says exactly that and is theirs to act on.
+
+Its old reason — that the work still got done, slower and without the conversation's warmth —
+is no longer true, and the new reason is stronger: **the fix is a launch, not an
+explanation.** If you find yourself composing a sentence about why somebody's agent has not
+answered, you are doing the wrong thing with the wrong hands. Launch the listener.
 
 **A held row can leave your list while you are still working it.** The held list answers what
 the server thinks *you* are doing, and it is filtered exactly as your claim is — so an event
-you took under the fallback disappears from it the moment that lane's listener comes back and
-the lane reads live again. Nothing has been settled and nothing has been taken off you:
-`corpus queue complete` and `corpus queue fail` take an event id and no lane, so the event is
-still yours to settle and you settle it from your subagent's report exactly as always. Read
-this the way you read every other row — **settlement follows the report, never the list.** The
-list is a check on work you may have forgotten, not the record of what you are holding.
+you took from a **released** conversation disappears from it the moment somebody designates a
+resident there again. Nothing has been settled and nothing has been taken off you: `corpus
+queue complete` and `corpus queue fail` take an event id and no lane, so the event is still
+yours to settle and you settle it from your subagent's report exactly as always. Read this the
+way you read every other row — **settlement follows the report, never the list.** The list is a
+check on work you may have forgotten, not the record of what you are holding.
+
+(The server refuses a re-designation while you are still holding that conversation's work, so
+the window in which this can happen is the one between your settling the last of it and the
+person asking. It is narrow and it is real.)
 
 **`inProgress` is a different list from the one you just claimed, and never work to do
 again.** It is `in-progress/` as it stood *before* this call's moves, so the events of this
@@ -398,8 +418,8 @@ guessing about it unnecessary as well as harmful.
 a trespass.** Staleness is staleness: work stranded by a resident that died is stuck whoever
 claimed it, and a reaper scoped to your lane would leave it unrecoverable by the only agent
 still running. It does not re-route what it recovers — a reaped event goes back to `pending/`
-on **the lane it was claimed from**, and the fallback rather than the reaper decides who may
-then see it. So run it every pass, and know that it is yours alone to run: a resident never
+on **the lane it was claimed from**, and that lane's own agent is who may then see it — a
+reaped event returns to the conversation it belongs to, not to you. So run it every pass, and know that it is yours alone to run: a resident never
 does, because requeuing another lane's held work is not something a lane owner can account
 for.
 
@@ -484,7 +504,7 @@ switch.
   {"events":[{"id":"evt_3f8c1a","type":"resident.designated","created":"2026-07-28T09:14:02Z","source":"thread","payload":{"threadId":"th_4b8e2c","resident":{"name":null,"docId":null,"weight":null}}}],"inProgress":{"events":[],"total":0,"truncated":false}}
   corpus agents
   orchestrator · waiting for a listener
-  th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
+  th_4b8e2c "Q3 planning" · a general resident · waiting for a listener · 1 waiting
   corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Sonnet — judged, difficulty: an open-ended conversation, nothing stated)"
   corpus queue complete evt_3f8c1a
   ```
@@ -570,15 +590,20 @@ switch.
   launch its successor, log that the lane is designated at a new weight and what went out,
   and let it leave on its own.
 
-- **A lane with nobody on it gets one, once a pass.** For every roster row that is not the
-  orchestrator's and does not read `live`, launch a listener. This covers the two cases no
-  event announces — a listener that crashed or was killed, and your own restart, where every
-  designation is still sitting on its thread and every listener is gone. It is **once per pass,
-  per lane, and never per event**: a lane that has been unattended may hand you a dozen events
-  under the fallback and it still wants one listener, and a `resident.designated` for a lane
-  you have already launched into this pass launches nothing further. And if a lane you launched
+- **A lane with work waiting and nobody on it gets a listener, once a pass.** For every roster
+  row that is not the orchestrator's, does not read `live`, and **has something pending**,
+  launch a listener. Those two fields together are the decision, and neither makes it alone: a
+  lane that is not live with nothing waiting is idle and perfectly healthy, and launching for
+  it would give this workspace one running agent per conversation that has ever existed.
+
+  This covers the two cases no event announces — a listener that crashed or was killed, and
+  your own restart, where every designation is still sitting on its thread and every listener
+  is gone. It is **once per pass, per lane, and never per event**: a lane that has been
+  unattended may be holding a dozen messages and it still wants one listener, and a
+  `resident.designated` for a lane you have already launched into this pass launches nothing
+  further. And if a lane you launched
   into does not read `live` on the following pass, that launch is not working: log it, stop
-  relaunching that lane, and leave it to the fallback until a fresh `resident.designated` says
+  relaunching that lane, and wait for a fresh `resident.designated` says
   to try again. Relaunching every pass forever is how one lane that will not take a listener
   becomes the only thing this loop does. Word that log line as **standing down, never as a failed launch** — a
   listener that started, parked, claimed this lane's work and is now inside a long turn reads
@@ -622,21 +647,25 @@ switch.
   to disagree once already. What you rely on is the outcome: a duplicate resolves itself at
   the first message, so launching costs a wasted session, occasionally. The failure you would
   buy by holding back has no repair in it at all — a listener that really did die, on a lane
-  nobody relaunches, with a person waiting on the fallback indefinitely.
+  nobody relaunches, and **nobody else coming**: since the fallback was removed, a conversation
+  with no listener is not answered slowly, it is not answered.
 
-- **But never in the same pass you took that lane's work.** This is why launching happens after
-  the claim rather than at the roster read, and it is the one collision the fallback can
-  actually produce. The events you claimed under the fallback are sitting in `in-progress/`
-  still stamped for that lane. A listener launched now goes live the moment it parks — and from
-  that moment those rows are reported to **it**, in the held list its own first claim prints,
-  as work on its lane that it has no memory of claiming. Reconciling that list is exactly what
-  its skill tells it to do, and reconciliation cannot tell your live dispatch from an event
-  somebody abandoned: it reads the thread, finds nothing answering the turn yet, and does the
-  work your subagent is in the middle of doing. Two agents then answer the same message, and
-  the first you know of it is a reply you did not write. So per lane, per pass: **take the work
-  or launch the listener, never both.** Prefer taking the work — you have already claimed it,
-  the person is waiting on an answer rather than on an agent, and the lane is not going
-  anywhere. Launch on a later pass, once what you took is settled.
+- **Launch before you dispatch, in the same pass, every pass.** There used to be a rule here
+  saying the exact opposite — *never in the same pass you took that lane's work* — and it was
+  correct for the mechanism it guarded. Under the fallback you could be holding a lane's
+  events in `in-progress/` while launching its listener, and that listener would read your
+  live dispatch as work somebody abandoned and answer the same turn twice.
+
+  **You can no longer be holding them.** A conversation with a resident is not on your claim,
+  absent listener or not, so there is nothing of yours on that lane to collide with. The
+  collision the rule guarded against cannot happen, so the rule is gone rather than relaxed.
+
+  It is gone for a second reason worth knowing, because it is what the rule cost. Deferring
+  the launch until the lane was clear meant a conversation somebody kept using **never had a
+  clear pass** — you claimed, so you deferred; they replied, so you claimed again. The busier
+  the conversation, the more certain it was that the agent that owned it never started at
+  all. Nothing in the old text was wrong; the outcome was, and it took a person noticing an
+  orchestrator explain its own starvation to find it.
 
 - **Structured targets.** The payload carries structured `mentions` and `skills` fields,
   parsed by the server at post time. `@<subagent>` (a `type: agent-def` document under
@@ -2088,8 +2117,10 @@ neighbouring documents back with it.
 **A broken `converse` shows up differently, and is worth recognising as its own thing.** The
 loop is fine and what fails is one conversation: its lane reads live on `corpus agents` while
 nothing gets answered in it, or its listener exits the moment it starts and the lane keeps
-reading `waiting for a listener` pass after pass while the orchestrator quietly does that
-conversation's work under the fallback. Restore the file the same way, and the next launch
+reading not-live with its pending count climbing, pass after pass, while you launch into it
+and nothing sticks. **That climbing count is the symptom**, and it is now the only one: the
+work is not being quietly done by anybody else, so a broken `converse` means a conversation
+going unanswered rather than answered oddly. Restore the file the same way, and the next launch
 picks it up; listeners already running keep the text they started with until they end.
 
 Halt first so a half-working loop cannot claim events mid-repair; resume last and the loop

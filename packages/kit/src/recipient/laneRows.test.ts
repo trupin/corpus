@@ -10,7 +10,7 @@ import {
   laneRow,
   laneRows,
   unknownLaneRow,
-  LAPSED_FALLBACK,
+  LAPSED_QUIET,
   LAPSED_ORCHESTRATOR,
   LIVE_WITHOUT_SUMMARY,
   MISSING_PROFILE_MARK,
@@ -28,6 +28,7 @@ function lane(overrides: Partial<AgentLane> = {}): AgentLane {
     resident: { name: "claims-review", docId: "doc_agent", weight: "heavy", designationId: null },
     live: true,
     since: NOW.toISOString(),
+    pending: 0,
     summary: "reviewing the draft",
     origin: { id: "th_root", title: "The claims conversation" },
     ...overrides,
@@ -177,7 +178,7 @@ describe("laneLine", () => {
   it("says how long a lapsed lane has been gone, and who answers meanwhile", () => {
     const since = new Date(NOW.getTime() - 18 * 60_000).toISOString();
     expect(laneLine(lane({ live: false, since }), "lapsed", NOW)).toBe(
-      `last seen 18m ago — ${LAPSED_FALLBACK}`,
+      `last seen 18m ago — ${LAPSED_QUIET}`,
     );
   });
 
@@ -186,7 +187,7 @@ describe("laneLine", () => {
     // composer apart never spell a duration differently.
     const since = new Date(NOW.getTime() - (2 * 3_600_000 + 5 * 60_000)).toISOString();
     expect(laneLine(lane({ live: false, since }), "lapsed", NOW)).toBe(
-      `last seen 2h 05m ago — ${LAPSED_FALLBACK}`,
+      `last seen 2h 05m ago — ${LAPSED_QUIET}`,
     );
   });
 
@@ -198,9 +199,7 @@ describe("laneLine", () => {
   });
 
   it("drops the age rather than printing a broken one", () => {
-    expect(laneLine(lane({ live: false, since: "not a date" }), "lapsed", NOW)).toBe(
-      LAPSED_FALLBACK,
-    );
+    expect(laneLine(lane({ live: false, since: "not a date" }), "lapsed", NOW)).toBe(LAPSED_QUIET);
   });
 
   it("says nothing at all about a lane the roster has not described", () => {

@@ -85,6 +85,61 @@ export const ReflectAskResultSchema = openapi(
  * literally the same, {@link isUnreflected} — so the corpus count and the marks
  * on the rows cannot disagree.
  */
+/**
+ * The **largest** quiet window a caller may set, in minutes — 7 days.
+ *
+ * Bounded rather than left open (CONTRACT-086) because the field is now
+ * writable, and an unbounded integer lets one mistyped digit configure a window
+ * measured in years. A window that long is indistinguishable from `0` in effect
+ * and distinguishable from it in intent, which is the worst pair: the automatic
+ * path looks armed and never fires.
+ *
+ * A week is chosen as the point past which nobody is choosing a *cadence* any
+ * more. Somebody who wants the automatic path off has `0`, which is the spelling
+ * SPEC.md §7 signed for exactly that, and it stays available below the bound.
+ */
+export const MAX_REFLECT_QUIET_MINUTES = 7 * 24 * 60;
+
+/**
+ * `reflect.quiet` — the quiet window in minutes, declared once for the two
+ * places it appears (CONTRACT-086).
+ *
+ * A factory rather than a shared instance so the two uses can differ in nothing
+ * but their surrounding object, and so neither can mutate the other's metadata.
+ * The prose is the same on both because the field *is* the same field: what
+ * `GET` reports is what `PUT` set.
+ */
+function quietMinutesField(): z.ZodNumber {
+  return z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_REFLECT_QUIET_MINUTES)
+    .describe(
+      "The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default " +
+        `${String(DEFAULT_REFLECT_QUIET_MINUTES)}, maximum ${String(MAX_REFLECT_QUIET_MINUTES)} — ` +
+        "seven days, past which nobody is choosing a cadence). The server enqueues a reflection " +
+        "by itself when something changed after the clock, nothing has changed for this long, and " +
+        "no reflection is pending or running — so ten changes in five minutes are one reflection, " +
+        "this long after the last. **`0` disables the automatic path** and leaves asking as the " +
+        "only way one happens: the Reflect control becomes the only thing that starts one.",
+    );
+}
+
+/**
+ * The body of `PUT /api/workspace/reflect/quiet` (CONTRACT-086).
+ *
+ * **One field, and deliberately not a boolean.** SPEC.md §7's rider signed
+ * 2026-08-25 lets a person switch the automatic path off from the board, and the
+ * spelling it signed for "off" is the one that already existed: `reflect.quiet:
+ * 0`. A second key meaning "automatic on/off" would be two ways to say one
+ * thing, and this package already carries the count of what that costs.
+ */
+export const ReflectQuietRequestSchema = openapi(
+  z.strictObject({ quiet: quietMinutesField() }),
+  "ReflectQuietRequest",
+);
+
 export const ReflectStatusSchema = openapi(
   z.object({
     reflected: IsoDateTimeSchema.nullable().describe(
@@ -119,18 +174,7 @@ export const ReflectStatusSchema = openapi(
         "nothing to say still posts its thread, in one line, so this is null only before the " +
         "first reflection lands.",
     ),
-    quiet: z
-      .number()
-      .int()
-      .min(0)
-      .describe(
-        "The configured quiet window in **minutes** (`reflect.quiet`, SPEC.md §7; default " +
-          `${String(DEFAULT_REFLECT_QUIET_MINUTES)}). The server enqueues a reflection by itself ` +
-          "when something changed after the clock, nothing has changed for this long, and no " +
-          "reflection is pending or running — so ten changes in five minutes are one reflection, " +
-          "this long after the last. **`0` disables the automatic path** and leaves asking as the " +
-          "only way one happens.",
-      ),
+    quiet: quietMinutesField(),
   }),
   "ReflectStatus",
 );

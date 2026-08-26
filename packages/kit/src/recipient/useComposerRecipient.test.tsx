@@ -25,6 +25,7 @@ const RESIDENT_LANE: AgentLane = {
   resident: { name: "claims-review", docId: "doc_agent", weight: "heavy", designationId: null },
   live: true,
   since: JUST_NOW,
+  pending: 0,
   summary: "reviewing the draft",
   origin: { id: "th_root", title: "The claims conversation" },
 };
@@ -34,6 +35,7 @@ const ORCHESTRATOR_LANE_ROW: AgentLane = {
   resident: null,
   live: true,
   since: JUST_NOW,
+  pending: 0,
   summary: null,
   origin: null,
 };
@@ -530,6 +532,7 @@ describe("the address line's recipient rows", () => {
       ...RESIDENT_LANE,
       live: false,
       since: "2026-01-01T00:00:00Z",
+      pending: 0,
       summary: null,
     };
     pickerFor("th_root", { lanes: [lapsed], graph: { th_root: {} } });
@@ -542,9 +545,39 @@ describe("the address line's recipient rows", () => {
     });
     expect(resident?.dataset["recipientLiveness"]).toBe("lapsed");
     expect(resident?.hasAttribute("disabled")).toBe(false);
-    expect(resident?.getAttribute("title")).toMatch(
-      /last seen .* — the orchestrator will answer until it returns/u,
-    );
+    // Quiet, not covered-for: the fallback that sentence described is gone
+    // (UI-174), so the line says the lane is unattended and stops there.
+    expect(resident?.getAttribute("title")).toMatch(/last seen .* — no listener right now/u);
+  });
+
+  /**
+   * UI-174. §8's rider, amended 2026-08-25: where the lane has no listener
+   * running, the row says **that**, and not merely that the work is queued —
+   * because since the fallback was removed, an agent that is not running is the
+   * reason nothing is happening, and it is the one thing a person can act on.
+   */
+  it("says an unattended lane's agent is not running, when something is waiting", async () => {
+    const waiting: AgentLane = {
+      ...RESIDENT_LANE,
+      live: false,
+      since: "2026-01-01T00:00:00Z",
+      pending: 2,
+      summary: null,
+    };
+    pickerFor("th_root", { lanes: [waiting], graph: { th_root: {} } });
+    await waitFor(openAddress);
+    await screen.findByRole("group", { name: RECIPIENT_GROUP_LABEL });
+    const resident = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-recipient-lane="th_root"]');
+      expect(found).not.toBeNull();
+      return found;
+    });
+
+    expect(resident?.getAttribute("title")).toContain("2 messages waiting");
+    expect(resident?.getAttribute("title")).toContain("its agent is not running");
+    // It states the fact and stops: no diagnosis of why, and no instruction the
+    // product gives nobody a way to follow.
+    expect(resident?.getAttribute("title")).not.toMatch(/start|crash|restart/iu);
   });
 
   /**

@@ -260,6 +260,7 @@ const RUNTIME_SURFACE = [
   "MAX_SCOPE_WALK",
   "laneRow",
   "laneRows",
+  "lapsedWaiting",
   "laneName",
   "laneLine",
   "laneLiveness",
@@ -268,7 +269,7 @@ const RUNTIME_SURFACE = [
   "UNNAMED_RESIDENT_LABEL",
   "LIVE_WITHOUT_SUMMARY",
   "NEVER_SEEN_LINE",
-  "LAPSED_FALLBACK",
+  "LAPSED_QUIET",
   "LAPSED_ORCHESTRATOR",
   // Who is resident, as against whether they are there — one vocabulary for the
   // three shapes a `Resident` now has, so the badge, the menu and the picker

@@ -21,6 +21,7 @@ function designated(overrides: Partial<AgentLane> = {}): AgentLane {
     // Relative to now: `isAgentPresent` expires evidence that has aged past the
     // grace window, so a fixed instant would be lapsed by the time this runs.
     since: new Date(Date.now() - 60_000).toISOString(),
+    pending: 0,
     summary: "reading the policy",
     origin: { id: "th_root", title: "Q3 planning" },
     ...overrides,
@@ -68,12 +69,8 @@ describe("ResidentBadge", () => {
     await waitFor(() => {
       expect(badge(container)?.dataset["residentLiveness"]).toBe("lapsed");
     });
-    expect(badge(container)?.getAttribute("title")).toContain(
-      "the orchestrator will answer until it returns",
-    );
-    expect(badge(container)?.textContent).toContain(
-      "the orchestrator will answer until it returns",
-    );
+    expect(badge(container)?.getAttribute("title")).toContain("no listener right now");
+    expect(badge(container)?.textContent).toContain("no listener right now");
     expect(container.querySelector(".lane-dot")?.getAttribute("aria-hidden")).toBe("true");
   });
 

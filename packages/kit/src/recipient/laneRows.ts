@@ -241,15 +241,39 @@ export const LIVE_WITHOUT_SUMMARY = "listening";
 export const NEVER_SEEN_LINE = "no listener yet";
 
 /**
- * What a lapsed *designated* lane says — §7's fallback, stated as the
- * consequence rather than as an error: past the grace window its pending events
- * become visible to the orchestrator's unscoped claim, so the work is done more
- * slowly and never silently not done.
+ * What a lapsed lane says when **nothing is waiting on it** — it is quiet, and
+ * quiet is not a fault (UI-174).
+ *
+ * This used to read *"the orchestrator will answer until it returns"*, which was
+ * true under §7's fallback and became false with the rider signed 2026-08-25:
+ * nobody else answers a resident's conversation now. A line that kept saying it
+ * would be the product telling a person something that is not so, in the one
+ * place they look to find out whether anything is wrong.
  */
-export const LAPSED_FALLBACK = "the orchestrator will answer until it returns";
+export const LAPSED_QUIET = "no listener right now";
 
-/** …and what a lapsed orchestrator says, which has nothing to fall back to. */
+/** …and what a lapsed orchestrator says, which is the same fact without a name. */
 export const LAPSED_ORCHESTRATOR = "nobody is listening";
+
+/**
+ * What a lapsed lane says when **something is waiting on it** (UI-174).
+ *
+ * §8's rider, amended 2026-08-25: *"where the lane has no listener running, the
+ * row says **that**, and not merely that the work is queued: an agent that is
+ * not running is the reason nothing is happening, and it is the one thing a
+ * person can act on."*
+ *
+ * **It states the fact and stops.** It does not diagnose why the listener is
+ * gone, and it does not tell the person to go and start one — the product gives
+ * them no button that does, and an instruction nobody can follow reads as a
+ * demand. It also must not read as an apology: §7's rule that an agent never
+ * announces its own absence in somebody's conversation is about turns, and the
+ * spirit of it belongs here too.
+ */
+export function lapsedWaiting(pending: number): string {
+  const work = pending === 1 ? "1 message" : `${String(pending)} messages`;
+  return `${work} waiting — its agent is not running`;
+}
 
 export function laneLiveness(row: AgentLane, now: Date): LaneLiveness {
   if (isAgentPresent(row, now)) return "live";
@@ -333,10 +357,19 @@ function lastSeen(since: string, now: Date): string | null {
  */
 export function laneLine(row: AgentLane, liveness: LaneLiveness, now: Date): string {
   if (liveness === "live") return row.summary ?? LIVE_WITHOUT_SUMMARY;
+  /*
+   * **Work waiting outranks the age, in both not-live states** (UI-174).
+   *
+   * A lane nobody has ever parked on normally says so and nothing more. But a
+   * lane with messages on it and no listener is the one row a person can act
+   * on, and it is that whether the listener died an hour ago or never started —
+   * so the pair is checked before either state's ordinary line.
+   */
+  if (row.pending > 0 && row.lane !== ORCHESTRATOR_LANE) return lapsedWaiting(row.pending);
   if (liveness === "waiting") return NEVER_SEEN_LINE;
-  const fallback = row.lane === ORCHESTRATOR_LANE ? LAPSED_ORCHESTRATOR : LAPSED_FALLBACK;
+  const quiet = row.lane === ORCHESTRATOR_LANE ? LAPSED_ORCHESTRATOR : LAPSED_QUIET;
   const age = row.since === null ? null : lastSeen(row.since, now);
-  return age === null ? fallback : `last seen ${age} ago — ${fallback}`;
+  return age === null ? quiet : `last seen ${age} ago — ${quiet}`;
 }
 
 export function laneRow(row: AgentLane, now: Date): LaneRow {

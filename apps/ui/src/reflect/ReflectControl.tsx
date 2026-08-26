@@ -1,9 +1,16 @@
+import { DEFAULT_REFLECT_QUIET_MINUTES } from "@corpus/contract";
 import type { ReactElement } from "react";
 import { useOpenInColumn } from "../board/openInColumn";
 import { useToast } from "../shell/Toasts";
 import "./ReflectControl.css";
-import { reflectControlLabel, reflectControlTitle, reflectedLabel } from "./unreflected";
-import { useAskReflection, useReflectStatus } from "./useReflectStatus";
+import {
+  automaticIsOn,
+  quietSwitchTitle,
+  reflectControlLabel,
+  reflectControlTitle,
+  reflectedLabel,
+} from "./unreflected";
+import { useAskReflection, useReflectStatus, useSetReflectQuiet } from "./useReflectStatus";
 
 /**
  * The board bar's **Reflect** control (SPEC.md §7's rider 9, §10's board bar).
@@ -33,6 +40,7 @@ export interface ReflectControlProps {
 export function ReflectControl({ now }: ReflectControlProps): ReactElement {
   const status = useReflectStatus();
   const ask = useAskReflection();
+  const setQuiet = useSetReflectQuiet();
   const navigation = useOpenInColumn();
   const toast = useToast();
   const at = now ?? new Date();
@@ -41,6 +49,7 @@ export function ReflectControl({ now }: ReflectControlProps): ReactElement {
   const label = reflectControlLabel(data, at);
   const isReflecting = data !== undefined && data.pending !== null;
   const digest = data?.lastDigest ?? null;
+  const automatic = automaticIsOn(data);
 
   return (
     <div className="reflect">
@@ -68,6 +77,48 @@ export function ReflectControl({ now }: ReflectControlProps): ReactElement {
         {label.count === null ? null : <span className="reflect-count">{label.count}</span>}
         {label.trail}
       </button>
+
+      {/*
+       * **The switch** (UI-172; SPEC.md §7's rider signed 2026-08-25).
+       *
+       * Beside the ask, because the two are the same decision seen from either
+       * side: whether the corpus reflects on its own, and asking it to now.
+       *
+       * **It never disables the ask, which is the whole of what was asked for**
+       * — with the automatic path off, this button becomes the only way a
+       * reflection happens, so disabling it would remove the last one.
+       *
+       * **Absent until the status arrives**, not rendered as "off". A control
+       * that said "off" before it had read anything would be making a claim
+       * about the workspace on the strength of not knowing (UI-098's rule), and
+       * its slot is reserved in CSS so the arrival moves nothing beside it
+       * (SPEC.md §10).
+       */}
+      <span className="reflect-auto">
+        {automatic === undefined ? null : (
+          <button
+            type="button"
+            className="reflect-auto-switch"
+            role="switch"
+            aria-checked={automatic}
+            aria-label="Automatic reflection"
+            disabled={setQuiet.isPending}
+            title={quietSwitchTitle(data, DEFAULT_REFLECT_QUIET_MINUTES)}
+            onClick={() => {
+              // `0` is §7's spelling of off, and the default is what on
+              // restores — SHARED-071 chose showing that number over
+              // remembering the old one, and the tooltip is where it shows.
+              setQuiet.mutate(automatic ? 0 : DEFAULT_REFLECT_QUIET_MINUTES, {
+                onError: (error) => {
+                  toast({ tone: "error", message: `Could not change it — ${error.message}` });
+                },
+              });
+            }}
+          >
+            {automatic ? "auto" : "auto off"}
+          </button>
+        )}
+      </span>
 
       {/*
        * The clock, and the way to what was said about it. Rendered only once a

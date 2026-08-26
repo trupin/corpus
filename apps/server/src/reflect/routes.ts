@@ -16,4 +16,30 @@ export function mountReflectRoutes(app: OpenAPIHono, reflect: ReflectService): v
   );
 
   app.openapi(contractRoutes.getReflectStatus, (c) => c.json(reflect.status(), 200));
+
+  /**
+   * The switch (SERVER-151; SPEC.md §7's rider signed 2026-08-25).
+   *
+   * A `null` from the service means the workspace config could not be read —
+   * a typo somebody is in the middle of, which is a thing a person has to find.
+   * Nothing is written over it and the refusal says which file, because the
+   * caller cannot see the server's disk and the path is the whole diagnostic.
+   */
+  app.openapi(contractRoutes.setReflectQuiet, (c) => {
+    const status = reflect.setQuiet(c.req.valid("json").quiet);
+    if (status === null) {
+      return c.json(
+        {
+          code: "bad_request" as const,
+          message:
+            "The workspace config could not be read, so nothing was written to it. " +
+            "`.corpus/config.json` is not valid JSON — repair it and try again. The quiet " +
+            "window is unchanged.",
+          issues: [],
+        },
+        400,
+      );
+    }
+    return c.json(status, 200);
+  });
 }

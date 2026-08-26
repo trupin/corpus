@@ -145,3 +145,38 @@ export function reflectControlTitle(status: ReflectStatus | undefined): string {
     `${String(status.quiet)} minutes after a change.`;
   return `Reflect over the whole corpus now. ${status.quiet === 0 ? manual : automatic}`;
 }
+
+/**
+ * Is the automatic path on? (SPEC.md §7: `reflect.quiet: 0` disables it.)
+ *
+ * `undefined` while the status has not arrived, which is not the same as `false`
+ * — a control that rendered "off" before it had read anything would be making a
+ * claim about the workspace on the strength of not knowing (UI-098's rule).
+ */
+export function automaticIsOn(status: ReflectStatus | undefined): boolean | undefined {
+  return status === undefined ? undefined : status.quiet > 0;
+}
+
+/**
+ * What the switch says it will do, and **the number it will write** (UI-172).
+ *
+ * The number is the whole point of this function. SHARED-071 chose *showing the
+ * value* over *remembering the previous one*, so the control is what makes that
+ * choice honest: somebody whose config says 45 minutes reads 45 while it is on,
+ * and reads the 30 it will restore **before** they switch it back on. Neither is
+ * a surprise, and nobody has to open a file to find out.
+ */
+export function quietSwitchTitle(status: ReflectStatus | undefined, restores: number): string {
+  if (status === undefined) return "Reading the reflection settings…";
+  if (status.quiet > 0) {
+    return (
+      `Reflection is automatic: the corpus reflects on itself once nothing has changed for ` +
+      `${String(status.quiet)} minutes. Switching it off leaves Reflect as the only way one ` +
+      `happens.`
+    );
+  }
+  return (
+    "Reflection is off: a reflection happens only when you ask for one. Switching it on " +
+    `restores the ${String(restores)}-minute quiet window.`
+  );
+}

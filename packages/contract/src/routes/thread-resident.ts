@@ -4,7 +4,7 @@ import { DesignateResidentRequestSchema, RESIDENT_WEIGHT_BOUNDARY } from "../sch
 import { ThreadIdSchema } from "../schemas/id.js";
 import { ThreadMutationResponseSchema } from "../schemas/thread.js";
 import {
-  CONFLICT_RESPONSE,
+  DESIGNATE_CONFLICT_RESPONSE,
   FORBIDDEN_RESPONSE,
   jsonContent,
   NOT_FOUND_RESPONSE,
@@ -118,6 +118,16 @@ export const designateResident = createRoute({
     "resident at all: `409` for a thread with a parent — anchored or whole-document — because a " +
     "thread on a document is *about* that document, and a resident owns a conversation rather " +
     "than a passage.\n\n" +
+    "**A second `409`, and it is the opposite of that one** (SPEC.md §7, rider signed " +
+    "2026-08-25). Releasing a resident hands its lane's pending events to the orchestrator, and " +
+    "designating again before those settle would put a listener on the same lane while the " +
+    "orchestrator is working them — the same turns answered twice, which is the one seam the " +
+    "no-fallback rule leaves. So a thread whose release is **still draining** refuses, with " +
+    '`code: "draining"` and `outstanding`, the number of events still being worked. The two ' +
+    "refusals are told apart at the `code` and never at the status, because a thread with a " +
+    "parent can *never* have a resident while this one is about to have one again in seconds: " +
+    "the condition is transient, self-clearing, and a fact about outstanding work rather than a " +
+    "state of the thread.\n\n" +
     "**A replacement is identified, not only announced** (CONTRACT-071). Every designation that " +
     "changes what the thread has gets a fresh `Resident.designationId`, and one that asks for the " +
     "state already in force writes nothing and keeps the id it had. That is what lets the " +
@@ -159,7 +169,10 @@ export const designateResident = createRoute({
     401: UNAUTHORIZED_RESPONSE,
     403: FORBIDDEN_RESPONSE,
     404: NOT_FOUND_RESPONSE,
-    409: CONFLICT_RESPONSE,
+    409: DESIGNATE_CONFLICT_RESPONSE,
+    // Same status, different `code`: see the description. A caller branches on
+    // `conflict` versus `draining`, never on the number.
+    // (The document declares one body per status, so the union is the schema's.)
   },
 });
 

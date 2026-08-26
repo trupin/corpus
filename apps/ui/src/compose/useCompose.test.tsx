@@ -37,6 +37,7 @@ describe("useCompose", () => {
             files: [],
             weight: {},
             recipient: {},
+            resident: {},
           }),
         ).toEqual({ ok: true });
       });
@@ -63,6 +64,7 @@ describe("useCompose", () => {
           files: [file("a.png"), file("b.png")],
           weight: {},
           recipient: {},
+          resident: {},
         });
       });
 
@@ -81,6 +83,7 @@ describe("useCompose", () => {
           files: [file("shot.png")],
           weight: {},
           recipient: {},
+          resident: {},
         });
       });
       const [call] = wire.to("/api/threads");
@@ -93,7 +96,13 @@ describe("useCompose", () => {
       const notices: RowNotice[] = [];
       const { result } = mount(wire, notices);
       await act(async () => {
-        await result.current.submit("ask", { text: "hello", files: [], weight: {}, recipient: {} });
+        await result.current.submit("ask", {
+          text: "hello",
+          files: [],
+          weight: {},
+          recipient: {},
+          resident: {},
+        });
       });
       expect(notices).toEqual([{ tone: "info", message: askMessage(false) }]);
       expect(askMessage(false)).not.toContain("queued the agent");
@@ -113,6 +122,7 @@ describe("useCompose", () => {
             files: [],
             weight: {},
             recipient: {},
+            resident: {},
           }),
         ).toEqual({ ok: true });
       });
@@ -137,6 +147,7 @@ describe("useCompose", () => {
           files: [file("s.png")],
           weight: {},
           recipient: {},
+          resident: {},
         });
       });
       expect(wire.to("/api/capture")[0]?.files).toEqual(["s.png"]);
@@ -150,7 +161,13 @@ describe("useCompose", () => {
     const notices: RowNotice[] = [];
     const { result } = mount(wire, notices);
     await act(async () => {
-      await result.current.submit("ask", { text: "hi", files: [], weight: {}, recipient: {} });
+      await result.current.submit("ask", {
+        text: "hi",
+        files: [],
+        weight: {},
+        recipient: {},
+        resident: {},
+      });
     });
     expect(notices[0]).toEqual({
       tone: "error",
@@ -170,6 +187,7 @@ describe("useCompose", () => {
         files: [],
         weight: {},
         recipient: {},
+        resident: {},
       });
       expect(outcome.ok).toBe(false);
       // The refusal itself, not just "it failed": the overlay settles its
@@ -187,7 +205,13 @@ describe("useCompose", () => {
     const { result } = mount(wire, []);
     expect(result.current.isPending).toBe(false);
     await act(async () => {
-      await result.current.submit("ask", { text: "hi", files: [], weight: {}, recipient: {} });
+      await result.current.submit("ask", {
+        text: "hi",
+        files: [],
+        weight: {},
+        recipient: {},
+        resident: {},
+      });
     });
     await waitFor(() => {
       expect(result.current.isPending).toBe(false);

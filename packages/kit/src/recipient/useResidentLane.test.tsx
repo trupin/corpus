@@ -12,6 +12,7 @@ const ORCHESTRATOR: AgentLane = {
   resident: null,
   live: false,
   since: null,
+  pending: 0,
   summary: null,
   origin: null,
 };
@@ -22,6 +23,7 @@ function designated(overrides: Partial<AgentLane> = {}): AgentLane {
     resident: { name: "claims-review", docId: "doc_agent", weight: null, designationId: null },
     live: true,
     since: "2026-08-16T12:00:00Z",
+    pending: 0,
     summary: "reading the policy",
     origin: { id: "th_root", title: "The claims conversation" },
     ...overrides,

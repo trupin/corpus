@@ -14,6 +14,27 @@ import { openapi } from "./openapi-metadata.js";
  * machinery — and exists as one endpoint only so the board can show the new
  * document with its pending-agent indicator without a three-call round trip.
  */
+/**
+ * **A capture carries no designation, and the reason is §7's, not §10's**
+ * (CONTRACT-088, corrected during SERVER-154).
+ *
+ * SPEC.md §10's rider signed 2026-08-25 says Ask and Capture both offer a new
+ * resident, reasoning that a capture's lack of a `recipient` is about *routing*
+ * rather than *ownership*. That reasoning is sound and its premise was not
+ * checked: **the thread a capture creates is not standalone.** It is the
+ * document's filing thread, written with `parent: <docId>` — and §7 allows a
+ * designation only on a standalone thread, *"because a thread on a document is
+ * about that document, and a resident owns a conversation rather than a
+ * passage"*.
+ *
+ * So the field is absent here rather than declared-and-always-refused. A wire
+ * field that can never succeed is worse than none: it tells every reader of the
+ * contract that something is possible.
+ *
+ * Closing the gap needs a decision nobody has made — either the filing thread
+ * stops being parented, which changes what a capture *is*, or §10's rider is
+ * amended. It is filed as SHARED-073 rather than settled here.
+ */
 export const CaptureRequestSchema = openapi(
   z.strictObject({
     text: z

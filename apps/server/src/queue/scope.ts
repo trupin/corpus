@@ -36,6 +36,7 @@ import {
   type ScopeWalkNode,
 } from "@corpus/contract";
 import { originDocumentOf, resolveOrigin } from "../core/provenance.js";
+import type { LaneReleased } from "./lanes.js";
 import { unknownLaneScope, unknownRecipient } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { ScopeRootLookup } from "./lanes.js";
@@ -143,6 +144,52 @@ export function isDesignatedRoot(db: ProjectionDb, id: string): boolean {
     )
     .get(id) as { ok: number } | undefined;
   return row !== undefined;
+}
+
+/**
+ * Has this lane's conversation been released? (SPEC.md §7's rider signed
+ * 2026-08-25, SERVER-153.)
+ *
+ * **`isDesignatedRoot`, negated — and it is worth saying why that is enough.** A
+ * lane is a designated root thread. So a lane that is no longer a designated
+ * root is one whose designation went away, which is exactly what release means.
+ * The orchestrator's own lane is never released: it is not a thread, so the
+ * query finds nothing and the caller never asks about it anyway.
+ *
+ * A thread **deleted** outright answers the same way, and that is right rather
+ * than incidental: its events have no owner and nobody is coming for them, so
+ * they belong to the orchestrator by the same reasoning a release does.
+ *
+ * Nothing here consults liveness, and that is the difference between this and
+ * the fallback it replaces (SERVER-152): a listener that is absent has not been
+ * released, and no amount of absence releases it.
+ */
+export function createReleasedLaneLookup(db: ProjectionDb): LaneReleased {
+  return (lane: Lane): boolean => lane !== ORCHESTRATOR_LANE && !isDesignatedRoot(db, lane);
+}
+
+/**
+ * How many of a released lane's events the orchestrator is still working
+ * (CONTRACT-089, SERVER-153) — `0` when none, which is the ordinary case.
+ *
+ * **This is the one seam the no-fallback rule leaves.** Release makes a lane's
+ * pending events the orchestrator's; designating again while it is mid-way
+ * through them would put a listener on the lane alongside it, and the same turns
+ * get answered twice.
+ *
+ * **A replacement can never be refused by this, and that is not a special
+ * case.** SPEC.md §7 makes designating a thread that already has a resident a
+ * replacement rather than a conflict — and a thread that has a resident is not
+ * released, so the orchestrator cannot be holding its events at all. The refusal
+ * fires only where the thread has no resident, which is exactly where a
+ * replacement is not what is happening. There is no sequence that deadlocks.
+ */
+export function drainingCount(db: ProjectionDb, lane: string): number {
+  if (isDesignatedRoot(db, lane)) return 0;
+  const row = db
+    .prepare("SELECT COUNT(*) AS held FROM events WHERE lane = ? AND status = 'in-progress'")
+    .get(lane) as { held: number } | undefined;
+  return row?.held ?? 0;
 }
 
 /**

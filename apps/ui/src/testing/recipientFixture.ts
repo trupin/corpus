@@ -44,6 +44,7 @@ export function residentLane(overrides: Partial<AgentLane> = {}): AgentLane {
     },
     live: true,
     since: new Date().toISOString(),
+    pending: 0,
     summary: "reviewing the draft",
     origin: { id: RESIDENT_THREAD_ID, title: "The claims conversation" },
     ...overrides,

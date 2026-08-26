@@ -32,7 +32,17 @@ async function threadWithJob(): Promise<{ threadId: string; job: string }> {
   // doc routes use.
   const threadId = ((await created.json()) as { thread: { id: string } }).thread.id;
 
-  const claimed = await ws.post("/api/queue/claim-all", {}, asAgent);
+  /*
+   * **Claimed on the thread's own lane, not unscoped** (SERVER-154).
+   *
+   * SPEC.md §7's rider A designates a general resident on every new standalone
+   * thread, so this turn is stamped for that lane — and the rider that removed
+   * the fallback means an unscoped claim cannot see it, whether or not anything
+   * is listening. This is what the shipped flow does: the orchestrator reads
+   * `pending > 0 && !live` off the roster and launches the listener, which then
+   * claims exactly this way.
+   */
+  const claimed = await ws.post(`/api/queue/claim-all?scope=${threadId}`, {}, asAgent);
   const { events } = (await claimed.json()) as { events: { id: string; type: string }[] };
   const job = events[0]?.id;
   expect(job).toBeDefined();

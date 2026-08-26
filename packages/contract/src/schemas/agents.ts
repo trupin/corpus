@@ -441,6 +441,53 @@ export const LaneOriginSchema = openapi(
  * without it would flicker every eight minutes, and a console pill that
  * flickered would be the same lie this field exists to stop, just faster.
  */
+/**
+ * **How much work is waiting on this lane** (CONTRACT-087; SPEC.md §7's rider
+ * signed 2026-08-25).
+ *
+ * **The field exists because the fallback stopped existing.** Until that rider,
+ * a lane whose listener was absent had its pending events folded into the
+ * orchestrator's unscoped claim, so "somebody is waiting here and nobody is
+ * listening" needed no field: the work itself arrived, and arriving was the
+ * signal. The rider removes that — *"a lane's work is done by that lane's agent,
+ * and by nobody else"* — so the work no longer arrives, and the fact has to be
+ * readable instead.
+ *
+ * **It is half of one decision, and `live` is the other half.** A lane with
+ * `pending > 0` and `live: false` is a conversation nobody is answering, and
+ * that pair is what the orchestrator launches a listener from. Neither field
+ * decides it alone: a lane with no work and no listener is idle and perfectly
+ * healthy, and launching for it would give a workspace one agent per
+ * conversation that has ever existed.
+ *
+ * **Pending only.** Not `in-progress`, and not `deferred`. The question is *is
+ * anyone waiting*, and an event already being worked is not waiting — counting
+ * it would keep a lane looking unattended for exactly as long as it is being
+ * attended to. A deferred event is waiting on a person's edit session (§7) and
+ * returns to pending by itself when that ends, where it is counted like any
+ * other.
+ *
+ * **This is what replaces reading `AgentLane.summary`.** That field is
+ * display-only and says so — *"a client must never parse it, key on it, or
+ * decide anything from it"* — and this is the field of its own that the same
+ * sentence promises.
+ */
+export const lanePendingField = z
+  .number()
+  .int()
+  .min(0)
+  .describe(
+    "**How many events are pending on this lane** (SPEC.md §7, rider signed 2026-08-25). " +
+      "`pending` only — never `in-progress`, which is work already being done rather than work " +
+      "waiting, and never `deferred`, which is waiting on a person's edit session and returns to " +
+      "pending by itself. **A lane with `pending > 0` and `live: false` is a conversation nobody " +
+      "is answering**, and that pair is the whole signal: since the rider there is no fallback, " +
+      "so no other agent will take this work and the only thing that changes it is a listener " +
+      "starting. Neither field means it alone — a lane with no work and no listener is idle and " +
+      "healthy. **Decide from this rather than from `summary`**, which is display-only and says " +
+      "so. `0` where nothing is waiting, never null and never absent.",
+  );
+
 export const presenceLiveField = z
   .boolean()
   .describe(
@@ -538,6 +585,9 @@ export const AgentLaneSchema = openapi(
     // the same schema.
     live: presenceLiveField,
     since: presenceSinceField,
+    // The half of the launch decision `live` cannot make (CONTRACT-087). It sits
+    // beside it because the two are read together and mean nothing apart.
+    pending: lanePendingField,
     summary: z
       .string()
       .max(LANE_SUMMARY_MAX_LENGTH)
@@ -635,6 +685,66 @@ export const AgentRosterSchema = openapi(
  * (CONTRACT-017), so a caller that means `name` and writes `agent` is told which
  * key it got wrong instead of quietly receiving a general resident.
  */
+/**
+ * The designation a **thread creation** carries (CONTRACT-088; SPEC.md §7's
+ * rider A and §10's rider B, both signed 2026-08-25).
+ *
+ * ## Three states, and `null` earns a job it was refused next door
+ *
+ * - **Absent** — rider A's default: a **general resident**. A conversation is a
+ *   thing an agent owns, so owning it is what happens when a caller says
+ *   nothing. That is the same spelling {@link DesignateResidentRequestSchema}
+ *   already gives the ordinary case, for the same reason.
+ * - **`{name}`** — that profile, resolved exactly as the designate route
+ *   resolves it, including its `404` on a name that matches nothing.
+ * - **`null`** — **no resident at all.**
+ *
+ * The docblock above rejects `{name: null}` partly because *"release is `DELETE`
+ * on this same path precisely so nothing here has to be spelled with a null"*.
+ * At creation there is no `DELETE` to lean on: the thread does not exist yet, so
+ * "create it with nobody" cannot be expressed as a later act without leaving a
+ * window in which the default already applied. That is what earns `null` a
+ * meaning here and nowhere else.
+ *
+ * ## `null` and absent differ here, unlike everywhere else on this body
+ *
+ * `parent` and `selector` on the same request both read *"Omitted or null"* and
+ * treat the two alike. This field does not, and a caller that spells a missing
+ * variable as `null` gets the opposite of the default rather than the default.
+ * It is called out in the published description for that reason: the risk is
+ * real and the alternative — a sentinel string — was rejected next door for
+ * reasons that still hold, since it would reach a recipient list dressed as a
+ * profile and could collide with a real one.
+ */
+export const CreateThreadResidentSchema = z
+  .strictObject({
+    name: AgentNameSchema.optional().describe(
+      "The profile to designate, by the invocable name `@<subagent>` mentions use (SPEC.md §8). " +
+        "Omitted designates a **general resident** — an agent with no persona document, which " +
+        "§7 calls the ordinary case. Resolution and its `404` are exactly the designate route's.",
+    ),
+    weight: RequestedWeightSchema.optional().describe(
+      "The model tier this resident works at (SPEC.md §7's rider signed 2026-08-19), the same " +
+        "level-key vocabulary the designate route takes. Omitted leaves it to the launcher.",
+    ),
+  })
+  .describe(
+    "**Who will own this conversation** (SPEC.md §7, rider signed 2026-08-25). **Three states, " +
+      "and `null` is not the same as omitting this field** — unlike `parent` and `selector` on " +
+      "this same body, where omitted and null mean one thing. **Omit it** for the default: a " +
+      "general resident, because a new standalone thread designates one unless the person chose " +
+      "otherwise. **Send `{name}`** to designate that profile. **Send `null`** for a thread with " +
+      "no resident at all, which belongs to the orchestrator as every thread did before this " +
+      "rider.\n\n" +
+      "**This is not `recipient`, and the two are never collapsed.** Naming a recipient routes " +
+      "**one message** and rewires nothing (SPEC.md §7's summons); designating hands over the " +
+      "conversation **and everything that grows out of it**. Both may be sent on one request, " +
+      "and they mean different things.\n\n" +
+      "**Refused on a thread with a parent.** §7 lets only a standalone thread designate: a " +
+      "thread on a document is *about* that document, and a resident owns a conversation rather " +
+      "than a passage.",
+  );
+
 export const DesignateResidentRequestSchema = openapi(
   z.strictObject({
     name: AgentNameSchema.describe(

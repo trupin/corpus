@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -38,19 +38,19 @@ general config API: one value moves, the one SPEC.md §7 already names.
 
 ## Acceptance Criteria
 
-- [ ] `PUT /api/workspace/reflect/quiet` is defined in `packages/contract`, with
+- [x] `PUT /api/workspace/reflect/quiet` is defined in `packages/contract`, with
       a body carrying `quiet` as a non-negative integer of minutes
-- [ ] Its response is the **same `ReflectStatus`** `GET` returns, so a client
+- [x] Its response is the **same `ReflectStatus`** `GET` returns, so a client
       that sets the value learns the whole new state in one round trip and never
       re-reads to find out what it did
-- [ ] The route description says outright that `0` disables the automatic path
+- [x] The route description says outright that `0` disables the automatic path
       and leaves asking as the only way a reflection happens, citing §7 — the
       published contract must not make a reader open the spec to learn what `0`
       means
-- [ ] The upper bound is stated and justified rather than left open, so a typo
+- [x] The upper bound is stated and justified rather than left open, so a typo
       cannot configure a window measured in years
-- [ ] `openapi.json` and the generated client regenerate cleanly
-- [ ] No general config route, and no second field meaning "automatic on/off"
+- [x] `openapi.json` and the generated client regenerate cleanly
+- [x] No general config route, and no second field meaning "automatic on/off"
       (SHARED-071's decision)
 
 ## Technical Design
@@ -93,16 +93,62 @@ through a hand-written fetch. A test that calls a hand-rolled helper rather than
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### The two calls this issue had to make
+
+**A sub-resource, not a `PATCH`.** `GET /api/workspace/reflect` answers a report
+of five fields, and exactly one of them is settable. A `PATCH` there would
+publish a resource whose fields are mostly read-only and leave a caller to work
+out which one is not. `PUT /api/workspace/reflect/quiet` says what it sets in its
+own path. A test pins that neither path carries a `patch`.
+
+**The bound is 7 days, and it is new.** The field was read-only, so an unbounded
+integer cost nothing. Writable, it lets one mistyped digit configure a window
+measured in years — armed to look at and never firing, which is the worst pair,
+because `0` at least says what it means. Seven days is where a person stops
+choosing a cadence.
+
+**One factory, two uses.** `quietMinutesField()` builds the field for both
+`ReflectStatus` and `ReflectQuietRequest`, and a test asserts the two published
+descriptions are byte-identical. What `GET` reports is what `PUT` set, so a
+reader who learns what `0` means from one finds the same sentence on the other.
+
+### Falsification
+
+Removing `.max(MAX_REFLECT_QUIET_MINUTES)` and regenerating:
+
+```
+× bounds the window rather than accepting any integer
+  Tests  1 failed | 5 passed
+```
+
+### What the surface's own pins caught
+
+Four existing gates refused the route until it was declared properly, which is
+the drift-check working: the endpoint inventory, the request-body count, the
+mandatory/omittable partition, and `additionalProperties: false`. The body is
+`z.strictObject` and `required: true` — a bare `PUT` would be a request to set
+the window to nothing in particular, and `0` is a value rather than an absence.
+
+### Checks
+
+```
+vitest run packages/contract      70 files, 2989 tests passed   exit 0
+eslint packages/contract/src                                     exit 0
+tsc -p tsconfig.build.json                                       exit 0
+generate (openapi.json + client)                                 clean
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CONTRACT-086]` prefix
+- [x] Committed with `[CONTRACT-086]` prefix

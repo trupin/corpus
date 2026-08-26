@@ -1135,6 +1135,7 @@ export async function stubCorpus(
       // parked `idle` and nothing else, and no agent runs in this suite.
       live: false,
       since: null,
+      pending: 0,
       summary: null,
       origin: { id, title: store.get(id)?.title ?? id },
     });
@@ -2015,6 +2016,7 @@ export async function stubCorpus(
         resident: null,
         live: options.agent?.live ?? false,
         since: options.agent?.since ?? null,
+        pending: 0,
         summary: null,
         origin: null,
       };

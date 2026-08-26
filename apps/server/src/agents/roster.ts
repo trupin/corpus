@@ -93,6 +93,54 @@ const LANE_WORK_SQL = `
   ORDER BY events.created DESC, events.id DESC
   LIMIT 1`;
 
+/**
+ * **How much is waiting on each lane, in one pass** (SERVER-155; SPEC.md §7's
+ * rider signed 2026-08-25).
+ *
+ * Grouped rather than asked per row, because the roster is built per lane and a
+ * per-lane query would make a workspace with thirty conversations pay thirty
+ * scans for a number the same index can produce once. `buildRoster` runs this
+ * before it builds any row and indexes into the result.
+ *
+ * **`pending` only.** Not `in-progress` — that is work already being done, and
+ * counting it would keep a lane looking unattended for exactly as long as it is
+ * being attended to. Not `deferred` — that is waiting on a person's edit session
+ * (§7 keys) and returns to pending by itself, where it is counted like anything
+ * else.
+ *
+ * **It reads the same rows a claim reads.** A count that disagreed with what a
+ * scoped claim would return is worse than no count at all: it would send the
+ * orchestrator to launch a listener for a lane with nothing on it, or leave a
+ * waiting lane unlaunched. The `events_status` index narrows both.
+ */
+const PENDING_BY_LANE_SQL = `
+  SELECT lane, COUNT(*) AS pending
+  FROM events
+  WHERE status = 'pending'
+  GROUP BY lane`;
+
+interface PendingRow {
+  readonly lane: string | null;
+  readonly pending: number;
+}
+
+/**
+ * The pending counts as a lookup, with the unstamped folded into the
+ * orchestrator's.
+ *
+ * A legacy event written before lanes existed carries no `lane`, and the claim
+ * path reads exactly that as the orchestrator's — so the count has to agree, or
+ * the orchestrator's row would under-report work it is about to be handed.
+ */
+function pendingByLane(projection: ProjectionDb): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of projection.prepare(PENDING_BY_LANE_SQL).all() as PendingRow[]) {
+    const lane = entry.lane ?? ORCHESTRATOR_LANE;
+    counts.set(lane, (counts.get(lane) ?? 0) + entry.pending);
+  }
+  return counts;
+}
+
 interface LaneWorkRow {
   readonly payloadJson: string;
   readonly lastLine: string | null;
@@ -181,13 +229,21 @@ function workSummary(projection: ProjectionDb, lane: Lane): string | null {
 /** The two halves of a row that are configuration rather than observation. */
 type LaneIdentity = Pick<AgentLane, "resident" | "origin">;
 
-function row(deps: RosterDeps, lane: Lane, identity: LaneIdentity): AgentLane {
+function row(
+  deps: RosterDeps,
+  lane: Lane,
+  identity: LaneIdentity,
+  pending: ReadonlyMap<string, number>,
+): AgentLane {
   const presence = deps.tracker.presenceOf(lane);
   return {
     lane,
     resident: identity.resident,
     live: presence.live,
     since: presence.since,
+    // Absent from the map means none, never unknown: the query returns a row
+    // only for a lane that has something (SERVER-155).
+    pending: pending.get(lane) ?? 0,
     summary: summarize(deps, lane, presence.since),
     origin: identity.origin,
   };
@@ -236,13 +292,20 @@ function residentOf(projection: ProjectionDb, entry: DesignatedRow): Resident | 
  * `resident` because nobody designates it: it is the lane that is there.
  */
 export function buildRoster(deps: RosterDeps): AgentRoster {
-  const orchestrator = row(deps, ORCHESTRATOR_LANE, { resident: null, origin: null });
+  // One grouped query for every lane's count, before any row is built.
+  const pending = pendingByLane(deps.projection);
+  const orchestrator = row(deps, ORCHESTRATOR_LANE, { resident: null, origin: null }, pending);
   const designated = (deps.projection.prepare(DESIGNATED_LANES_SQL).all() as DesignatedRow[]).map(
     (entry) =>
-      row(deps, entry.id, {
-        resident: residentOf(deps.projection, entry),
-        origin: { id: entry.id, title: entry.title },
-      }),
+      row(
+        deps,
+        entry.id,
+        {
+          resident: residentOf(deps.projection, entry),
+          origin: { id: entry.id, title: entry.title },
+        },
+        pending,
+      ),
   );
   return { agents: [orchestrator, ...designated] };
 }
@@ -282,13 +345,27 @@ export function buildRoster(deps: RosterDeps): AgentRoster {
  */
 export function rosterSignature(projection: ProjectionDb): string {
   const lanes = projection.prepare(DESIGNATED_LANES_SQL).all() as DesignatedRow[];
+  /*
+   * `pending` is in the signature, and it has to be (SERVER-155).
+   *
+   * It is the one field the orchestrator launches from, so a roster that went
+   * stale on it would leave a conversation waiting with nobody listening and
+   * nothing to announce that anything had changed — which, since SPEC.md §7's
+   * rider removed the fallback, means waiting indefinitely rather than waiting a
+   * little longer. It qualifies on the same test every other field here does: it
+   * is derived from rows a write moves, not from the clock, so two measurements
+   * of an unchanged workspace still agree.
+   */
+  const pending = pendingByLane(projection);
   return JSON.stringify([
     workSummary(projection, ORCHESTRATOR_LANE),
+    pending.get(ORCHESTRATOR_LANE) ?? 0,
     ...lanes.map((entry) => [
       entry.id,
       entry.title,
       residentOf(projection, entry),
       workSummary(projection, entry.id),
+      pending.get(entry.id) ?? 0,
     ]),
   ]);
 }

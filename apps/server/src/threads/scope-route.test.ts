@@ -231,7 +231,10 @@ describe("a thread with no scope to list", () => {
    * by default — so this is a `409` and not an empty listing.
    */
   it("refuses an undesignated thread with a 409 that names the remedy", async () => {
-    const created = await createThread(ws, { body: "Just a conversation." });
+    // Explicitly undesignated, because since SPEC.md §7's rider A a plain
+    // `POST /api/threads` designates a general resident (SERVER-154) and would
+    // give this thread the very scope the case is about not having.
+    const created = await createThread(ws, { body: "Just a conversation.", resident: null });
 
     const response = await scopeResponse(created.id);
     const body = (await response.json()) as { code: string; message: string };
