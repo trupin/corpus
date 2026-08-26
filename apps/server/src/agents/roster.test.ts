@@ -143,6 +143,8 @@ describe("the shape of the roster", () => {
       // A real count, not a special case: the orchestrator's lane is a lane
       // (SERVER-155). Nothing is queued in a workspace this fresh.
       pending: 0,
+      // …and nothing claimed, so nothing being done (SERVER-157).
+      working: false,
       summary: null,
       origin: null,
     });
@@ -463,6 +465,54 @@ describe("the fallback a lapse creates", () => {
    * The lapse is still exercised, because it still has an effect — on the roster
    * row a person reads, and on nothing else.
    */
+  /**
+   * SERVER-157. `live: false` is true of a crashed listener, an unobserved one,
+   * **and a resident in the middle of a turn** — and since v0.23.0 the
+   * orchestrator launches from `pending > 0 && !live`, so the third one gets a
+   * duplicate started on top of it.
+   */
+  it("tells a resident mid-turn from a dead lane, which `live` alone cannot", async () => {
+    const id = await designatedThread("thinking about it");
+    expect(await claimed()).toHaveLength(1);
+    const parked = park(id);
+    await settle();
+    await workOn(id);
+
+    // The resident claims its own work and then goes quiet — which is what
+    // working inline looks like from outside, because it holds no park while
+    // it thinks.
+    const mine = await claimed(id);
+    expect(mine).toHaveLength(1);
+    parked.leave();
+    await parked.done;
+    ws.advance(LANE_GRACE_MS * 2);
+
+    const lane = (await roster()).find((entry) => entry.lane === id);
+    // The pair the field exists for: nobody parked, and something being done.
+    expect(lane?.live).toBe(false);
+    expect(lane?.working).toBe(true);
+  });
+
+  /**
+   * The converse, and the one that stops the field being read as presence. A
+   * lane holding nothing is not working — so `working: false` with `pending > 0`
+   * is a launch, which is the state that must stay reachable.
+   */
+  it("reads not-working once the held event is settled, so a launch is still possible", async () => {
+    const id = await designatedThread("finished with it");
+    expect(await claimed()).toHaveLength(1);
+    const parked = park(id);
+    await settle();
+    await workOn(id);
+    const [held] = await claimed(id);
+    expect((await ws.post(`/api/queue/${held ?? ""}/complete`, {})).status).toBe(200);
+    parked.leave();
+    await parked.done;
+
+    const lane = (await roster()).find((entry) => entry.lane === id);
+    expect(lane?.working).toBe(false);
+  });
+
   it("hides a live lane's work from the orchestrator, and keeps hiding it after a lapse", async () => {
     const id = await designatedThread("the resident's own conversation");
     // A designation announces itself on the *orchestrator's* lane whoever is

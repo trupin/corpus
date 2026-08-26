@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -43,16 +43,16 @@ contract text forbids deciding from it. This lifts it into a field.
 
 ## Acceptance Criteria
 
-- [ ] Every roster row carries `working`, derived from the lane's held work —
+- [x] Every roster row carries `working`, derived from the lane's held work —
       the same read `workSummary` already makes
-- [ ] `live` is unchanged and keeps its meaning exactly
-- [ ] `{live: false, working: true}` is representable and is the state the whole
+- [x] `live` is unchanged and keeps its meaning exactly
+- [x] `{live: false, working: true}` is representable and is the state the whole
       issue is about
-- [ ] It is computed in the **same pass** as `pending`, not a query per row
-- [ ] Test: a lane holding an in-progress event reads `working: true` with
+- [x] It is computed in the **same pass** as `pending`, not a query per row
+- [x] Test: a lane holding an in-progress event reads `working: true` with
       `live: false`, which is the resident mid-turn
-- [ ] Test: a lane holding nothing reads `working: false`
-- [ ] **Falsified**: hard-coding `working: false` turns the mid-turn test red
+- [x] Test: a lane holding nothing reads `working: false`
+- [x] **Falsified**: hard-coding `working: false` turns the mid-turn test red
 
 ## Technical Design
 
@@ -90,16 +90,55 @@ settling it, let the park lapse, and confirm the row reads `live: false` with
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-26.
+
+### One more pass over the same table, and into the same signature
+
+`workingLanes` sits beside `pendingByLane` and runs once before any row is
+built — a `SELECT DISTINCT lane … WHERE status = 'in-progress'`, which is the
+read `workSummary` was already making per row and rendering into prose.
+
+It goes into `rosterSignature` for the reason `pending` did: the orchestrator
+decides from it, and a fact nobody announces is a fact nobody reads. **The
+direction that costs most is the one worth naming** — a stale `working: true`
+leaves a finished lane looking busy, and a listener that should have started
+does not.
+
+### The pair, and its converse
+
+A resident claims its own work and goes quiet, which is what working inline looks
+like from outside — it holds no park while it thinks. Past the grace window the
+row reads `{live: false, working: true}`, which is the state the field exists
+for. Settle the held event and it reads `working: false` with the work still
+pending, which is a launch. Both are tested, because the second is what stops the
+field being read as presence and suppressing a launch onto a genuinely dead lane.
+
+### Falsification
+
+Hard-coding `working: false`:
+
+```
+× tells a resident mid-turn from a dead lane, which `live` alone cannot
+  Tests  1 failed | 32 passed
+```
+
+### Checks
+
+```
+vitest run apps/server            205 files, 4691 tests passed   exit 0
+eslint apps/server/src                        0 problems         exit 0
+tsc --noEmit -p apps/server                                      exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[SERVER-157]` prefix
+- [x] Committed with `[SERVER-157]` prefix
