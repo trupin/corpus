@@ -4307,6 +4307,10 @@
             "minimum": 0,
             "description": "**How many events are pending on this lane** (SPEC.md §7, rider signed 2026-08-25). `pending` only — never `in-progress`, which is work already being done rather than work waiting, and never `deferred`, which is waiting on a person's edit session and returns to pending by itself. **A lane with `pending > 0` and `live: false` is a conversation nobody is answering**, and that pair is the whole signal: since the rider there is no fallback, so no other agent will take this work and the only thing that changes it is a listener starting. Neither field means it alone — a lane with no work and no listener is idle and healthy. **Decide from this rather than from `summary`**, which is display-only and says so. `0` where nothing is waiting, never null and never absent."
           },
+          "working": {
+            "type": "boolean",
+            "description": "**Whether this lane is holding work it claimed** (SPEC.md §7). True while an event stamped for this lane sits in `in-progress/`.\n\n**It is not presence and must never be read as it.** `live` is the parked request; this is held work, and the two come apart in both directions. A resident works its conversation inline and holds no park while it does, so a turn longer than the grace window reads `{live: false, working: true}` — which is the state this field exists for, and the one that tells a busy agent from a dead one. And a listener that died mid-event leaves its event held until `corpus queue reap-stale` requeues it, so `working: true` outlives the agent that earned it: **the field bounds a launch decision and is never evidence anybody is there**.\n\n**The third of three, and the launch decision needs all three.** `live` answers *is anybody there*, `pending` answers *is anybody waiting*, and this answers *is anything being done*. **Decide from this rather than from `summary`**, which renders the same fact as prose and forbids deciding from it."
+          },
           "summary": {
             "type": [
               "string",
@@ -4333,6 +4337,7 @@
           "live",
           "since",
           "pending",
+          "working",
           "summary",
           "origin"
         ]

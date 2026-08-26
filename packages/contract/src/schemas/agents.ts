@@ -472,6 +472,63 @@ export const LaneOriginSchema = openapi(
  * decide anything from it"* — and this is the field of its own that the same
  * sentence promises.
  */
+/**
+ * **Is this lane holding work it claimed?** (CONTRACT-057; SPEC.md §7.)
+ *
+ * ## The three things `live: false` means, and why the third is expensive
+ *
+ * Presence is the parked request and nothing else, so `live: false` is true of a
+ * listener that crashed, one the server has not observed since it restarted, and
+ * **one in the middle of a turn**. The third is not an edge case: §7 has a
+ * resident work its conversation inline, and the converse skill tells it to
+ * await what it launches rather than park on it, so a turn longer than the grace
+ * window is *designed behaviour*.
+ *
+ * That was cosmetic until v0.23.0 and is not any more. The orchestrator launches
+ * a listener for a lane that is `pending > 0 && !live`, so a resident thinking
+ * for two minutes with a message queued behind it looks exactly like a dead
+ * lane — and gets a second listener started on top of it.
+ *
+ * ## It is not presence, and must not be read as it
+ *
+ * **A lane holding work is not evidence a listener is alive.** A listener that
+ * died mid-event leaves its event in `in-progress/` until `corpus queue
+ * reap-stale` requeues it, so `working: true` outlives the agent that earned it.
+ * The field **bounds a launch decision** — it says *do not start a second one
+ * yet* — and it can never be read as *somebody is definitely there*. `live`
+ * answers that, still, and is unchanged.
+ *
+ * The pair `{live: false, working: true}` is the state this whole field exists
+ * for and must read naturally: nobody is parked, and something is being done.
+ *
+ * ## Why it is not folded into `summary`
+ *
+ * The roster already computes this — `workSummary` renders `working <title>` for
+ * a lane holding an in-progress event — into a field whose contract says a
+ * client *"must never parse it, key on it, or decide anything from it"*. This is
+ * the field of its own that sentence promises, and it is the third one: `live`
+ * answers *is anybody there*, `pending` answers *is anybody waiting*, and this
+ * answers *is anything being done*. The launch decision needs all three.
+ */
+export const laneWorkingField = z
+  .boolean()
+  .describe(
+    "**Whether this lane is holding work it claimed** (SPEC.md §7). True while an event stamped " +
+      "for this lane sits in `in-progress/`.\n\n" +
+      "**It is not presence and must never be read as it.** `live` is the parked request; this " +
+      "is held work, and the two come apart in both directions. A resident works its " +
+      "conversation inline and holds no park while it does, so a turn longer than the grace " +
+      "window reads `{live: false, working: true}` — which is the state this field exists for, " +
+      "and the one that tells a busy agent from a dead one. And a listener that died mid-event " +
+      "leaves its event held until `corpus queue reap-stale` requeues it, so `working: true` " +
+      "outlives the agent that earned it: **the field bounds a launch decision and is never " +
+      "evidence anybody is there**.\n\n" +
+      "**The third of three, and the launch decision needs all three.** `live` answers *is " +
+      "anybody there*, `pending` answers *is anybody waiting*, and this answers *is anything " +
+      "being done*. **Decide from this rather than from `summary`**, which renders the same fact " +
+      "as prose and forbids deciding from it.",
+  );
+
 export const lanePendingField = z
   .number()
   .int()
@@ -588,6 +645,10 @@ export const AgentLaneSchema = openapi(
     // The half of the launch decision `live` cannot make (CONTRACT-087). It sits
     // beside it because the two are read together and mean nothing apart.
     pending: lanePendingField,
+    // The third field of the launch decision (CONTRACT-057). It sits after
+    // `pending` because the two are read together and neither means the whole
+    // thing: waiting work on a busy lane wants patience, not a second listener.
+    working: laneWorkingField,
     summary: z
       .string()
       .max(LANE_SUMMARY_MAX_LENGTH)

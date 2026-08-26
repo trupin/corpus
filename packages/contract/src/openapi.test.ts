@@ -5693,10 +5693,11 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
   });
 
-  it("shapes a roster row as the rider's seven fields", () => {
-    // `pending` joined them in CONTRACT-087, beside `live` because the two are
-    // read together: it is the half of the launch decision `live` cannot make.
-    const shape = ["lane", "resident", "live", "since", "pending", "summary", "origin"];
+  it("shapes a roster row as the rider's eight fields", () => {
+    // `pending` joined them in CONTRACT-087 and `working` in CONTRACT-057, both
+    // beside `live` because the three are one decision: is anybody there, is
+    // anybody waiting, is anything being done.
+    const shape = ["lane", "resident", "live", "since", "pending", "working", "summary", "origin"];
     expect(Object.keys(componentSchemas?.["AgentLane"]?.properties ?? {})).toEqual(shape);
     expect(componentSchemas?.["AgentLane"]?.required).toEqual(shape);
     expect(componentSchemas?.["AgentRoster"]?.required).toEqual(["agents"]);
@@ -5756,6 +5757,62 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
       expect(description).toContain("still draining");
       expect(description).toContain("the same turns answered twice");
       expect(description).toContain("transient, self-clearing");
+    });
+  });
+
+  /**
+   * CONTRACT-057. `live: false` means three different things, and the third —
+   * a resident mid-turn — stopped being cosmetic when AGENT-053 started
+   * launching listeners from `pending > 0 && !live`.
+   */
+  describe("a lane says whether it is working (CONTRACT-057)", () => {
+    const working = (): SchemaNode =>
+      componentSchemas?.["AgentLane"]?.properties?.["working"] ?? {};
+    const prose = (): string => String(working().description ?? "");
+
+    it("is a boolean beside `live`, not a widening of it", () => {
+      expect(working().type).toBe("boolean");
+      // `live` keeps its meaning exactly; this is a sibling observation.
+      expect(componentSchemas?.["AgentLane"]?.properties?.["live"]?.type).toBe("boolean");
+    });
+
+    /**
+     * The pair the whole field exists for. A description that did not make it
+     * representable would leave a reader assuming the two agree.
+     */
+    it("names `{live: false, working: true}` as the state it exists for", () => {
+      expect(prose()).toContain("`{live: false, working: true}`");
+      expect(prose()).toContain("tells a busy agent from a dead one");
+    });
+
+    /**
+     * **The asymmetry a consumer must not get wrong.** A listener that died
+     * mid-event leaves its event held, so this outlives the agent. Read as
+     * presence it would suppress a launch onto a genuinely dead lane — forever.
+     */
+    it("says it is never evidence anybody is there, and why", () => {
+      expect(prose()).toContain("never be read as it");
+      expect(prose()).toContain("reap-stale");
+      expect(prose()).toContain("outlives the agent that earned it");
+      expect(prose()).toContain("bounds a launch decision");
+    });
+
+    it("tells a reader to decide from it rather than from `summary`", () => {
+      expect(prose()).toContain("Decide from this rather than from `summary`");
+      // And says where it sits among the three, so nobody reads one for all.
+      expect(prose()).toContain("The third of three");
+    });
+
+    /**
+     * `summary`'s own promise has to survive this landing, or the field it
+     * pointed at would be the one contradicting it.
+     */
+    it("leaves `summary`'s display-only promise standing", () => {
+      const summary = String(
+        componentSchemas?.["AgentLane"]?.properties?.["summary"]?.description ?? "",
+      );
+      expect(summary).toContain("display only");
+      expect(summary).toContain("everything a client needs to decide from is a field of its own");
     });
   });
 

@@ -746,7 +746,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
 | CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | done | P1 | — |
-| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | todo | P1 | — |
+| CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | done | P1 | — |
 
 **Scope addition, forced 2026-08-16.** `CONTRACT-045` made `QueueStatus.agent`
 a required field, which breaks every constructor of one: `SERVER-086` (the

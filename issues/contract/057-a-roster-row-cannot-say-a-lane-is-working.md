@@ -6,7 +6,7 @@ contract (server work follows in its own issue)
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -57,18 +57,20 @@ speculative in the first place, and would give the UI a truthful third state.
 
 ## Acceptance Criteria
 
-- [ ] `AgentLaneSchema` publishes a structured field for "this lane is holding
+- [x] `AgentLaneSchema` publishes a structured field for "this lane is holding
       work it claimed" — a boolean, or a count, decided in the issue
-- [ ] Its description states what it is derived from and, explicitly, that it is
+- [x] Its description states what it is derived from and, explicitly, that it is
       **not** presence: a lane may hold work and not be live, which is exactly
       the case the field exists for
-- [ ] It states the one asymmetry a consumer must not get wrong — a lane holding
+- [x] It states the one asymmetry a consumer must not get wrong — a lane holding
       work is *not* evidence a listener is alive, since a listener that died
       mid-event leaves its event held until `reap-stale` requeues it, so the
-      field bounds a launch decision and must never suppress the §7 fallback
-- [ ] `summary`'s "everything a client needs to decide from is a field of its own
+      field bounds a launch decision. ~~and must never suppress the §7 fallback~~
+      — **that clause is stale**: v0.23.0 removed the fallback, so what it must
+      never suppress is a *launch*, which is stricter and is what shipped
+- [x] `summary`'s "everything a client needs to decide from is a field of its own
       on this row" is still true after this lands
-- [ ] The OpenAPI document is regenerated and the drift check passes
+- [x] The OpenAPI document is regenerated and the drift check passes
 
 ## Technical Design
 
@@ -119,8 +121,50 @@ answer the question `summary` currently answers in prose.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent._
+Implemented by the orchestrator on opus, 2026-08-26. Wire half; SERVER-157
+computes it, CLI-071 prints it, AGENT-055 decides from it.
 
-## Completion Checklist (orchestrator)
+### The issue's own criterion had gone stale, and the correction is stricter
 
-- [ ] Committed with `[CONTRACT-057]` prefix
+It required the field "must never suppress the §7 fallback". **There is no
+fallback** — v0.23.0 removed it. What the field must never suppress is a
+**launch**, and that is a harder requirement than the one filed: under the
+fallback a wrongly-suppressed launch cost warmth, because the orchestrator would
+have done the work. Now it costs the answer.
+
+So the published description states the asymmetry in those terms: a listener
+that died mid-event leaves its event held until `reap-stale` requeues it, so
+`working: true` **outlives the agent that earned it**, and the field bounds a
+launch decision rather than asserting presence.
+
+### Three fields, one decision
+
+`live` answers *is anybody there*, `pending` answers *is anybody waiting*, and
+`working` answers *is anything being done*. The description says which is which
+and that all three are needed, because a reader who took one for the whole would
+either launch onto a busy agent or never launch onto a dead one.
+
+### `summary` keeps its promise, and a test says so
+
+The roster already computed this and rendered it into `summary`, whose contract
+forbids deciding from it. Lifting it out is what makes that promise true rather
+than aspirational — so a test asserts `summary` still reads *"everything a
+client needs to decide from is a field of its own on this row"* after this
+landed, since that sentence is now describing something real.
+
+### Falsification
+
+Cutting the outlives-the-agent warning:
+
+```
+× says it is never evidence anybody is there, and why
+  Tests  1 failed | 4 passed
+```
+
+### Checks
+
+```
+vitest run packages/contract      3013 tests passed   exit 0
+eslint packages/contract/src         0 errors         exit 0
+generate (openapi.json + client)     clean
+```
