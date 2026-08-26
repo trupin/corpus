@@ -5652,6 +5652,82 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
   });
 
   /**
+   * CONTRACT-088. §7's rider A makes a resident what a new standalone thread
+   * gets when nobody chose, and §10's rider B puts the choice on both composer
+   * submits. The wire has to express three states, and one of them — *present,
+   * and explicitly nobody* — has no spelling anywhere else on this body.
+   */
+  describe("a thread is created with its resident (CONTRACT-088)", () => {
+    const created = (): Record<string, { description?: string }> =>
+      componentSchemas?.["CreateThreadRequest"]?.properties ?? {};
+
+    it("carries the designation on both composer submits", () => {
+      expect(created()["resident"]).toBeDefined();
+      expect(componentSchemas?.["CaptureRequest"]?.properties?.["resident"]).toBeDefined();
+    });
+
+    /**
+     * The trap this pins: `parent` and `selector` on this same body both read
+     * "Omitted or null" and mean one thing by the pair. A caller who learned
+     * that here would spell an unset variable as `null` and get the opposite of
+     * the default.
+     */
+    it("says outright that null and omitted differ, unlike its neighbours", () => {
+      const description = created()["resident"]?.description ?? "";
+      expect(description).toContain("`null` is not the same as omitting this field");
+      expect(description).toContain("unlike `parent` and `selector`");
+    });
+
+    it("keeps designating and routing apart, in the field's own words", () => {
+      const description = created()["resident"]?.description ?? "";
+      expect(description).toContain("This is not `recipient`");
+      expect(description).toContain("**one message**");
+      expect(description).toContain("everything that grows out of it");
+    });
+
+    it("states the three spellings where a caller sets them, on the route too", () => {
+      const description = operation("/api/threads", "post").description ?? "";
+      expect(description).toContain("**`null` means no resident at all**");
+      expect(description).toContain("designates a **general " + "resident**");
+    });
+
+    it("refuses a designation on a thread that has a parent", () => {
+      expect(operation("/api/threads", "post").description).toContain(
+        "**A `resident` on a thread with a `parent` is a `400`**",
+      );
+      expect(created()["resident"]?.description).toContain("Refused on a thread with a parent");
+    });
+
+    /**
+     * A capture has no `recipient` for a documented reason, and gaining a
+     * designation looks like a contradiction until the two are told apart.
+     * The route says which is which so the next reader does not re-open it.
+     */
+    it("explains why a capture designates although it never routes", () => {
+      const description = operation("/api/capture", "post").description ?? "";
+      expect(description).toContain("although it carries no `recipient`");
+      expect(description).toContain("*routing*, not about *ownership*");
+    });
+
+    /**
+     * Flat `resident.name` parts cannot express *present, and explicitly
+     * nobody*, so the multipart twin carries one encoded value — the same
+     * choice `selector` made, for a reason that binds harder here.
+     */
+    it("carries one encoded part through multipart, not flattened fields", () => {
+      const multipart =
+        componentSchemas?.["MultipartCreateThreadRequest"]?.properties?.["resident"];
+      expect(multipart?.type).toBe("string");
+      expect(multipart?.description).toContain("An omitted " + "part and a `null` one mean");
+      expect(
+        Object.keys(componentSchemas?.["MultipartCreateThreadRequest"]?.properties ?? {}).filter(
+          (key) => key.startsWith("resident."),
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  /**
    * CONTRACT-087. The field exists because SPEC.md §7's rider signed 2026-08-25
    * removed the fallback: until then a lane whose listener was absent had its
    * work folded into the orchestrator's claim, so the work arriving *was* the

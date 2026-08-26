@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -39,27 +39,27 @@ Two routes gain it: `POST /api/threads` (Ask) and `POST /api/capture` (Capture).
 
 ## Acceptance Criteria
 
-- [ ] `POST /api/threads` accepts a designation on creation, expressing three
+- [x] `POST /api/threads` accepts a designation on creation, expressing three
       states without ambiguity: **absent** (rider A's default — a general
       resident), **a named profile**, and **explicitly none**
-- [ ] `POST /api/capture` accepts the same. §10's rider says outright why it may,
+- [x] `POST /api/capture` accepts the same. §10's rider says outright why it may,
       although it carries no `recipient`: _"the reason it carries none — that a
       capture is in no scope by construction — is a statement about routing and
       not about ownership"_
-- [ ] **Designation and `recipient` are separate fields and are never
+- [x] **Designation and `recipient` are separate fields and are never
       collapsed.** The route descriptions say why, citing §10: naming a recipient
       routes one message and rewires nothing, while designating hands over the
       conversation and everything that grows out of it. Both may be sent, and
       they mean different things
-- [ ] A thread **with a parent** refuses a designation, as §7 has always required
+- [x] A thread **with a parent** refuses a designation, as §7 has always required
       — a resident owns a conversation rather than a passage. The refusal names
       the rule
-- [ ] The response carries the designation that was made, so a client never
+- [x] The response carries the designation that was made, so a client never
       re-reads to learn what it got
-- [ ] The three states have exactly **one spelling each** on the wire. "Absent"
+- [x] The three states have exactly **one spelling each** on the wire. "Absent"
       and "explicitly none" must be distinguishable, because they are different
       requests
-- [ ] `openapi.json` and the generated client regenerate cleanly
+- [x] `openapi.json` and the generated client regenerate cleanly
 
 ## Technical Design
 
@@ -108,16 +108,76 @@ refused with the rule named.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### The tri-state, and the one thing that could go wrong with it
+
+`DesignateResidentRequestSchema`'s docblock already argues this vocabulary and
+**rejects two alternatives**: `{name: null}` (it makes the ordinary case the
+ceremonious one) and a sentinel name like `"general"` (it would reach a
+recipient list dressed as a profile and could collide with a real one). Both
+rejections still hold, so the spelling here extends that vocabulary rather than
+inventing one.
+
+The part that had to be decided new: **`null` earns a job here that the designate
+route refused it.** That docblock's reason was *"release is `DELETE` on this same
+path precisely so nothing here has to be spelled with a null"*. At creation there
+is no `DELETE` to lean on — the thread does not exist yet, so "create it with
+nobody" cannot be a later act without a window in which the default already
+applied.
+
+**So `null` and omitted differ on this field, and on no other field of this
+body.** `parent` and `selector` both read *"Omitted or null"* and mean one thing
+by the pair. A caller who learned the habit here would spell an unset variable
+as `null` and get the **opposite** of the default. That is stated in the
+published description and pinned by a test.
+
+### Registering the shape as a component swallowed the nullable
+
+First attempt registered `CreateThreadResident` as a named component. The
+generated document published `{"$ref": ...}` and **dropped `.nullable()`
+entirely** — so the wire could not express "explicitly nobody" at all, and the
+existing house rule *"keeps every named component a plain, non-nullable,
+undefaulted object"* went red, which is exactly the guard doing its job.
+
+Un-registered, it publishes inline as `type: ["object", "null"]` with its
+description on the property. The three states survive.
+
+### Multipart carries one encoded part
+
+Flat `resident.name` / `resident.weight` parts were rejected for the reason
+`MultipartSelectorSchema` gives — a second wire spelling that drifts — and the
+reason binds harder here: **flat parts cannot say *present, and explicitly
+nobody***. One JSON-encoded part keeps all three states through the encoding, and
+the same schema serves Capture, whose preprocess only acts on strings.
+
+### Falsification
+
+Cutting the null-versus-omitted warning out of the description:
+
+```
+× says outright that null and omitted differ, unlike its neighbours
+  Tests  1 failed | 6 passed
+```
+
+### Checks
+
+```
+vitest run packages/contract      70 files, 3000 tests passed   exit 0
+eslint packages/contract/src                      0 errors      exit 0
+tsc -p tsconfig.build.json                                      exit 0
+generate (openapi.json + client)                                clean
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[CONTRACT-088]` prefix
+- [x] Committed with `[CONTRACT-088]` prefix

@@ -19,7 +19,14 @@ export const capture = createRoute({
     "call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the " +
     "body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board " +
     "show the pending-agent indicator immediately and the console link the job back to the capture. " +
-    "An upload past the workspace's size caps is a `413`.",
+    "An upload past the workspace's size caps is a `413`." +
+    "\n\n**The filing thread is created with a resident, unless the caller says otherwise** " +
+    "(SPEC.md §10, rider signed 2026-08-25). Omitting `resident` designates a general resident; " +
+    "`null` creates the thread with none; an object designates a profile. **A capture carries a " +
+    "designation although it carries no `recipient`**, and the rider says why: the reason it has " +
+    "no recipient — a capture creates a standalone thread in no scope by construction — is about " +
+    "*routing*, not about *ownership*. There is nowhere to route a message before there is a " +
+    "conversation, and there is very much a conversation to own.",
   request: {
     headers: ActorHeaderSchema,
     body: {

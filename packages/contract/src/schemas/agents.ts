@@ -685,6 +685,66 @@ export const AgentRosterSchema = openapi(
  * (CONTRACT-017), so a caller that means `name` and writes `agent` is told which
  * key it got wrong instead of quietly receiving a general resident.
  */
+/**
+ * The designation a **thread creation** carries (CONTRACT-088; SPEC.md §7's
+ * rider A and §10's rider B, both signed 2026-08-25).
+ *
+ * ## Three states, and `null` earns a job it was refused next door
+ *
+ * - **Absent** — rider A's default: a **general resident**. A conversation is a
+ *   thing an agent owns, so owning it is what happens when a caller says
+ *   nothing. That is the same spelling {@link DesignateResidentRequestSchema}
+ *   already gives the ordinary case, for the same reason.
+ * - **`{name}`** — that profile, resolved exactly as the designate route
+ *   resolves it, including its `404` on a name that matches nothing.
+ * - **`null`** — **no resident at all.**
+ *
+ * The docblock above rejects `{name: null}` partly because *"release is `DELETE`
+ * on this same path precisely so nothing here has to be spelled with a null"*.
+ * At creation there is no `DELETE` to lean on: the thread does not exist yet, so
+ * "create it with nobody" cannot be expressed as a later act without leaving a
+ * window in which the default already applied. That is what earns `null` a
+ * meaning here and nowhere else.
+ *
+ * ## `null` and absent differ here, unlike everywhere else on this body
+ *
+ * `parent` and `selector` on the same request both read *"Omitted or null"* and
+ * treat the two alike. This field does not, and a caller that spells a missing
+ * variable as `null` gets the opposite of the default rather than the default.
+ * It is called out in the published description for that reason: the risk is
+ * real and the alternative — a sentinel string — was rejected next door for
+ * reasons that still hold, since it would reach a recipient list dressed as a
+ * profile and could collide with a real one.
+ */
+export const CreateThreadResidentSchema = z
+  .strictObject({
+    name: AgentNameSchema.optional().describe(
+      "The profile to designate, by the invocable name `@<subagent>` mentions use (SPEC.md §8). " +
+        "Omitted designates a **general resident** — an agent with no persona document, which " +
+        "§7 calls the ordinary case. Resolution and its `404` are exactly the designate route's.",
+    ),
+    weight: RequestedWeightSchema.optional().describe(
+      "The model tier this resident works at (SPEC.md §7's rider signed 2026-08-19), the same " +
+        "level-key vocabulary the designate route takes. Omitted leaves it to the launcher.",
+    ),
+  })
+  .describe(
+    "**Who will own this conversation** (SPEC.md §7, rider signed 2026-08-25). **Three states, " +
+      "and `null` is not the same as omitting this field** — unlike `parent` and `selector` on " +
+      "this same body, where omitted and null mean one thing. **Omit it** for the default: a " +
+      "general resident, because a new standalone thread designates one unless the person chose " +
+      "otherwise. **Send `{name}`** to designate that profile. **Send `null`** for a thread with " +
+      "no resident at all, which belongs to the orchestrator as every thread did before this " +
+      "rider.\n\n" +
+      "**This is not `recipient`, and the two are never collapsed.** Naming a recipient routes " +
+      "**one message** and rewires nothing (SPEC.md §7's summons); designating hands over the " +
+      "conversation **and everything that grows out of it**. Both may be sent on one request, " +
+      "and they mean different things.\n\n" +
+      "**Refused on a thread with a parent.** §7 lets only a standalone thread designate: a " +
+      "thread on a document is *about* that document, and a resident owns a conversation rather " +
+      "than a passage.",
+  );
+
 export const DesignateResidentRequestSchema = openapi(
   z.strictObject({
     name: AgentNameSchema.describe(

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { DocIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
-import { requestsAgentFormField } from "./thread.js";
+import { MultipartResidentSchema, requestsAgentFormField } from "./thread.js";
 import { warningsField } from "./warning.js";
 import { requestedWeightField } from "./weight.js";
 import { openapi } from "./openapi-metadata.js";
@@ -27,6 +27,21 @@ export const CaptureRequestSchema = openapi(
         "carries its own mention or skill invocation, which routes it instead.",
     ),
     weight: requestedWeightField,
+    /*
+     * Who will own the conversation a capture starts (CONTRACT-088; SPEC.md
+     * §10's rider signed 2026-08-25).
+     *
+     * **A capture carries no `recipient` and does carry this**, and the rider
+     * says why in as many words: the reason it carries none — that a capture
+     * creates a standalone thread in no scope by construction — is a statement
+     * about *routing* and not about *ownership*. There is nowhere to route a
+     * message before there is a conversation; there is very much a conversation
+     * to own.
+     *
+     * The designation lands on the filing thread, which is the standalone
+     * thread this call already creates.
+     */
+    resident: MultipartResidentSchema,
     files: AttachmentFilesSchema,
   }),
   "CaptureRequest",

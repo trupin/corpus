@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ActorSchema } from "./actor.js";
-import { residentField } from "./agents.js";
+import { CreateThreadResidentSchema, residentField } from "./agents.js";
 import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
@@ -216,6 +216,10 @@ export const CreateThreadRequestSchema = openapi(
     requestsAgent: requestsAgentField(THREAD_CREATE_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
     weight: requestedWeightField,
+    // Who will own the conversation, as against `recipient` above, which routes
+    // one message (CONTRACT-088). Three states, and `null` is not `absent` —
+    // see `CreateThreadResidentSchema` for why it earns that job here.
+    resident: CreateThreadResidentSchema.nullable().optional(),
   }),
   "CreateThreadRequest",
 );
@@ -254,6 +258,46 @@ const MultipartSelectorSchema = openapi(
 );
 
 /**
+ * The designation, carried through multipart the way the selector is
+ * (CONTRACT-088): one JSON-encoded part.
+ *
+ * **Flattening it into `resident.name` / `resident.weight` parts was rejected**
+ * for the reason {@link MultipartSelectorSchema} gives — it invents a second wire
+ * spelling of a shape the JSON branch already has, and the two drift. It matters
+ * more here than there, because this field's three states turn on the difference
+ * between an absent part and a present one, and flat parts have no way to say
+ * *"present, and explicitly nobody"*.
+ *
+ * So the three states survive the encoding exactly: **omit the part** for the
+ * default general resident, send `null` for no resident, send an object for a
+ * profile.
+ */
+export const MultipartResidentSchema = openapi(
+  z
+    .preprocess((value) => {
+      if (typeof value !== "string") return value;
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        // Left as the string it is, exactly as the selector does: reporting it
+        // is the schema's job, and throwing out of a preprocess loses the path.
+        return value;
+      }
+    }, CreateThreadResidentSchema.nullable())
+    .optional(),
+  {
+    type: "string",
+    description:
+      "Who will own this conversation, as a JSON value encoded into one part (SPEC.md §7's rider " +
+      "signed 2026-08-25). Same three states as the JSON body's `resident`: **omit the part** " +
+      "for the default — a general resident — send `null` for a thread with no resident at all, " +
+      'or send an object such as `{"name":"researcher"}` to designate a profile. **An omitted ' +
+      "part and a `null` one mean different things here**, which is why this is one encoded value " +
+      "rather than flat parts: flat parts cannot say *present, and explicitly nobody*.",
+  },
+);
+
+/**
  * The attachment form of thread creation (SPEC.md §6, §8) — the composer's *Ask*
  * with a screenshot, and a selection comment that carries a file.
  *
@@ -287,6 +331,7 @@ export const MultipartCreateThreadRequestSchema = openapi(
       requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
       model: turnModelRequestField,
       weight: requestedWeightField,
+      resident: MultipartResidentSchema,
       files: AttachmentFilesSchema,
     })
     .refine((value) => value.text !== undefined || value.files.length > 0, {
