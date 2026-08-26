@@ -34,6 +34,7 @@ const ORCHESTRATOR: AgentLane = {
   resident: null,
   live: true,
   since: NOW,
+  pending: 0,
   summary: null,
   origin: null,
 };
@@ -43,6 +44,7 @@ const RESIDENT: AgentLane = {
   resident: { name: "Ana", docId: "doc_ana", weight: "heavy", designationId: null },
   live: true,
   since: NOW,
+  pending: 0,
   summary: "reviewing the draft",
   origin: { id: "th_a", title: "The claims conversation" },
 };

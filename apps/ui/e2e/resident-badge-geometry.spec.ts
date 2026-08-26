@@ -80,6 +80,7 @@ const profileGone = (name: string): readonly AgentLane[] => [
     resident: { name, docId: null, weight: null, designationId: null },
     live: false,
     since: ago(17 * 60_000),
+    pending: 0,
     summary: null,
     origin: { id: "th_solo", title: "Q3 planning" },
   },

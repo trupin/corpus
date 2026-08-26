@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -38,23 +38,23 @@ when the last reflection landed. This issue adds the third: the switch.
 
 ## Acceptance Criteria
 
-- [ ] The Reflect control carries a switch for the automatic path, beside the ask
-- [ ] Switching it off `PUT`s `quiet: 0`. Switching it on `PUT`s the default
-- [ ] **The control names the window before it writes it.** A person whose config
+- [x] The Reflect control carries a switch for the automatic path, beside the ask
+- [x] Switching it off `PUT`s `quiet: 0`. Switching it on `PUT`s the default
+- [x] **The control names the window before it writes it.** A person whose config
       carries 45 minutes sees 45 while it is on, and sees the 30 it will restore
       before they switch it back on. SHARED-071 chose showing the number over
       remembering the old one, and this is the half that makes that honest
-- [ ] With the automatic path off, the control **says so where it is read** —
+- [x] With the automatic path off, the control **says so where it is read** —
       "reflected 2h ago" alone would let a person believe one is still coming
-- [ ] **The ask stays enabled with the switch off.** That is the whole point of
+- [x] **The ask stays enabled with the switch off.** That is the whole point of
       the request: the button becomes the only way a reflection happens
-- [ ] **The bar's height never changes**, and neither does anything beside the
+- [x] **The bar's height never changes**, and neither does anything beside the
       control. §10's rule, and the control's own docblock already commits to it —
       the switch is `flex: none` and reserves its room whether or not it has
       anything to say
-- [ ] The switch reflects server state, never local state. A `PUT` that fails
+- [x] The switch reflects server state, never local state. A `PUT` that fails
       leaves the switch where the server says it is, and raises a toast
-- [ ] Keyboard reachable and labelled, like every other control on the bar
+- [x] Keyboard reachable and labelled, like every other control on the bar
 
 ## Technical Design
 
@@ -99,16 +99,60 @@ make.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-25.
+
+### The control shows the number, which is what makes SHARED-071 honest
+
+That issue chose **showing the window** over **remembering the previous one**, on
+the grounds that a second config key whose only job is to undo a toggle hides the
+value about to be written. This is where the choice pays for itself: a person
+whose config says 45 minutes reads *"reflects on itself once nothing has changed
+for 45 minutes"* while it is on, and reads *"restores the 30-minute quiet
+window"* **before** switching it back on. Neither is a surprise and nobody opens
+a file.
+
+### The ask stays enabled, and a test holds it
+
+The whole of the request: with the automatic path off, the Reflect button is the
+**only** way a reflection happens, so disabling it would remove the last one.
+Falsified by adding `|| automatic === false` to the ask's `disabled` and watching
+that test go red.
+
+### No optimistic update
+
+The switch reflects server state and nothing else. `setQueryData` takes the
+response — the route answers the whole `ReflectStatus`, so the switch flips
+because the server said so rather than on a second round trip — and a failed
+`PUT` leaves the control where the server has it, with a toast saying the ask did
+not land.
+
+### Absent until known, in a reserved slot
+
+A control that said *"off"* before reading anything would claim something about
+the workspace on the strength of not knowing (UI-098's rule). So the wrapper
+always renders at `7ch` and the switch appears inside it: the arrival paints and
+moves nothing beside it, which is §10's rule applied to a value that shows up
+late rather than one that grows. Both labels are sized for the wider of the two,
+so flipping it never re-widths the bar either.
+
+### Checks
+
+```
+vitest run apps/ui/src           179 files, 3743 tests passed   exit 0
+vitest run packages/kit           978 tests passed              exit 0
+eslint apps/ui/src packages/kit/src          0 errors            exit 0
+tsc --noEmit -p apps/ui                                          exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[UI-172]` prefix
+- [x] Committed with `[UI-172]` prefix

@@ -15,6 +15,7 @@ const LANE: AgentLane = {
   resident: { name: "researcher", docId: "doc_agentdef", weight: null, designationId: null },
   live: false,
   since: null,
+  pending: 0,
   summary: null,
   origin: { id: "th_root", title: "Q3 planning" },
 };

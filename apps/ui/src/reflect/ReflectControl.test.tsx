@@ -137,4 +137,72 @@ describe("the Reflect control", () => {
     const button = screen.getByRole("button", { name: "Reflect" });
     expect(button.getAttribute("title")).toContain("manual only");
   });
+
+  /**
+   * The switch (UI-172; SPEC.md §7's rider signed 2026-08-25).
+   */
+  describe("the automatic-reflection switch", () => {
+    const switchOf = async (): Promise<HTMLElement> =>
+      screen.findByRole("switch", { name: "Automatic reflection" });
+
+    it("reads on for a configured window, and says the window in its tooltip", async () => {
+      mount({ reflect: { quiet: 45 } });
+
+      const control = await switchOf();
+      expect(control.getAttribute("aria-checked")).toBe("true");
+      expect(control.textContent).toBe("auto");
+      // SHARED-071 chose showing the number over remembering it, and this is
+      // where a person whose config says 45 reads 45.
+      expect(control.getAttribute("title")).toContain("45 minutes");
+    });
+
+    it("reads off at zero, and names the window switching it on restores", async () => {
+      mount({ reflect: { quiet: 0 } });
+
+      const control = await switchOf();
+      expect(control.getAttribute("aria-checked")).toBe("false");
+      expect(control.textContent).toBe("auto off");
+      expect(control.getAttribute("title")).toContain("restores the 30-minute quiet window");
+    });
+
+    it("writes zero to switch off, and the default to switch on", async () => {
+      const { wire } = mount({ reflect: { quiet: 45 } });
+      await userEvent.click(await switchOf());
+
+      await waitFor(() => {
+        expect(wire.writes("PUT")).toHaveLength(1);
+      });
+      const written = wire.writes("PUT")[0];
+      expect(written?.path).toBe("/api/workspace/reflect/quiet");
+      expect(written?.body).toMatchObject({ quiet: 0 });
+    });
+
+    /**
+     * The whole of what the user asked for: with the automatic path off, this
+     * button is the only way a reflection happens, so disabling it would remove
+     * the last one.
+     */
+    it("leaves the ask enabled with the automatic path off", async () => {
+      mount({ reflect: { quiet: 0 } });
+      await switchOf();
+
+      const ask = screen.getByRole("button", { name: /^Reflect/ });
+      expect(ask.hasAttribute("disabled")).toBe(false);
+    });
+
+    /**
+     * A control that said "off" before it had read anything would be claiming
+     * something about the workspace on the strength of not knowing (UI-098).
+     * Its slot is reserved in CSS, so the arrival paints and moves nothing.
+     */
+    it("says nothing at all until the status arrives", () => {
+      const pending = (): Promise<Response> => new Promise(() => undefined);
+      const harness = createBoardHarness(pending);
+      render(<ReflectControl now={NOW} />, { wrapper: harness.Wrapper });
+
+      expect(screen.queryByRole("switch")).toBeNull();
+      // The slot is there regardless, which is what keeps the bar still.
+      expect(document.querySelector(".reflect-auto")).not.toBeNull();
+    });
+  });
 });

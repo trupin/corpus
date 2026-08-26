@@ -190,6 +190,7 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
             resident: null,
             live: false,
             since: null,
+            pending: 0,
             summary: null,
             origin: null,
           },
@@ -216,6 +217,19 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
         );
       }
       return json(status);
+    }
+    /*
+     * `PUT /api/workspace/reflect/quiet` — the switch (UI-172). It **echoes the
+     * value it was given** back on the whole status, because that is what the
+     * real route does and it is what makes the control's optimism-free
+     * behaviour testable: the switch flips because the server said so.
+     */
+    if (url.pathname === "/api/workspace/reflect/quiet" && request.method === "PUT") {
+      const status: ReflectStatus = { ...QUIET_REFLECT_STATUS, ...options.reflect };
+      return request.text().then((raw) => {
+        const { quiet } = JSON.parse(raw) as { quiet: number };
+        return json({ ...status, quiet });
+      });
     }
     /*
      * `POST /api/boards/order` — the bar's order, written as one act and one

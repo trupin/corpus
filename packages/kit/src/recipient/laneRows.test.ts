@@ -28,6 +28,7 @@ function lane(overrides: Partial<AgentLane> = {}): AgentLane {
     resident: { name: "claims-review", docId: "doc_agent", weight: "heavy", designationId: null },
     live: true,
     since: NOW.toISOString(),
+    pending: 0,
     summary: "reviewing the draft",
     origin: { id: "th_root", title: "The claims conversation" },
     ...overrides,

@@ -21,6 +21,7 @@ function designated(overrides: Partial<AgentLane> = {}): AgentLane {
     // Relative to now: `isAgentPresent` expires evidence that has aged past the
     // grace window, so a fixed instant would be lapsed by the time this runs.
     since: new Date(Date.now() - 60_000).toISOString(),
+    pending: 0,
     summary: "reading the policy",
     origin: { id: "th_root", title: "Q3 planning" },
     ...overrides,
