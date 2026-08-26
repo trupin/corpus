@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -43,21 +43,21 @@ SERVER-157 makes something better available.
 
 ## Acceptance Criteria
 
-- [ ] The launch rule reads all three fields: **not live**, **something
+- [x] The launch rule reads all three fields: **not live**, **something
       pending**, and **not working**
-- [ ] The text says why the third is not the same question as the first, in the
+- [x] The text says why the third is not the same question as the first, in the
       terms §7 uses — presence is the parked request, and a resident spends most
       of its time not parked
-- [ ] **The tolerance for duplicates survives as the fallback position**, not as
+- [x] **The tolerance for duplicates survives as the fallback position**, not as
       the rule. A lane that is not live, has work, and is not working is still a
       launch, and the first contested claim still settles a duplicate — because
       `working` can be stale for the same reason `live` can
-- [ ] **It must never suppress a launch onto a genuinely dead lane.** A listener
+- [x] **It must never suppress a launch onto a genuinely dead lane.** A listener
       that died mid-event leaves its event held, so the lane reads `working:
       true` until `reap-stale` requeues it. The skill states that bound and says
       what closes it, because a rule that silently waits forever is worse than a
       duplicate
-- [ ] The worked example shows the three-field row
+- [x] The worked example shows the three-field row
 
 ## Technical Design
 
@@ -90,16 +90,76 @@ and confirm one does.
 
 ## E2E Verification Log
 
-<!-- filled by the implementing agent -->
+Implemented by the orchestrator on opus, 2026-08-26.
+
+### Three fields, each with the failure it prevents
+
+The rule now names all three and says what leaving each out costs:
+
+- **Not live** alone launches for every idle conversation in the workspace.
+- **Something pending** alone would have you launch for a healthy quiet lane.
+- **Not working** is the one easy to leave out and the one that costs an agent:
+  a resident working inline holds no park, so a long turn reads exactly like a
+  dead lane and the launch puts a second listener on a conversation already
+  thinking.
+
+`lapsed · working · 2 waiting` is named in the text as **a busy agent**, because
+that row looks like a contradiction and is the case the field exists for.
+
+### The argument was narrowed, not reversed — which is the whole delicacy
+
+*"A row that does not read `live` does not mean nobody is there — and you launch
+anyway"* was correct and stays. `working` answers **one** of the three things a
+not-live row could mean. A crashed listener and one unobserved since a restart
+are still indistinguishable, and still want the same thing.
+
+So the bullet says which uncertainty went and, at length, that **everything the
+old argument forbade it still forbids**: no probe, no holding back a pass to see
+what happens, and above all no reading the display line after the state. A rule
+that answers one uncertainty is exactly where somebody starts inventing
+separators for the rest.
+
+And the asymmetry that decides it is restated in v0.23.0's terms: a wasted
+session against an unanswered conversation is not a close call. A test pins that
+sentence, because it is the reason the tolerance survives at all.
+
+### The bound, and where it is closed
+
+`working` outlives a dead agent — a listener that died mid-event leaves its event
+held until `corpus queue reap-stale` returns it. That is the one way this rule
+could wait forever, so the text says so **and** says what closes it: the reap is
+step 2 and the roster read is step 3, so the roster you decide from has already
+had its stale work returned.
+
+### Falsification
+
+Dropping the third field from the rule:
+
+```
+× launches once per lane per pass, and stops when a launch does not take
+  Tests  1 failed | 502 passed
+```
+
+### No SPEC.md citations
+
+`grep -c "SPEC.md"` → 0. This file ships into a user's workspace, which has none
+(AGENT-053's finding).
+
+### Checks
+
+```
+vitest run scripts/workspace-template.test.ts   503 tests passed   exit 0
+```
+
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[AGENT-055]` prefix
+- [x] Committed with `[AGENT-055]` prefix

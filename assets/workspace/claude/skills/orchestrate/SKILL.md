@@ -591,14 +591,29 @@ switch.
   and let it leave on its own.
 
 - **A lane with work waiting and nobody on it gets a listener, once a pass.** For every roster
-  row that is not the orchestrator's, does not read `live`, and **has something pending**,
-  launch a listener. Those two fields together are the decision, and neither makes it alone: a
-  lane that is not live with nothing waiting is idle and perfectly healthy, and launching for
-  it would give this workspace one running agent per conversation that has ever existed.
+  row that is not the orchestrator's, does not read `live`, **has something pending**, and is
+  **not working**, launch a listener. Those three fields together are the decision and none of
+  them makes it alone.
+
+  - **Not live** is *nobody is parked*. On its own it launches for every idle conversation in
+    the workspace, which is one running agent per conversation that has ever existed.
+  - **Something pending** is *somebody is waiting*. A lane that is not live with nothing
+    waiting is idle and perfectly healthy.
+  - **Not working** is *nothing is being done*. This is the one that is easy to leave out and
+    the one that costs an agent when you do: a resident works its conversation inline and holds
+    no park while it does, so a turn longer than the grace window reads exactly like a dead
+    lane. `lapsed · working · 2 waiting` is a **busy agent**, and launching onto it puts a
+    second listener on a conversation that already has one thinking.
+
+  **Working is not presence, and must never be read as it.** A listener that died mid-event
+  leaves its event held until `corpus queue reap-stale` returns it to pending — so a dead lane
+  can read `working` until you reap it, and reaping is what closes that. It is in step 2 of the
+  loop for exactly this reason: reap first, and the roster you read afterwards is telling the
+  truth about what is being done.
 
   This covers the two cases no event announces — a listener that crashed or was killed, and
   your own restart, where every designation is still sitting on its thread and every listener
-  is gone. It is **once per pass, per lane, and never per event**: a lane that has been
+  is gone. Both read `working: false` once you have reaped, which is why the reap comes first. It is **once per pass, per lane, and never per event**: a lane that has been
   unattended may be holding a dozen messages and it still wants one listener, and a
   `resident.designated` for a lane you have already launched into this pass launches nothing
   further. And if a lane you launched
@@ -628,17 +643,23 @@ switch.
   too. A roster launch has no event of its own to log to, so the prompt is the whole record of
   what you chose.
 
-- **A row that does not read `live` does not mean nobody is there — and you launch anyway.**
-  Presence is the parked request and nothing else, so a row reads not-live for a listener that
-  crashed, for one the server has not seen since it restarted, **and for one in the middle of a
-  turn**: a resident works its conversation inline and holds no park while it does, so any turn
-  longer than the grace window is indistinguishable from an empty lane. `live` is the only
-  reading with a definite meaning; the others all mean *nobody is parked at this instant*, and
-  no more. Nothing on the row separates them — the line printed after the state is display
-  text whose length is promised and whose content is not, so keying on it is deciding from a
-  string that may change without notice — and you must not invent a separator: no probe, no
-  holding back a pass to see what happens, no reading the lane's busyness. **Launch, and let
-  the lane settle it.** A second listener parks, costs nothing while the conversation is quiet,
+- **A row that does not read `live` still does not mean nobody is there — and where the row
+  cannot tell you, you launch anyway.** Presence is the parked request and nothing else, so a
+  row reads not-live for a listener that crashed, for one the server has not seen since it
+  restarted, **and for one in the middle of a turn**: a resident works its conversation inline
+  and holds no park while it does, so any turn longer than the grace window is indistinguishable
+  from an empty lane *by presence alone*.
+
+  **`working` separates the third of those, and only the third.** A lane holding claimed work
+  is being worked; that much the row now tells you, and the rule above uses it. What the row
+  still cannot tell you is a crashed listener from one the server has not seen since a restart —
+  and it does not need to, because both want the same thing.
+
+  **Everything the old argument forbade, it still forbids.** Do not invent a separator for what
+  is left: no probe, no holding back a pass to see what happens, and above all no reading the
+  line printed after the state — that is display text whose length is promised and whose content
+  is not, so keying on it is deciding from a string that may change without notice. Where the
+  three fields say launch, **launch, and let the lane settle it.** A second listener parks, costs nothing while the conversation is quiet,
   and at the first message either of them is asked to answer, one of the two finds out it is
   second and goes — nothing posted, nothing worked, and nobody answered twice. **How it finds
   that out is the converse skill's to state, and it is stated there alone.** A resident runs
@@ -649,6 +670,11 @@ switch.
   buy by holding back has no repair in it at all — a listener that really did die, on a lane
   nobody relaunches, and **nobody else coming**: since the fallback was removed, a conversation
   with no listener is not answered slowly, it is not answered.
+
+  That asymmetry is why `working` narrows this rule and does not reverse it. It removes the one
+  uncertainty the row can now answer, and everywhere the row still cannot answer, **launching
+  under uncertainty remains right** — a wasted session against an unanswered conversation is not
+  a close call.
 
 - **Launch before you dispatch, in the same pass, every pass.** There used to be a rule here
   saying the exact opposite — *never in the same pass you took that lane's work* — and it was
