@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { DocIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
-import { MultipartResidentSchema, requestsAgentFormField } from "./thread.js";
+import { requestsAgentFormField } from "./thread.js";
 import { warningsField } from "./warning.js";
 import { requestedWeightField } from "./weight.js";
 import { openapi } from "./openapi-metadata.js";
@@ -13,6 +13,27 @@ import { openapi } from "./openapi-metadata.js";
  * the agent. It is a thin composition of primitives that already exist — no new
  * machinery — and exists as one endpoint only so the board can show the new
  * document with its pending-agent indicator without a three-call round trip.
+ */
+/**
+ * **A capture carries no designation, and the reason is §7's, not §10's**
+ * (CONTRACT-088, corrected during SERVER-154).
+ *
+ * SPEC.md §10's rider signed 2026-08-25 says Ask and Capture both offer a new
+ * resident, reasoning that a capture's lack of a `recipient` is about *routing*
+ * rather than *ownership*. That reasoning is sound and its premise was not
+ * checked: **the thread a capture creates is not standalone.** It is the
+ * document's filing thread, written with `parent: <docId>` — and §7 allows a
+ * designation only on a standalone thread, *"because a thread on a document is
+ * about that document, and a resident owns a conversation rather than a
+ * passage"*.
+ *
+ * So the field is absent here rather than declared-and-always-refused. A wire
+ * field that can never succeed is worse than none: it tells every reader of the
+ * contract that something is possible.
+ *
+ * Closing the gap needs a decision nobody has made — either the filing thread
+ * stops being parented, which changes what a capture *is*, or §10's rider is
+ * amended. It is filed as SHARED-073 rather than settled here.
  */
 export const CaptureRequestSchema = openapi(
   z.strictObject({
@@ -27,21 +48,6 @@ export const CaptureRequestSchema = openapi(
         "carries its own mention or skill invocation, which routes it instead.",
     ),
     weight: requestedWeightField,
-    /*
-     * Who will own the conversation a capture starts (CONTRACT-088; SPEC.md
-     * §10's rider signed 2026-08-25).
-     *
-     * **A capture carries no `recipient` and does carry this**, and the rider
-     * says why in as many words: the reason it carries none — that a capture
-     * creates a standalone thread in no scope by construction — is a statement
-     * about *routing* and not about *ownership*. There is nowhere to route a
-     * message before there is a conversation; there is very much a conversation
-     * to own.
-     *
-     * The designation lands on the filing thread, which is the standalone
-     * thread this call already creates.
-     */
-    resident: MultipartResidentSchema,
     files: AttachmentFilesSchema,
   }),
   "CaptureRequest",

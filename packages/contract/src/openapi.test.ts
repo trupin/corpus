@@ -5718,9 +5718,25 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
     const created = (): Record<string, { description?: string }> =>
       componentSchemas?.["CreateThreadRequest"]?.properties ?? {};
 
-    it("carries the designation on both composer submits", () => {
+    /**
+     * **Ask only, and Capture deliberately not** — §10's rider signed
+     * 2026-08-25 asked for both, and its premise about Capture was wrong.
+     *
+     * The thread a capture creates is the document's *filing* thread, written
+     * with a parent. §7 allows a designation only on a standalone thread, so a
+     * `resident` on this body could never succeed — and a wire field that can
+     * never succeed is worse than none, because it tells every reader of the
+     * contract that something is possible. SHARED-073 carries the decision.
+     */
+    it("carries the designation on Ask, and not on Capture, whose thread has a parent", () => {
       expect(created()["resident"]).toBeDefined();
-      expect(componentSchemas?.["CaptureRequest"]?.properties?.["resident"]).toBeDefined();
+      expect(componentSchemas?.["CaptureRequest"]?.properties?.["resident"]).toBeUndefined();
+      // The reason lives in the schema's source docblock rather than in the
+      // published description — a component's own prose is not emitted here —
+      // so what the wire promises is the absence itself.
+      expect(Object.keys(componentSchemas?.["CaptureRequest"]?.properties ?? {})).not.toContain(
+        "resident",
+      );
     });
 
     /**
@@ -5760,11 +5776,6 @@ describe("lanes, designation and the roster (CONTRACT-051)", () => {
      * designation looks like a contradiction until the two are told apart.
      * The route says which is which so the next reader does not re-open it.
      */
-    it("explains why a capture designates although it never routes", () => {
-      const description = operation("/api/capture", "post").description ?? "";
-      expect(description).toContain("although it carries no `recipient`");
-      expect(description).toContain("*routing*, not about *ownership*");
-    });
 
     /**
      * Flat `resident.name` parts cannot express *present, and explicitly

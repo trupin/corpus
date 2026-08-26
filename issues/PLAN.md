@@ -1693,12 +1693,13 @@ agent runs at all.
 | CONTRACT-089 | Designating into a drain is refused, with its reason | done | P0 | opus | SHARED-072 |
 | SERVER-152 | The fallback is removed — every claim sees its own lane and no other | done | P0 | fable | SHARED-072 |
 | SERVER-153 | Release drains the lane, and a draining thread refuses designation | done | P0 | opus | SERVER-152, CONTRACT-089 |
-| SERVER-154 | A new standalone thread designates a general resident | todo | P0 | opus | CONTRACT-088 |
+| SERVER-154 | A new standalone thread designates a general resident | done | P0 | opus | CONTRACT-088 |
 | SERVER-155 | A roster row carries its lane's pending count | done | P0 | opus | CONTRACT-087 |
 | AGENT-053 | The orchestrate skill launches before it dispatches, and never takes a lane's work | todo | P0 | fable | SERVER-152, SERVER-155 |
 | AGENT-054 | A listener starts with work already waiting, and that is now ordinary | todo | P0 | fable | SERVER-152 |
 | UI-173 | Ask and Capture offer a new resident | todo | P0 | opus | CONTRACT-088 |
 | UI-174 | A row says no agent is running, not merely that work is queued | todo | P0 | opus | CONTRACT-087, SERVER-155 |
+| SHARED-073 | A capture cannot designate what it creates (rider B premise, found in SERVER-154) | todo | P1 | fable | SHARED-072 |
 
 **Also in the release, filed under Phase 46**: CONTRACT-086, SERVER-151 and
 UI-172 — the reflection switch's wire, server and control. `SHARED-071` and

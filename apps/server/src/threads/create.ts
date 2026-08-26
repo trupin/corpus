@@ -31,6 +31,7 @@ import {
   type TextQuoteSelector,
   type Lane,
   type Thread,
+  type Resident,
 } from "@corpus/contract";
 import { stampedOrigin } from "../docs/create.js";
 import {
@@ -68,6 +69,8 @@ import {
 } from "../docs/index.js";
 import { contextualizeSelector } from "./anchor-context.js";
 import { enqueueComment } from "./events.js";
+import { residentToStored } from "../core/resident.js";
+import { residentFor } from "./resident.js";
 import { TURN_SUBJECT, assertAppendableTurnText } from "./fences.js";
 import { assertWritableForm } from "./forms.js";
 import { parseMentions } from "./mentions.js";
@@ -117,6 +120,26 @@ export interface ThreadCreateInput {
    * thread created with a recipient is not thereby put in that agent's scope.
    */
   readonly recipient: Lane | undefined;
+  /**
+   * Who will **own** this conversation (SPEC.md §7's rider A, signed
+   * 2026-08-25) — three states, and they are not the two {@link recipient} has.
+   *
+   * - **`undefined`** — the rider's default: a **general resident**. A
+   *   conversation is a thing an agent owns, so owning it is what happens when
+   *   nobody chose.
+   * - **`null`** — explicitly **no resident**, which is what every thread was
+   *   before the rider.
+   * - **an object** — that profile, resolved exactly as the designate route
+   *   resolves it.
+   *
+   * `undefined` and `null` mean different things here and nowhere else on this
+   * input, which is why the contract says so in its own published description.
+   *
+   * **This is not `recipient`.** A recipient routes one message and rewires
+   * nothing; a designation hands over the conversation and everything that
+   * grows out of it. Both may ride one request.
+   */
+  readonly resident: CreateThreadRequest["resident"];
   readonly files: readonly File[];
 }
 
@@ -139,6 +162,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
       weight: body.weight,
       job: body.job,
       recipient: body.recipient,
+      resident: body.resident,
       files: [],
     };
   }
@@ -152,6 +176,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
     weight: body.weight,
     job: body.job,
     recipient: body.recipient,
+    resident: body.resident,
     files: body.files,
   };
 }
@@ -207,6 +232,48 @@ export function normalizeSelector(
  * created without one carries no key at all — the server records and never
  * invents, so there is nothing to write.
  */
+/**
+ * The designation a creation makes (SERVER-154; SPEC.md §7's rider A, signed
+ * 2026-08-25).
+ *
+ * ## The three states, and which one absence is
+ *
+ * `undefined` designates a **general resident** — §7 calls naming no profile
+ * *"the ordinary case"*, one that *"requires nothing to exist first"*, and the
+ * rider makes it what happens when nobody chose. `null` designates nobody. An
+ * object names a profile, resolved through the **same** `residentFor` the
+ * designate route uses, so a name that resolves to nothing is the same `404`
+ * from either door rather than two answers to one question.
+ *
+ * ## A thread with a parent designates nothing, and is not refused here
+ *
+ * §7 lets only a standalone thread designate. The contract refuses a `resident`
+ * sent *with* a `parent` (CONTRACT-088), which is where a caller's mistake
+ * belongs — but a thread with a parent and no `resident` at all is the ordinary
+ * comment, and must not acquire one from the default. So the parent check comes
+ * first and answers `null` for both.
+ *
+ * ## Nothing here starts a listener
+ *
+ * Rider A's lazy clause: *"A listener is started when its lane has something
+ * pending and none is running, not when the thread is created."* Launching here
+ * would run one background agent per thread anyone makes, and it is the
+ * orchestrator's job besides — it reads the roster's `pending` count and starts
+ * what is waiting.
+ */
+function designationFor(
+  workspace: ThreadsWorkspace,
+  input: ThreadCreateInput,
+  parentId: string | null,
+): Resident | null {
+  if (parentId !== null) return null;
+  if (input.resident === null) return null;
+  const resolved = residentFor(workspace.projection, input.resident?.name, input.resident?.weight);
+  // Every designation this server writes carries its own id (SERVER-147), and a
+  // creation is a designation like any other.
+  return { ...resolved, designationId: newId(ID_PREFIXES.designation) };
+}
+
 function threadFields(input: {
   readonly id: string;
   readonly title: string;
@@ -216,6 +283,8 @@ function threadFields(input: {
   readonly agent: string;
   readonly model: string | undefined;
   readonly origin: string | null;
+  /** The designation this creation makes, or `null` for a thread with none. */
+  readonly resident: Resident | null;
 }): Record<string, unknown> {
   return {
     id: input.id,
@@ -232,6 +301,21 @@ function threadFields(input: {
     // from a job joins that job's scope — which is how a subthread the agent
     // opens while working stays in the conversation it came from (§7).
     origin: input.origin,
+    /*
+     * SPEC.md §7's rider A (SERVER-154): a new standalone thread designates a
+     * general resident unless the person chose otherwise.
+     *
+     * Written **in the same frontmatter as the thread itself**, not by a second
+     * call after it. A created thread is never briefly resident-less, and a
+     * window in which the orchestrator saw its events as unowned is a window in
+     * which it could take them — since SPEC.md §7's rider makes a released lane
+     * the orchestrator's, and "not yet designated" is indistinguishable from
+     * "released" to the predicate that decides.
+     *
+     * `residentToStored` is the one place the stored shape is produced, so the
+     * key this writes and the key the designate route writes cannot drift.
+     */
+    ...(input.resident === null ? {} : { resident: residentToStored(input.resident) }),
     ...(input.model === undefined
       ? {}
       : { [TURN_MODELS_FRONTMATTER_KEY]: { [input.stamp]: input.model } }),
@@ -374,6 +458,7 @@ export async function createThread(
             agent: decision.agent,
             model: input.model,
             origin: stampedOrigin(workspace, input.job),
+            resident: designationFor(workspace, input, parentId),
           }),
         ),
       );

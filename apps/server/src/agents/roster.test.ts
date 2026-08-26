@@ -68,7 +68,16 @@ const laneRow = async (lane: string): Promise<AgentLane> => {
 
 /** A designated standalone thread, which is what makes a lane. */
 async function designatedThread(body: string): Promise<string> {
-  const created = await createThread(ws, { body });
+  /*
+   * Created **explicitly undesignated**, then designated (SERVER-154).
+   *
+   * Since SPEC.md §7's rider A a plain create already designates a general
+   * resident, so designating a profile on top would be a *replacement* — one
+   * `resident.released` and one `resident.designated` where these cases count
+   * on exactly one announcement. The two steps here are what the helper has
+   * always meant: a thread, then one designation.
+   */
+  const created = await createThread(ws, { body, resident: null });
   expect(
     (await ws.post(`/api/threads/${created.id}/resident`, { name: "researcher" })).status,
   ).toBe(200);
@@ -591,7 +600,10 @@ describe("a scope that names no lane", () => {
   };
 
   it("refuses a park on a standalone thread that holds no resident", async () => {
-    const { id } = await createThread(ws, { body: "nobody is resident here" });
+    // Explicitly undesignated: since SPEC.md §7's rider A a plain create
+    // designates a general resident (SERVER-154), which is the very thing this
+    // case is about not having.
+    const { id } = await createThread(ws, { body: "nobody is resident here", resident: null });
 
     const response = await parkAndRead(id);
 
@@ -603,7 +615,7 @@ describe("a scope that names no lane", () => {
 
   it("refuses a park on a thread this workspace does not hold, identically", async () => {
     const missing = await parkAndRead("th_deadbeef");
-    const { id } = await createThread(ws, { body: "no resident" });
+    const { id } = await createThread(ws, { body: "no resident", resident: null });
     const undesignated = await parkAndRead(id);
 
     expect(missing.status).toBe(422);
@@ -618,7 +630,7 @@ describe("a scope that names no lane", () => {
   // **The one that matters.** A park the server never admitted leaves no record,
   // so the aggregate has nothing to be true about.
   it("leaves agent.live false and the roster untouched", async () => {
-    const { id } = await createThread(ws, { body: "a typo'd --thread" });
+    const { id } = await createThread(ws, { body: "a typo'd --thread", resident: null });
     expect(await agent()).toEqual({ live: false, since: null });
 
     // Presence is read while the attempt is outstanding rather than after it,

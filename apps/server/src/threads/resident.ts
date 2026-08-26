@@ -390,7 +390,7 @@ const GENERAL_RESIDENT_SUBJECT = "general resident";
  * what is checkable. `undefined` becomes `null`: the request has one spelling of
  * "no level" and the `Resident` has one, and this is where they meet.
  */
-function residentFor(
+export function residentFor(
   projection: ProjectionDb,
   name: string | undefined,
   weight: string | undefined,

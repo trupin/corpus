@@ -145,10 +145,15 @@ describe("the ['tree'] invalidation key", () => {
       // its deletion cannot move a badge — and the frame must not claim it did.
       expect(deletion.after).toBe(deletion.before);
       expect(deletion.announced).toBe(false);
+      // `["agents"]` joined this frame with SERVER-154: a standalone thread now
+      // designates a general resident, so it is a lane, and deleting it takes
+      // that lane off the roster. The tree is still silent, which is the whole
+      // subject of the case.
       expect(deletion.keys.map((key) => JSON.stringify(key))).toEqual([
         '["docs"]',
         `["docs","${thread}"]`,
         `["threads","${thread}"]`,
+        '["agents"]',
         '["reflect"]',
       ]);
     });
