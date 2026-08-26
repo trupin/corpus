@@ -375,12 +375,15 @@ test.describe("the top bar's way in", () => {
       .evaluateAll((nodes: Element[]): string[] =>
         nodes.map((node) => node.className || node.tagName.toLowerCase()),
       );
-    // The address line (UI-126) sits between the 📎 and the hint; the submits
-    // keep the bar's tail, which is the key contract's order.
+    // The address line (UI-126) sits between the 📎 and the hint, and the owner
+    // picker (UI-173) beside it — two acts, two controls, adjacent because a
+    // person choosing one is deciding about the other. The submits keep the
+    // bar's tail, which is the key contract's order.
     expect(order).toEqual([
       "clip",
       "input",
       "composer-address",
+      "compose-resident",
       "hint",
       "spacer",
       "btn-capture",
