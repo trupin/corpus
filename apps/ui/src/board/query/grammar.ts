@@ -1,5 +1,7 @@
 import {
   ACTORS,
+  EXTRA_KEY_PATTERN,
+  EXTRA_PARAM_PREFIX,
   CORE_DOC_TYPES,
   DEFAULT_DOC_SORT,
   DOC_SORTS,
@@ -47,6 +49,13 @@ export type ValueSource =
   | { readonly kind: "docType" }
   /** Tags actually in use. */
   | { readonly kind: "tag" }
+  /**
+   * The `extra.` namespace: nothing to offer *after* the `=`, because the
+   * vocabulary is the workspace's own values and enumerating them would mean
+   * offering four hundred customer names for one menu. What can be offered is
+   * the **key**, before the `=`, and UI-178 is where that comes from.
+   */
+  | { readonly kind: "extraKey" }
   /** Folders under `data/docs/`, from `GET /api/tree`. */
   | { readonly kind: "folder" }
   /** A document id, offered by title so nobody types `doc_*` by hand (§5). */
@@ -94,13 +103,29 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     values: { kind: "free", hint: "words" },
     multi: false,
   },
+  /**
+   * SPEC.md §9.2's **Pattern matching**. Both match one field literally, where
+   * `q` ranks whole words across the corpus, and both are **exact** without a
+   * wildcard — so the summary has to say `*` out loud, because a person who
+   * types `title=Mortgage` and gets nothing has no way to guess why.
+   */
+  title: {
+    summary: "The title, matched whole. Use * for a run of characters, ? for one.",
+    values: { kind: "free", hint: "text, or a pattern with * and ?" },
+    multi: false,
+  },
+  body: {
+    summary: "The body text, matched whole — so this one nearly always wants *foo*.",
+    values: { kind: "free", hint: "a pattern with * and ?" },
+    multi: false,
+  },
   type: {
     summary: "Document type. The set is open — a workspace may hold its own.",
     values: { kind: "docType" },
     multi: true,
   },
   tag: {
-    summary: "Tags from the document's frontmatter.",
+    summary: "Tags from the document's frontmatter. Takes * and ? patterns.",
     values: { kind: "tag" },
     multi: true,
   },
@@ -110,7 +135,7 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     multi: false,
   },
   folder: {
-    summary: "Folder under data/docs/, including everything beneath it.",
+    summary: "Folder under data/docs/, including everything beneath it. Takes * and ?.",
     values: { kind: "folder" },
     multi: false,
   },
@@ -210,6 +235,21 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     values: { kind: "free", hint: "a stage the board names" },
     multi: true,
   },
+  /**
+   * SPEC.md §5's **Structured fields** — the one entry here that describes a
+   * **namespace** rather than a field (SHARED-011's rider, signed 2026-08-04).
+   *
+   * The schema publishes one name, `extra`, because a parameter's published
+   * name must equal its schema key and the real spelling — `extra.assignee` —
+   * has an open tail. So this summary has to teach the tail, since nothing else
+   * in the editor can: a person who reads "extra" and types `extra=theo` gets a
+   * filter the server will not honour.
+   */
+  extra: {
+    summary: "Any frontmatter field this workspace uses: extra.assignee=theo.",
+    values: { kind: "extraKey" },
+    multi: false,
+  },
   sort: {
     // Not "a leading - reverses it": the contract enumerates the keys, and only
     // updated and created have a descending form. `sort=-due` is a 400.
@@ -247,6 +287,11 @@ const UNDOCUMENTED: FieldDetail = {
  */
 const READING_ORDER: readonly string[] = [
   "q",
+  // Beside `q` because they answer the same question — "match this text" — and
+  // the difference between them is the thing a reader most needs to see: `q`
+  // ranks whole words across the corpus, these two match one field literally.
+  "title",
+  "body",
   "type",
   "tag",
   "status",
@@ -267,6 +312,9 @@ const READING_ORDER: readonly string[] = [
   "isParent",
   "references",
   "includeArchived",
+  // Last of the filters and first of the things a workspace invented: it is the
+  // only entry that opens onto names this build cannot know.
+  "extra",
   // Beside `status`'s neighbours rather than beside `status` itself, because the
   // two are never substitutes (SPEC.md §5): `status` says whether work remains,
   // `stage` says where in a workflow the document is.
@@ -319,6 +367,14 @@ export const QUERY_EXAMPLES: readonly QueryExample[] = [
   // of the request the user actually had — a list without the threads hanging
   // off its documents (UI-088).
   { query: "isParent=true&status=open", meaning: "Top-level only, still open." },
+  // SPEC.md §5's **Structured fields** and §9.2's **Pattern matching**, shown
+  // together because they arrived together and because neither is guessable
+  // from the field list alone: one has a name this build cannot know, and the
+  // other is a property of four fields' *values* rather than a syntax of its
+  // own. There is deliberately no `QUERY_OPERATORS` entry for `*` — an operator
+  // entry would claim a syntax the parser does not have.
+  { query: "extra.assignee=theo", meaning: "A frontmatter field this workspace invented." },
+  { query: "title=Catch-Up*", meaning: "Glob on a field: * is any run, ? is one." },
 ];
 
 /**
@@ -331,9 +387,30 @@ export const QUERY_EXAMPLES: readonly QueryExample[] = [
  * already stored in a hand-edited view document.
  */
 export function unknownQueryFields(filter: Readonly<Record<string, string>>): readonly string[] {
-  return Object.keys(filter)
-    .filter((name) => !QUERY_FIELD_NAMES.includes(name))
-    .sort();
+  return Object.keys(filter).filter(isUnknownField).sort();
+}
+
+/**
+ * `extra.<key>` is a real filter whose **name** the schema cannot publish, so
+ * one rule stands beside the field list rather than a second field list beside
+ * it (SPEC.md §5's **Structured fields**).
+ *
+ * Without it every working `extra.assignee=theo` column would be marked as
+ * naming a filter that does not exist — the exact warning this function exists
+ * to raise for a genuine typo, aimed at the one filter a workspace invented on
+ * purpose.
+ *
+ * The key rule is the contract's own {@link EXTRA_KEY_PATTERN}, imported rather
+ * than restated, for the reason this module already gives about its value
+ * lists: a copy here is a copy that can disagree with the server. `extra.a.b`
+ * fails it, because the key is everything after the **first** dot and `a.b` is
+ * not an identifier — do not split on the last one.
+ */
+function isUnknownField(name: string): boolean {
+  if (name.startsWith(EXTRA_PARAM_PREFIX)) {
+    return !EXTRA_KEY_PATTERN.test(name.slice(EXTRA_PARAM_PREFIX.length));
+  }
+  return !QUERY_FIELD_NAMES.includes(name);
 }
 
 /** The core document types, for the value vocabulary's "not in use yet" tail. */

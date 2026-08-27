@@ -107,6 +107,29 @@ describe("QueryEditor", () => {
       expect(editor.value()).toBe("status=");
     });
 
+    /**
+     * SPEC.md §5's **Structured fields**. The menu must leave the caret where
+     * the workspace's own key goes, because completing to `extra=` would hand
+     * the person a filter the server does not honour.
+     */
+    it("completes the open namespace to its dot, not to an operator", async () => {
+      const editor = renderEditor();
+      type("extr");
+      await waitFor(() => {
+        expect(options().some((text) => text.startsWith("extra."))).toBe(true);
+      });
+      fireEvent.keyDown(field(), { key: "Enter" });
+      expect(editor.value()).toBe("extra.");
+    });
+
+    it("says in the menu that the tail is the workspace's own", async () => {
+      renderEditor();
+      type("extra");
+      await waitFor(() => {
+        expect(screen.getAllByRole("option")[0]?.textContent).toContain("extra.assignee=theo");
+      });
+    });
+
     it("offers every published field when the caret opens a fresh one", async () => {
       renderEditor();
       type("type=thread&");

@@ -1823,7 +1823,7 @@ parameter catalogue names them.
 | SERVER-158 | The projection answers a glob, and reads `extra_json` | done | P1 | opus | CONTRACT-091 |
 | SERVER-159 | Enumerate the workspace's vocabulary from the projection | todo | P2 | opus | CONTRACT-092 |
 | CLI-072 | `corpus doc list` takes the same filters the board does | done | P1 | opus | CONTRACT-091, SERVER-158 |
-| UI-177 | The query editor treats `extra.` as open, and stops calling a real field unknown | todo | P1 | opus | CONTRACT-091, SERVER-158 |
+| UI-177 | The query editor treats `extra.` as open, and stops calling a real field unknown | done | P1 | opus | CONTRACT-091, SERVER-158 |
 | UI-178 | Autocomplete offers the keys and tags the workspace already uses | todo | P2 | opus | CONTRACT-092, SERVER-159, UI-177 |
 
 `SHARED-011` keeps its existing row in the unrowed backlog and is marked `done`

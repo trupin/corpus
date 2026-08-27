@@ -57,6 +57,59 @@ describe("the query grammar", () => {
     ]);
   });
 
+  /**
+   * SPEC.md §5's **Structured fields**, and the defect UI-177 exists for.
+   *
+   * `extra.assignee=theo` is a filter the server honours and a name the schema
+   * cannot publish, because the namespace is open. Without a rule for it, every
+   * working column filtering on an invented field would be flagged as naming a
+   * filter that does not exist — the warning aimed at a genuine typo, pointed at
+   * the one filter the workspace meant.
+   */
+  describe("the extra. namespace", () => {
+    it("does not call a real invented field unknown", () => {
+      expect(unknownQueryFields({ "extra.assignee": "theo" })).toEqual([]);
+      expect(unknownQueryFields({ "extra.a-b": "x", "extra._c": "y" })).toEqual([]);
+    });
+
+    it("still flags a genuine typo standing beside one", () => {
+      expect(unknownQueryFields({ "extra.assignee": "theo", titel: "x" })).toEqual(["titel"]);
+    });
+
+    it.each([
+      ["extra.", "the empty key"],
+      ["extra.1bad", "a key that does not start with a letter"],
+      ["extra.a b", "a key with a space"],
+      ["extra.a.b", "a key that is not an identifier because the split is on the first dot"],
+    ])("flags %s — %s", (name) => {
+      expect(unknownQueryFields({ [name]: "x" })).toEqual([name]);
+    });
+
+    it("offers the namespace as a field, saying the tail is the workspace's own", () => {
+      const field = queryField("extra");
+      expect(field?.values).toEqual({ kind: "extraKey" });
+      // The summary has to carry the dotted spelling: the menu shows the name
+      // `extra`, and a person who types `extra=theo` gets a filter the server
+      // will not honour.
+      expect(field?.summary).toContain("extra.assignee=theo");
+    });
+  });
+
+  /**
+   * SPEC.md §9.2's **Pattern matching** is a property of four fields' *values*,
+   * not a syntax — so it belongs in those fields' prose and in an example, and
+   * **not** in `QUERY_OPERATORS`, which would claim a token the parser does not
+   * have.
+   */
+  it("teaches globs in the field summaries rather than as an operator", () => {
+    for (const name of ["title", "body", "tag", "folder"]) {
+      expect(queryField(name)?.summary).toMatch(/\*/);
+    }
+    expect(QUERY_OPERATORS.map((rule) => rule.token)).not.toContain("*");
+    expect(QUERY_EXAMPLES.some((example) => example.query.includes("*"))).toBe(true);
+    expect(QUERY_EXAMPLES.some((example) => example.query.startsWith("extra."))).toBe(true);
+  });
+
   it("names one operator and two combinators — the whole language", () => {
     expect(QUERY_OPERATORS.map((rule) => rule.token)).toEqual(["="]);
     expect(QUERY_COMBINATORS.map((rule) => rule.token)).toEqual(["&", ","]);

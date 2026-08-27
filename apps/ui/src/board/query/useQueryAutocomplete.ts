@@ -1,6 +1,6 @@
 import { AUTOCOMPLETE_LIMIT, handleAutocompleteKeyDown, type AutocompleteItem } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { QUERY_FIELDS, queryField, type ValueSource } from "./grammar";
+import { QUERY_FIELDS, queryField, type QueryField, type ValueSource } from "./grammar";
 import {
   applyQueryCompletion,
   detectQueryTrigger,
@@ -35,6 +35,15 @@ function optionsFor(source: ValueSource, vocabulary: QueryVocabulary): readonly 
       return vocabulary.folder;
     case "docId":
       return vocabulary.docId;
+    /*
+     * SPEC.md §5's **Structured fields**. There is nothing to offer *after* the
+     * `=`: the vocabulary is the workspace's own values, and a workspace with a
+     * `customer` field on four hundred documents would put four hundred strings
+     * in one menu. What can be offered is the **key**, before the `=`, and
+     * UI-178 is where that arrives from.
+     */
+    case "extraKey":
+      return [];
     case "free":
       return [];
   }
@@ -54,13 +63,26 @@ function matches(option: ValueOption, needle: string): boolean {
   );
 }
 
+/**
+ * What accepting a field puts in the box.
+ *
+ * An open namespace is offered as `extra.` rather than `extra`, and the trailing
+ * dot is what tells {@link applyQueryCompletion} to stop before the `=` — the
+ * caret then sits exactly where the workspace's own key goes (SPEC.md §5).
+ * Offering the bare name would complete to `extra=`, which is a query the server
+ * does not honour.
+ */
+function fieldToken(field: QueryField): string {
+  return field.values.kind === "extraKey" ? `${field.name}.` : field.name;
+}
+
 function fieldItems(needle: string): readonly AutocompleteItem[] {
   return QUERY_FIELDS.filter(
     (field) => needle === "" || field.name.toLowerCase().startsWith(needle),
   ).map((field) => ({
     key: `field:${field.name}`,
-    token: field.name,
-    label: field.name,
+    token: fieldToken(field),
+    label: fieldToken(field),
     description: field.summary,
   }));
 }

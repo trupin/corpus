@@ -162,3 +162,33 @@ describe("applyQueryCompletion", () => {
     expect(applyQueryCompletion(first.text, next as never, "open").text).toBe("status=open");
   });
 });
+
+/**
+ * SPEC.md §5's **Structured fields**: `extra.` is a prefix whose tail the
+ * workspace chose, so the completion has to stop at the dot. Completing it to
+ * `extra=` would hand the person a query the server does not honour, which is
+ * the one failure the editor exists to prevent.
+ */
+describe("completing an open namespace", () => {
+  it("stops at the dot instead of adding the operator", () => {
+    const trigger = detectQueryTrigger("ext", 3);
+    expect(trigger).not.toBeNull();
+    expect(applyQueryCompletion("ext", trigger!, "extra.")).toEqual({
+      text: "extra.",
+      caret: 6,
+    });
+  });
+
+  it("still adds the operator for an ordinary field", () => {
+    const trigger = detectQueryTrigger("ty", 2);
+    expect(applyQueryCompletion("ty", trigger!, "type")).toEqual({ text: "type=", caret: 5 });
+  });
+
+  it("leaves a namespace already carrying a key alone", () => {
+    // The caret repairing `extr.assignee=theo` must not gain a second operator
+    // — the same rule the mid-token case already keeps for ordinary fields.
+    const text = "extr.assignee=theo";
+    const trigger = detectQueryTrigger(text, 4);
+    expect(applyQueryCompletion(text, trigger!, "extra.").text).not.toContain("==");
+  });
+});
