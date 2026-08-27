@@ -220,7 +220,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | done | P2 | CLI-001 |
 | UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | done | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | done | P2 | INFRA-013 |
-| CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
+| CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | closed | P2 | CONTRACT-022 |
 | UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | done | P2 | UI-031 |
 | PLUGINS-008 | Legacy frontmatter-items todo renders a silently empty body (dogfood 2026-08-02) | done | P1 | PLUGINS-005 |
 | PLUGINS-009 | Todo item rows: right-click quick actions — toggle, comment, open thread (dogfood) | done | P2 | PLUGINS-005, PLUGINS-003 |
@@ -571,7 +571,7 @@ changes behaviour and nothing below waits on them.
 | SERVER-096 | Dragging a column wider moves its document to the top of every list (SERVER-095 finding) | done | P2 | — |
 | SERVER-097 | A `doc.edited` range starts at a commit that touched a different document (SERVER-095 finding) | done | P1 | — |
 | SERVER-102 | Adding a tag merges in bulk and races on a single document (PR #43 review) | done | P1 | — |
-| SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | blocked | P0 | needs a CONTRACT issue first |
+| SERVER-103 | A rollback replaces a whole file and presents nothing (PR #43 review) | closed | P0 | needs a CONTRACT issue first |
 
 ## Phase 30 — A key instead of a lock (2026-08-11)
 
@@ -804,7 +804,7 @@ ones their own files carry.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-002 | Reconcile SPEC.md with adjudicated Phase 2 behavior (PR #9 findings 2–4) | done | P0 | — |
-| SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied at its phase kickoff) | todo | P1 | — |
+| SHARED-011 | Structured filtering — arbitrary fields and glob matching (SIGNED 2026-08-04, applied 2026-08-26) | done | P1 | — |
 | SERVER-054 | The board row's pending-agent dot uses the heuristic UI-058 just replaced | done | P1 | UI-058 |
 | CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | done | P2 | — |
@@ -1790,3 +1790,66 @@ Done. What stood in for it: `CI / validate` green on the merged head, the full
 local gate before the push, and four falsifications — the wait-for-the-drop
 guard, `canUpgrade`'s second verdict, the fork refusal and the `--unstable`
 branch — each turning a named number of tests red.
+
+---
+
+## Phase 50 — A field you invented is a filter you can use (2026-08-26, v0.26.0 scope)
+
+The user signed a rider on **2026-08-04** and it was never applied. Its two
+paragraphs promise that a workspace may invent a frontmatter field and filter on
+it, and that four filters accept glob patterns. Three weeks later the promise
+stands and the code does not keep it — the same debt Phase 49 cleared for §2.4,
+found in a different section.
+
+**Most of the machinery was already built.** `ExtraFrontmatterSchema` passes any
+key through untouched, the projection carries an `extra_json` column, and the
+board's query editor derives its field list from `DocsQuerySchema.shape` at
+runtime. What was missing is only the query: no filter had ever read
+`extra_json`, and there was no pattern matching anywhere in the read path.
+
+**Where the signed text landed.** The rider says "APPEND to §5 (views and
+queries)". §5 is **The document model** today and the collection query lives in
+§9.2 — the section was split after the signature. Each paragraph went verbatim
+to the section that now covers its subject, and each names the other half.
+One consequence is recorded rather than assumed: `title=Catch-Up*` is the
+rider's own example and the collection query carried neither a `title` filter
+nor a `body` filter, so the signed text creates two filters, and §9.2's
+parameter catalogue names them.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-091 | `extra.<key>` is a filter, and title/body/tag/folder take globs | todo | P1 | opus | SHARED-011 |
+| CONTRACT-092 | A vocabulary endpoint: the tags and `extra` keys this workspace uses | todo | P2 | opus | CONTRACT-091 |
+| SERVER-158 | The projection answers a glob, and reads `extra_json` | todo | P1 | opus | CONTRACT-091 |
+| SERVER-159 | Enumerate the workspace's vocabulary from the projection | todo | P2 | opus | CONTRACT-092 |
+| CLI-072 | `corpus doc list` takes the same filters the board does | todo | P1 | opus | CONTRACT-091, SERVER-158 |
+| UI-177 | The query editor treats `extra.` as open, and stops calling a real field unknown | todo | P1 | opus | CONTRACT-091, SERVER-158 |
+| UI-178 | Autocomplete offers the keys and tags the workspace already uses | todo | P2 | opus | CONTRACT-092, SERVER-159, UI-177 |
+
+`SHARED-011` keeps its existing row in the unrowed backlog and is marked `done`
+there; `scripts/check-issues.ts` allows one row per id, so it is named here in
+prose and counted there.
+
+**The droppable issue is UI-178**, and SERVER-159 and CONTRACT-092 with it. The
+feature is usable without a completion menu — you type the field's name. If the
+vocabulary endpoint had not held, the headline would still have been true.
+
+**Nearby debt, riding along because it is in the same files**: `CONTRACT-066`
+(an `@` menu filters a page the server already truncated) and `CONTRACT-072`
+(three surfaces describing a heuristic SERVER-054 deleted, one of them published
+in `openapi.json`). Both are query-surface defects, and CONTRACT-072 was already
+`in_progress`.
+
+**Two rows closed as stale**, which is bookkeeping and not work:
+
+- `SERVER-103` was a `P0` describing unrecoverable data loss in
+  `POST /api/skills/{name}/rollback`. The rider signed 2026-08-12 deleted that
+  route, so the defect went with it.
+- `CONTRACT-026` asked where the `tag:` chip's vocabulary comes from and listed a
+  dedicated route among its candidates. `CONTRACT-092` is that route, answering
+  the same question for two callers instead of one.
+
+**Left out**: focus mode (`UI-100`, `UI-101`, `UI-081`), the source-trace
+selection defects (`UI-060`, `UI-061`), and the agent-facing CLI debt
+(`CLI-047`, `CLI-051`, `CLI-023`, `CONTRACT-085`). Each is a different sentence.
+The CLI debt is deferred for the third time, deliberately and in writing.
