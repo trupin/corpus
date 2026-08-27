@@ -1054,6 +1054,8 @@ export async function stubCorpus(
   let reflectedAt: string | null = options.reflect?.reflected ?? STUB_REFLECTED_AT;
   let pendingReflection: string | null = options.reflect?.pending ?? null;
   let lastDigest: string | null = options.reflect?.lastDigest ?? null;
+  /** Mutable, because `PUT …/reflect/quiet` changes it (UI-172's switch). */
+  let quietMinutes: number = options.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES;
   let reflectionAsks = 0;
 
   /*
@@ -1960,8 +1962,24 @@ export async function stubCorpus(
         ),
       ).length,
       lastDigest,
-      quiet: options.reflect?.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES,
+      quiet: quietMinutes,
     });
+
+    /*
+     * `PUT /api/workspace/reflect/quiet` — the switch (SPEC.md §7's rider
+     * signed 2026-08-25, UI-172), which this stub did not answer at all until
+     * UI-179 needed to press it in a browser.
+     *
+     * It **echoes the value it was given** on the whole status, because that is
+     * what the real route does and it is what makes the control's
+     * optimism-free behaviour reachable here: the switch flips because the
+     * server said so, not because it was clicked.
+     */
+    if (url.pathname === "/api/workspace/reflect/quiet" && method === "PUT") {
+      const body = (await route.request().postDataJSON()) as { quiet?: number };
+      quietMinutes = body.quiet ?? DEFAULT_REFLECT_QUIET_MINUTES;
+      return json(route, reflectStatus());
+    }
 
     if (url.pathname === "/api/workspace/reflect") {
       if (method === "POST") {
