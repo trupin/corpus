@@ -162,6 +162,42 @@ them are genuinely about an absent lane and were changed to assert the **lane**
 rather than a count — *the orchestrator sees nothing of this lane* is what their
 own comments already claimed, and it is now what they check.
 
+### The whole chain, end to end
+
+The verification above proved the orchestrator **hears**. It did not prove the
+loop closes, which is a different claim, so it was run separately against a real
+server on 8797 — the exact state a restart leaves: orchestrator running, its own
+lane drained, **no listener anywhere**, and a conversation's message waiting.
+
+```
+1. orchestrator claims and settles what it can see  ->  resident.designated, lane.waiting
+2. pending, with no listener ever started           ->  comment.created  lane=th_igqvd5sj
+3. orchestrator parks; a NEW message arrives
+   the park returned after 0s                       ->  lane.waiting {"lane":"th_igqvd5sj"}
+4. corpus agents
+   th_igqvd5sj "Rate question" · waiting for a listener · 2 waiting
+5. the orchestrator launches a listener (`queue idle --thread`)
+   its first park returned                          ->  comment.created  (turn 23:03:33)
+                                                        comment.created  (turn 23:03:54)
+6. the listener claims its lane                     ->  both, moved to in-progress
+7. the listener settles them
+8. queue running — pending 0, in-progress 0, processed 5, failed 0
+```
+
+**Both messages reach the relaunched listener** — the one that had been waiting
+since before the notice, and the one that raised it. Nothing is lost by the lane
+having been unattended, which is the property the whole design rests on: the
+stamp is made once and the work waits for its own listener rather than falling to
+anybody else.
+
+**One thing the run corrected about how this reads.** Step 5 is a *notification*
+and not a taking: `settledWork`'s docblock says it outright — *"`idle` claims
+nothing"* — so the listener sees its work when it parks and takes it with a
+scoped `claim-all` at step 6, which is exactly the loop the converse skill
+already runs. A first pass through this transcript mistook the park's report for
+a claim and then found the events still pending, which is the protocol working
+rather than a defect.
+
 ### Suites
 
 ```
