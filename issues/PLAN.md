@@ -1782,3 +1782,11 @@ named here in prose and counted there.
 **Left out**: everything else. The scope is one sentence — you can upgrade
 without leaving — and the two arcs in it were the only two blocked issues in the
 tracker.
+
+**No pr-reviewer ran on PR #65**, and the reason is the same as for #62, #63 and
+#64: the session carries a standing directive not to spawn subagents unless the
+user asks. Recorded here rather than left as a silent gap in the Definition of
+Done. What stood in for it: `CI / validate` green on the merged head, the full
+local gate before the push, and four falsifications — the wait-for-the-drop
+guard, `canUpgrade`'s second verdict, the fork refusal and the `--unstable`
+branch — each turning a named number of tests red.
