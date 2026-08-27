@@ -2407,6 +2407,65 @@
           "children"
         ]
       },
+      "WorkspaceVocabulary": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagUse"
+            },
+            "description": "Every tag in use, most-used first and then alphabetical — deterministic, so a client renders the order it is given rather than sorting again."
+          },
+          "extraKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtraKeyUse"
+            },
+            "description": "Every extra frontmatter key in use (SPEC.md §5), ordered the same way."
+          }
+        },
+        "required": [
+          "tags",
+          "extraKeys"
+        ]
+      },
+      "TagUse": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The tag, lowercased — the form the `tag` filter matches."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Documents carrying it, counted once each."
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ]
+      },
+      "ExtraKeyUse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The frontmatter key, exactly as written. **Case is preserved**, because `json_extract` is case-sensitive and `Owner` is genuinely a different field from `owner` — unlike a tag, whose filter matches case-insensitively."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Documents carrying it, counted once each."
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ]
+      },
       "RenameFolderResult": {
         "type": "object",
         "properties": {
@@ -7236,6 +7295,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FolderTree"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vocabulary": {
+      "get": {
+        "tags": [
+          "tree"
+        ],
+        "summary": "The tags and invented frontmatter keys this workspace uses",
+        "description": "Backs the query editor's completion and the search overlay's `tag:` chip (SPEC.md §5, §10). Every tag and every extra frontmatter key present in the corpus, each with the number of documents carrying it, most-used first. Archived documents are excluded, the way every list excludes them by default, and so are the **skills and agent definitions the tool installed** — `name` and `description` on a `SKILL.md` are Claude Code's frontmatter (SPEC.md §7), not a convention this workspace invented, and on a fresh workspace they outnumber everything a person wrote. They stay filterable; they are absent from this *menu*. **Keys, not their values**: what a `customer` field holds is unbounded and what a workspace names its fields is not. An empty corpus answers two empty arrays, never a `404`. Read-only; no acting party.",
+        "responses": {
+          "200": {
+            "description": "The vocabulary in use, most-used first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceVocabulary"
                 }
               }
             }

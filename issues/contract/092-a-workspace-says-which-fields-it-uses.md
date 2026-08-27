@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -51,13 +51,13 @@ holds"* — rather than in a separate signature, and the release notes say so.
 
 ## Acceptance Criteria
 
-- [ ] The §9.2 bullet above is applied to SPEC.md
-- [ ] `GET /api/vocabulary` is defined in `packages/contract/src/routes/`
-- [ ] The response schema carries `tags` and `extraKeys`, each an array of
+- [x] The §9.2 bullet above is applied to SPEC.md
+- [x] `GET /api/vocabulary` is defined in `packages/contract/src/routes/`
+- [x] The response schema carries `tags` and `extraKeys`, each an array of
       `{ value, count }` / `{ key, count }`
-- [ ] The route declares `200` and `401` and nothing else
-- [ ] It is listed in the route inventory test alongside its neighbours
-- [ ] `npm run openapi:check` regenerates cleanly
+- [x] The route declares `200` and `401` and nothing else
+- [x] It is listed in the route inventory test alongside its neighbours
+- [x] `npm run openapi:check` regenerates cleanly
 
 ## Technical Design
 
@@ -97,9 +97,69 @@ Schema round-trip, and the inventory test that every declared route is mounted.
 `npm run openapi:generate`, then read the new path out of `openapi.json`.
 
 ## E2E Verification Log
-_Filled by the implementer._
+
+**Implemented on: opus.**
+
+### One rule the issue did not have, and running it supplied
+
+Against a real workspace `corpus init` had just created, plus two hand-written
+notes, the first answer was:
+
+```
+tags:  [{value: core, count: 4}, {value: work, count: 2}]
+keys:  [{key: description, count: 5}, {key: name, count: 5},
+        {key: assignee, count: 2}, {key: estimate, count: 1}, ...]
+```
+
+`name` and `description` are **Claude Code's** frontmatter on a `SKILL.md`
+(SPEC.md §7: the two sets coexist in one YAML block), and `core` is the shipped
+skills' tag. They are not conventions this workspace invented, and on a fresh
+workspace they outnumber everything a person has written — a completion menu
+would have offered the tool's own machinery above the user's `assignee`.
+
+The fix reuses a decision rather than inventing one: `rankableSql`, the
+`skill`/`agent-def` list the §7 rider signed 2026-08-24, whose stated bar is
+exactly this — *the tool wrote it, not the user*. It excludes them from a
+**menu** and from nothing else: `extra.name=comment` still runs and
+`doc list --type skill` is untouched.
+
+After:
+
+```
+tags: [{'value': 'work', 'count': 2}]
+keys: [{'key': 'assignee', 'count': 2}, {'key': 'estimate', 'count': 1},
+       {'key': 'for', 'count': 1}, {'key': 'owners', 'count': 1}]
+```
+
+**Open question, deliberately not decided here.** `for` comes from a seed
+`type: view` document that `corpus init` writes, so by the "tool wrote it" test
+it arguably belongs out too. The signed list is "exactly the two types
+`corpus init` puts on disk", written before seed views existed, and widening it
+would be making a decision the rider did not. One key of noise is the cheaper
+error.
+
+### Generated output
+
+```
+$ npm run generate -w packages/contract
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+```
+
+`GET /api/vocabulary` appears once in the document, declaring `200` and `401`.
+The route inventory test failed until it was registered, which is what that test
+is for.
+
+### E2E
+
+```
+$ curl -H "Authorization: Bearer …" http://127.0.0.1:8791/api/vocabulary
+{"tags":[{"value":"work","count":2}],"extraKeys":[…]}
+$ curl -o /dev/null -w "%{http_code}" http://127.0.0.1:8791/api/vocabulary
+401
+```
 
 ## Completion Checklist (domain agent)
-- [ ] Tests pass
-- [ ] `openapi.json` regenerated
-- [ ] SPEC.md bullet applied
+- [x] Tests pass
+- [x] `openapi.json` regenerated
+- [x] SPEC.md bullet applied

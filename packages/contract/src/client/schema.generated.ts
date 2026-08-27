@@ -1262,6 +1262,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tags and invented frontmatter keys this workspace uses
+         * @description Backs the query editor's completion and the search overlay's `tag:` chip (SPEC.md §5, §10). Every tag and every extra frontmatter key present in the corpus, each with the number of documents carrying it, most-used first. Archived documents are excluded, the way every list excludes them by default, and so are the **skills and agent definitions the tool installed** — `name` and `description` on a `SKILL.md` are Claude Code's frontmatter (SPEC.md §7), not a convention this workspace invented, and on a fresh workspace they outnumber everything a person wrote. They stay filterable; they are absent from this *menu*. **Keys, not their values**: what a `customer` field holds is unbounded and what a workspace names its fields is not. An empty corpus answers two empty arrays, never a `404`. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The vocabulary in use, most-used first. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceVocabulary"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/folders/rename": {
         parameters: {
             query?: never;
@@ -5613,6 +5661,24 @@ export interface components {
             /** @description `count` plus every descendant folder's count. */
             totalCount: number;
             children: components["schemas"]["FolderNode"][];
+        };
+        WorkspaceVocabulary: {
+            /** @description Every tag in use, most-used first and then alphabetical — deterministic, so a client renders the order it is given rather than sorting again. */
+            tags: components["schemas"]["TagUse"][];
+            /** @description Every extra frontmatter key in use (SPEC.md §5), ordered the same way. */
+            extraKeys: components["schemas"]["ExtraKeyUse"][];
+        };
+        TagUse: {
+            /** @description The tag, lowercased — the form the `tag` filter matches. */
+            value: string;
+            /** @description Documents carrying it, counted once each. */
+            count: number;
+        };
+        ExtraKeyUse: {
+            /** @description The frontmatter key, exactly as written. **Case is preserved**, because `json_extract` is case-sensitive and `Owner` is genuinely a different field from `owner` — unlike a tag, whose filter matches case-insensitively. */
+            key: string;
+            /** @description Documents carrying it, counted once each. */
+            count: number;
         };
         RenameFolderResult: {
             /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. */
