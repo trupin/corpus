@@ -864,6 +864,13 @@ export const RESIDENT_DESIGNATED_EVENT_TYPE = "resident.designated";
 export const RESIDENT_RELEASED_EVENT_TYPE = "resident.released";
 
 /**
+ * The event type an unattended lane's arrival enqueues (CONTRACT-093); pinned
+ * the same way. The third of the announcements that reach the orchestrator's
+ * lane, and the only one that is not about a designation changing.
+ */
+export const LANE_WAITING_EVENT_TYPE = "lane.waiting";
+
+/**
  * The payload of a `resident.designated` event — what the orchestrator reads to
  * launch a listener: which conversation was designated, and who to launch there
  * (SPEC.md §7, rider SHARED-043; AGENT-026).
@@ -894,6 +901,54 @@ export const ResidentDesignatedPayloadSchema = z.object({
   // launch is read here and looked up nowhere.
   resident: ResidentSchema,
 });
+
+/**
+ * The payload of a `lane.waiting` event — the whole of it (CONTRACT-093;
+ * SPEC.md §7's rider signed 2026-08-27, *"a lane that cannot be worked says
+ * so"*).
+ *
+ * **One field, and the emptiness is the design.** The orchestrator's loop
+ * dispatches what it claims, so an announcement carrying a turn timestamp or a
+ * document id would be answerable — and answering it would be the orchestrator
+ * writing in a resident's name, which the rider signed 2026-08-25 removed the
+ * lapse fallback specifically to prevent: *"answering in the resident's place is
+ * not a slower version of the same answer — it is a different agent, with none
+ * of the conversation, writing in its name."*
+ *
+ * A settling agent that wanted to answer this has nothing to answer **with**.
+ * That is what makes the mistake impossible rather than merely forbidden, and it
+ * is why nothing may be added here for convenience: every field is a step toward
+ * a payload somebody could dispatch. What the orchestrator needs is the lane,
+ * because the lane is the argument to the launch.
+ *
+ * The lane is a thread id — the root of the scope whose listener is absent. The
+ * orchestrator's own lane never announces to itself, so no value here is ever
+ * `"orchestrator"`.
+ *
+ * Not a registered component, for {@link ResidentDesignatedPayloadSchema}'s
+ * reason: it rides inside `QueueEvent.payload`, which §7 keeps open.
+ */
+export const LaneWaitingPayloadSchema = z.object({
+  lane: ThreadIdSchema.describe(
+    "The lane with work and no listener — a standalone thread's id, and the argument to the " +
+      "launch this event asks for. It is deliberately the only field: this event is not the " +
+      "work and must not be answerable (SPEC.md §7).",
+  ),
+});
+
+export type LaneWaitingPayload = z.infer<typeof LaneWaitingPayloadSchema>;
+
+/**
+ * Narrows a queue event to a waiting-lane notice, or returns `undefined`.
+ *
+ * Same tolerance as its siblings: a malformed payload is not an exception, so a
+ * loop reading a mixed batch skips what it cannot understand rather than dying
+ * on it.
+ */
+export function parseLaneWaitingPayload(payload: unknown): LaneWaitingPayload | undefined {
+  const parsed = LaneWaitingPayloadSchema.safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
+}
 
 /**
  * Why a resident was released (CONTRACT-069; SPEC.md §7's three ways out of a

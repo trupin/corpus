@@ -1808,7 +1808,7 @@ branch — each turning a named number of tests red.
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | SHARED-075 | A lane nobody can work announces itself to the orchestrator | done | P0 | fable | — |
-| CONTRACT-093 | `lane.waiting` is a core event type | todo | P0 | opus | SHARED-075 |
+| CONTRACT-093 | `lane.waiting` is a core event type | done | P0 | opus | SHARED-075 |
 | SERVER-161 | An unattended lane's arrival announces itself | todo | P0 | opus | CONTRACT-093 |
 | AGENT-057 | The orchestrator settles a waiting lane by launching, never by answering | todo | P0 | fable | SERVER-161 |
 

@@ -25,7 +25,12 @@ import {
   TERMINAL_QUEUE_EVENT_STATUSES,
 } from "./queue.js";
 import { buildOpenApiDocument } from "../openapi.js";
-import { RESIDENT_DESIGNATED_EVENT_TYPE, RESIDENT_RELEASED_EVENT_TYPE } from "./agents.js";
+import {
+  LANE_WAITING_EVENT_TYPE,
+  LaneWaitingPayloadSchema,
+  RESIDENT_DESIGNATED_EVENT_TYPE,
+  RESIDENT_RELEASED_EVENT_TYPE,
+} from "./agents.js";
 import { WORKSPACE_REFLECT_EVENT_TYPE } from "./reflect.js";
 
 const event = {
@@ -88,16 +93,42 @@ describe("queue vocabularies", () => {
    * this set is what every event-type description in the published document is
    * built from.
    */
-  it("is exactly the seven core types, in producer order", () => {
+  it("is exactly the eight core types, in producer order", () => {
     expect([...CORE_QUEUE_EVENT_TYPES]).toEqual([
       "comment.created",
       "form.respond",
       "doc.edited",
+      // CONTRACT-093, beside the two announcements it belongs with rather than
+      // appended: the list reads as families, and `agent.done` is last for a
+      // stated reason.
+      "lane.waiting",
       "resident.designated",
       "resident.released",
       "workspace.reflect",
       "agent.done",
     ]);
+  });
+
+  /**
+   * **The whole of `lane.waiting`'s payload is one lane** (SPEC.md §7's rider
+   * signed 2026-08-27). The orchestrator's loop dispatches what it claims, so a
+   * payload carrying a turn or a document would be answerable — and answering it
+   * would be the orchestrator writing in a resident's name.
+   *
+   * This asserts the *absence*, because the absence is the safety property. A
+   * field added here for convenience is a step toward an event somebody
+   * dispatches.
+   */
+  it("gives the waiting-lane notice nothing anybody could answer", () => {
+    expect(LaneWaitingPayloadSchema.parse({ lane: "th_x9y8" })).toEqual({ lane: "th_x9y8" });
+    expect(Object.keys(LaneWaitingPayloadSchema.shape)).toEqual(["lane"]);
+    // A turn timestamp is the field that would make it answerable, and it is
+    // dropped rather than carried.
+    expect(
+      LaneWaitingPayloadSchema.parse({ lane: "th_x9y8", turnTs: "2026-08-27T10:00:00Z" }),
+    ).toEqual({ lane: "th_x9y8" });
+    // The orchestrator's own lane never announces to itself.
+    expect(LaneWaitingPayloadSchema.safeParse({ lane: "orchestrator" }).success).toBe(false);
   });
 
   /**
@@ -108,6 +139,10 @@ describe("queue vocabularies", () => {
    */
   it("spells the reflection event type identically where its payload is declared", () => {
     expect(CORE_QUEUE_EVENT_TYPES).toContain(WORKSPACE_REFLECT_EVENT_TYPE);
+  });
+
+  it("spells the waiting-lane event type identically where its payload is declared", () => {
+    expect(CORE_QUEUE_EVENT_TYPES).toContain(LANE_WAITING_EVENT_TYPE);
   });
 
   it("spells the resident event types identically where their payloads are declared", () => {

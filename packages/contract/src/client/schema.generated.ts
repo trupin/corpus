@@ -6506,7 +6506,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name. */
             type: string;
             /**
              * Format: date-time
@@ -6539,7 +6539,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
+            /** @description The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes. */
             type: string;
             /**
              * Format: date-time
@@ -6637,7 +6637,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and the agent parked it because a person had an edit session open on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that session ends. Nothing refused it: the agent deferred because it saw, not because it was blocked.

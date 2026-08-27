@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -52,13 +52,13 @@ person's affordance and the orchestrator's launch argument, not content.
 
 ## Acceptance Criteria
 
-- [ ] `lane.waiting` joins `CORE_QUEUE_EVENT_TYPES`
-- [ ] Its payload schema carries the lane and **nothing else**, and its docblock
+- [x] `lane.waiting` joins `CORE_QUEUE_EVENT_TYPES`
+- [x] Its payload schema carries the lane and **nothing else**, and its docblock
       says why that is load-bearing rather than minimal
-- [ ] The type's description in the generated document explains that it is not
+- [x] The type's description in the generated document explains that it is not
       the work and never becomes it
-- [ ] `openapi.json` regenerates cleanly
-- [ ] `queue.ts`'s docblock stops calling §7's Core event types sentence
+- [x] `openapi.json` regenerates cleanly
+- [x] `queue.ts`'s docblock stops calling §7's Core event types sentence
       incomplete for `resident.released` — §7 has named it since the rider signed
       2026-08-25, and the note has been stale since
 
@@ -97,10 +97,42 @@ answerable.
 
 ## E2E Verification Log
 
-_Filled by the implementer._
+**Implemented on: opus.**
+
+### The stale note turned out to be the stale thing
+
+The acceptance criterion said `queue.ts`'s docblock called §7's Core event types
+sentence incomplete for `resident.released`. Checked against SPEC.md first, and
+§7 **names it**, with its reason, and has since the rider signed 2026-08-25. The
+contract had been carrying a "pending amendment" for a fortnight after the
+amendment landed. Corrected rather than deleted, with a line saying so — a note
+*about* the spec goes stale exactly like the spec does, and nothing checks it.
+
+### The payload, and why the test asserts an absence
+
+```
+Object.keys(LaneWaitingPayloadSchema.shape)  ->  ["lane"]
+parse({ lane, turnTs })                      ->  { lane }        turnTs dropped
+safeParse({ lane: "orchestrator" })          ->  false
+```
+
+The turn timestamp is the field that would make this event answerable, and the
+test asserts it does not survive. That is the safety property stated as a test:
+an agent that wanted to answer a `lane.waiting` has nothing to answer **with**,
+so the mistake is impossible rather than forbidden.
+
+### Generated
+
+```
+$ npm run generate -w packages/contract
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+$ vitest run packages/contract
+   Tests  3047 passed (3047)
+```
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests pass
-- [ ] `openapi.json` regenerated
-- [ ] Lint and typecheck clean
+- [x] Tests pass
+- [x] `openapi.json` regenerated
+- [x] Lint and typecheck clean
