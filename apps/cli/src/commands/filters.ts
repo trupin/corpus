@@ -92,10 +92,32 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
       "still searchable (SPEC.md §5).",
   },
   {
+    name: "title",
+    type: "string",
+    valueName: "text",
+    description:
+      "Match a document's title. Takes glob patterns — `*` for any run of characters, `?` for " +
+      'one — and matches **exactly** without one, so a substring is spelled `"*mortgage*"`. ' +
+      "Case-insensitive. Distinct from `--q`, which ranks whole words across the corpus " +
+      "(SPEC.md §9.2). **Quote the pattern**: an unquoted `*` is expanded by your shell before " +
+      "this command ever sees it.",
+  },
+  {
+    name: "body",
+    type: "string",
+    valueName: "text",
+    description:
+      "Match a document's body text, on the same terms as `--title` — glob with a wildcard, " +
+      "exact without one. A thread carries its turns in its body, so a pattern reaches turn " +
+      'text. Almost every useful body filter wants wildcards: `--body "*rate assumption*"`.',
+  },
+  {
     name: "tag",
     type: "string",
     valueName: "a,b",
-    description: "Comma-separated tags; values OR together.",
+    description:
+      "Comma-separated tags; values OR together. Each value takes glob patterns on the same " +
+      'terms as `--title`, so `--tag "proj-*"` matches a family of tags.',
   },
   {
     name: "folder",
@@ -103,7 +125,8 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     valueName: "path",
     description:
       "Path prefix under `data/docs/`, matching the folder and its descendants. Threads inherit " +
-      "their parent's folder.",
+      "their parent's folder. Takes glob patterns, which match the stored path rather than the " +
+      'bare name — `--folder "work/*"` — and cannot be combined with `--folder-scope`.',
   },
   {
     name: "status",
@@ -224,6 +247,8 @@ export function collectDocFilters(context: FlagSource): DocFilters {
   const { flags } = context;
 
   const type = flags.string("type");
+  const title = flags.string("title");
+  const body = flags.string("body");
   const tag = flags.string("tag");
   const folder = flags.string("folder");
   const status = oneOf(context, "status", DOC_STATUSES);
@@ -245,6 +270,8 @@ export function collectDocFilters(context: FlagSource): DocFilters {
   // and an absent key is exactly what "no such filter" means on the wire.
   return {
     ...(type === undefined ? {} : { type }),
+    ...(title === undefined ? {} : { title }),
+    ...(body === undefined ? {} : { body }),
     ...(tag === undefined ? {} : { tag }),
     ...(folder === undefined ? {} : { folder }),
     ...(status === undefined ? {} : { status }),

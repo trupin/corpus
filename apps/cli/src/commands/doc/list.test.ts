@@ -1,6 +1,6 @@
 import type { DocList } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, exitCodeFor } from "../../errors.js";
+import { ExitCode, exitCodeFor, UsageError } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
 import {
   closeStubServers,
@@ -103,6 +103,8 @@ describe("corpus doc list", () => {
       flags: {
         q: "mortgage",
         type: "note,view",
+        title: "Mort*",
+        body: "*escrow*",
         tag: "finance",
         folder: "finance",
         status: "open",
@@ -125,6 +127,8 @@ describe("corpus doc list", () => {
     expect(query(stub.requests[0])).toEqual({
       q: "mortgage",
       type: "note,view",
+      title: "Mort*",
+      body: "*escrow*",
       tag: "finance",
       folder: "finance",
       status: "open",
@@ -156,6 +160,96 @@ describe("corpus doc list", () => {
     expect(query(stub.requests[1])).toEqual({
       includeArchived: "true",
       unread: "true",
+    });
+  });
+
+  /**
+   * SPEC.md §5's **Structured fields**, from the CLI. The property is the one
+   * this whole file is about: a filter must reach the wire exactly as typed or
+   * not at all, and `extra.<key>` is the only filter here whose *name* is
+   * chosen by the caller.
+   */
+  describe("--extra", () => {
+    it("sends one dotted parameter per key", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(
+        stubContext(stub, { flags: { extra: ["assignee=theo", "customer=acme"] } }).context,
+      );
+
+      expect(query(stub.requests[0])).toEqual({
+        "extra.assignee": "theo",
+        "extra.customer": "acme",
+      });
+    });
+
+    it("splits on the first `=`, so a value may contain one", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(stubContext(stub, { flags: { extra: ["url=a=b"] } }).context);
+
+      expect(query(stub.requests[0])).toEqual({ "extra.url": "a=b" });
+    });
+
+    it("lets the last occurrence of a key win", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(
+        stubContext(stub, { flags: { extra: ["assignee=theo", "assignee=sam"] } }).context,
+      );
+
+      expect(query(stub.requests[0])).toEqual({ "extra.assignee": "sam" });
+    });
+
+    it("passes a glob through untouched — the pattern is the server's to read", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(stubContext(stub, { flags: { extra: ["assignee=t*"] } }).context);
+
+      expect(query(stub.requests[0])).toEqual({ "extra.assignee": "t*" });
+    });
+
+    /**
+     * Refused **before any request**, the stance every enumerated filter on this
+     * verb takes: a round trip to be told what the CLI already knows is a round
+     * trip the agent pays for.
+     */
+    it.each([
+      ["assignee", "no `=`", /=/],
+      ["1bad=x", "a key that is not an identifier", /identifier/],
+      ["assignee=", "an empty value", /no value/],
+    ])("refuses %s (%s) without sending anything", async (given, _why, expected) => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+      const harness = stubContext(stub, { flags: { extra: [given] } });
+
+      await expect(runDocList(harness.context)).rejects.toThrow(expected);
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("points at the wildcard when somebody asks for absence", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+      const harness = stubContext(stub, { flags: { extra: ["assignee="] } });
+
+      // There is no absence filter, so the refusal has to say what *can* be
+      // asked rather than only what cannot. The advice lives on the hint, which
+      // is where this CLI puts "here is the thing to type instead".
+      const thrown = await runDocList(harness.context).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeInstanceOf(UsageError);
+      expect((thrown as UsageError).hint).toContain("'*'");
+    });
+
+    it("exits as a usage error, not as a failed request", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+      const harness = stubContext(stub, { flags: { extra: ["1bad=x"] } });
+
+      const thrown = await runDocList(harness.context).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(exitCodeFor(thrown)).toBe(ExitCode.usageError);
     });
   });
 

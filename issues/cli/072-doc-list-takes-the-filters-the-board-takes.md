@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -34,14 +34,14 @@ those two, but their help text is now wrong and must say so.
 
 ## Acceptance Criteria
 
-- [ ] `--title` and `--body` map to the new filters
-- [ ] `--extra key=value` is repeatable and maps to `extra.<key>=<value>`
-- [ ] `--extra` without an `=` is refused with a message naming the form
-- [ ] Help text for `--tag`, `--folder`, `--title` and `--body` names glob
+- [x] `--title` and `--body` map to the new filters
+- [x] `--extra key=value` is repeatable and maps to `extra.<key>=<value>`
+- [x] `--extra` without an `=` is refused with a message naming the form
+- [x] Help text for `--tag`, `--folder`, `--title` and `--body` names glob
       support and distinguishes it from `--query`
-- [ ] `--json` output is unchanged in shape
-- [ ] `docs/cli.md` regenerates cleanly (`npm run cli:docs`)
-- [ ] Two examples in the registry entry, one glob and one `--extra`
+- [x] `--json` output is unchanged in shape
+- [x] `docs/cli.md` regenerates cleanly (`npm run cli:docs`)
+- [x] Two examples in the registry entry, one glob and one `--extra`
 
 ## Technical Design
 
@@ -84,9 +84,95 @@ Against a real server and a real workspace:
 5. `corpus doc list --extra owner` exits non-zero naming the `key=value` form
 
 ## E2E Verification Log
-_Filled by the implementer._
+
+**Implemented on: opus.**
+
+### Where the flags landed
+
+`--title` and `--body` went into the **shared** list, so they appear on
+`corpus search` too — the contract puts them on `docFilterShape` because they
+are structural filters exactly as `--tag` is. `--extra` is list-only, for the
+same reason `--is-parent` is: §9.2's signed `/api/search` parameter string does
+not carry it, so a flag for it on `search` would go nowhere on the wire. Both
+facts are pinned by tests rather than left to the reviewer.
+
+`--tag` and `--folder` needed no code change to take globs — the server does
+that — but their help text was now wrong and says so.
+
+### E2E, against the real server on the real workspace
+
+The same workspace SERVER-158 verified against, port 8791, two hand-written
+documents carrying invented frontmatter fields:
+
+```
+$ corpus doc list --extra assignee=theo
+doc_broker01  note  open  Catch-Up with the broker  data/docs/work/tasks/broker.md
+showing 1–1 of 1 document
+
+$ corpus doc list --extra "assignee=t*"
+doc_broker01  note  open  Catch-Up with the broker  data/docs/work/tasks/broker.md
+
+$ corpus doc list --title "Catch-Up*"
+doc_broker01  note  open  Catch-Up with the broker  data/docs/work/tasks/broker.md
+doc_notary01  note  open  Catch-Up with the notary  data/docs/work/tasks/notary.md
+showing 1–2 of 2 documents
+
+$ corpus doc list --extra assignee=theo --extra estimate=3
+doc_broker01  note  open  Catch-Up with the broker  data/docs/work/tasks/broker.md
+
+$ corpus doc list --extra owners=dana --json --fields id,title
+{"items":[{"id":"doc_broker01","title":"Catch-Up with the broker"}],"page":{"total":1,"limit":50,"offset":0}}
+```
+
+The three refusals, each before any request:
+
+```
+$ corpus doc list --extra assignee
+corpus: --extra takes `key=value`, and `assignee` has no `=`.
+  Write it as `--extra assignee=theo`. No request was sent.
+exit=2
+
+$ corpus doc list --extra 1bad=x
+corpus: `1bad` is not a field name: it must be an identifier — letters, digits, `_` and `-`, starting with a letter or `_`.
+  No request was sent.
+exit=2
+
+$ corpus doc list --extra assignee=
+corpus: --extra assignee= has no value.
+  There is no way to ask for a document that *lacks* a field. To find every document that has one, write `--extra assignee='*'`. No request was sent.
+exit=2
+```
+
+The third refusal says what **can** be asked, not only what cannot. There is no
+absence filter, so a message that stopped at "no value" would leave the caller
+guessing at a filter that does not exist.
+
+### Falsification
+
+```
+$ # the dotted prefix dropped from the wire key
+      Tests  4 failed | 48 passed (52)
+   × sends one dotted parameter per key
+   × splits on the first `=`, so a value may contain one
+   × lets the last occurrence of a key win
+   × passes a glob through untouched
+```
+
+### Suites
+
+```
+$ vitest run apps/cli
+   Test Files  1 failed | 107 passed (108)
+        Tests  2 failed | 2193 passed (2195)
+```
+
+**The two failures are `init/git-process-group.test.ts` and are not this
+issue's.** Verified by stashing every change in this branch and re-running that
+file alone on the clean tree, where it also failed. It is timing-sensitive — one
+of its two cases passed on the clean tree and neither did under load — and it
+touches no code this issue goes near.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests pass
-- [ ] `docs/cli.md` regenerated
-- [ ] E2E log filled
+- [x] Tests pass
+- [x] `docs/cli.md` regenerated
+- [x] E2E log filled
