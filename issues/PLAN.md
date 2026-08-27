@@ -1803,6 +1803,24 @@ branch — each turning a named number of tests red.
 
 ---
 
+## Phase 51 — Reported after v0.26.0 (2026-08-27, user instruction)
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-075 | A lane nobody can work announces itself to the orchestrator | todo | P0 | fable | — |
+
+**Awaiting a signature**, and the draft is in the issue. It is the half of
+SERVER-160 that v0.26.0 left open and named as open: a conversation being
+**created** now reaches the orchestrator, and every later message to it does
+not. The user hit it by restarting the orchestrator, which kills every listener
+at once while their conversations keep accepting messages.
+
+The draft narrows the user's instruction in exactly one place — they said
+*always* send to both, it says *when the listener is absent* — and the issue puts
+that question in front of them rather than deciding it.
+
+---
+
 ## Phase 50 — A field you invented is a filter you can use (2026-08-26, v0.26.0 scope)
 
 The user signed a rider on **2026-08-04** and it was never applied. Its two
