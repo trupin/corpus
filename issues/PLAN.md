@@ -1839,14 +1839,25 @@ heuristic SERVER-054 deleted, one of them published in `openapi.json`. The first
 was corrected in PR #55; the other two are corrected here, in files this phase
 was already editing.
 
-**Reported during the phase, and pulled in at the user's word.** Three `P0`
-defects reported 2026-08-27, each with a screenshot, each asked for in this
-release: `UI-179` (the Reflect control's switch sits hard against the clock),
-`UI-180` (the composer's foot wraps its legend onto three lines and its two
-pickers do not match) and `UI-181` (the Reflect label runs its count into its
-noun). None belongs to this release's sentence; all three are in it because the
-user asked, and the report says so rather than pretending they were always in
-scope.
+**Reported during the phase, and pulled in at the user's word.** Five `P0`
+defects reported 2026-08-27, none belonging to this release's sentence, all in
+it because the user asked — recorded here rather than folded in as if they had
+always been in scope.
+
+**One of them was not cosmetic.** `SERVER-160`: pressing **Ask** enqueued one
+event on the new thread's own lane, which the orchestrator cannot see and was
+never woken for, so no listener was ever launched and the message sat pending
+for as long as the workspace ran. Three correct decisions — a creation
+designates, the fallback is gone, the launch is the orchestrator's — with
+nothing joining the first to the third. `CLI-073` is its paperwork and was found
+while reproducing it: the roster told the operator a lapsed lane's work would
+become claimable after sixteen minutes, which the rider signed 2026-08-25
+deleted.
+
+The other three were the visible ones: `UI-179` (the Reflect switch sits hard
+against the clock), `UI-180` (the composer's foot wraps its legend onto three
+lines and its two pickers do not match) and `UI-181` (the Reflect label runs its
+count into its noun).
 
 They have a common shape worth naming: **every one is a layout claim that no
 existing test could see.** Two were CSS, one was a string that is correct in the
@@ -1859,6 +1870,8 @@ rendered boxes and `innerText`.
 | UI-179 | The Reflect control's parts do not line up (user report) | done | P0 | opus | — |
 | UI-180 | The composer's foot is crowded, and its two pickers do not match (user report) | done | P0 | opus | — |
 | UI-181 | The Reflect label runs its count into its noun (user report) | done | P0 | opus | — |
+| SERVER-160 | Pressing Ask tells the orchestrator nothing, so nobody answers | done | P0 | opus | — |
+| CLI-073 | The roster promises a fallback that was deleted | done | P0 | opus | — |
 
 **`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
 query-surface defect in the same files, and reading it properly showed it is

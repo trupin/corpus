@@ -70,7 +70,7 @@ import {
 import { contextualizeSelector } from "./anchor-context.js";
 import { enqueueComment } from "./events.js";
 import { residentToStored } from "../core/resident.js";
-import { residentFor } from "./resident.js";
+import { residentDesignatedPayload, residentFor, RESIDENT_DESIGNATED } from "./resident.js";
 import { TURN_SUBJECT, assertAppendableTurnText } from "./fences.js";
 import { assertWritableForm } from "./forms.js";
 import { parseMentions } from "./mentions.js";
@@ -78,7 +78,7 @@ import { decideParticipation } from "./participation.js";
 import { loadThread, toWireThread } from "./read.js";
 import { deriveThreadTitle } from "./title.js";
 import { assertModelNamesAnAgentTurn, storeTurnFiles, whileUnreferenced } from "./turns.js";
-import type { ThreadsWorkspace } from "./workspace.js";
+import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
 /**
  * A creation request, whichever of the route's two media types it arrived as —
@@ -416,6 +416,10 @@ export async function createThread(
     // block the server appends is not something the user wrote, and must never
     // be able to summon the agent.
     const parsed = parseMentions(workspace.projection, input.text ?? "");
+    // Hoisted out of `threadFields` because the announcement below needs it
+    // *after* the write, and computing it twice would mint two designation ids
+    // for one designation.
+    const designated = designationFor(workspace, input, parentId);
     // A brand-new thread cannot be `engaged`, so an omitted `requestsAgent` is
     // mention-only here — which is exactly what the contract's
     // `THREAD_CREATE_OMITTED_BEHAVIOUR` promises its callers.
@@ -458,7 +462,7 @@ export async function createThread(
             agent: decision.agent,
             model: input.model,
             origin: stampedOrigin(workspace, input.job),
-            resident: designationFor(workspace, input, parentId),
+            resident: designated,
           }),
         ),
       );
@@ -524,6 +528,51 @@ export async function createThread(
     // reflection left on a document, not the digest of it.
     if (parentId === null) workspace.reflect?.observeThreadCreated(input.job, id);
 
+    /*
+     * **The launch instruction** (SERVER-160; SPEC.md §7's rider A, signed
+     * 2026-08-25, and the `resident.designated` carve-out in `queue/lanes.ts`).
+     *
+     * A creation that designates a resident **and enqueues work for it**
+     * announces the designation, exactly as `POST /api/threads/{id}/resident`
+     * does. Without this, pressing **Ask** did nothing at all:
+     *
+     * - The thread's `comment.created` is stamped with the **thread's** lane,
+     *   and the same rider removed the lapse fallback — `visibleTo` is exact
+     *   equality, so the orchestrator's unscoped `claim-all` can never see it.
+     * - The orchestrator waits in a parked `queue idle` on its own lane. A wake
+     *   is not enough to reach it: `idle` re-parks on a wake whose work it
+     *   cannot claim, by design, so only an event it *can* claim ends the park.
+     * - Rider A's lazy clause hands the launch to the orchestrator, which starts
+     *   listeners by reading the roster — and it reads the roster when it wakes.
+     *
+     * Measured on a real server before the fix: one `comment.created` on the new
+     * lane, `queue claim-all` empty, and a parked `queue idle` holding its whole
+     * window. A person pressed Ask and nothing whatever happened.
+     *
+     * **Gated on `decision.enqueue`, which is rider A's own condition** — *"a
+     * listener is started when its lane has something pending and none is
+     * running"*. A standalone thread created without asking for the agent still
+     * designates a general resident, and announcing that would ask for a
+     * listener for a conversation with nothing waiting in it: one background
+     * agent per thread anybody makes, which is the thing the rider's laziness
+     * exists to prevent.
+     *
+     * **Before the comment event**, so the instruction to start a listener
+     * exists before the work it is being started for, and an orchestrator that
+     * wakes and reads the roster in one pass sees the lane already carrying its
+     * count.
+     */
+    const designatedEventId =
+      designated === null || !decision.enqueue
+        ? null
+        : (
+            await workspace.enqueue({
+              type: RESIDENT_DESIGNATED,
+              source: EVENT_SOURCE.thread,
+              payload: residentDesignatedPayload(id, designated),
+            })
+          ).id;
+
     // After the write: an event may not name a thread that does not exist yet,
     // and the parked `queue idle` it wakes will read the thread immediately.
     const eventId = decision.enqueue
@@ -541,6 +590,7 @@ export async function createThread(
       thread: toWireThread(workspace, loadThread(workspace, id)),
       anchorId,
       eventId,
+      designatedEventId,
       result,
     };
   });

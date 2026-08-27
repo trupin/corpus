@@ -316,11 +316,21 @@ describe("corpus agents", () => {
     // One note for two unattended lanes, not one per row.
     expect(stderr.split("\n").filter(Boolean)).toHaveLength(1);
     expect(stderr).toContain("not a failure");
-    expect(stderr).toContain("never silently not done");
-    // The window is **the contract's** number, rendered — not a second copy of
-    // it. Computed here from the same constant rather than written as `16m`, so
-    // a literal in the command would fail this even if the contract moved.
-    expect(stderr).toContain(`(${formatAge(AGENT_PRESENCE_WINDOW_SECONDS * 1000)})`);
+    /*
+     * **It must not promise the work will be picked up** (CLI-073). This note
+     * used to end "…becomes visible to the orchestrator's own `corpus queue
+     * claim-all` … never silently not done", which the rider signed 2026-08-25
+     * deleted along with the fallback itself. An operator watching a
+     * conversation go unanswered read it and waited out a grace window for
+     * something that was never coming.
+     *
+     * What replaced it is the true thing and the actionable one: the work waits,
+     * and the pending count is a launch instruction.
+     */
+    expect(stderr).toContain("waits");
+    expect(stderr).toContain("launch** a listener");
+    expect(stderr).not.toContain("claim-all");
+    expect(stderr).not.toContain("never silently not done");
     expect(GRACE_WINDOW).toBe(formatAge(AGENT_PRESENCE_WINDOW_SECONDS * 1000));
   });
 

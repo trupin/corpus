@@ -196,6 +196,73 @@ describe("the event type", () => {
   });
 });
 
+/**
+ * **SERVER-160: pressing Ask has to reach the orchestrator.** Reported
+ * 2026-08-27 — *"no event goes to the orchestrator agent, which means it is not
+ * aware of what it needs to do"* — and the product was unusable for it.
+ *
+ * A standalone thread created with `requestsAgent` designates a general resident
+ * (rider A), so its message is stamped with the **thread's** lane. The same
+ * rider removed the lapse fallback, so `visibleTo` is exact equality and the
+ * orchestrator's unscoped claim can never see that message. Rider A hands the
+ * launch to the orchestrator, which starts listeners by reading the roster — and
+ * nothing told it to read one. Nobody launched, nobody claimed, and the message
+ * sat pending for as long as the workspace ran.
+ *
+ * The assertions below are about the **lane**, because the lane is the whole
+ * defect: an event on the thread's own lane is invisible to the orchestrator by
+ * design, and this is the one that is not.
+ */
+describe("a creation that asks for the agent asks for a listener", () => {
+  it("announces the designation on the orchestrator's lane, beside the message", async () => {
+    ws = createThreadWorkspace("create-announces");
+    const thread = await createThread(ws, {
+      title: "Rate assumption",
+      body: "is 6.1% the right base case?",
+      requestsAgent: true,
+    });
+
+    const byType = new Map(pendingPayloads().map((event) => [event.type, event]));
+    expect([...byType.keys()].sort()).toEqual([RESIDENT_DESIGNATED, "comment.created"].sort());
+
+    // The launch instruction reaches the orchestrator, which is the only agent
+    // that can act on it.
+    const designated = byType.get(RESIDENT_DESIGNATED);
+    expect(designated?.lane).toBe("orchestrator");
+    expect(designated?.payload["threadId"]).toBe(thread.id);
+
+    // The conversation's own message stays on the conversation's lane, waiting
+    // for the listener the instruction above asks for. Routing is unchanged.
+    expect(byType.get("comment.created")?.lane).toBe(thread.id);
+  });
+
+  /**
+   * Rider A's own condition — *"a listener is started when its lane has
+   * something pending and none is running"*. A standalone thread still
+   * designates a general resident when nobody asked for the agent, and asking
+   * for a listener there would start one background agent per thread anybody
+   * makes.
+   */
+  it("stays silent when the creation asks for no agent", async () => {
+    ws = createThreadWorkspace("create-silent");
+    await createThread(ws, { title: "A note to myself", body: "no agent wanted" });
+
+    expect(pendingPayloads()).toEqual([]);
+  });
+
+  /** A comment on a document designates nobody, so there is no lane to launch. */
+  it("stays silent for a thread with a parent", async () => {
+    ws = createThreadWorkspace("create-parented");
+    const parent = (await createDoc(ws, { type: "note", title: "Mortgage", body: "Rates.\n" })).id;
+    await createThread(ws, { parent, body: "what about escrow?", requestsAgent: true });
+
+    const types = pendingPayloads().map((event) => event.type);
+    expect(types).toEqual(["comment.created"]);
+    // The ordinary rule: no designation, so the orchestrator's own lane.
+    expect(pendingPayloads()[0]?.lane).toBe("orchestrator");
+  });
+});
+
 describe("POST /api/threads/{id}/resident", () => {
   it("writes the resolved resident into the thread's frontmatter and answers with it", async () => {
     const created = await createThread(ws, {
