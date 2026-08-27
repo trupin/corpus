@@ -1807,9 +1807,22 @@ branch — each turning a named number of tests red.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-075 | A lane nobody can work announces itself to the orchestrator | todo | P0 | fable | — |
+| SHARED-075 | A lane nobody can work announces itself to the orchestrator | done | P0 | fable | — |
+| CONTRACT-093 | `lane.waiting` is a core event type | done | P0 | opus | SHARED-075 |
+| SERVER-161 | An unattended lane's arrival announces itself | done | P0 | opus | CONTRACT-093 |
+| AGENT-057 | The orchestrator settles a waiting lane by launching, never by answering | done | P0 | fable | SERVER-161 |
 
-**Awaiting a signature**, and the draft is in the issue. It is the half of
+**Signed 2026-08-27** and applied the same day.
+
+**`SHARED-074` is answered in this phase and the answer is "no change".** The
+reaper stays lane-blind. The question turned on evidence that does not exist —
+presence is a parked `idle`, a resident mid-turn holds none, and `lastTouched`
+takes the *older* of the file's mtime and the event's `updated`, so a listener
+cannot signal life by touching what it holds. A heartbeat is the only thing that
+would settle it, and it buys a worse failure: a listener that forgets to beat is
+declared dead while answering. What was actually wrong was the **reason** the
+code gave — it cited the fallback removed in v0.23.0 — and the duplication that
+raised the question belonged to the loop's ordering, fixed in `AGENT-056`. It is the half of
 SERVER-160 that v0.26.0 left open and named as open: a conversation being
 **created** now reaches the orchestrator, and every later message to it does
 not. The user hit it by restarting the orchestrator, which kills every listener
@@ -1901,7 +1914,7 @@ rendered boxes and `innerText`.
 | SERVER-160 | Pressing Ask tells the orchestrator nothing, so nobody answers | done | P0 | opus | — |
 | CLI-073 | The roster promises a fallback that was deleted | done | P0 | opus | — |
 | AGENT-056 | Reaping before reading the roster duplicates a working listener | done | P0 | opus | — |
-| SHARED-074 | May the reaper touch a resident lane's held work? | todo | P1 | fable | — |
+| SHARED-074 | May the reaper touch a resident lane's held work? | done | P1 | fable | — |
 
 **`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
 query-surface defect in the same files, and reading it properly showed it is

@@ -65,15 +65,27 @@ import { openapi } from "./openapi-metadata.js";
  * could see in the queue. The generated document publishes the whole set
  * wherever an event type appears.
  *
- * **§7's "Core event types" sentence does not yet name `resident.released`.**
- * It joins the inventory's pending amendments (`../routes/inventory.ts`) rather
- * than the undocumented: this package never edits SPEC.md, and the amendment is
- * the orchestrator's to take to the user.
+ * `lane.waiting` is core, and is the third member of that same family (SPEC.md
+ * §7's rider signed 2026-08-27). It says a lane has work and no listener, so the
+ * orchestrator launches one — the gap the other two leave, because they fire
+ * only when a designation *changes* while a conversation goes unanswered on the
+ * messages in between. **It is not the work and must never be dispatched**: its
+ * payload (`LaneWaitingPayloadSchema`) carries the lane and nothing else, so an
+ * agent that wanted to answer it has nothing to answer with, and the
+ * orchestrator settles it by making sure a listener is running.
+ *
+ * **This docblock used to say §7's "Core event types" sentence did not name
+ * `resident.released`, and that has been false since the rider signed
+ * 2026-08-25.** §7 names it, with the reason. The note is corrected rather than
+ * deleted because it was carried as a pending amendment in
+ * `../routes/inventory.ts` for a fortnight after the amendment had landed — a
+ * reminder that a note about the spec is itself something that goes stale.
  */
 export const CORE_QUEUE_EVENT_TYPES = [
   "comment.created",
   "form.respond",
   "doc.edited",
+  "lane.waiting",
   "resident.designated",
   "resident.released",
   "workspace.reflect",

@@ -11,8 +11,11 @@ import { conflict, notFound, type HttpError } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import { readHeldInProgress, type HeldSet } from "./held.js";
 import {
+  LANE_WAITING,
   NO_SCOPE_LOOKUP,
   NOTHING_RELEASED,
+  RESIDENT_DESIGNATED,
+  RESIDENT_RELEASED,
   laneFor,
   laneOf,
   visibleTo,
@@ -567,6 +570,7 @@ export class QueueService {
     // would leave a conversation waiting with nothing to say it had changed.
     this.invalidate(queueTransitionKeys(undefined, "pending"));
     this.wake(laneOf(event));
+    if (!this.isAnnouncement(event.type)) await this.announceWaitingLane(laneOf(event));
     this.evictReleasedLane(event);
     return event;
   }
@@ -654,6 +658,80 @@ export class QueueService {
    */
   private wake(lane: Lane): void {
     this.wakeLanes([lane]);
+  }
+
+  /**
+   * Whether this lane wants a listener started for it (SERVER-161).
+   *
+   * **The one place the rider's condition lives**, and it is named rather than
+   * inlined for a recorded reason: the instruction that prompted the rider asked
+   * for the notice on **every** message to a resident lane, and §7's signed text
+   * took the cheaper reading — only when the listener is absent. The two coincide
+   * in the case that prompted it, since a restarted orchestrator has no listeners
+   * running at all. If the unconditional reading is ever wanted, this function is
+   * the whole of the change (SHARED-075).
+   *
+   * `isLive` is the same predicate presence is published from, so the notice and
+   * the roster cannot come to disagree about whether anybody is there.
+   */
+  private wantsListener(lane: Lane): boolean {
+    if (lane === ORCHESTRATOR_LANE) return false;
+    return !this.laneTracker.isLive(lane);
+  }
+
+  /**
+   * Whether this event is itself an announcement, and so must not produce one.
+   *
+   * Belt and braces with {@link laneFor}'s carve-out, which already sends all
+   * three to the orchestrator's lane where {@link wantsListener} refuses them.
+   * The type check is the one that does not depend on routing being right — and
+   * routing being wrong is not hypothetical: a test whose scope lookup ignored
+   * the payload sent the notice to the resident's own lane, where it announced
+   * itself until the test timed out.
+   */
+  private isAnnouncement(type: string): boolean {
+    return type === LANE_WAITING || type === RESIDENT_DESIGNATED || type === RESIDENT_RELEASED;
+  }
+
+  /**
+   * **A lane that cannot be worked says so** (SPEC.md §7, rider signed
+   * 2026-08-27; SERVER-161).
+   *
+   * A message to a designated conversation is stamped with that conversation's
+   * lane. `visibleTo` is exact equality since the rider signed 2026-08-25, so the
+   * orchestrator cannot see it — and {@link wake} reaches only lanes an arrival
+   * is visible to, so its parked `idle` does not end either. Without this, the
+   * orchestrator learns the lane is waiting only when its own park expires.
+   *
+   * **A second enqueue, and not a wake.** `queue/waiters.ts` says a waiter woken
+   * for work it cannot claim "re-reads its own lane, finds nothing, and parks
+   * again without the HTTP request returning" — SERVER-160 measured exactly that,
+   * a park holding 23 of its 25 seconds with a wake in place. Only a claimable
+   * event ends it.
+   *
+   * **It carries nothing answerable.** The payload is the lane and nothing else
+   * (CONTRACT-093), because this loop dispatches what it claims and an
+   * orchestrator answering here would be a different agent writing in the
+   * resident's name — the thing the fallback was removed to prevent.
+   *
+   * **No recursion**, two ways over: a notice is stamped with the orchestrator's
+   * lane, and {@link wantsListener} refuses that lane outright.
+   *
+   * Two messages in quick succession on one absent lane produce two notices. That
+   * is accepted rather than overlooked: the orchestrator's launch rule is already
+   * "once per pass, per lane", so the second launches nothing, and collapsing
+   * them would mean remembering which lanes had announced — state whose only
+   * purpose would be to save an event the loop already ignores.
+   */
+  private async announceWaitingLane(lane: Lane): Promise<void> {
+    if (!this.wantsListener(lane)) return;
+    await this.enqueue({
+      type: LANE_WAITING,
+      // The server produced it, unprompted by any client — unlike every other
+      // event, which carries the surface a person or an agent acted through.
+      source: "server",
+      payload: { lane },
+    });
   }
 
   /** {@link wake} for a batch: woken once, for the union of what those lanes reach. */
@@ -1042,12 +1120,40 @@ export class QueueService {
    * came back to `pending/` (sprint-003 adjudication 1).
    *
    * **Lane-blind, and lane-preserving** (SPEC.md §7). Staleness is staleness: a
-   * held event nobody can account for is stuck whichever agent claimed it, and
-   * scoping the reaper would leave a dead resident's work unrecoverable by the
-   * one agent still running. What it must not do is *re-route* what it recovers
-   * — `stamp` spreads the event, so a reaped event returns to `pending/` on the
-   * lane it was claimed from, and the fallback (not the reaper) is what decides
-   * who may then see it.
+   * held event nobody can account for is stuck whichever agent claimed it. What
+   * it must not do is *re-route* what it recovers — `stamp` spreads the event,
+   * so a reaped event returns to `pending/` on the lane it was claimed from.
+   *
+   * **The reason this used to give was the fallback, and the fallback is gone**
+   * (SHARED-074). It said scoping the reaper "would leave a dead resident's work
+   * unrecoverable by the one agent still running" — true while a lapsed lane's
+   * work fell to the orchestrator, and false since the rider signed 2026-08-25.
+   * A reaped resident event returns to its own lane, where **only that lane's
+   * listener** can ever take it. So a reap does not hand a resident's work to
+   * anybody; it makes the work claimable again by the listener that gets
+   * launched next, and clears the `working` flag that would otherwise say a dead
+   * lane is busy for ever.
+   *
+   * **That is still worth doing, and it stays lane-blind** — decided rather than
+   * inherited. The alternative would be to reap a resident lane only on evidence
+   * its listener is gone, and no such evidence exists: presence is holding a
+   * parked `idle`, a resident inside a long turn holds none, and
+   * {@link QueueStore.lastTouched} takes the *older* of the file's mtime and the
+   * event's `updated`, so a listener cannot signal life by touching what it
+   * holds. The window is therefore a guess about how long thinking may take, and
+   * every option considered moved the guess rather than removing it:
+   *
+   * - **A heartbeat** would make staleness real evidence, and is the only one
+   *   that would. It puts a new obligation on every resident and a new way to
+   *   die — a listener that forgets to beat is declared dead while answering.
+   * - **A longer window for resident lanes** is one number replacing another.
+   *
+   * The cost of leaving it is bounded and known: a resident mid-turn has its
+   * held event returned under it, so a `complete` for that event arrives for
+   * something no longer `in-progress`. The **duplication** this used to cause is
+   * fixed elsewhere and properly — AGENT-056 has the orchestrator read the
+   * roster before reaping, so a busy lane still reads `working` when the launch
+   * decision is made.
    */
   async reapStale(): Promise<ReapResult> {
     return this.serialize(async () => {

@@ -3000,6 +3000,25 @@ describe("orchestrate skill body", () => {
        * reap-then-read loop turns every long turn into the launch condition.
        * One pass of delay for a crashed listener is the whole price.
        */
+      /*
+       * AGENT-057. `lane.waiting` is the one event the loop claims that must
+       * **never** be dispatched: it is a report that somebody else's
+       * conversation is unattended, and answering it would be the orchestrator
+       * writing in a resident's name.
+       *
+       * The payload makes that impossible — it carries only the lane — but the
+       * skill has to say so, because a reader meeting an unfamiliar type with no
+       * rule reaches for the general one, and the general one is *dispatch*.
+       */
+      expect(body).toMatch(/\*\*Do not dispatch it\.\*\*/);
+      expect(body).toMatch(/writing in a resident's\s+name/);
+      expect(body).toMatch(/Settle it by making sure a listener is running for the lane it names/);
+      // Two consequences that are easy to leave out and read as faults.
+      expect(body).toMatch(/settles with no launch, and that is ordinary/);
+      expect(body).toMatch(/\*\*Several notices for one lane are one launch\.\*\*/);
+      // And the table names it, alongside the two announcements it belongs with.
+      expect(body).toMatch(/\| `lane\.waiting`\s+\| A conversation has work and nobody listening/);
+
       expect(routing).toMatch(/\*\*Working is not presence, and must never be read as it\.\*\*/);
       expect(routing).toMatch(/why the roster is read \*before\* the reap/);
       expect(routing).toMatch(/is exactly\s+backwards for one that is alive/);

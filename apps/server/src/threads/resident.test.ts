@@ -12,7 +12,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CORE_QUEUE_EVENT_TYPES, type QueryKey } from "@corpus/contract";
+import { CORE_QUEUE_EVENT_TYPES, LANE_WAITING_EVENT_TYPE, type QueryKey } from "@corpus/contract";
 import {
   AUTH,
   appendTurn,
@@ -222,8 +222,29 @@ describe("a creation that asks for the agent asks for a listener", () => {
       requestsAgent: true,
     });
 
+    /*
+     * **Three events, and two of them ask for the same listener** (SERVER-161).
+     *
+     * `resident.designated` is here because a designation is a first-class act
+     * §7 requires be visible in the queue, the job log and the history "exactly
+     * as a comment is" — not merely because it wakes anybody.
+     * `lane.waiting` is here because the message landed on a lane with no
+     * listener, which is now true of every such message and not only of a
+     * creation.
+     *
+     * The overlap is accepted rather than removed. The orchestrator's launch
+     * rule is already **once per pass, per lane**, so the pair collapses into one
+     * launch; suppressing one would mean the queue knowing which other event a
+     * caller happened to enqueue in the same request, which is coupling bought
+     * to save an event the loop already ignores.
+     */
     const byType = new Map(pendingPayloads().map((event) => [event.type, event]));
-    expect([...byType.keys()].sort()).toEqual([RESIDENT_DESIGNATED, "comment.created"].sort());
+    expect([...byType.keys()].sort()).toEqual(
+      [RESIDENT_DESIGNATED, LANE_WAITING_EVENT_TYPE, "comment.created"].sort(),
+    );
+    // Both launch instructions reach the orchestrator, and name the same lane.
+    expect(byType.get(LANE_WAITING_EVENT_TYPE)?.lane).toBe("orchestrator");
+    expect(byType.get(LANE_WAITING_EVENT_TYPE)?.payload["lane"]).toBe(thread.id);
 
     // The launch instruction reaches the orchestrator, which is the only agent
     // that can act on it.
@@ -258,7 +279,8 @@ describe("a creation that asks for the agent asks for a listener", () => {
 
     const types = pendingPayloads().map((event) => event.type);
     expect(types).toEqual(["comment.created"]);
-    // The ordinary rule: no designation, so the orchestrator's own lane.
+    // The ordinary rule: no designation, so the orchestrator's own lane — and a
+    // lane that is already the orchestrator's never announces to itself.
     expect(pendingPayloads()[0]?.lane).toBe("orchestrator");
   });
 });
@@ -1499,13 +1521,37 @@ describe("reading a resident back", () => {
   });
 });
 
+/**
+ * The three events that reach the orchestrator's lane by their **type** rather
+ * than by the walk (SPEC.md §7's carve-outs). Excluded wherever a test is about
+ * routing, because their lane is not a routing decision.
+ */
+const ANNOUNCEMENT_TYPES: readonly string[] = [
+  RESIDENT_DESIGNATED,
+  RESIDENT_RELEASED,
+  LANE_WAITING_EVENT_TYPE,
+];
+
 // SPEC.md §7's lanes (SERVER-111), against the real server: designation is what
 // makes the walk answer differently, and the walk is what stamps the file a
 // parked agent will claim from.
 describe("what a designation routes", () => {
-  /** The one pending event, as the queue wrote it — including its lane stamp. */
+  /**
+   * The one pending event **the walk stamped**, as the queue wrote it.
+   *
+   * Announcements are excluded rather than counted (SERVER-161). This block's
+   * subject is the walk — which lane a conversation's event is stamped with —
+   * and since the rider signed 2026-08-27 an event landing on a lane with no
+   * listener also enqueues a `lane.waiting` on the orchestrator's. That notice
+   * is a second event with a lane of its own, decided by its **type** and never
+   * by the walk, so counting it here would be measuring the announcement while
+   * asserting the routing.
+   *
+   * It still insists on exactly one: a test that produced two conversation
+   * events would be testing something it had not said.
+   */
   const onlyPending = (): StoredEvent => {
-    const events = pendingPayloads();
+    const events = pendingPayloads().filter((event) => !ANNOUNCEMENT_TYPES.includes(event.type));
     expect(events).toHaveLength(1);
     return events[0] as StoredEvent;
   };
@@ -1577,19 +1623,27 @@ describe("what a designation routes", () => {
     ws.advance(61_000);
 
     // The turn's event is untouched, still stamped for the lane it was posted
-    // on; the release's own event is the orchestrator's.
+    // on; the release's own event is the orchestrator's; and the turn also
+    // announced the unattended lane (SERVER-161), which is the orchestrator's
+    // by type.
     expect(
       pendingPayloads()
         .map((event) => `${event.type}@${event.lane}`)
         .sort(),
-    ).toEqual(["comment.created@" + created.id, "resident.released@orchestrator"].sort());
+    ).toEqual(
+      [
+        "comment.created@" + created.id,
+        "lane.waiting@orchestrator",
+        "resident.released@orchestrator",
+      ].sort(),
+    );
 
     await appendTurn(ws, created.id, { body: "second", requestsAgent: true });
     expect(
       pendingPayloads()
         .map((event) => event.lane)
         .sort(),
-    ).toEqual([created.id, "orchestrator", "orchestrator"].sort());
+    ).toEqual([created.id, "orchestrator", "orchestrator", "orchestrator"].sort());
   });
 
   describe("a recipient that names no lane", () => {
@@ -1651,6 +1705,17 @@ describe("what a designation routes", () => {
       ws.server.queue.store.ensureLayoutSync();
     };
 
+    /**
+     * What a claim hands over, **conversation work only**.
+     *
+     * Announcements are dropped for {@link onlyPending}'s reason (SERVER-161):
+     * this block asks who may claim a *conversation's* work, and since the rider
+     * signed 2026-08-27 an arrival on an unattended lane also puts a
+     * `lane.waiting` on the orchestrator's. Counting that as claimed work would
+     * make "the orchestrator sees nothing of this lane" false while the property
+     * it names is still true — the notice is a launch instruction, and launching
+     * is precisely what the orchestrator is still allowed to do.
+     */
     const claimed = async (scope?: string): Promise<string[]> => {
       const query = scope === undefined ? "" : `?scope=${scope}`;
       const response = await ws.post(`/api/queue/claim-all${query}`, {});
@@ -1658,6 +1723,28 @@ describe("what a designation routes", () => {
       return ((await response.json()) as { events: { id: string }[] }).events.map(
         (event) => event.id,
       );
+    };
+
+    /**
+     * What a claim hands over, **conversation work only** — announcements
+     * dropped (SERVER-161).
+     *
+     * Opt-in rather than the default, because both readings are asked for here.
+     * An assertion about *who may answer a conversation* must not count a
+     * `lane.waiting`: the notice is a launch instruction, and launching is
+     * precisely what the orchestrator is still allowed to do, so counting it
+     * would make "the orchestrator sees nothing of this lane" read false while
+     * the property it names is still true. An assertion about the designation
+     * announcement itself wants the unfiltered list, and one test here is
+     * exactly that.
+     */
+    const claimedWork = async (scope?: string): Promise<string[]> => {
+      const query = scope === undefined ? "" : `?scope=${scope}`;
+      const response = await ws.post(`/api/queue/claim-all${query}`, {});
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { events: { id: string; type: string }[] }).events
+        .filter((event) => !ANNOUNCEMENT_TYPES.includes(event.type))
+        .map((event) => event.id);
     };
 
     /** Parks a scoped `idle`, which is the whole of §7's presence. */
@@ -1845,15 +1932,18 @@ describe("what a designation routes", () => {
       expect(await claimed()).toHaveLength(1);
       await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
 
-      // Still designated: nobody else may touch it, however long nobody listens.
+      // Still designated: nobody else may touch its **work**, however long
+      // nobody listens. The turn also announced the lane, and that notice is a
+      // launch instruction rather than the conversation (SERVER-161).
       ws.advance(LANE_GRACE_MS * 2);
-      expect(await claimed()).toEqual([]);
+      expect(await claimedWork()).toEqual([]);
 
       expect((await release(created.id)).status).toBe(200);
       // The release's own `resident.released` is the orchestrator's by §7's
       // carve-out, and the resident's turn is now the orchestrator's by this
-      // rider. Both arrive on one claim.
-      expect((await claimed()).length).toBe(2);
+      // rider. Both arrive on one claim — and the turn is the only *work* among
+      // them, the notice above having been claimed already.
+      expect((await claimedWork()).length).toBe(1);
     });
 
     /**
@@ -1868,9 +1958,11 @@ describe("what a designation routes", () => {
       expect(await claimed()).toHaveLength(1);
       await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
       await release(created.id);
-      // Claimed, not settled: this is what "draining" is.
+      // Claimed, not settled: this is what "draining" is. Three now — the
+      // turn, the release, and the notice the turn raised on an unattended lane
+      // (SERVER-161).
       const held = await claimed();
-      expect(held.length).toBe(2);
+      expect(held.length).toBe(3);
 
       const refused = await designateGeneral(created.id);
       expect(refused.status).toBe(409);
@@ -1955,10 +2047,12 @@ describe("what a designation routes", () => {
       await appendTurn(ws, created.id, { body: "please look", requestsAgent: true });
       ws.advance(LANE_GRACE_MS * 2);
 
-      expect(await claimed()).toEqual([]);
+      // Conversation work only: the turn above also announced the lane, and a
+      // launch instruction is not the conversation's work (SERVER-161).
+      expect(await claimedWork()).toEqual([]);
       // The converse, without which the assertion above would also pass against
       // a queue that had lost the event entirely.
-      expect(await claimed(created.id)).toHaveLength(1);
+      expect(await claimedWork(created.id)).toHaveLength(1);
     });
 
     // §7: presence is asked at the request and never re-asked of one already

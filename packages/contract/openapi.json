@@ -4522,7 +4522,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "Event type. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name."
+            "description": "Event type. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated because the set on the wire is not the set any one build knows: a queue carried over from an older workspace, an event written into `pending/` by hand, or a server newer than this client can each name a type this client has never heard of (SPEC.md §7). A consumer that does not recognise a type fails the event with the type quoted, and never guesses a handler from the name."
           },
           "created": {
             "type": "string",
@@ -4588,7 +4588,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes."
+            "description": "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: the set on the wire is not the set any one build knows. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes."
           },
           "heldSince": {
             "type": "string",
@@ -4842,7 +4842,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10)."
+            "description": "The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, lane.waiting, resident.designated, resident.released, workspace.reflect, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: the set on the wire is not the set any one build knows (SPEC.md §7). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §10)."
           },
           "status": {
             "type": "string",
