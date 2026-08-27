@@ -1,0 +1,83 @@
+/*
+ * The updates panel. It borrows `.search-panel` for its frame — the same modal
+ * shell every overlay in the app uses — and adds only what is its own.
+ */
+
+.upgrade-panel {
+  max-width: 34rem;
+  padding: var(--sp-4, 1rem) var(--sp-5, 1.25rem) var(--sp-4, 1rem);
+}
+
+.upgrade-heading {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.upgrade-line {
+  margin: 0 0 0.5rem;
+  line-height: 1.5;
+}
+
+/*
+ * The one line that must not read as a fault. It is the sentence a person sees
+ * while their server is deliberately gone, so it takes the ordinary text colour
+ * rather than `--signal`.
+ */
+.upgrade-riding {
+  color: var(--text, inherit);
+}
+
+.upgrade-refused {
+  color: var(--signal, inherit);
+}
+
+.upgrade-notes {
+  margin: 0 0 0.5rem;
+}
+
+.upgrade-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+/*
+ * A button, not a link, and disabled rather than hidden while an upgrade runs:
+ * a control that vanished would move the row under the cursor of somebody who
+ * had just pressed the one beside it.
+ */
+.upgrade-actions button {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius, 4px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.upgrade-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.upgrade-actions .btn-upgrade {
+  border-color: var(--accent, currentColor);
+  color: var(--accent, inherit);
+  font-weight: 600;
+}
+
+/* The version label in the console strip, which is now a control. */
+.c-status-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.c-status-button:hover {
+  text-decoration: underline;
+}

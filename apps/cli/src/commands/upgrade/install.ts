@@ -137,11 +137,12 @@ function packageNameOf(trailing: readonly string[]): string | undefined {
 export function refuseUndetectable(
   method: InstallMethod & { kind: "undetectable" },
   tarballUrl: string,
+  installable?: string,
 ): RefusedError {
   return new RefusedError(`this copy of corpus cannot upgrade itself: ${method.reason}`, {
     code: "upgrade_install_method_unknown",
     hint:
-      `Install the release the way you installed this copy, e.g. \`npm install -g ${tarballUrl}\`. ` +
+      `Install ${installable ?? `the release the way you installed this copy, e.g. \`npm install -g ${tarballUrl}\``}. ` +
       "Corpus refuses to guess: reinstalling globally from here would install a second copy rather than replace this one.",
     details: { packageRoot: method.packageRoot },
   });
@@ -176,9 +177,20 @@ export function isWritable(directory: string): boolean {
   }
 }
 
+/**
+ * Both refusals take an `installable` override, and it exists because
+ * "instructions that are not runnable are not instructions" has a second reader
+ * now: `--unstable` (CLI-034).
+ *
+ * A pull-request build's URL is an **artifact zip behind an authenticated API**,
+ * not a tarball. Handing it to `npm install -g` in an example command would give
+ * somebody a line that cannot work, which is worse than giving them none — so
+ * the unstable path passes a sentence describing the two steps that do.
+ */
 export function refuseUnwritable(
   method: InstallMethod & { kind: "npm-global" },
   tarballUrl: string,
+  installable?: string,
 ): RefusedError {
   return new RefusedError(
     `${method.globalRoot} is not writable by this user, so the install would fail halfway`,
@@ -186,7 +198,7 @@ export function refuseUnwritable(
       code: "upgrade_prefix_unwritable",
       hint:
         `Take ownership of the npm prefix (\`sudo chown -R $(whoami) ${method.prefix}\`) and run \`corpus upgrade\` again, ` +
-        `or install it yourself with \`sudo npm install -g ${tarballUrl}\`. Corpus never elevates itself.`,
+        `or install it yourself ${installable ?? `with \`sudo npm install -g ${tarballUrl}\``}. Corpus never elevates itself.`,
       details: { prefix: method.prefix, globalRoot: method.globalRoot },
     },
   );

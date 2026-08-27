@@ -56,7 +56,24 @@ jobs:
         working-directory: dist-package
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          # Every open PR is normally on the same version, so a name carrying
+          # only the version and a seven-character sha says nothing about where
+          # the build came from. `corpus upgrade --unstable` (CLI-034) picks a
+          # build out of this list and has to be able to tell the caller which
+          # PR it chose, so the PR number is part of the name (INFRA-026).
+          #
+          # Empty is a hard failure rather than a fallback name. This workflow
+          # triggers on `pull_request` and nothing else, so an empty PR number
+          # means the trigger changed — and the wrong answer to that is a build
+          # labelled like a PR build that is not one.
+          if [ -z "$PR_NUMBER" ]; then
+            echo "no pull request number: this workflow is pull_request-only." >&2
+            echo "If a new trigger was added, give it a name that cannot be read" >&2
+            echo "as a PR build before uploading anything." >&2
+            exit 1
+          fi
           tarball=$(npm pack --silent)
           version=$(node -p "require('./package.json').version")
           bytes=$(stat -c %s "$tarball")
@@ -67,6 +84,7 @@ jobs:
             echo "bytes=$bytes"
             echo "kb=$((bytes / 1024))"
             echo "sha_short=${HEAD_SHA:0:7}"
+            echo "artifact=corpus-$version-pr$PR_NUMBER-${HEAD_SHA:0:7}"
           } >> "$GITHUB_OUTPUT"
           ls -l "$tarball"
 
@@ -83,9 +101,19 @@ jobs:
           git status --porcelain
 
       # `if-no-files-found: error` on purpose: a packaging job that uploads
-      # nothing has failed, whatever the exit codes above said. The name carries
-      # the version and the short head sha so two runs on the same PR are
-      # distinguishable in the run's artifact list.
+      # nothing has failed, whatever the exit codes above said.
+      #
+      # The name is `corpus-<version>-pr<N>-<sha_short>`, and it is a documented
+      # scheme rather than a label: `corpus upgrade --unstable` parses it, and
+      # `docs/RELEASING.md` is where it is written down. Changing it here without
+      # changing that command breaks the command silently.
+      #
+      # `overwrite: true` because two runs on the same head sha — a re-run, a
+      # retried job — produce the same name, and `upload-artifact@v4` fails on a
+      # duplicate rather than replacing. Failing there would leave the PR with
+      # the *older* build under the name and a red job explaining nothing. A
+      # force-push changes the sha and so gets its own name; only same-sha reruns
+      # replace, which is the case where replacing is right.
       #
       # 14 days of retention: long enough to outlive a normal PR review cycle
       # (and any re-review after a force-push), short enough that a busy PR does
@@ -95,9 +123,10 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: corpus-${{ steps.pack.outputs.version }}-${{ steps.pack.outputs.sha_short }}
+          name: ${{ steps.pack.outputs.artifact }}
           path: ${{ steps.pack.outputs.path }}
           if-no-files-found: error
+          overwrite: true
           retention-days: 14
 
       # One sticky comment, created once and edited in place thereafter —
@@ -117,6 +146,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
           VERSION: ${{ steps.pack.outputs.version }}
           TARBALL: ${{ steps.pack.outputs.tarball }}
+          ARTIFACT: ${{ steps.pack.outputs.artifact }}
           BYTES: ${{ steps.pack.outputs.bytes }}
           KB: ${{ steps.pack.outputs.kb }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
@@ -129,14 +159,17 @@ jobs:
 
           | | |
           | --- | --- |
+          | Artifact | \`$ARTIFACT\` |
           | Tarball | \`$TARBALL\` |
           | Version | \`$VERSION\` |
           | Head commit | \`$SHA\` |
           | Size | $KB KB ($BYTES bytes) |
-          | Download | [$TARBALL]($ARTIFACT_URL) |
+          | Download | [$ARTIFACT]($ARTIFACT_URL) |
 
-          Install it with \`npm install -g <path-to-tgz>\`. Downloading a workflow
-          artifact requires being signed in to GitHub.
+          Install it with \`npm install -g <path-to-tgz>\`, or with
+          \`corpus upgrade --unstable $PR\`. Downloading a workflow artifact
+          requires being signed in to GitHub; \`--unstable\` needs a token with
+          \`actions: read\` for the same reason.
 
           <sub>Built by [this run]($RUN_URL) after \`pack:check\` passed. Updated in
           place on every push — this comment always describes the head commit named

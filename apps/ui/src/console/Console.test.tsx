@@ -192,10 +192,13 @@ describe("the collapsed strip", () => {
     expect(screen.getByRole("status").textContent).toBe("checking server…");
   });
 
+  // The version is a `<button>` since UI-035 — it is where §2.4's check is
+  // asked for — so it answers to the button role rather than to `status`. What
+  // it says is unchanged, which is the part this test is about.
   it("reports the server version once the probe answers", async () => {
     renderConsole(transport().fetch);
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toBe("corpus 1.2.3");
+      expect(screen.getByRole("button", { name: "corpus 1.2.3" })).toBeTruthy();
     });
   });
 
@@ -225,15 +228,17 @@ describe("the collapsed strip", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toBe("corpus 1.2.3");
+      expect(screen.getByRole("button", { name: "corpus 1.2.3" })).toBeTruthy();
     });
 
     reachable = false;
     harness?.eventSource.latest().emit("error");
 
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toBe("server unreachable");
+      expect(screen.getByText("server unreachable")).toBeTruthy();
     });
+    // And it stops being a control: there is no version to check against.
+    expect(screen.queryByRole("button", { name: /^corpus / })).toBeNull();
   });
 
   // TEST-85: the reachability notice and the failed-job count are two different

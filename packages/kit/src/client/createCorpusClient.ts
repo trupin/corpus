@@ -37,6 +37,8 @@ import type {
   ThreadScope,
   UpdateDocRequest,
   UpdateDocResponse,
+  UpgradeCheck,
+  UpgradeStarted,
 } from "@corpus/contract";
 import {
   ReattachConflictErrorSchema,
@@ -385,6 +387,41 @@ export interface CorpusClient {
    */
   setReflectQuiet(quiet: number): Promise<ReflectStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
+  /**
+   * `GET /api/upgrade/check` — **is there a newer release, and can it be
+   * installed** (SPEC.md §2.4).
+   *
+   * The server reaches GitHub once per call and keeps nothing, so every call is
+   * a fresh look and there is no cache to invalidate. That is also why nothing
+   * in the kit puts this behind a `useQuery`: §2.4 says Corpus "never checks
+   * for, downloads, or installs anything in the background", and a query is a
+   * thing react-query is entitled to refetch on a window focus.
+   *
+   * **Two verdicts, and a client must read both.** `upgradeAvailable` says a
+   * newer release exists; `verifiable` says it publishes the checksum the
+   * upgrade verifies before installing. Offering {@link startUpgrade} on the
+   * first alone offers an action the upgrade will refuse.
+   *
+   * An unreachable GitHub arrives as a `200` with `reachable: false`, not as a
+   * thrown error — so this rejects only when the *server* could not be reached.
+   */
+  checkUpgrade(options?: RequestOptions): Promise<UpgradeCheck>;
+  /**
+   * `POST /api/upgrade` — **spawn the detached upgrade** (SPEC.md §2.4).
+   *
+   * Resolves as soon as a process exists, which is long before anything is
+   * installed. Nothing about the outcome comes back this way: the upgrade's last
+   * act is restarting the server this request was answered by, so the stream
+   * dropping is the progress indicator and `GET /api/health` returning a new
+   * `version` is the completion signal. `logPath` is where the report — what was
+   * updated, what was left alone, and every conflict apart from both — will be
+   * written.
+   *
+   * Raises {@link CorpusRequestError} with `status: 409` when an upgrade is
+   * already running. That is a refusal to start a second one, not a failure of
+   * the first, and a caller should say so rather than offer a retry.
+   */
+  startUpgrade(): Promise<UpgradeStarted>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
    * `POST /api/threads/{id}/turns` as `multipart/form-data` — the attachment
@@ -1115,6 +1152,17 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
 
     async getHealth(options) {
       return unwrap("GET /api/health", await api.GET("/api/health", { ...signalOf(options) }));
+    },
+
+    async checkUpgrade(options) {
+      return unwrap(
+        "GET /api/upgrade/check",
+        await api.GET("/api/upgrade/check", { ...signalOf(options) }),
+      );
+    },
+
+    async startUpgrade() {
+      return unwrap("POST /api/upgrade", await api.POST("/api/upgrade", {}));
     },
 
     async appendTurn(threadId, input) {

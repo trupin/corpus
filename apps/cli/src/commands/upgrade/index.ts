@@ -3,6 +3,7 @@ import { createClient } from "../../client.js";
 import {
   PartialFailureError,
   RefusedError,
+  UsageError,
   WorkspaceConfigError,
   isCliError,
   toProblem,
@@ -43,9 +44,28 @@ import {
   refuseUnwritable,
   type InstallMethod,
   type NpmRunner,
+  type VerifiedTarball,
 } from "./install.js";
 import { openJournal, silentJournal, type Journal } from "./journal.js";
-import { evaluateRelease, lookupLatestRelease, releaseSource } from "./release.js";
+import {
+  evaluateRelease,
+  lookupLatestRelease,
+  releaseSource,
+  type ReleaseVerdict,
+} from "./release.js";
+import {
+  ARTIFACT_RETENTION_DAYS,
+  buildAge,
+  describeBuild,
+  downloadPrBuild,
+  lookupPrBuilds,
+  readGhToken,
+  refuseWithoutToken,
+  resolveGithubToken,
+  UNVERIFIED_NOTICE,
+  type GhTokenReader,
+  type PrBuild,
+} from "./unstable.js";
 
 /**
  * `corpus upgrade` — the whole tool, upgraded by one command (SPEC.md §2.4).
@@ -136,10 +156,31 @@ export interface ServerReport {
   readonly detail: string | null;
 }
 
+export interface UnstableReport {
+  readonly pr: number;
+  readonly version: string;
+  readonly sha: string;
+  readonly artifactName: string;
+  readonly createdAt: string;
+  /** Always `false`. Stated rather than implied — this path publishes no checksum. */
+  readonly checksumVerified: false;
+}
+
 export interface UpgradeResult {
   readonly mode: "check" | "upgrade";
   /** The release comparison, in the same shape `GET /api/upgrade/check` publishes. */
   readonly check: UpgradeCheck;
+  /**
+   * The pull-request build this run chose, or `null` on the ordinary path
+   * (CLI-034).
+   *
+   * Its own key rather than a flag on `tool`, because "which build am I
+   * running" has to stay answerable after the fact and a PR number is the only
+   * thing that answers it — every open PR normally carries the same version.
+   * `checksumVerified: false` is stated here rather than left to be inferred
+   * from the field's presence.
+   */
+  readonly unstable: UnstableReport | null;
   readonly tool: ToolReport;
   /** Absolute workspace root, or `null` when the command ran outside one. */
   readonly workspace: string | null;
@@ -196,6 +237,123 @@ export interface UpgradeEffects {
   readonly now?: () => Date;
   /** Where interrupt handlers are installed; a parameter so no test touches `process`. */
   readonly signals?: SignalTarget;
+  /** How a GitHub token is read from the `gh` CLI; injected so no test spawns one. */
+  readonly ghToken?: GhTokenReader;
+}
+
+/**
+ * What `check` says on the unstable path: nobody looked at the release list.
+ *
+ * `reachable: false` is the truthful reading — the field says whether the
+ * Releases API answered, and it was never asked — and the detail says so in
+ * words rather than leaving a reader to guess at a network failure that did not
+ * happen.
+ */
+function unconsultedReleases(installed: string): ReleaseVerdict {
+  return {
+    check: {
+      installed,
+      latest: null,
+      upgradeAvailable: false,
+      verifiable: false,
+      notesUrl: null,
+      reachable: false,
+      detail:
+        "the release list was not consulted: --unstable installs a pull-request build, and " +
+        "`corpus upgrade` without the flag installs the newest published release",
+    },
+    release: null,
+    assets: null,
+  };
+}
+
+/** The `<pr>` positional, validated, and refused where it means nothing. */
+function requestedPr(context: CommandContext, wantsUnstable: boolean): number | undefined {
+  const raw = context.args.optional("pr")?.trim();
+  if (raw === undefined || raw === "") return undefined;
+  if (!wantsUnstable) {
+    throw new UsageError(
+      "a pull-request number only means something with --unstable; `corpus upgrade` installs the newest release",
+    );
+  }
+  const asked = Number(raw.replace(/^#/, ""));
+  if (!Number.isInteger(asked) || asked <= 0) {
+    throw new UsageError(`\`${raw}\` is not a pull-request number`);
+  }
+  return asked;
+}
+
+/**
+ * Finds the build `--unstable` will install, and refuses rather than falling
+ * back when it cannot.
+ *
+ * **Never a silent fallback to a release.** A person who typed `--unstable`
+ * asked for a specific class of build, and quietly installing something else
+ * would be the command deciding for them — the rider says the deviations are
+ * stated, and "there was no build so I installed a release" is the largest one
+ * available.
+ */
+async function chooseUnstableBuild(
+  context: CommandContext,
+  effects: UpgradeEffects,
+  source: { readonly api: string; readonly repo: string },
+  pr: number | undefined,
+): Promise<UnstableSource> {
+  const token = resolveGithubToken(context.env, effects.ghToken ?? readGhToken);
+  if (token === null) throw refuseWithoutToken();
+
+  const lookup = await lookupPrBuilds({
+    fetch: effects.fetch ?? globalThis.fetch,
+    api: source.api,
+    repo: source.repo,
+    version: context.version,
+    token: token.token,
+    timeoutMs: CHECK_TIMEOUT_MS,
+    pr,
+    allowFork: context.flags.boolean("allow-fork"),
+  });
+
+  if (lookup.kind === "unreachable") {
+    throw new RefusedError(`the pull-request builds could not be listed: ${lookup.detail}`, {
+      code: "upgrade_unstable_unreachable",
+      hint:
+        `The token came from ${token.detail}. Nothing was downloaded or installed. ` +
+        "`corpus upgrade` without the flag installs the newest published release and needs no token.",
+    });
+  }
+  if (lookup.kind === "none") {
+    throw new RefusedError(lookup.detail, {
+      code: "upgrade_unstable_no_build",
+      hint:
+        `CI keeps a pull-request build for ${String(ARTIFACT_RETENTION_DAYS)} days, so an older ` +
+        "pull request routinely has none — push to it and let Package run, or use `corpus upgrade` " +
+        "for the newest published release." +
+        (lookup.truncated
+          ? " The search stopped after the most recent 500 artifacts; a build older than those was not looked for."
+          : ""),
+      details: { truncated: lookup.truncated },
+    });
+  }
+  if (lookup.truncated) {
+    // No silent caps: the search was bounded and it found something, so say the
+    // bound existed rather than letting "newest" sound exhaustive.
+    context.out.note(
+      "searched the most recent 500 artifacts; an older build than the one chosen was not looked for",
+    );
+  }
+  return { build: lookup.build, token: token.token };
+}
+
+/** What the report and the journal record about a chosen build. */
+function unstableReport(build: PrBuild): UnstableReport {
+  return {
+    pr: build.pr,
+    version: build.version,
+    sha: build.sha,
+    artifactName: build.artifactName,
+    createdAt: build.createdAt,
+    checksumVerified: false,
+  };
 }
 
 export async function runUpgrade(
@@ -203,6 +361,8 @@ export async function runUpgrade(
   effects: UpgradeEffects = {},
 ): Promise<void> {
   const checkOnly = context.flags.boolean("check");
+  const wantsUnstable = context.flags.boolean("unstable");
+  const pr = requestedPr(context, wantsUnstable);
   const actor = resolveActor(context.flags, context.env);
   const located = locateWorkspace(context);
   const nested = createNestedOutput(context.out);
@@ -219,33 +379,58 @@ export async function runUpgrade(
       : await (effects.serverRunning ?? serverIsRunning)(workspaceContext);
 
   const source = releaseSource(context.env);
-  const verdict = evaluateRelease(
-    context.version,
-    await lookupLatestRelease({
-      fetch: effects.fetch ?? globalThis.fetch,
-      api: source.api,
-      repo: source.repo,
-      version: context.version,
-      timeoutMs: CHECK_TIMEOUT_MS,
-    }),
-  );
+  /*
+   * The two sources, and the fork is here — one request each, neither aware of
+   * the other. `--unstable` does **not** consult the release list: it is a
+   * different question with a different answer, and asking anyway would double
+   * the failure surface of a command that has already been told what to install.
+   * `check.reachable` is `false` on that path and its `detail` says why, which is
+   * the truthful reading of a list nobody looked at.
+   */
+  const unstable = wantsUnstable
+    ? await chooseUnstableBuild(context, effects, source, pr)
+    : undefined;
+  const verdict = wantsUnstable
+    ? unconsultedReleases(context.version)
+    : evaluateRelease(
+        context.version,
+        await lookupLatestRelease({
+          fetch: effects.fetch ?? globalThis.fetch,
+          api: source.api,
+          repo: source.repo,
+          version: context.version,
+          timeoutMs: CHECK_TIMEOUT_MS,
+        }),
+      );
   const method =
     effects.installMethod ?? detectInstallMethod(effects.packageRoot, effects.platform);
 
   if (checkOnly) {
-    await reportCheck(context, { located, verdict, method, effects, actor, nested });
+    await reportCheck(context, { located, verdict, method, effects, actor, nested, unstable });
     return;
   }
 
+  const startedAt = (effects.now ?? (() => new Date()))();
   const journal =
     located.workspace === null
       ? silentJournal
       : openJournal({
           root: located.workspace.root,
-          startedAt: (effects.now ?? (() => new Date()))(),
+          startedAt,
           from: context.version,
-          to: verdict.check.latest ?? "(unknown)",
+          to: unstable?.build.version ?? verdict.check.latest ?? "(unknown)",
         });
+
+  /*
+   * Recorded before anything is downloaded, because the rider requires "which
+   * build am I running" to stay answerable **after the fact** — and after the
+   * fact includes a run that failed halfway. The version alone cannot answer it:
+   * every open pull request normally carries the same one.
+   */
+  if (unstable !== undefined) {
+    journal.note(`unstable: ${describeBuild(unstable.build, startedAt)}`);
+    journal.note(`  artifact ${unstable.build.artifactName} — no published checksum`);
+  }
 
   try {
     await performUpgrade(context, {
@@ -258,6 +443,7 @@ export async function runUpgrade(
       actor,
       nested,
       journal,
+      unstable,
     });
   } catch (error) {
     // A detached run's only witness is this file, so a refusal is recorded in it
@@ -350,6 +536,7 @@ interface Stage {
   readonly effects: UpgradeEffects;
   readonly actor: Actor;
   readonly nested: ReturnType<typeof createNestedOutput>;
+  readonly unstable?: UnstableSource | undefined;
 }
 
 /**
@@ -378,6 +565,7 @@ async function reportCheck(context: CommandContext, stage: Stage): Promise<void>
   const result: UpgradeResult = {
     mode: "check",
     check: stage.verdict.check,
+    unstable: stage.unstable === undefined ? null : unstableReport(stage.unstable.build),
     tool: {
       installed: false,
       from: context.version,
@@ -399,13 +587,30 @@ async function reportCheck(context: CommandContext, stage: Stage): Promise<void>
   };
 
   context.out.emit(result);
-  renderCheck(context.out, result, stage.method);
+  renderCheck(context.out, result, stage.method, (stage.effects.now ?? (() => new Date()))());
 }
 
 interface RunStage extends Stage {
   readonly workspaceContext: WorkspaceCommandContext | null;
   readonly wasRunning: boolean;
   readonly journal: Journal;
+  /**
+   * The pull-request build to install, when `--unstable` chose one (CLI-034).
+   *
+   * The *lookup* is forked — `./unstable.ts` shares nothing with the release
+   * lookup — and the **install** half is what is shared: same install-method
+   * detection, same refusals, same stop, same npm path, same template sync, same
+   * conditional restart. This field is what a shared install half has to branch
+   * on, and it branches in exactly four places: the release list was not
+   * consulted so its reachability is not a failure, the version comparison does
+   * not apply, the checksum verification cannot run, and the download is a zip.
+   */
+  readonly unstable?: UnstableSource | undefined;
+}
+
+export interface UnstableSource {
+  readonly build: PrBuild;
+  readonly token: string;
 }
 
 async function performUpgrade(context: CommandContext, stage: RunStage): Promise<void> {
@@ -415,7 +620,11 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     journal.note(line);
   };
 
-  if (!verdict.check.reachable) {
+  const unstable = stage.unstable;
+
+  // Not on the unstable path: `reachable` is false there because nobody asked
+  // the Releases API, which is a decision rather than a failure.
+  if (unstable === undefined && !verdict.check.reachable) {
     throw new RefusedError(
       `could not check for a newer release: ${verdict.check.detail ?? "unknown"}`,
       {
@@ -425,13 +634,19 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     );
   }
 
-  if (!verdict.check.upgradeAvailable) {
+  /*
+   * The version comparison does not apply to a PR build. `--unstable` is almost
+   * always a *sideways* move — the branch carries the same version as `main`
+   * until a release bumps it — and refusing to "downgrade" would refuse the
+   * ordinary case. It is never reached implicitly either: the flag was typed.
+   */
+  if (unstable === undefined && !verdict.check.upgradeAvailable) {
     await reportAlreadyCurrent(context, stage, say);
     return;
   }
 
   const assets = verdict.assets;
-  if (!verdict.check.verifiable || assets === null) {
+  if (unstable === undefined && (!verdict.check.verifiable || assets === null)) {
     throw new RefusedError(
       `release ${verdict.check.latest ?? "?"} cannot be verified, so it will not be installed`,
       {
@@ -444,20 +659,71 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     );
   }
 
-  if (method.kind === "undetectable") throw refuseUndetectable(method, assets.tarball.url);
-  if (!isWritable(method.globalRoot)) throw refuseUnwritable(method, assets.tarball.url);
+  /*
+   * The same two refusals, decided before anything is downloaded, on both paths
+   * — with one difference that matters. A release's URL is a tarball, so `npm
+   * install -g <url>` is a line somebody can paste. A pull-request build's URL is
+   * an artifact **zip behind an authenticated API**, and the same line would not
+   * work; the unstable path therefore hands over the two steps that do, rather
+   * than a runnable-looking command that is not.
+   */
+  const byHand = unstable?.build.downloadUrl ?? assets?.tarball.url ?? "";
+  const installable =
+    unstable === undefined
+      ? undefined
+      : `by downloading ${unstable.build.artifactName} from pull request #${String(unstable.build.pr)} and running \`npm install -g <path-to-tgz>\` on the tarball inside it`;
+  if (method.kind === "undetectable") throw refuseUndetectable(method, byHand, installable);
+  if (!isWritable(method.globalRoot)) throw refuseUnwritable(method, byHand, installable);
 
-  say(`corpus ${context.version} → ${verdict.check.latest ?? "?"}`);
-
-  const download = await downloadAndVerify({
-    fetch: effects.fetch ?? globalThis.fetch,
-    assets,
-    version: context.version,
-    timeoutMs: DOWNLOAD_TIMEOUT_MS,
-  });
-  say(
-    `  verified ${assets.tarball.name} (${formatBytes(download.bytes)}, sha256 ${download.sha256.slice(0, 12)}…)`,
-  );
+  /** What the report names as the thing that was installed, on either path. */
+  let tarballName: string;
+  let download: VerifiedTarball;
+  if (unstable !== undefined) {
+    tarballName = unstable.build.artifactName;
+    // Named **before** installing, every time. Bare `--unstable` takes the newest
+    // build across open pull requests, and the newest build is not always the
+    // caller's own — a silent choice here is the thing the rider forbids.
+    say(
+      `corpus ${context.version} → ${describeBuild(unstable.build, (effects.now ?? (() => new Date()))())}`,
+    );
+    say(`  ${UNVERIFIED_NOTICE}`);
+    download = await downloadPrBuild({
+      fetch: effects.fetch ?? globalThis.fetch,
+      build: unstable.build,
+      token: unstable.token,
+      version: context.version,
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    // "downloaded", not "verified": nothing published a digest to check this
+    // against, and the word the stable path uses would be a claim this path
+    // cannot make. The digest is of what arrived, so the run stays identifiable.
+    say(
+      `  downloaded ${unstable.build.artifactName} (${formatBytes(download.bytes)}, sha256 ${download.sha256.slice(0, 12)}… — unverified)`,
+    );
+  } else {
+    if (assets === null) {
+      // Unreachable: the guard above threw for a stable run with no assets. It
+      // is here because `assets` is read again in the report, and an assertion
+      // would be a claim rather than a check.
+      throw new RefusedError(
+        `release ${verdict.check.latest ?? "?"} publishes nothing installable`,
+        {
+          code: "upgrade_unverifiable",
+        },
+      );
+    }
+    tarballName = assets.tarball.name;
+    say(`corpus ${context.version} → ${verdict.check.latest ?? "?"}`);
+    download = await downloadAndVerify({
+      fetch: effects.fetch ?? globalThis.fetch,
+      assets,
+      version: context.version,
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    say(
+      `  verified ${assets.tarball.name} (${formatBytes(download.bytes)}, sha256 ${download.sha256.slice(0, 12)}…)`,
+    );
+  }
 
   const server: {
     wasRunning: boolean;
@@ -643,6 +909,7 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
   const result: UpgradeResult = {
     mode: "upgrade",
     check: verdict.check,
+    unstable: unstable === undefined ? null : unstableReport(unstable.build),
     tool: {
       installed: true,
       from: context.version,
@@ -650,7 +917,7 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
       method: method.kind,
       prefix: method.prefix,
       command: installed.command,
-      tarball: { name: assets.tarball.name, sha256: download.sha256, bytes: download.bytes },
+      tarball: { name: tarballName, sha256: download.sha256, bytes: download.bytes },
     },
     workspace: stage.located.workspace?.root ?? null,
     workspaceDetail: stage.located.detail,
@@ -761,6 +1028,7 @@ async function reportAlreadyCurrent(
   const result: UpgradeResult = {
     mode: "upgrade",
     check: stage.verdict.check,
+    unstable: stage.unstable === undefined ? null : unstableReport(stage.unstable.build),
     tool: {
       installed: false,
       from: context.version,
@@ -857,8 +1125,23 @@ function renderConflicts(
   }
 }
 
-function renderCheck(out: Output, result: UpgradeResult, method: InstallMethod): void {
+function renderCheck(out: Output, result: UpgradeResult, method: InstallMethod, now: Date): void {
   const { check } = result;
+  const unstable = result.unstable;
+  if (unstable !== null) {
+    // The age, not the timestamp — "built 40 minutes ago" is what tells a person
+    // whether this is the build they just pushed. `createdAt` stays absolute in
+    // the JSON, where a machine wants an instant rather than a phrase.
+    out.line(
+      `corpus ${check.installed} → PR #${String(unstable.pr)} — corpus ${unstable.version}, ` +
+        `commit ${unstable.sha}, built ${buildAge(unstable.createdAt, now)}`,
+    );
+    out.line(`  artifact: ${unstable.artifactName}`);
+    out.line(`  ${UNVERIFIED_NOTICE}`);
+    if (method.kind === "undetectable") out.line(`  NOT installable here: ${method.reason}`);
+    out.line("nothing was downloaded, installed or written (--check).");
+    return;
+  }
   if (!check.reachable) {
     out.line(`corpus ${check.installed} — could not check: ${check.detail ?? "unknown"}`);
     return;
@@ -971,13 +1254,32 @@ export const upgradeCommand: StandaloneCommandSpec = {
     "Run outside a workspace it still upgrades the tool, and says that the template sync and the " +
     "restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or " +
     "a mirror instead of `trupin/corpus`.",
-  args: [],
+  args: [
+    {
+      name: "pr",
+      required: false,
+      description:
+        "A pull-request number, with `--unstable`: install that pull request's newest build instead of the newest across all of them. Without `--unstable` it is a usage error — `corpus upgrade` installs releases, which have no pull request.",
+    },
+  ],
   flags: [
     {
       name: "check",
       type: "boolean",
       description:
-        "Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached.",
+        "Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached. With `--unstable`, reports the pull-request build that would be installed — its PR, version, commit and age — and installs nothing.",
+    },
+    {
+      name: "unstable",
+      type: "boolean",
+      description:
+        "Install a **pull-request build** — the tarball CI attaches to every PR — instead of a release (SPEC.md §2.4's rider). Bare, it takes the newest build across open pull requests and **names the PR it chose before installing**, because the newest build is not always yours; with a `<pr>` it takes that pull request's newest build and says so plainly when there is none, rather than falling back to another's. It states its deviations instead of hiding them: a GitHub token with `actions: read` is required (`CORPUS_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`) and the command refuses with instructions when none is usable rather than silently installing a release; builds expire on CI's 14-day retention, and an expired one is an ordinary answer naming the window; and a PR build carries **no published checksum**, so the verification `corpus upgrade` performs does not run and every install says so. Everything else is the stable path unchanged — same install-method detection, same refusals, same template sync, same conditional restart — and `corpus upgrade` without the flag is untouched.",
+    },
+    {
+      name: "allow-fork",
+      type: "boolean",
+      description:
+        "Also consider builds produced from a fork's branch. Off by default and deliberately so: a fork's pull request runs the fork's code, and installing that build globally runs it on this machine. Only meaningful with `--unstable`.",
     },
   ],
   examples: [
@@ -990,6 +1292,16 @@ export const upgradeCommand: StandaloneCommandSpec = {
       command: "corpus upgrade",
       description:
         "Install the latest release, sync this workspace's template files, and restart the server if it was running.",
+    },
+    {
+      command: "corpus upgrade --unstable",
+      description:
+        "Install the newest pull-request build across all open PRs, naming the one it chose before it installs it.",
+    },
+    {
+      command: "corpus upgrade --unstable 63 --check",
+      description:
+        "Report PR #63's newest build — version, commit and age — without installing anything.",
     },
     {
       command: "corpus upgrade --json",

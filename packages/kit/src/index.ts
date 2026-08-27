@@ -90,6 +90,7 @@ export { useThreadScope, type ThreadScopeView } from "./query/useThreadScope.js"
 // The semantic index's health report — the console strip's index pill reads it,
 // and it refreshes on the `["index"]` frames the embed worker already emits.
 export { useIndexStatus } from "./query/useIndexStatus.js";
+export { useCheckUpgrade, useStartUpgrade } from "./query/useUpgrade.js";
 export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.

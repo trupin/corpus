@@ -46,6 +46,11 @@ const RUNTIME_SURFACE = [
   "useAgentsRoster",
   "useIndexStatus",
   "useHealth",
+  // SPEC.md §2.4's two acts. Mutations rather than queries, both of them: a
+  // query is something react-query may run again on its own, and "never checks
+  // in the background" is a promise a refetch would break.
+  "useCheckUpgrade",
+  "useStartUpgrade",
   // write path
   "useAppendTurn",
   "provisionalBody",

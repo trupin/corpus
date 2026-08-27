@@ -252,8 +252,11 @@ test.describe("the strip's height is not its text", () => {
     await page.goto("/");
 
     const status = page.locator(".c-status");
-    // Whole in `title`…
-    await expect(status).toHaveAttribute("title", `corpus ${LONG_VERSION}`);
+    // Whole in `title` — which since UI-035 also says what pressing it does, so
+    // the assertion is on the version being there rather than on the whole
+    // string. Clause 2 is about the value being reachable, not about the tooltip
+    // carrying nothing else.
+    await expect(status).toHaveAttribute("title", new RegExp(`corpus ${LONG_VERSION}\\b`));
     // …cut on screen, and the strip is still one unclipped line.
     expect(
       await status.evaluate((element) => element.scrollWidth > element.clientWidth),

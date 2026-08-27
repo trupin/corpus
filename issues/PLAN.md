@@ -254,9 +254,9 @@ Note: the SPEC §10 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 | INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | done | P1 | SHARED-007 |
 | CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | done | P1 | SHARED-007, INFRA-016, CLI-027 |
 | CONTRACT-027 | Upgrade routes: check + trigger | done | P1 | SHARED-007 |
-| SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | todo | P1 | CONTRACT-027, CLI-025 |
+| SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | done | P1 | CONTRACT-027, CLI-025 |
 | CLI-027 | `corpus workspace diff <path>`: what the tool changed under an edited file | done | P1 | SHARED-007 |
-| UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | todo | P1 | CONTRACT-027, SERVER-050 |
+| UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | done | P1 | CONTRACT-027, SERVER-050 |
 
 Rider **amended 2026-08-03** (signed): `corpus upgrade` also runs the workspace
 template sync, and a file the workspace edited that the tool also changed is
@@ -512,8 +512,8 @@ cheapest moment for that to happen.
 | PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | done | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | done | P2 | SHARED-031 |
 | SHARED-038 | `--unstable` reaches §2.4 before it reaches the code | done | P1 | — |
-| INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
-| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
+| INFRA-026 | A PR's package cannot be told from any other PR's | done | P1 | — |
+| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | done | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | done | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | done | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there | done | P1 | — |
@@ -1745,3 +1745,40 @@ needs a decision that changes signed text, and the go-ahead did not carry one.
 The upgrade arc, and the debt scope proposed for v0.24.0 on 2026-08-25, both
 wait again: finishing what v0.23.0 started outranks both.
 
+
+---
+
+## Phase 49 — You can upgrade without leaving (2026-08-26, v0.25.0 scope)
+
+SPEC.md §2.4 describes a self-upgrade in four parts, and three of them exist.
+`corpus upgrade` and `corpus upgrade --check` ship and work (CLI-025). The
+contract publishes `GET /api/upgrade/check` and `POST /api/upgrade` (CONTRACT-027)
+in some of the most carefully argued route prose in the document. **No server
+answers either route, and no surface offers either act.** §2.4's last sentence —
+"The UI offers the same flow on demand: a check affordance, and when a newer
+release exists, an 'Upgrade & restart' action" — has been a promise the code
+does not keep since 2026-08-02, and the signed rider of 2026-08-12 added a
+second promise (`--unstable`) on top of it.
+
+This phase makes both true. A person upgrades from the board and rides the
+restart out; a person dogfooding a PR installs that PR's build by number.
+
+**One issue was added during the phase.** The server has to answer "is there a
+newer release, and can it be verified" — which is a judgment `apps/cli` already
+makes, in code the *upgrade itself* obeys. Two copies of that judgment is the
+one duplication that actually costs something: a server that offers an upgrade
+the CLI will then refuse is worse than a slower check. CONTRACT-090 moves the
+judgment to the one package both already depend on, and neither the server nor
+the CLI grows a second version parser.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-090 | One release lookup, in the package both consumers already have | done | P1 | opus | — |
+
+`SERVER-050`, `UI-035`, `INFRA-026` and `CLI-034` keep their existing rows in
+Phases 10 and 14; `scripts/check-issues.ts` allows one row per id, so they are
+named here in prose and counted there.
+
+**Left out**: everything else. The scope is one sentence — you can upgrade
+without leaving — and the two arcs in it were the only two blocked issues in the
+tracker.

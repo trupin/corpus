@@ -20,6 +20,7 @@ export * from "./code.js";
 export * from "./headings.js";
 export * from "./openapi.js";
 export * from "./query-keys.js";
+export * from "./release.js";
 export * from "./routes/index.js";
 export * from "./schemas/index.js";
 export * from "./scope.js";

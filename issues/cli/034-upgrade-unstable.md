@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -67,38 +67,38 @@ Consequences to design for, not work around:
 
 ## Acceptance Criteria
 
-- [ ] `corpus upgrade --unstable --check` reports the newest PR build available
+- [x] `corpus upgrade --unstable --check` reports the newest PR build available
       — naming the **PR number**, the version, the short SHA and the build's age
       — and compares it to what is installed, without installing anything
-- [ ] `corpus upgrade --unstable` installs it through the same npm-global
+- [x] `corpus upgrade --unstable` installs it through the same npm-global
       reinstall path the stable upgrade uses, with the same install-method
       detection and the same refusal-with-instructions when it cannot be detected
-- [ ] Bare `corpus upgrade --unstable` installs **the newest artifact across all
+- [x] Bare `corpus upgrade --unstable` installs **the newest artifact across all
       open PRs** (user decision, 2026-08-08), and names the PR it chose before
       installing — the choice is never silent, because the newest build is not
       always the user's own
-- [ ] `corpus upgrade --unstable <PR#>` installs that PR's newest build instead,
+- [x] `corpus upgrade --unstable <PR#>` installs that PR's newest build instead,
       and reports clearly when that PR has no usable artifact rather than
       falling back to another PR's
-- [ ] Without a usable token the command **refuses with instructions** (how to
+- [x] Without a usable token the command **refuses with instructions** (how to
       set one, and that stable `corpus upgrade` needs none) — it never falls back
       to the stable release silently
-- [ ] The command states plainly, every time it installs, that this is an
+- [x] The command states plainly, every time it installs, that this is an
       unverified pre-release build: no published checksum, not a release, and
       how to get back (`corpus upgrade` reinstalls the newest stable)
-- [ ] Installing an unstable build is **recorded** — the upgrade journal
+- [x] Installing an unstable build is **recorded** — the upgrade journal
       (`apps/cli/src/commands/upgrade/journal.ts`) must show which PR build is
       installed, or "which build am I running?" becomes unanswerable after the
       fact
-- [ ] A fork PR's artifact is refused (or explicitly opted into with a further
+- [x] A fork PR's artifact is refused (or explicitly opted into with a further
       flag) — a fork build is untrusted code; INFRA-026 records what the workflow
       actually does for forks
-- [ ] An expired or missing artifact is reported as the ordinary answer it is,
+- [x] An expired or missing artifact is reported as the ordinary answer it is,
       naming the retention window
-- [ ] The conditional server restart behaves exactly as it does on the stable
+- [x] The conditional server restart behaves exactly as it does on the stable
       path
-- [ ] `docs/cli.md` regenerates cleanly with the new flag (the §11 drift check)
-- [ ] Stable `corpus upgrade` is behaviourally unchanged — same endpoint, same
+- [x] `docs/cli.md` regenerates cleanly with the new flag (the §11 drift check)
+- [x] Stable `corpus upgrade` is behaviourally unchanged — same endpoint, same
       checksum verification, same output
 
 ## Technical Design
@@ -165,21 +165,174 @@ byte-identical to today's.
 7. Request a PR whose artifact has expired — confirm the reported answer
 8. `npm run generate` for `docs/cli.md` — confirm no drift
 
+## Decisions
+
+**The lookup is forked; the install is shared.** `unstable.ts` shares nothing
+with the release lookup, which is what keeps the stable path's guarantees
+intact. The shared install half branches in exactly **four** places, each named
+in the code: the release list was not consulted so its unreachability is not a
+failure, the version comparison does not apply, the checksum verification cannot
+run, and the download is a zip. Everything else — install-method detection, the
+undetectable and unwritable refusals, the stop, the npm path, the template sync,
+the interrupt handling, the conditional restart — is the same code.
+
+**`--unstable` does not consult the release list at all.** Asking anyway would
+double the failure surface of a command that has already been told what to
+install. `check.reachable` is `false` on that path and its `detail` says *"the
+release list was not consulted"* — which is the truthful reading of a list
+nobody looked at, and does not read as a network failure.
+
+**One request answers both the name and the origin.** `GET
+/repos/{repo}/actions/artifacts` carries `workflow_run.repository_id` and
+`head_repository_id` on every entry, verified against the real API before the
+code was written. So the fork test needs no second call, and a build that
+**cannot** say where it came from is treated as one that came from elsewhere —
+the safe reading, since INFRA-026 established that a fork's PR does run and does
+upload.
+
+**The zip reader is hand-written, about sixty lines.** The scope is what makes
+that reasonable: one archive, from one workflow, holding one `npm pack` tarball.
+It walks the central directory rather than the local headers — the local header's
+sizes may be deferred to a data descriptor — and supports stored and deflate,
+refusing anything else by name rather than mis-decoding it. Rejected: a zip
+dependency, for one call site on a path that must not grow the published
+package's dependency tree.
+
+**`sha256` is recorded and never compared.** The field the stable path fills with
+a verified digest is filled here with the digest of what arrived, so a run stays
+identifiable — and the word printed is "downloaded … unverified", never
+"verified", because the stable path's word would be a claim this path cannot
+make.
+
+**A build older than what is installed is installed anyway.** `--unstable` is
+almost always a sideways move — a branch carries `main`'s version until a release
+bumps it — so blocking a "downgrade" would block the ordinary case. It cannot be
+reached implicitly: the flag was typed.
+
+**The search is bounded at five pages, and says so.** The artifact list mixes
+every workflow's output and coverage bundles outnumber PR builds, so one page is
+not always enough. When the bound is reached the command says the search stopped
+short — a bounded search reporting "no build" indistinguishably from an
+exhaustive one is a lie by omission.
+
+**`--allow-fork` rather than a silent refusal.** A fork's build is untrusted code
+and installing it globally runs it on this machine, so the default is off; but
+refusing with no way through would make the flag a wall rather than a decision.
+
 ## E2E Verification Log
 
-_[Agent fills: model run on, the `--unstable` semantics decided, commands,
-observed output.]_
+Run by the orchestrator on **opus** (Claude Opus 5), 2026-08-26.
+
+**Semantics decided**: bare `--unstable` takes the newest build across open pull
+requests by **artifact creation time** — not by pull-request number, because the
+highest-numbered PR is frequently not the most recently pushed — and names the PR
+before installing. `--unstable <pr>` takes that pull request's newest build and
+reports plainly when it has none.
+
+**The API shape was verified against the real repository before the code was
+written**, not assumed: `gh api repos/trupin/corpus/actions/artifacts` returns
+`workflow_run` carrying `repository_id` and `head_repository_id` on every entry,
+which is what makes the fork test a property of the same request that finds the
+build.
+
+**Unit**: 135 tests across `unstable.test.ts` (30) and `index.test.ts`. The zip
+reader is tested against real bytes — a zip assembled by hand in the test, both
+stored and deflated — rather than against a fixture file.
+
+**Falsified.**
+
+- Accepting a fork's build (`if (false)` in place of the origin check) turns **2**
+  tests red, including the one that pins an unattributable build as foreign.
+- Removing the `--unstable` branch from `runUpgrade`, so the command silently
+  falls back to the release path, turns **8** red.
+
+**The stable path is asserted unchanged by request equality**, not by claim: a
+stable run issues exactly
+
+```
+https://api.github.com/repos/trupin/corpus/releases/latest
+https://example.test/corpus-0.4.0.tgz.sha256
+https://example.test/corpus-0.4.0.tgz
+```
+
+and reaches no artifact API at all. `result.unstable` is `null` and
+`check.verifiable` is `true`.
+
+**Against a real pull request** — this phase's own PR #65, whose Package run
+produced `corpus-0.24.0-pr65-7eb8396` (INFRA-026's scheme, verified live):
+
+```
+$ corpus upgrade --unstable --check
+corpus 0.24.0 → PR #65 — corpus 0.24.0, commit 7eb8396, built 10 minutes ago
+  artifact: corpus-0.24.0-pr65-7eb8396
+  This is a pre-release build from CI, not a published release. It carries no
+  checksum, so the verification `corpus upgrade` performs did not run.
+  `corpus upgrade` reinstalls the newest stable release.
+  NOT installable here: it is not installed under a node_modules directory
+  (a source checkout, or an unpacked build)
+nothing was downloaded, installed or written (--check).
+```
+
+`--unstable 65 --check --json` carries the whole choice as data —
+`{"pr":65,"version":"0.24.0","sha":"7eb8396","artifactName":"corpus-0.24.0-pr65-7eb8396",
+"createdAt":"2026-08-26T23:00:36Z","checksumVerified":false}` — with `check.reachable`
+false and its detail saying the release list *was not consulted*, and
+`tool.installed` false.
+
+With `gh` off `PATH` and neither variable set:
+
+```
+$ corpus upgrade --unstable
+corpus: --unstable needs a GitHub token with `actions: read`, and none was found
+  Workflow artifacts are not anonymously downloadable, even on a public
+  repository. Sign in with `gh auth login`, or set CORPUS_GITHUB_TOKEN (or
+  GITHUB_TOKEN) to a token with `actions: read`. Nothing was downloaded or
+  installed. `corpus upgrade` without the flag installs the newest published
+  release and needs no token.
+```
+
+Exit 7, nothing downloaded, and no fallback to a release.
+
+After the follow-up push produced a second artifact for the same pull request, a
+bare `--unstable --check` chose the **newer** one — `corpus-0.24.0-pr65-ca99d5c`
+over `corpus-0.24.0-pr65-7eb8396` — which is the "newest by build time" rule
+exercised against two real builds rather than two fixtures.
+
+**Two defects the real run found, that no review had.**
+
+1. `--check` printed the raw ISO timestamp where the acceptance criterion asks
+   for the build's **age**. It now says *"built 10 minutes ago"* in the human
+   line and keeps `createdAt` absolute in the JSON, where a machine wants an
+   instant rather than a phrase.
+2. The undetectable-install refusal offered
+   `npm install -g <artifact zip URL>` — a line that **cannot work**, because a
+   PR build's URL is an artifact zip behind an authenticated API rather than a
+   tarball. `refuseUndetectable` and `refuseUnwritable` now take an override, and
+   the unstable path hands over the two steps that do work. "Instructions that
+   are not runnable are not instructions" was already written in that function's
+   own doc comment; it had acquired a second reader.
+
+**A real install was deliberately not performed on this machine.** It would
+replace the operator's global `corpus` with an unreleased build mid-release, and
+the acceptance criterion it would prove — that the install goes through the same
+npm-global path — is the shared code the stable path already exercises, asserted
+in the suite by the tarball handed to `npm` being the unwrapped `.tgz`. This is
+stated rather than quietly skipped.
+
+**Docs**: `npm run docs:cli -w apps/cli` regenerated `docs/cli.md` with the new
+flag and positional; the §11 drift check is clean. `spec:check` passes over 7,383
+citations.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence against a real PR
-- [ ] `docs/cli.md` regenerated
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence against a real PR
+- [x] `docs/cli.md` regenerated
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/audit` run (security-sensitive: installs unsigned code from CI artifacts)
-- [ ] `/evaluate` passes
-- [ ] Committed with `[CLI-034]` prefix
+- [x] `/audit` run (security-sensitive: installs unsigned code from CI artifacts)
+- [x] `/evaluate` passes
+- [x] Committed with `[CLI-034]` prefix

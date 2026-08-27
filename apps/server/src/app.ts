@@ -16,6 +16,7 @@ import {
   type QueryKey,
 } from "@corpus/contract";
 import {
+  defaultPackageRoot,
   isLoopbackHost,
   nonLoopbackBindError,
   readQuietMinutes,
@@ -105,6 +106,8 @@ import {
 import { createJobLookup } from "./queue/job-lookup.js";
 import { createLaneScopeLookup, createReleasedLaneLookup } from "./queue/scope.js";
 import { createHealthHandler } from "./routes/health.js";
+import { mountUpgradeRoutes } from "./upgrade/routes.js";
+import type { SpawnFn } from "./upgrade/trigger.js";
 import { mountStaticUi } from "./static-ui.js";
 import {
   createOutOfBandCommitter,
@@ -283,6 +286,20 @@ export interface CreateServerDeps {
    * serializes every commit the server makes on a single `.git/index` lock.
    */
   readonly git?: AutoCommitter | undefined;
+  /**
+   * Where `POST /api/upgrade` looks for the `corpus` CLI it spawns (SPEC.md
+   * §2.4). Defaults to this package's own root, which is the only answer a
+   * running server has; a test points it at a fixture layout instead.
+   */
+  readonly packageRoot?: string | undefined;
+  /** The environment the upgrade routes read and the spawned child inherits. */
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  /** How `GET /api/upgrade/check` reaches GitHub. Injected so no test does. */
+  readonly fetch?: typeof globalThis.fetch | undefined;
+  /** How `POST /api/upgrade` starts the detached CLI. Injected for the same reason. */
+  readonly spawn?: SpawnFn | undefined;
+  /** Whether a recorded upgrade pid is still running; injected so no test signals one. */
+  readonly isAlive?: ((pid: number) => boolean) | undefined;
 }
 
 /** IPv6 literals need brackets to form a URL authority. */
@@ -373,6 +390,23 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       now,
     }),
   );
+
+  // SPEC.md §2.4 (SERVER-050). Mounted beside health rather than with the
+  // document routes for the same reason health is here: neither needs the
+  // projection, so both answer on a server started without one. The check
+  // reaches GitHub and the trigger starts a process that outlives this one —
+  // no workspace file is written by either, which is why neither carries an
+  // acting party.
+  mountUpgradeRoutes(app, {
+    version: config.version,
+    workspaceRoot: config.workspaceRoot,
+    corpusDir: config.corpusDir,
+    packageRoot: deps.packageRoot ?? defaultPackageRoot(),
+    env: deps.env ?? process.env,
+    ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+    ...(deps.spawn === undefined ? {} : { spawn: deps.spawn }),
+    ...(deps.isAlive === undefined ? {} : { isAlive: deps.isAlive }),
+  });
 
   const bus = createInvalidationBus({ logger });
   const hub = createSseHub({

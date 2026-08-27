@@ -151,6 +151,62 @@ Deleting a pushed tag is only safe while nothing consumes it, which is why step 
 always-safe alternative is to burn the version: leave the failed tag deleted or in place, and cut
 `v<x.y.z+1>` from the fixed commit with `npm run release:prepare`. Version numbers are cheap.
 
+## PR builds, and the name `corpus upgrade --unstable` parses
+
+Every pull request gets a packaged tarball from `.github/workflows/package.yml`,
+uploaded as a workflow artifact and linked from a single sticky comment. This is
+what `corpus upgrade --unstable` installs, so the artifact's **name is a
+contract**, not a label (INFRA-026).
+
+```
+corpus-<version>-pr<N>-<sha_short>
+```
+
+- `<version>` — the version inside the tarball, unchanged. A PR build carries the
+  same version string as `main`; nothing about packaging a PR makes it a
+  prerelease. Making PR builds carry a prerelease version would touch the version
+  singularity invariant (INFRA-008, INFRA-022) and has not been decided.
+- `<N>` — the pull request number. It is what makes two PRs' packages tellable
+  apart, since they are normally on the same version.
+- `<sha_short>` — the first seven characters of the PR's head sha.
+
+**Change this name and `corpus upgrade --unstable` stops finding builds.** The
+command lists a repository's `Package` workflow runs and reads the artifacts
+attached to them, so it depends on both the shape above and the workflow's name.
+
+### What a consumer has to know
+
+- **Retention is 14 days.** An older PR routinely has no artifact at all. That is
+  an ordinary answer, and the command reports it as one rather than as a failure.
+- **Artifacts are not anonymously downloadable**, even on a public repository:
+  `GET /repos/{owner}/{repo}/actions/artifacts/{id}/zip` needs a token with
+  `actions: read`. The stable release path needs no credential; this one does.
+- **The download is a zip containing the tarball**, not the tarball. One more
+  unwrap than the release path.
+- **There is no published checksum.** Releases carry `<tarball>.tgz.sha256`
+  (INFRA-016) and `corpus upgrade` verifies it. A workflow artifact has nothing
+  equivalent, which is why SPEC.md §2.4's rider makes the unstable path say so on
+  every install.
+- **A fork's PR is untrusted code.** The workflow does run on a fork's pull
+  request and does upload an artifact; what it cannot do is comment, because
+  `pull_request` from a fork gives the run a read-only token whatever the
+  `permissions:` block asks for. The artifact is therefore reachable and must be
+  refused by name of its _origin_ rather than by its absence: the run's
+  `head_repository` is what says where the code came from, and the artifact name
+  does not.
+- **Same-sha re-runs replace, force-pushes do not.** `overwrite: true` means a
+  re-run of the same commit replaces its artifact; a force-push produces a new
+  sha and so a new name. "The newest build for PR N" is answered by creation
+  time, and there is at most one artifact per (PR, sha).
+
+### Runs that are not pull requests
+
+There are none. `package.yml` triggers on `pull_request` and nothing else, and
+the pack step **fails** rather than inventing a name when the PR number is empty.
+If a trigger is ever added, give it a name that cannot be read as a PR build
+before it uploads anything — a non-PR build wearing a PR-shaped name is a build
+`--unstable` would offer to install as somebody's pull request.
+
 ## Related
 
 | Command                   | What it does                                                    |
