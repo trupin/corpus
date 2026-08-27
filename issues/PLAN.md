@@ -1834,11 +1834,23 @@ prose and counted there.
 feature is usable without a completion menu — you type the field's name. If the
 vocabulary endpoint had not held, the headline would still have been true.
 
-**Nearby debt, riding along because it is in the same files**: `CONTRACT-066`
-(an `@` menu filters a page the server already truncated) and `CONTRACT-072`
-(three surfaces describing a heuristic SERVER-054 deleted, one of them published
-in `openapi.json`). Both are query-surface defects, and CONTRACT-072 was already
-`in_progress`.
+**Nearby debt that rode along**: `CONTRACT-072` — three surfaces describing a
+heuristic SERVER-054 deleted, one of them published in `openapi.json`. The first
+was corrected in PR #55; the other two are corrected here, in files this phase
+was already editing.
+
+**`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
+query-surface defect in the same files, and reading it properly showed it is
+neither. It lives in the `@` menu's autocomplete and in `ThreadMenuItems.tsx`,
+which this phase never opens, and the question it exists to answer — *does
+"addressable" belong in the Corpus API at all, as an `addressable=true` filter
+or otherwise* — is a product decision SPEC.md does not make. The issue says so
+itself, and says why it was not guessed at inside a loose-ends PR: "guessing it
+is how the next third copy of a rule gets written". `folder=` cannot express it
+either, even with this release's globs: `folder` is rooted at `data/docs/` and
+SQLite's `*` crosses `/`, so `.claude/agents/*` would match the nested personas
+the gate exists to exclude. It keeps its `todo` row and its `fable`
+recommendation.
 
 **Two rows closed as stale**, which is bookkeeping and not work:
 
