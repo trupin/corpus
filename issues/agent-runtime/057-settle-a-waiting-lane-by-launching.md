@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -42,15 +42,15 @@ the general one.
 
 ## Acceptance Criteria
 
-- [ ] The event-type table names `lane.waiting` and what settles it
-- [ ] The skill states plainly that it is **not** dispatched, and why — a
+- [x] The event-type table names `lane.waiting` and what settles it
+- [x] The skill states plainly that it is **not** dispatched, and why — a
       sentence about writing in a resident's name, not a sentence about payloads
-- [ ] Settling it is: make sure a listener is running for the lane it names, then
+- [x] Settling it is: make sure a listener is running for the lane it names, then
       settle the event. The existing once-per-pass-per-lane launch rule applies
       unchanged — several notices for one lane launch one listener
-- [ ] A notice for a lane that is already live settles with no launch, and that
+- [x] A notice for a lane that is already live settles with no launch, and that
       is an ordinary outcome rather than a discrepancy to log
-- [ ] `scripts/workspace-template.test.ts` pins all of it
+- [x] `scripts/workspace-template.test.ts` pins all of it
 
 ## Technical Design
 
@@ -72,9 +72,35 @@ The template test, over the skill's prose.
 
 ## E2E Verification Log
 
-_Filled by the implementer._
+**Implemented on: opus.** Prose, so the verification is the pinned assertions
+and one falsification.
+
+The rule the skill now carries, in its own words: *"Everything else in the table
+above is work; this is a report that work exists somewhere you may not touch.
+Answering it would be you writing in a resident's name… There is no thread to
+read, no turn to reply to, no author, no text: an instruction to answer it could
+not be followed even if you took one."*
+
+Two consequences that are easy to leave out and easy to misread as faults are
+stated: a notice for a lane that has since gone live settles with **no launch**
+and that is ordinary, and several notices for one lane are **one** launch under
+the existing once-per-pass-per-lane rule.
+
+It also names the case that prompted the report — *"which is most of the time
+after you restart, since restarting you ends every listener you launched while
+their conversations keep accepting messages"* — because a rule whose triggering
+situation is unnamed is a rule a reader does not connect to what they are
+seeing.
+
+### Falsification
+
+```
+$ # "**Do not dispatch it.**" -> "It is fine to dispatch."
+      Tests  1 failed | 505 passed (506)
+   × launches once per lane per pass, and stops when a launch does not take
+```
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests pass
-- [ ] Lint clean
+- [x] Tests pass
+- [x] Lint clean

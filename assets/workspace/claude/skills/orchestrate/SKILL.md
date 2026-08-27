@@ -456,8 +456,9 @@ row below is failed with a reason and is never silently completed.
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
 | `doc.edited`          | A subagent working **Reflecting on a user edit** below — one of the two events whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
 | `workspace.reflect`   | A subagent working **Reflecting on the corpus** below — the other one. Its dispatch carries the payload's `since` verbatim, `null` included. It falls in no scope and is always yours.                     |
-| `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the two rows that are not jobs. |
-| `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is the other row that is not a job. |
+| `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the three rows that are not jobs. |
+| `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is another row that is not a job. |
+| `lane.waiting`        | A conversation has work and nobody listening. **Never dispatched** — it is a report about somebody else's conversation, not the conversation. Make sure a listener is running for the payload's `lane` (Launching a listener below), then complete. The third row that is not a job. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
 
@@ -466,7 +467,27 @@ the reply, skill genesis — belongs to the comment skill, applied inside the su
 skill routes and dispatches, and owns queue state, ordering, deferral, logging, and the halt
 switch.
 
-- **Launching a listener.** `resident.designated` is one of the two rows above that are not
+- **A waiting lane is a request for a listener, and never a message to answer.** `lane.waiting`
+  arrives when a conversation received work and nobody was listening on it — which is most of
+  the time after you restart, since restarting you ends every listener you launched while their
+  conversations keep accepting messages.
+
+  **Do not dispatch it.** Everything else in the table above is work; this is a report that
+  work exists somewhere you may not touch. Answering it would be you writing in a resident's
+  name, which is the thing the rider signed 2026-08-25 removed the fallback to prevent — and it
+  is why the payload carries **only** the lane. There is no thread to read, no turn to reply
+  to, no author, no text: an instruction to answer it could not be followed even if you took
+  one. Settle it by making sure a listener is running for the lane it names, then complete it.
+
+  **A notice for a lane that is already live settles with no launch, and that is ordinary.** It
+  is not a discrepancy and not worth a log line beyond the settle: the notice is raised when
+  the work arrives and read when you next wake, and a listener may have started in between.
+
+  **Several notices for one lane are one launch.** The once-per-pass-per-lane rule below covers
+  them exactly as it covers several `resident.designated` for one lane — a conversation left
+  unattended for an hour may have raised a dozen, and it still wants one listener.
+
+- **Launching a listener.** `resident.designated` is one of the rows above that are not
   jobs. Everything else you dispatch is work that reports back and settles. This one starts an
   agent and gets out of its way. Launch a background subagent applying the **converse** skill,
   invoked as `/converse <the payload's threadId>`, and hand it the payload's `resident`
