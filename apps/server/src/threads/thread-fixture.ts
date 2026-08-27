@@ -8,7 +8,7 @@
 // projection and the real queue directories. A test that stubbed any of them
 // would assert that the stub was called.
 
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createWriteWorkspace,
@@ -59,6 +59,23 @@ export const turnsOf = (
  * Pending events, `evt_*.json` only. Every status directory ships a `.gitkeep`,
  * which has broken a count assertion in each of the last three sprints.
  */
+/**
+ * The pending `comment.created` files — the queue's §8 enqueues, without the
+ * announcements that reach the orchestrator's lane by their type (SERVER-161).
+ *
+ * A turn on a designated conversation with nobody listening now writes two
+ * files: the message, and the `lane.waiting` that asks for a listener. A test
+ * about **what a turn enqueues** wants the first; a test about what is on disk
+ * wants {@link pendingEvents}.
+ */
+export function commentEvents(ws: WriteWorkspace): string[] {
+  const dir = join(ws.root, ".corpus", "queue", "pending");
+  return pendingEvents(ws).filter((name) => {
+    const raw = JSON.parse(readFileSync(join(dir, name), "utf8")) as { type?: string };
+    return raw.type === "comment.created";
+  });
+}
+
 export function pendingEvents(ws: WriteWorkspace): string[] {
   const dir = join(ws.root, ".corpus", "queue", "pending");
   try {

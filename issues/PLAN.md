@@ -1809,8 +1809,8 @@ branch — each turning a named number of tests red.
 | --- | --- | --- | --- | --- | --- |
 | SHARED-075 | A lane nobody can work announces itself to the orchestrator | done | P0 | fable | — |
 | CONTRACT-093 | `lane.waiting` is a core event type | done | P0 | opus | SHARED-075 |
-| SERVER-161 | An unattended lane's arrival announces itself | todo | P0 | opus | CONTRACT-093 |
-| AGENT-057 | The orchestrator settles a waiting lane by launching, never by answering | todo | P0 | fable | SERVER-161 |
+| SERVER-161 | An unattended lane's arrival announces itself | done | P0 | opus | CONTRACT-093 |
+| AGENT-057 | The orchestrator settles a waiting lane by launching, never by answering | done | P0 | fable | SERVER-161 |
 
 **Signed 2026-08-27** and applied the same day. It is the half of
 SERVER-160 that v0.26.0 left open and named as open: a conversation being

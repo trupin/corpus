@@ -33,7 +33,7 @@
 // designation changing is {@link visibleTo}, which is evaluated when a claim is
 // made rather than written into a file.
 
-import { ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
+import { LANE_WAITING_EVENT_TYPE, ORCHESTRATOR_LANE, type Lane } from "@corpus/contract";
 import type { StoredEvent } from "./store.js";
 
 /**
@@ -52,6 +52,24 @@ export const RESIDENT_DESIGNATED = "resident.designated";
 
 /** The release half (SERVER-128, CONTRACT-069), under the same carve-out. */
 export const RESIDENT_RELEASED = "resident.released";
+
+/**
+ * The third event under the carve-out (SERVER-161; SPEC.md §7's rider signed
+ * 2026-08-27): a lane with work and nobody to do it, announced to the
+ * orchestrator so it launches a listener.
+ *
+ * **It is here rather than resolved through the walk, and that is a safety
+ * property rather than a shortcut.** The notice is *about* a lane, so a routing
+ * rule that read its payload could route it back to the lane it names — and a
+ * notice on the lane nobody is listening to is a notice nobody reads, which
+ * would announce again, and again. The type deciding the lane makes that
+ * impossible however the scope lookup behaves.
+ *
+ * `service.test.ts` proved the point before this line existed: a test whose
+ * scope lookup answered one lane for every payload sent the notice to the
+ * resident's lane, where it announced itself, until the test timed out.
+ */
+export const LANE_WAITING = LANE_WAITING_EVENT_TYPE;
 
 /**
  * The lane an event was stamped with.
@@ -137,7 +155,11 @@ export interface LaneInput {
  * Everything else is the walk.
  */
 export function laneFor(input: LaneInput, findScopeRoot: ScopeRootLookup): Lane {
-  if (input.type === RESIDENT_DESIGNATED || input.type === RESIDENT_RELEASED) {
+  if (
+    input.type === RESIDENT_DESIGNATED ||
+    input.type === RESIDENT_RELEASED ||
+    input.type === LANE_WAITING
+  ) {
     return ORCHESTRATOR_LANE;
   }
   if (input.recipient !== undefined) return input.recipient;

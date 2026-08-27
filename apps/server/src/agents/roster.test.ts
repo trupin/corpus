@@ -444,6 +444,23 @@ describe("the fallback a lapse creates", () => {
     ).toBe(201);
   }
 
+  /**
+   * What a claim hands over, **conversation work only**.
+   *
+   * Announcements are dropped (SERVER-161). This block asks who may claim a
+   * *conversation's* work across a lapse, and since the rider signed 2026-08-27
+   * an arrival on a lane with no listener also puts a `lane.waiting` on the
+   * orchestrator's. That notice is a launch instruction — launching is exactly
+   * what the orchestrator is still supposed to do — so counting it would make
+   * "the orchestrator did not take it" read false while the property these tests
+   * name is still true.
+   */
+  const ANNOUNCEMENTS: readonly string[] = [
+    "lane.waiting",
+    "resident.designated",
+    "resident.released",
+  ];
+
   const claimed = async (scope?: string): Promise<string[]> => {
     const query = scope === undefined ? "" : `?scope=${scope}`;
     const response = await ws.post(`/api/queue/claim-all${query}`, {});
@@ -451,6 +468,16 @@ describe("the fallback a lapse creates", () => {
     return ((await response.json()) as { events: { id: string }[] }).events.map(
       (event) => event.id,
     );
+  };
+
+  /** {@link claimed}, announcements dropped — see {@link ANNOUNCEMENTS}. */
+  const claimedWork = async (scope?: string): Promise<string[]> => {
+    const query = scope === undefined ? "" : `?scope=${scope}`;
+    const response = await ws.post(`/api/queue/claim-all${query}`, {});
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { events: { id: string; type: string }[] }).events
+      .filter((event) => !ANNOUNCEMENTS.includes(event.type))
+      .map((event) => event.id);
   };
 
   /**
@@ -552,11 +579,13 @@ describe("the fallback a lapse creates", () => {
     ws.advance(LANE_GRACE_MS * 2);
 
     // Lapsed, so the orchestrator could have taken it — but it did not, and the
-    // fallback was never written down.
+    // fallback was never written down. Work only: the turn above also announced
+    // the unattended lane, and a launch instruction is not the work
+    // (SERVER-161).
     const back = park(id);
     await settle();
-    expect(await claimed()).toEqual([]);
-    expect(await claimed(id)).toHaveLength(1);
+    expect(await claimedWork()).toEqual([]);
+    expect(await claimedWork(id)).toHaveLength(1);
 
     back.leave();
     await back.done;

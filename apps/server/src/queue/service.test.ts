@@ -113,6 +113,100 @@ describe("enqueue", () => {
     expect(read?.ok === true && read.event.type).toBe("b");
   });
 
+  /**
+   * **A lane that cannot be worked says so** (SPEC.md §7's rider signed
+   * 2026-08-27; SERVER-161).
+   *
+   * User report: *"When restarting the orchestrator agent, it does not receive a
+   * message when a listener receives a message, which means it's not aware that
+   * a listener agent might need to be spawned."*
+   *
+   * Every assertion here is about a **lane**, because the lane is the whole
+   * defect: an event on a conversation's own lane is invisible to the
+   * orchestrator by design, and the notice is the one that is not.
+   */
+  describe("a waiting lane's notice", () => {
+    /** A lane tracker answering for exactly the lanes named as parked. */
+    const trackerWith = (live: readonly string[]) => ({
+      isLive: (lane: string) => live.includes(lane),
+      observePark: () => () => undefined,
+      presenceOf: () => ({ live: false, since: null }),
+      presence: () => ({ live: false, since: null }),
+    });
+
+    const pendingOf = async (service: QueueService) => {
+      const ids = await service.store.listIds("pending");
+      const events = [];
+      for (const id of ids) {
+        const read = await service.store.readEvent("pending", id);
+        if (read?.ok === true) events.push(read.event);
+      }
+      return events;
+    };
+
+    it("announces on the orchestrator's lane when the listener is absent", async () => {
+      const service = makeService();
+      service.attachScopeLookup(() => "th_x9y8");
+      service.attachLaneTracker(trackerWith([]) as never);
+
+      await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: { threadId: "th_x9y8" },
+      });
+
+      const events = await pendingOf(service);
+      const byType = new Map(events.map((event) => [event.type, event]));
+      expect([...byType.keys()].sort()).toEqual(["comment.created", "lane.waiting"]);
+      // The notice reaches the only agent that can act on it…
+      expect(byType.get("lane.waiting")?.lane).toBe("orchestrator");
+      expect(byType.get("lane.waiting")?.payload).toEqual({ lane: "th_x9y8" });
+      // …and the conversation's own message stays the conversation's.
+      expect(byType.get("comment.created")?.lane).toBe("th_x9y8");
+    });
+
+    it("says nothing when the lane's listener is parked", async () => {
+      const service = makeService();
+      service.attachScopeLookup(() => "th_x9y8");
+      service.attachLaneTracker(trackerWith(["th_x9y8"]) as never);
+
+      await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: { threadId: "th_x9y8" },
+      });
+
+      // Somebody can already work it, which is the whole of what the notice
+      // exists to arrange.
+      expect((await pendingOf(service)).map((event) => event.type)).toEqual(["comment.created"]);
+    });
+
+    it("says nothing for the orchestrator's own lane", async () => {
+      const service = makeService();
+      service.attachLaneTracker(trackerWith([]) as never);
+
+      await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+
+      expect((await pendingOf(service)).map((event) => event.type)).toEqual(["comment.created"]);
+    });
+
+    /** The notice takes the orchestrator's lane, which cannot want a listener. */
+    it("never announces an announcement", async () => {
+      const service = makeService();
+      service.attachScopeLookup(() => "th_x9y8");
+      service.attachLaneTracker(trackerWith([]) as never);
+
+      await service.enqueue({
+        type: "comment.created",
+        source: "ui",
+        payload: { threadId: "th_x9y8" },
+      });
+
+      const notices = (await pendingOf(service)).filter((event) => event.type === "lane.waiting");
+      expect(notices).toHaveLength(1);
+    });
+  });
+
   // SERVER-069's seam. What matters about it is the *ordering* it promises: the
   // observer runs after the event is durable and mirrored, and before anything
   // parked on the queue is woken — so a line written about a job cannot land
@@ -1402,17 +1496,42 @@ describe("lanes", () => {
   const RESIDENT = "th_resident";
   const OTHER = "th_other";
 
-  /** A service whose walk answers `lane` for every event; nothing is live. */
+  /**
+   * A tracker reporting the named lanes as parked (SERVER-161).
+   *
+   * **Most of this suite is about routing, and routing is not about who is
+   * listening.** Since the rider signed 2026-08-27, an event on a lane whose
+   * listener is *absent* also enqueues a `lane.waiting` on the orchestrator's
+   * lane — so a test that seeds a resident's event and then counts the
+   * orchestrator's would be counting the notice as well, and would be measuring
+   * the announcement rather than the partition it is asserting.
+   *
+   * These tests therefore say who is listening, which every one of them meant
+   * anyway: a scoped claim seeing only its own lane is a statement about a
+   * conversation someone is answering. The two that are genuinely about an
+   * absent lane say so, and assert the notice rather than working around it.
+   */
+  const listening = (...lanes: readonly string[]) =>
+    ({
+      isLive: (lane: string) => lanes.includes(lane),
+      observePark: () => () => undefined,
+      presenceOf: () => ({ live: false, since: null }),
+      presence: () => ({ live: false, since: null }),
+    }) as never;
+
+  /** A service whose walk answers `lane` for every event; its listener is parked. */
   const laned = (lane: string): QueueService => {
     const service = makeService();
     service.attachScopeLookup(() => lane);
+    service.attachLaneTracker(listening(lane));
     return service;
   };
 
   /** The scope lookup a real workspace supplies, as a payload-keyed table. */
-  const routing = (table: Record<string, string>): QueueService => {
+  const routing = (table: Record<string, string>, live: readonly string[] = []): QueueService => {
     const service = makeService();
     service.attachScopeLookup((payload) => table[String(payload.threadId)] ?? ORCHESTRATOR_LANE);
+    service.attachLaneTracker(listening(...(live.length === 0 ? Object.values(table) : live)));
     return service;
   };
 
@@ -1694,8 +1813,15 @@ describe("lanes", () => {
       await vi.waitFor(() => {
         expect(tracker.isLive(RESIDENT)).toBe(true);
       });
-      // Live: the orchestrator sees nothing of this lane.
-      expect((await service.claimAll()).events).toHaveLength(0);
+      // Live: the orchestrator sees nothing **of this lane**.
+      //
+      // Stated as the lane rather than as a count since SERVER-161: the post
+      // above happened before anything parked, so the orchestrator also holds a
+      // `lane.waiting` about this conversation. That notice is not the
+      // conversation's work and is exactly what this suite's subject — the
+      // partition — permits.
+      const whileLive = await service.claimAll();
+      expect(whileLive.events.filter((event) => event.lane === RESIDENT)).toHaveLength(0);
 
       service.close();
       await parked;
@@ -1704,7 +1830,8 @@ describe("lanes", () => {
       // Lapsed: the roster's answer changed, and the claim's did not. Before
       // the rider this second claim returned the event.
       expect(tracker.isLive(RESIDENT)).toBe(false);
-      expect((await service.claimAll()).events).toHaveLength(0);
+      const whileLapsed = await service.claimAll();
+      expect(whileLapsed.events.filter((event) => event.lane === RESIDENT)).toHaveLength(0);
     });
 
     it("reports the aggregate on the queue status, from the same observation", async () => {
@@ -1737,6 +1864,10 @@ describe("lanes", () => {
     it("wakes nobody when a lane's listener goes away, because nothing moved", async () => {
       const service = makeService({ pollIntervalMs: 60_000 });
       service.attachScopeLookup(() => RESIDENT);
+      // Listening at the moment of the post, so no `lane.waiting` is produced
+      // (SERVER-161). The subject here is that a *lapse* moves nothing — and a
+      // lapse is a listener going away, which is not an enqueue.
+      service.attachLaneTracker(listening(RESIDENT));
       await post(service, "th_resident");
 
       const orchestrator = service.idle({ timeoutMs: 150 });

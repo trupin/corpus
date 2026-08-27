@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -43,14 +43,14 @@ accepting messages that reach nobody.
 
 ## Acceptance Criteria
 
-- [ ] An event enqueued on a lane whose listener is **absent** also enqueues
+- [x] An event enqueued on a lane whose listener is **absent** also enqueues
       `lane.waiting` on the orchestrator's lane, naming that lane
-- [ ] An event on a lane whose listener is **present** enqueues no notice
-- [ ] An event on the orchestrator's own lane enqueues no notice — it is already
+- [x] An event on a lane whose listener is **present** enqueues no notice
+- [x] An event on the orchestrator's own lane enqueues no notice — it is already
       the orchestrator's
-- [ ] A `lane.waiting` never enqueues a `lane.waiting` — no recursion
-- [ ] A parked `corpus queue idle` returns with the notice
-- [ ] The condition lives in **one named predicate**, so the unconditional
+- [x] A `lane.waiting` never enqueues a `lane.waiting` — no recursion
+- [x] A parked `corpus queue idle` returns with the notice
+- [x] The condition lives in **one named predicate**, so the unconditional
       reading is a one-line change (see SHARED-075)
 
 ## Technical Design
@@ -100,11 +100,78 @@ silent cases, and a parked `idle` returning.
 
 ## E2E Verification Log
 
-_Filled by the implementer._
+**Implemented on: opus.**
+
+### Reproduction
+
+Real workspace on 8795. A conversation created (which SERVER-160 announces
+correctly), then a **later** message posted to it:
+
+```
+pending after the later message:
+  comment.created        lane=th_am6bccbo
+$ corpus queue claim-all --json
+  claimed: []
+```
+
+One event, on the conversation's lane, and the orchestrator sees nothing — the
+exact half SERVER-160 named as still open.
+
+### Post-implementation verification
+
+```
+$ corpus queue idle --wait 25 --json   (parked first, then a later message posted)
+the parked orchestrator returned after 1s of a 25s window:
+   lane.waiting -> {"lane": "th_am6bccbo"}
+
+pending:
+  lane.waiting           lane=orchestrator
+  comment.created        lane=th_am6bccbo
+```
+
+### The recursion guard was wrong, and my own test caught it
+
+The first version guarded only on the resolved lane: a notice takes the
+orchestrator's lane, which `wantsListener` refuses. That is true **when routing
+is right**, and routing is a scope lookup that reads the payload.
+
+Eighteen tests broke and five of them **timed out at 5s** rather than failing.
+The lane suite's helper answers one lane for every payload, so the notice was
+routed to the *resident's* lane, where it wanted a listener, so it announced
+again — until the test gave up. The "never announces an announcement" case I had
+written for exactly this is the one that reported it.
+
+Two guards now, and the second does not depend on the first:
+
+- `laneFor` sends `lane.waiting` to the orchestrator by **type**, beside the two
+  resident announcements that were already carved out that way. The notice is
+  *about* a lane, so any rule that read its payload could route it back to the
+  lane it names.
+- `enqueue` refuses to announce for any announcement, checked on the type.
+
+### What the eleven remaining failures were, and why they were right to fail
+
+Not the notice being wrong — the lane suite constructs precisely the situation
+the rider is about: an event on a resident lane with nobody listening. Those
+tests are about **routing**, and they had never had to say who was listening
+because nothing depended on it.
+
+They say so now, which every one of them meant anyway: a scoped claim seeing only
+its own lane is a statement about a conversation somebody is answering. Two of
+them are genuinely about an absent lane and were changed to assert the **lane**
+rather than a count — *the orchestrator sees nothing of this lane* is what their
+own comments already claimed, and it is now what they check.
+
+### Suites
+
+```
+$ vitest run apps/server/src/queue/service.test.ts
+   Tests  102 passed (102)
+```
 
 ## Completion Checklist (domain agent)
 
-- [ ] Reproduced the silence before the fix
-- [ ] Tests pass
-- [ ] E2E log filled
-- [ ] Lint and typecheck clean
+- [x] Reproduced the silence before the fix
+- [x] Tests pass
+- [x] E2E log filled
+- [x] Lint and typecheck clean

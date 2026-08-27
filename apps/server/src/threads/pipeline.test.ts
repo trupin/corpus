@@ -214,9 +214,18 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     // `failed-job` needs reason reads `events.status`, SERVER-028) and, since
     // SERVER-155, the roster: the event lands in `pending/` and moves its lane's
     // count, which is what the orchestrator starts a listener from.
+    //
+    // **Three frames since SERVER-161**, and the third is an enqueue like the
+    // second. The thread is standalone and designated with nobody listening, so
+    // the turn also raises a `lane.waiting` on the orchestrator's lane — which is
+    // itself an enqueue, and announces exactly the same keys for exactly the same
+    // reasons. Two identical frames is what two enqueues look like; a frame that
+    // differed would be the thing to investigate.
+    const enqueueFrame = [["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]];
     expect(frames).toEqual([
       [["docs"], ["docs", created.id], ["threads", created.id], ["reflect"]],
-      [["queue"], ["jobs"], ["docs"], ["agents"], ["reflect"]],
+      enqueueFrame,
+      enqueueFrame,
     ]);
   });
 

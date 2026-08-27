@@ -8,6 +8,7 @@ import {
   createDoc,
   createThread,
   createThreadWorkspace,
+  commentEvents,
   pendingEvents,
   postForm,
   referencedAttachments,
@@ -556,7 +557,10 @@ describe("the §8 enqueue matrix", () => {
     });
 
     expect(appended.eventId).toMatch(/^evt_/);
-    expect(pendingEvents(ws)).toHaveLength(1);
+    // One *comment* event. The thread is standalone and designated, so the turn
+    // also announced its unattended lane (SERVER-161) — a launch instruction,
+    // and not one of §8's enqueues, which is what this matrix is about.
+    expect(commentEvents(ws)).toHaveLength(1);
     expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("requested");
     expect(ws.db.prepare("SELECT agent FROM threads WHERE id = ?").get(created.id)).toEqual({
       agent: "requested",
@@ -805,7 +809,10 @@ describe("the enqueued event", () => {
     ws.reproject();
     await createThread(ws, { body: "/comment please, and ask @nobody too" });
 
-    const payload = eventPayload(pendingEvents(ws)[0] ?? "");
+    // The comment's own event, named rather than taken as the first file on
+    // disk: a standalone creation that asks for the agent also announces its
+    // unattended lane (SERVER-161), and the directory's order is by event id.
+    const payload = eventPayload(commentEvents(ws)[0] ?? "");
     expect(payload["skills"]).toEqual([
       { name: "comment", docId: expect.stringMatching(/^doc_/) as unknown, status: "open" },
     ]);

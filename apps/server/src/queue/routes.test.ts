@@ -237,6 +237,24 @@ describe("the scope parameter", () => {
    */
   const partition = (): void => {
     server.queue.attachScopeLookup(() => "th_resident");
+    /*
+     * And says the resident is listening (SERVER-161).
+     *
+     * These tests are about the **partition** — which lane a claim may take
+     * from — and a partition is not a statement about who is present. Since the
+     * rider signed 2026-08-27, seeding a lane with no listener also puts a
+     * `lane.waiting` on the orchestrator's, so a test asserting "the
+     * orchestrator's call sees nothing" would be seeing the announcement and
+     * calling it a partition failure. Saying somebody is listening is what these
+     * tests meant anyway: a scoped claim taking its own lane is a statement
+     * about a conversation somebody is answering.
+     */
+    server.queue.attachLaneTracker({
+      isLive: (lane: string) => lane === "th_resident",
+      observePark: () => () => undefined,
+      presenceOf: () => ({ live: false, since: null }),
+      presence: () => ({ live: false, since: null }),
+    } as never);
   };
 
   it("hands a scoped claim its own lane, and the orchestrator's call nothing", async () => {
