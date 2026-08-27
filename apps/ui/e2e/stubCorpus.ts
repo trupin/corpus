@@ -30,6 +30,7 @@ import {
   type FolderNode,
   type FolderStatusResult,
   type FolderTree,
+  type WorkspaceVocabulary,
   type Health,
   type Form,
   type IndexStatus,
@@ -170,7 +171,8 @@ type StubPayload =
   | ThreadScope
   | UnknownRecipientError
   | UpdateDocResponse
-  | ValidationError;
+  | ValidationError
+  | WorkspaceVocabulary;
 
 export interface StubRow {
   readonly id: string;
@@ -1699,6 +1701,32 @@ export async function stubCorpus(
      * of rider 1's rules.
      */
     if (url.pathname === "/api/tree") return json(route, folderTree() satisfies FolderTree);
+
+    /*
+     * `GET /api/vocabulary` — the tags and invented frontmatter keys the query
+     * editor completes from and the search overlay's `tag:` chip cycles through
+     * (SPEC.md §9.2, CONTRACT-092).
+     *
+     * **Derived from the seeded documents**, for the reason the tree above is:
+     * an answer of `{ tags: [], extraKeys: [] }` looks exactly like a workspace
+     * that uses neither, so no spec could reach a chip that offers anything.
+     * The stub carries no extra frontmatter, so `extraKeys` is honestly empty.
+     */
+    if (url.pathname === "/api/vocabulary") {
+      const counts = new Map<string, number>();
+      for (const doc of store.values()) {
+        for (const tag of doc.tags) {
+          const value = tag.toLowerCase();
+          counts.set(value, (counts.get(value) ?? 0) + 1);
+        }
+      }
+      return json(route, {
+        tags: [...counts.entries()]
+          .sort(([a, ac], [b, bc]) => (ac === bc ? (a < b ? -1 : 1) : bc - ac))
+          .map(([value, count]) => ({ value, count })),
+        extraKeys: [],
+      } satisfies WorkspaceVocabulary);
+    }
 
     /*
      * SPEC.md §9.2's folder acts (rider 7). Each takes a path in the **body**,

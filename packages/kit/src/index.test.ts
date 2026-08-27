@@ -32,6 +32,8 @@ const RUNTIME_SURFACE = [
   "useDoc",
   "useThread",
   "useTree",
+  // CONTRACT-092's vocabulary, read for the query editor's completions.
+  "useVocabulary",
   "useRelatedDocs",
   "useCorpusSearch",
   "useJobs",
@@ -105,6 +107,7 @@ const RUNTIME_SURFACE = [
   "threadKey",
   "threadScopeKey",
   "TREE_KEY",
+  "VOCABULARY_KEY",
   // live updates
   "Row",
   "AgeChip",

@@ -76,7 +76,9 @@ function fieldToken(field: QueryField): string {
   return field.values.kind === "extraKey" ? `${field.name}.` : field.name;
 }
 
-function fieldItems(needle: string): readonly AutocompleteItem[] {
+function fieldItems(needle: string, vocabulary: QueryVocabulary): readonly AutocompleteItem[] {
+  const namespace = openNamespace(needle);
+  if (namespace !== undefined) return extraKeyItems(namespace, vocabulary);
   return QUERY_FIELDS.filter(
     (field) => needle === "" || field.name.toLowerCase().startsWith(needle),
   ).map((field) => ({
@@ -85,6 +87,44 @@ function fieldItems(needle: string): readonly AutocompleteItem[] {
     label: fieldToken(field),
     description: field.summary,
   }));
+}
+
+/**
+ * The part of a field token that sits after an open namespace's dot, or
+ * `undefined` when the token is an ordinary field name.
+ *
+ * Matched against the grammar's own namespace fields rather than the literal
+ * string `extra.`, so this file keeps naming no field.
+ */
+function openNamespace(needle: string): string | undefined {
+  for (const field of QUERY_FIELDS) {
+    if (field.values.kind !== "extraKey") continue;
+    const prefix = `${field.name.toLowerCase()}.`;
+    if (needle.startsWith(prefix)) return needle.slice(prefix.length);
+  }
+  return undefined;
+}
+
+/**
+ * The **field names** a workspace invented, offered after `extra.`
+ * (SPEC.md §5's **Structured fields**, CONTRACT-092).
+ *
+ * This is the only completion in the editor that offers part of a field name,
+ * and it has to be: an invented field appears in no list anywhere, so a person
+ * who has not memorised their own convention has no way to find it. The token
+ * carries the whole dotted name, because that is what the caret is replacing.
+ */
+function extraKeyItems(needle: string, vocabulary: QueryVocabulary): readonly AutocompleteItem[] {
+  const field = QUERY_FIELDS.find((entry) => entry.values.kind === "extraKey");
+  if (field === undefined) return [];
+  return vocabulary.extraKey
+    .filter((option) => matches(option, needle))
+    .map((option) => ({
+      key: `extra:${option.value}`,
+      token: `${field.name}.${option.value}`,
+      label: `${field.name}.${option.value}`,
+      description: option.detail,
+    }));
 }
 
 function valueItems(
@@ -147,7 +187,8 @@ export function useQueryAutocomplete({
   const items = useMemo<readonly AutocompleteItem[]>(() => {
     if (kind === undefined) return [];
     const needle = query.toLowerCase();
-    const all = kind === "field" ? fieldItems(needle) : valueItems(field, needle, vocabulary);
+    const all =
+      kind === "field" ? fieldItems(needle, vocabulary) : valueItems(field, needle, vocabulary);
     return all.slice(0, AUTOCOMPLETE_LIMIT);
   }, [field, kind, query, vocabulary]);
 

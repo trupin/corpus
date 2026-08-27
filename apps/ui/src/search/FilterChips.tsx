@@ -1,4 +1,5 @@
 import type { FolderTree, SearchHit } from "@corpus/contract";
+import { useVocabulary } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
 import {
   AGENT_OPTIONS,
@@ -95,7 +96,13 @@ const TAG_CHIP_TITLES: Record<Exclude<TagChipState, "cycles">, string> = {
 export function FilterChips({ query, onChange, tree, hits }: FilterChipsProps): ReactElement {
   const [picker, setPicker] = useState<"references" | "parent" | null>(null);
   const candidates = documentChoices(hits);
-  const tag = tagChipState(query.tag);
+  // The vocabulary the `tag:` chip cycles through (CONTRACT-092). A ranked hit
+  // carries no tags, so this is the only source there has ever been for it —
+  // and a failed read leaves the chip in exactly the state it shipped in rather
+  // than breaking the row.
+  const vocabulary = useVocabulary();
+  const tags = tagOptions(vocabulary.data);
+  const tag = tagChipState(query.tag, tags);
 
   const set = (change: Partial<SearchQuery>): void => {
     onChange({ ...query, ...change });
@@ -132,7 +139,7 @@ export function FilterChips({ query, onChange, tree, hits }: FilterChipsProps): 
         disabled={tag === "unavailable"}
         {...(tag === "cycles" ? {} : { title: TAG_CHIP_TITLES[tag] })}
         onClick={() => {
-          set({ tag: cycle(tagOptions(), query.tag) });
+          set({ tag: cycle(tags, query.tag) });
         }}
       />
       <Chip

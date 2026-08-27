@@ -1,4 +1,10 @@
-import type { AgentRoster, DocRow, QueueStatus, ReflectStatus } from "@corpus/contract";
+import type {
+  AgentRoster,
+  DocRow,
+  QueueStatus,
+  ReflectStatus,
+  WorkspaceVocabulary,
+} from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -61,6 +67,34 @@ export interface BoardTransportOptions {
   readonly reflect?: Partial<ReflectStatus>;
   /** Paths that answer with an error, mapped to the status to answer with. */
   readonly failing?: Readonly<Record<string, number>>;
+  /**
+   * What `GET /api/vocabulary` answers (SPEC.md §9.2, CONTRACT-092).
+   *
+   * Omitted, it is derived from the seeded rows' tags, so a suite that seeds a
+   * tag can complete on it without declaring the vocabulary twice. Give it
+   * explicitly to test the `extra.` completions, which no `DocRow` carries.
+   */
+  readonly vocabulary?: WorkspaceVocabulary;
+}
+
+/** Tags across every seeded row, counted — the fixture's own vocabulary. */
+function vocabularyFrom(options: BoardTransportOptions): WorkspaceVocabulary {
+  const counts = new Map<string, number>();
+  const seeded = [
+    ...(options.views ?? []),
+    ...(options.boards ?? []),
+    ...(options.defaultRows ?? []),
+    ...Object.values(options.rows ?? {}).flat(),
+  ];
+  for (const doc of seeded) {
+    for (const tag of doc.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return {
+    tags: [...counts.entries()]
+      .sort(([a, ac], [b, bc]) => (ac === bc ? (a < b ? -1 : 1) : bc - ac))
+      .map(([value, count]) => ({ value, count })),
+    extraKeys: [],
+  };
 }
 
 /**
@@ -151,6 +185,20 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
       return json(collection(keyed ?? options.defaultRows ?? []));
     }
     if (url.pathname === "/api/tree") return json(options.tree ?? { folders: [] });
+    /*
+     * `GET /api/vocabulary` — the tags and invented frontmatter keys the query
+     * editor completes from (CONTRACT-092). Answered rather than left to the
+     * `{}` catch-all for the reason this file has learned twice: the first
+     * surface to read a new field turns a silent stub gap into a component
+     * reading `tags` off nothing.
+     *
+     * **Derived from the seeded rows** rather than canned, so a suite that
+     * seeds a tag can complete on it without also declaring a vocabulary — and
+     * so the fixture cannot offer a tag no document in it carries.
+     */
+    if (url.pathname === "/api/vocabulary") {
+      return json(options.vocabulary ?? vocabularyFrom(options));
+    }
     if (url.pathname === "/api/jobs") return json({ jobs: [] });
     /*
      * The console strip is mounted by every shell these fixtures render, so its

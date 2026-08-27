@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -33,13 +33,13 @@ still stands.
 
 ## Acceptance Criteria
 
-- [ ] A kit hook reads `GET /api/vocabulary`
-- [ ] Typing `extra.` in the query editor offers the workspace's extra keys,
+- [x] A kit hook reads `GET /api/vocabulary`
+- [x] Typing `extra.` in the query editor offers the workspace's extra keys,
       most-used first
-- [ ] Typing `tag=` offers the workspace's tags, most-used first
-- [ ] The search overlay's `tag:` chip offers options on the hybrid path, which
+- [x] Typing `tag=` offers the workspace's tags, most-used first
+- [x] The search overlay's `tag:` chip offers options on the hybrid path, which
       it cannot do today
-- [ ] An empty or failed vocabulary read degrades to today's behaviour — the
+- [x] An empty or failed vocabulary read degrades to today's behaviour — the
       editor still works, and offers nothing rather than breaking
 
 ## Technical Design
@@ -84,9 +84,66 @@ Real dev server against a real workspace holding two invented fields. Type
 more-used one first.
 
 ## E2E Verification Log
-_Filled by the implementer._
+
+**Implemented on: opus.**
+
+### CONTRACT-026 closed itself
+
+`apps/ui/src/search/filters.ts` had already written down what would fix the
+`tag:` chip:
+
+> the day this function returns real tags, the chip becomes a normal cycling
+> chip again with no other edit.
+
+That is what happened. `tagOptions` now takes the vocabulary and `tagChipState`
+was not touched at all — the three states it distinguishes (`cycles`, `clears`,
+`unavailable`) were already written against "is there a vocabulary", so the chip
+went from disabled-with-an-apology to an ordinary cycling chip by one function
+returning something.
+
+`queryVocabulary.ts` had the same note about tags being sampled from one page:
+"`CONTRACT-026` … is the fix that would make it exhaustive, and until it lands
+this is the honest approximation". Tags now come from the endpoint, so a tag used
+only on documents older than the sampled page is offered for the first time.
+
+### Where the key completions go
+
+`extra.` is the only completion in the editor that offers part of a **field
+name**, and it has to be: an invented field appears in no list anywhere, so a
+person who has not memorised their own convention cannot find it. The namespace
+is recognised by `values.kind === "extraKey"` rather than by the literal string,
+so `useQueryAutocomplete` still names no field.
+
+Values are deliberately **not** offered. A workspace with a `customer` field on
+four hundred documents would put four hundred strings in one menu, and the
+endpoint does not return them.
+
+### The cache key
+
+`["docs", "vocabulary"]`, a child of the documents key. The published SSE key
+vocabulary is closed and a new name there is a server emission to wire; this
+resource changes exactly when documents change, and `invalidateQueries` matches
+by prefix — so every frame that already names `["docs"]` refetches this, with no
+new channel and no way for the menu to go stale while the corpus moves.
+
+### A hint, never a gate
+
+`retry: false`, and a failed read is silence: the tag menu is empty, the `extra.`
+menu is empty, the chip stays disabled with the sentence it already had, and
+every other chip is unaffected. Nothing the query language accepts depends on a
+name appearing in a menu — `extra.customer=acme` runs for a field no document
+carries yet. Three tests hold that, including one that answers the endpoint with
+a `500`.
+
+### Fixtures
+
+Both stubs now answer the route, **derived from their seeded documents** rather
+than canned — `boardFixture.ts` for the unit suites and `e2e/stubCorpus.ts` for
+Playwright. That is the rule those files have learned twice already: an answer
+of `{ tags: [], extraKeys: [] }` is indistinguishable from a workspace that uses
+neither, so no spec could ever reach a chip that offers something.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests pass
-- [ ] E2E log filled
-- [ ] Lint and typecheck clean
+- [x] Tests pass
+- [x] E2E log filled
+- [x] Lint and typecheck clean

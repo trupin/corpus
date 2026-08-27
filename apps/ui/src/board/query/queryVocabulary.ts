@@ -1,5 +1,10 @@
-import { MAX_PAGE_LIMIT, type DocRow, type FolderTree } from "@corpus/contract";
-import { useDocs, useTree } from "@corpus/kit";
+import {
+  MAX_PAGE_LIMIT,
+  type DocRow,
+  type FolderTree,
+  type WorkspaceVocabulary,
+} from "@corpus/contract";
+import { useDocs, useTree, useVocabulary } from "@corpus/kit";
 import { useMemo } from "react";
 import { folderChoices } from "../newList";
 import { CORE_TYPE_VALUES } from "./grammar";
@@ -68,13 +73,44 @@ export function docTypeOptions(rows: readonly DocRow[]): readonly ValueOption[] 
   return [...inUse, ...unused];
 }
 
-/** Tags in use. Empty when the workspace has none — there is nothing to invent. */
-export function tagOptions(rows: readonly DocRow[]): readonly ValueOption[] {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    for (const tag of row.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  }
-  return byUseThenName(counts, "document");
+/**
+ * Tags in use, **from the workspace's own vocabulary** rather than from the
+ * sampled page (CONTRACT-092, closing CONTRACT-026).
+ *
+ * This module's own docblock named the defect: the sample is one page of rows,
+ * so a workspace larger than {@link VOCABULARY_SAMPLE} got a tag list drawn
+ * from its live end and a tag used only on older documents was simply not
+ * offered. `GET /api/vocabulary` counts every document, so the list is now
+ * exhaustive and the count beside each tag is the real one.
+ *
+ * Empty when the read has not arrived or failed — there is nothing to invent,
+ * and the editor still accepts any tag typed by hand.
+ */
+export function tagOptions(vocabulary: WorkspaceVocabulary | undefined): readonly ValueOption[] {
+  return (vocabulary?.tags ?? []).map((tag) => ({
+    value: tag.value,
+    detail: plural(tag.count, "document"),
+  }));
+}
+
+/**
+ * The frontmatter keys this workspace invented (SPEC.md §5's **Structured
+ * fields**), offered **before** the `=` rather than after it.
+ *
+ * This is the only completion in the editor that offers part of a *field name*,
+ * and it has to be: an invented field appears in no list anywhere, so a person
+ * who has not memorised their own convention has no way to find it. What is
+ * deliberately not offered is the value — a `customer` field on four hundred
+ * documents would put four hundred strings in one menu, and the endpoint does
+ * not return them.
+ */
+export function extraKeyOptions(
+  vocabulary: WorkspaceVocabulary | undefined,
+): readonly ValueOption[] {
+  return (vocabulary?.extraKeys ?? []).map((entry) => ({
+    value: entry.key,
+    detail: plural(entry.count, "document"),
+  }));
 }
 
 /**
@@ -98,6 +134,8 @@ export interface QueryVocabulary {
   readonly tag: readonly ValueOption[];
   readonly folder: readonly ValueOption[];
   readonly docId: readonly ValueOption[];
+  /** Field-name completions under `extra.`, not values (SPEC.md §5). */
+  readonly extraKey: readonly ValueOption[];
 }
 
 /**
@@ -109,16 +147,22 @@ export interface QueryVocabulary {
 export function useQueryVocabulary(): QueryVocabulary {
   const docs = useDocs({ limit: VOCABULARY_SAMPLE, includeArchived: true });
   const tree = useTree();
+  // A **hint**, never a gate: a failed read leaves the tag and `extra.` menus
+  // empty and refuses nothing, because a name that is not offered is still a
+  // name the query language accepts.
+  const vocabulary = useVocabulary();
   const rows = docs.data?.items;
   const folders = tree.data;
+  const words = vocabulary.data;
 
   return useMemo(() => {
     const items = rows ?? [];
     return {
       docType: docTypeOptions(items),
-      tag: tagOptions(items),
+      tag: tagOptions(words),
       folder: folderOptions(folders),
       docId: docIdOptions(items),
+      extraKey: extraKeyOptions(words),
     };
-  }, [rows, folders]);
+  }, [rows, folders, words]);
 }

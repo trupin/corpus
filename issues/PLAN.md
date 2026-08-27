@@ -1819,12 +1819,12 @@ parameter catalogue names them.
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-091 | `extra.<key>` is a filter, and title/body/tag/folder take globs | done | P1 | opus | SHARED-011 |
-| CONTRACT-092 | A vocabulary endpoint: the tags and `extra` keys this workspace uses | todo | P2 | opus | CONTRACT-091 |
+| CONTRACT-092 | A vocabulary endpoint: the tags and `extra` keys this workspace uses | done | P2 | opus | CONTRACT-091 |
 | SERVER-158 | The projection answers a glob, and reads `extra_json` | done | P1 | opus | CONTRACT-091 |
-| SERVER-159 | Enumerate the workspace's vocabulary from the projection | todo | P2 | opus | CONTRACT-092 |
+| SERVER-159 | Enumerate the workspace's vocabulary from the projection | done | P2 | opus | CONTRACT-092 |
 | CLI-072 | `corpus doc list` takes the same filters the board does | done | P1 | opus | CONTRACT-091, SERVER-158 |
 | UI-177 | The query editor treats `extra.` as open, and stops calling a real field unknown | done | P1 | opus | CONTRACT-091, SERVER-158 |
-| UI-178 | Autocomplete offers the keys and tags the workspace already uses | todo | P2 | opus | CONTRACT-092, SERVER-159, UI-177 |
+| UI-178 | Autocomplete offers the keys and tags the workspace already uses | done | P2 | opus | CONTRACT-092, SERVER-159, UI-177 |
 
 `SHARED-011` keeps its existing row in the unrowed backlog and is marked `done`
 there; `scripts/check-issues.ts` allows one row per id, so it is named here in

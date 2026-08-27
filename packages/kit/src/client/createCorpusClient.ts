@@ -39,6 +39,7 @@ import type {
   UpdateDocResponse,
   UpgradeCheck,
   UpgradeStarted,
+  WorkspaceVocabulary,
 } from "@corpus/contract";
 import {
   EXTRA_PARAM_PREFIX,
@@ -234,6 +235,15 @@ export interface CorpusClient {
    */
   getThreadScope(threadId: string, options?: RequestOptions): Promise<ThreadScope>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
+  /**
+   * `GET /api/vocabulary` — the tags and invented frontmatter keys this
+   * workspace uses, each with a document count (SPEC.md §5, §9.2).
+   *
+   * A hint source and never a gate: nothing the query language accepts depends
+   * on a name appearing here, so a caller that cannot reach it offers no
+   * completions and every query still runs.
+   */
+  getVocabulary(options?: RequestOptions): Promise<WorkspaceVocabulary>;
   /**
    * The four **folder acts** (SPEC.md §9.2, rider 7 signed 2026-08-22), behind
    * the explorer's folder menu (§10, rider 1).
@@ -1053,6 +1063,13 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
 
     async getTree(options) {
       return unwrap("GET /api/tree", await api.GET("/api/tree", { ...signalOf(options) }));
+    },
+
+    async getVocabulary(options) {
+      return unwrap(
+        "GET /api/vocabulary",
+        await api.GET("/api/vocabulary", { ...signalOf(options) }),
+      );
     },
 
     async renameFolder(from, to) {

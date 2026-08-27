@@ -69,6 +69,19 @@ export {
 export const HEALTH_KEY: QueryKey = ["health"];
 
 /**
+ * `["docs", "vocabulary"]` — the tags and invented frontmatter keys behind
+ * `GET /api/vocabulary` (SPEC.md §9.2, CONTRACT-092).
+ *
+ * **A child of the documents key, deliberately.** The published SSE key
+ * vocabulary is closed (`packages/contract/src/query-keys.ts`) and a new name
+ * there is a server emission to wire; this resource needs neither, because it
+ * changes exactly when documents change. `invalidateQueries` matches by prefix,
+ * so every frame that already names `["docs"]` refetches this too — no new
+ * channel, and no way for the menu to go stale while the corpus moves under it.
+ */
+export const VOCABULARY_KEY: QueryKey = [...DOCS_KEY, "vocabulary"];
+
+/**
  * A filter record as it appears inside a query key: sorted keys, sorted array
  * members, nothing empty. See {@link canonicalFilter}.
  */
