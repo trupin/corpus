@@ -73,9 +73,21 @@ export function ReflectControl({ now }: ReflectControlProps): ReactElement {
           });
         }}
       >
-        {label.lead}
+        {/*
+         * **Three elements, not two text nodes around a span** (UI-181).
+         *
+         * This button is a flex row, so a bare text run becomes an *anonymous*
+         * flex item — and CSS strips whitespace at both ends of one. The label's
+         * own trailing and leading spaces were composed correctly, carried
+         * correctly in the DOM, announced correctly by the accessible name, and
+         * thrown away at layout: a person read `Reflect ·  5changes since 1w`.
+         * Real elements with `white-space: pre` keep what
+         * `reflectControlLabel` wrote, which is why the fix is here and not in
+         * the strings — the strings were never wrong.
+         */}
+        <span className="reflect-said">{label.lead}</span>
         {label.count === null ? null : <span className="reflect-count">{label.count}</span>}
-        {label.trail}
+        {label.trail === "" ? null : <span className="reflect-said">{label.trail}</span>}
       </button>
 
       {/*

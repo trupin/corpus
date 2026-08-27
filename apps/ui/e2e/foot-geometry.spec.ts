@@ -29,6 +29,17 @@ interface Box {
   readonly height: number;
 }
 
+/** An unreflected note — written by a person after the clock the stub carries. */
+function note(n: number): StubRow {
+  return {
+    id: `doc_n${String(n)}`,
+    title: `Note ${String(n)}`,
+    path: `data/docs/inbox/n${String(n)}.md`,
+    updated: "2026-08-20T10:00:00.000Z",
+    lastActor: "user",
+  };
+}
+
 const VIEW: StubRow = {
   id: "doc_view_inbox",
   type: "view",
@@ -100,6 +111,104 @@ test.describe("the board bar's Reflect control", () => {
 
     // And nothing is on top of anything.
     expect(clock.x).toBeGreaterThan(swtch.x + swtch.width);
+  });
+
+  /**
+   * UI-181. **`innerText`, not `textContent`** — the whole of the defect is
+   * that the two are different.
+   *
+   * `.reflect-ask` is a flex row, so each contiguous run of text around the
+   * count's own `<span>` becomes an anonymous flex item, and CSS strips
+   * whitespace at both ends of one. The DOM string and the accessible name were
+   * always right; what a person read was `Reflect ·  5changes since 1w`. Both
+   * assertions that guarded this label read the DOM, so neither could see it.
+   */
+  test("the label's count keeps a space on either side of it", async ({ page }) => {
+    await stubCorpus(page, [VIEW, note(1), note(2), note(3), note(4), note(5)], {
+      reflect: { reflected: "2026-08-19T10:00:00.000Z" },
+    });
+    await page.goto("/");
+    await page.locator(".reflect-ask").waitFor();
+
+    /*
+     * **Geometry, because the string was never the problem.** `textContent`
+     * carried both spaces all along, and `innerText` cannot answer either: a
+     * flex row's items are block boxes to it, so it reports a newline between
+     * every piece whatever the spacing does. What a person sees is the gap
+     * between two boxes, measured against the width of a space in the same
+     * font.
+     */
+    const measured = await page.evaluate(() => {
+      const button = document.querySelector(".reflect-ask");
+      if (button === null) throw new Error("no .reflect-ask");
+      const parts = [...button.children] as HTMLElement[];
+      const [lead, count, trail] = parts;
+      if (lead === undefined || count === undefined || trail === undefined) {
+        throw new Error(`expected three parts, saw ${String(parts.length)}`);
+      }
+
+      const probe = document.createElement("span");
+      probe.style.font = getComputedStyle(lead).font;
+      probe.style.whiteSpace = "pre";
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.textContent = " ";
+      button.append(probe);
+      const space = probe.getBoundingClientRect().width;
+      probe.remove();
+
+      const box = (node: HTMLElement) => node.getBoundingClientRect();
+
+      /*
+       * Where a part's **first visible glyph** sits, not where its box starts:
+       * the trail's leading space is inside its own box, so a box-to-box gap
+       * would read as zero whether the space is there or not. A `Range` over
+       * one character is the only thing that answers "is there room between the
+       * digit and the letter".
+       */
+      const firstGlyphLeft = (node: HTMLElement): number => {
+        const text = node.firstChild;
+        if (text === null) throw new Error("no text");
+        const at = (node.textContent ?? "").search(/\S/);
+        const range = document.createRange();
+        range.setStart(text, at);
+        range.setEnd(text, at + 1);
+        return range.getBoundingClientRect().left;
+      };
+      const lastGlyphRight = (node: HTMLElement): number => {
+        const text = node.firstChild;
+        if (text === null) throw new Error("no text");
+        const content = node.textContent ?? "";
+        const at = content.length - 1 - [...content].reverse().findIndex((ch) => /\S/.test(ch));
+        const range = document.createRange();
+        range.setStart(text, at);
+        range.setEnd(text, at + 1);
+        return range.getBoundingClientRect().right;
+      };
+
+      return {
+        space,
+        beforeCount: box(count).left - lastGlyphRight(lead),
+        afterCount: firstGlyphLeft(trail) - box(count).right,
+        text: button.textContent,
+        // One line: every part shares a top edge.
+        tops: parts.map((node) => Math.round(box(node).top)),
+      };
+    });
+
+    // The space after the digit is the one a person said was missing. It is not
+    // "some gap": it is at least a space of the label's own font.
+    expect(measured.afterCount).toBeGreaterThanOrEqual(measured.space - 0.5);
+    // And the one before it, which the count's right-aligned slot also widens.
+    expect(measured.beforeCount).toBeGreaterThanOrEqual(measured.space - 0.5);
+    expect(measured.text).toBe("Reflect · 5 changes since 1w");
+    expect(new Set(measured.tops).size).toBe(1);
+
+    // The accessible name says the same sentence, which it already did.
+    await expect(page.locator(".reflect-ask")).toHaveAttribute(
+      "aria-label",
+      "Reflect · 5 changes since 1w",
+    );
   });
 
   /** Flipping it must not re-width the row — the reason the slot exists. */

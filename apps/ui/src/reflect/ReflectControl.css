@@ -54,6 +54,22 @@
 }
 
 /*
+ * The label's words, either side of the count (UI-181).
+ *
+ * `.reflect-ask` is a flex row, so a bare text run inside it is an **anonymous
+ * flex item**, and CSS strips whitespace at both ends of one. The label is
+ * composed as `Reflect · ` + `5` + ` changes since 1w` and both of those spaces
+ * were being thrown away at layout — `textContent` and the accessible name kept
+ * them, which is why the two assertions guarding this label never saw it.
+ *
+ * `pre` rather than `nowrap`: `nowrap` still collapses a leading space, and a
+ * leading space is exactly what the trail carries.
+ */
+.reflect-said {
+  white-space: pre;
+}
+
+/*
  * The count's own box (SPEC.md §10's rider, signed 2026-08-20 — "a count
  * reaching two digits" is named in it).
  *

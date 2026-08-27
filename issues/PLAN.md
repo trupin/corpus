@@ -1839,18 +1839,26 @@ heuristic SERVER-054 deleted, one of them published in `openapi.json`. The first
 was corrected in PR #55; the other two are corrected here, in files this phase
 was already editing.
 
-**Reported during the phase, and pulled in at the user's word.** Two `P0`
+**Reported during the phase, and pulled in at the user's word.** Three `P0`
 defects reported 2026-08-27, each with a screenshot, each asked for in this
-release: `UI-179` (the Reflect control's switch sits hard against the clock) and
+release: `UI-179` (the Reflect control's switch sits hard against the clock),
 `UI-180` (the composer's foot wraps its legend onto three lines and its two
-pickers do not match). Neither belongs to this release's sentence; both are in
-it because the user asked, and the report says so rather than pretending they
-were always in scope.
+pickers do not match) and `UI-181` (the Reflect label runs its count into its
+noun). None belongs to this release's sentence; all three are in it because the
+user asked, and the report says so rather than pretending they were always in
+scope.
+
+They have a common shape worth naming: **every one is a layout claim that no
+existing test could see.** Two were CSS, one was a string that is correct in the
+DOM and trimmed at layout, and the assertions that guarded them all read the
+DOM. The three now share `apps/ui/e2e/foot-geometry.spec.ts`, which measures
+rendered boxes and `innerText`.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | UI-179 | The Reflect control's parts do not line up (user report) | done | P0 | opus | — |
 | UI-180 | The composer's foot is crowded, and its two pickers do not match (user report) | done | P0 | opus | — |
+| UI-181 | The Reflect label runs its count into its noun (user report) | done | P0 | opus | — |
 
 **`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
 query-surface defect in the same files, and reading it properly showed it is
