@@ -6,7 +6,8 @@ shared
 
 ## Status
 
-todo
+done — decided 2026-08-27: it stays lane-blind, and the reason it gives
+is corrected.
 
 ## Priority
 
@@ -69,22 +70,61 @@ Options, none costless:
 
 ## Acceptance Criteria
 
-- [ ] The question is answered in §7, or explicitly declined with the reason
-- [ ] Whatever is decided, `reapStale`'s docblock stops citing the fallback as
-      its justification — that fallback is gone
+- [x] The question is answered — **declined**, with the reason, in the code
+      rather than in §7 (see below)
+- [x] `reapStale`'s docblock stops citing the fallback as its justification
 
-## Technical Design
+## The decision
 
-_Depends on the answer._
+**The reaper stays lane-blind, and no §7 rider is drafted.** Recorded here and in
+`reapStale`'s docblock, which is where the wrong reason had been living.
+
+### Why not option 2 or 3
+
+The question turns on evidence that does not exist and cannot be cheaply made to.
+Presence is holding a parked `idle`; a resident inside a long turn holds none.
+And a listener cannot signal life by touching what it holds, because
+`QueueStore.lastTouched` returns the **older** of the file's mtime and the
+event's `updated` — so a touch is invisible by construction.
+
+- **A heartbeat** is the only option that would make staleness real evidence. It
+  is also a new obligation on every resident and a new way to die: a listener
+  that forgets to beat is declared dead while it is answering somebody. That is a
+  worse failure than the one being fixed.
+- **A longer window for resident lanes** replaces one guess with another.
+
+### Why leaving it is defensible rather than merely cheaper
+
+The premise the old reason rested on has inverted, and the inversion argues
+*for* the current behaviour rather than against it. A reaped resident event
+returns to **its own lane**, where since the rider signed 2026-08-25 only that
+lane's listener can ever claim it. So a reap hands a resident's work to nobody.
+What it does is make the work claimable again by whatever listener is launched
+next, and clear the `working` flag that would otherwise report a dead lane as
+busy for ever. Both are wanted.
+
+### What it still costs, stated rather than waved past
+
+A resident mid-turn has its held event returned under it, so a `complete` for
+that event arrives for something no longer `in-progress`. Bounded, rare, and
+untidy.
+
+**The duplication that prompted this question is fixed elsewhere and properly.**
+AGENT-056 has the orchestrator read the roster *before* reaping, so a busy lane
+still reads `working` at the moment the launch decision is made. This issue was
+raised to ask whether the reaper itself should change; the answer is that the
+symptom belonged to the loop's ordering, and the reaper's own behaviour is
+right for a reason it had stopped stating correctly.
 
 ## Testing Strategy
 
-_Depends on the answer._
+None — no behaviour changed. The reasoning is in the code, beside the code it
+explains.
 
 ## E2E Verification Log
 
-_N/A — a decision, not an implementation._
+_N/A — a decision. Nothing shipped but a corrected justification._
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Decided with the user
+- [x] Decided, under the v0.27.0 go-ahead that named this issue

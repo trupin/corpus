@@ -1120,12 +1120,40 @@ export class QueueService {
    * came back to `pending/` (sprint-003 adjudication 1).
    *
    * **Lane-blind, and lane-preserving** (SPEC.md §7). Staleness is staleness: a
-   * held event nobody can account for is stuck whichever agent claimed it, and
-   * scoping the reaper would leave a dead resident's work unrecoverable by the
-   * one agent still running. What it must not do is *re-route* what it recovers
-   * — `stamp` spreads the event, so a reaped event returns to `pending/` on the
-   * lane it was claimed from, and the fallback (not the reaper) is what decides
-   * who may then see it.
+   * held event nobody can account for is stuck whichever agent claimed it. What
+   * it must not do is *re-route* what it recovers — `stamp` spreads the event,
+   * so a reaped event returns to `pending/` on the lane it was claimed from.
+   *
+   * **The reason this used to give was the fallback, and the fallback is gone**
+   * (SHARED-074). It said scoping the reaper "would leave a dead resident's work
+   * unrecoverable by the one agent still running" — true while a lapsed lane's
+   * work fell to the orchestrator, and false since the rider signed 2026-08-25.
+   * A reaped resident event returns to its own lane, where **only that lane's
+   * listener** can ever take it. So a reap does not hand a resident's work to
+   * anybody; it makes the work claimable again by the listener that gets
+   * launched next, and clears the `working` flag that would otherwise say a dead
+   * lane is busy for ever.
+   *
+   * **That is still worth doing, and it stays lane-blind** — decided rather than
+   * inherited. The alternative would be to reap a resident lane only on evidence
+   * its listener is gone, and no such evidence exists: presence is holding a
+   * parked `idle`, a resident inside a long turn holds none, and
+   * {@link QueueStore.lastTouched} takes the *older* of the file's mtime and the
+   * event's `updated`, so a listener cannot signal life by touching what it
+   * holds. The window is therefore a guess about how long thinking may take, and
+   * every option considered moved the guess rather than removing it:
+   *
+   * - **A heartbeat** would make staleness real evidence, and is the only one
+   *   that would. It puts a new obligation on every resident and a new way to
+   *   die — a listener that forgets to beat is declared dead while answering.
+   * - **A longer window for resident lanes** is one number replacing another.
+   *
+   * The cost of leaving it is bounded and known: a resident mid-turn has its
+   * held event returned under it, so a `complete` for that event arrives for
+   * something no longer `in-progress`. The **duplication** this used to cause is
+   * fixed elsewhere and properly — AGENT-056 has the orchestrator read the
+   * roster before reaping, so a busy lane still reads `working` when the launch
+   * decision is made.
    */
   async reapStale(): Promise<ReapResult> {
     return this.serialize(async () => {
