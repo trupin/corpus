@@ -4,7 +4,27 @@
 contract
 
 ## Status
-todo
+
+closed — superseded by CONTRACT-092, which answers the same question for two callers.
+
+**Closed 2026-08-26 (Phase 50): superseded by CONTRACT-092.**
+
+This issue asked where the `tag:` chip's vocabulary comes from and listed three
+candidates. Candidate (b) — a dedicated route — is what Phase 50 built, for a
+second reason this issue could not have known: SPEC.md §5's **Structured fields**
+rider makes an invented frontmatter field a filter, and an invented field appears
+in no list anywhere unless something enumerates it. One route answers both
+questions, so building this one separately would have been designing the same
+endpoint twice.
+
+`GET /api/vocabulary` returns tags with counts, which is exactly what the chip
+needs on the hybrid path, plus the extra keys the query editor needs. UI-178
+consumes it and carries this issue's acceptance criterion for the chip.
+
+The widening this issue proposed — putting `type` on `SearchHit` — is **not**
+carried over. It is a per-hit payload cost for one glyph, this issue itself
+called it "probably wrong", and it has nothing to do with a vocabulary. Anyone
+who wants it should file it on its own merits.
 
 ## Priority
 P2
@@ -14,6 +34,7 @@ opus
 
 ## Dependencies
 - Depends on: CONTRACT-022
+- Superseded by: CONTRACT-092
 - Blocks: —
 
 ## Spec References

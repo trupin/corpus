@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import type { WorkspaceVocabulary } from "@corpus/contract";
+import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FilterChips } from "./FilterChips";
@@ -18,15 +20,46 @@ afterEach(cleanup);
 
 const HITS = [hitFixture({ id: "doc_a", title: "Greenhouse plan" })];
 
-function renderChips(query: Partial<SearchQuery> = {}) {
+/**
+ * The chip row needs a corpus client now: the `tag:` vocabulary comes from
+ * `GET /api/vocabulary` (CONTRACT-092), which is the only source there has ever
+ * been for it — a ranked hit deliberately carries no tags.
+ *
+ * `vocabulary: null` answers the read with a `500`, which is how the "the read
+ * failed" state is driven honestly rather than asserted about.
+ */
+function renderChips(
+  query: Partial<SearchQuery> = {},
+  vocabulary: WorkspaceVocabulary | null = { tags: [], extraKeys: [] },
+) {
   const onChange = vi.fn();
+  const fetch = ((input: RequestInfo | URL) => {
+    const url = new URL(new Request(input).url);
+    if (url.pathname === "/api/vocabulary" && vocabulary !== null) {
+      return Promise.resolve(
+        new Response(JSON.stringify(vocabulary), {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ code: "internal_error", message: "no" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as typeof globalThis.fetch;
+
+  const harness = createCorpusTestHarness({ fetch });
   const view = render(
-    <FilterChips
-      query={{ ...EMPTY_SEARCH_QUERY, ...query }}
-      onChange={onChange}
-      tree={{ folders: [] }}
-      hits={HITS}
-    />,
+    <harness.Wrapper>
+      <FilterChips
+        query={{ ...EMPTY_SEARCH_QUERY, ...query }}
+        onChange={onChange}
+        tree={{ folders: [] }}
+        hits={HITS}
+      />
+    </harness.Wrapper>,
   );
   return { ...view, onChange };
 }
@@ -93,5 +126,59 @@ describe("the tag chip with a tag already in the query", () => {
 
     await user.click(chip);
     expect(onChange).toHaveBeenCalledWith({ ...EMPTY_SEARCH_QUERY, tag: null });
+  });
+});
+
+/**
+ * CONTRACT-026, closed at last. The chip could display and clear a tag and
+ * never offer one, because `SearchHit` carries no tags — the defect UI-026's
+ * eval recorded as FAIL-1. `filters.ts` said what would fix it: "the day this
+ * function returns real tags, the chip becomes a normal cycling chip again with
+ * no other edit", and `tagChipState` needed none.
+ */
+describe("the tag chip with a workspace vocabulary", () => {
+  const VOCABULARY: WorkspaceVocabulary = {
+    tags: [
+      { value: "irrigation", count: 4 },
+      { value: "greenhouse", count: 1 },
+    ],
+    extraKeys: [],
+  };
+
+  it("becomes an ordinary cycling chip, with no explanation to give", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderChips({}, VOCABULARY);
+
+    await waitFor(() => {
+      expect(tagChip().disabled).toBe(false);
+    });
+    // No title: the two apologetic states exist because the chip cannot do its
+    // job, and it can now.
+    expect(tagChip().getAttribute("title")).toBeNull();
+
+    await user.click(tagChip());
+    expect(onChange).toHaveBeenCalledWith({ ...EMPTY_SEARCH_QUERY, tag: "irrigation" });
+  });
+
+  it("cycles in the order the server gave, most-used first", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderChips({ tag: "irrigation" }, VOCABULARY);
+
+    await waitFor(() => {
+      expect(tagChip().disabled).toBe(false);
+    });
+    await user.click(tagChip());
+    expect(onChange).toHaveBeenCalledWith({ ...EMPTY_SEARCH_QUERY, tag: "greenhouse" });
+  });
+
+  it("stays disabled when the read fails, rather than breaking the row", async () => {
+    renderChips({}, null);
+    await waitFor(() => {
+      expect(tagChip().disabled).toBe(true);
+    });
+    // Every other chip is unaffected: the vocabulary is a hint, not a gate.
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "type: any" }).disabled).toBe(
+      false,
+    );
   });
 });

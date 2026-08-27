@@ -1,7 +1,13 @@
-import type { FolderTree } from "@corpus/contract";
+import type { FolderTree, WorkspaceVocabulary } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 import { describe, expect, it } from "vitest";
-import { docIdOptions, docTypeOptions, folderOptions, tagOptions } from "./queryVocabulary";
+import {
+  docIdOptions,
+  docTypeOptions,
+  extraKeyOptions,
+  folderOptions,
+  tagOptions,
+} from "./queryVocabulary";
 
 const rows = [
   docRowFixture({ id: "doc_a", type: "note", title: "Mortgage options", tags: ["finance"] }),
@@ -48,17 +54,68 @@ describe("docTypeOptions", () => {
   });
 });
 
+/**
+ * Tags now come from `GET /api/vocabulary` rather than from the sampled page
+ * (CONTRACT-092, closing CONTRACT-026). The difference is exhaustiveness: the
+ * sample was one page of rows, so a tag used only on older documents was simply
+ * not offered in a workspace larger than the page.
+ */
 describe("tagOptions", () => {
-  it("counts every tag across the rows, most-used first", () => {
-    expect(tagOptions(rows)).toEqual([
-      { value: "finance", detail: "2 documents" },
-      { value: "urgent", detail: "2 documents" },
+  const VOCABULARY: WorkspaceVocabulary = {
+    tags: [
+      { value: "finance", count: 12 },
+      { value: "urgent", count: 1 },
+    ],
+    extraKeys: [
+      { key: "assignee", count: 4 },
+      { key: "estimate", count: 1 },
+    ],
+  };
+
+  it("offers the workspace's tags with their real counts, in the order given", () => {
+    // The server orders by use and then by name, so the client renders what it
+    // was handed rather than sorting a second time.
+    expect(tagOptions(VOCABULARY)).toEqual([
+      { value: "finance", detail: "12 documents" },
+      { value: "urgent", detail: "1 document" },
     ]);
   });
 
   /** No vocabulary means no suggestions — never an invented one. */
   it("offers nothing when the workspace has no tags", () => {
-    expect(tagOptions([docRowFixture({ tags: [] })])).toEqual([]);
+    expect(tagOptions({ tags: [], extraKeys: [] })).toEqual([]);
+  });
+
+  /**
+   * A failed or pending read is **silence**, not a failure: nothing the query
+   * language accepts depends on a name appearing in this menu.
+   */
+  it("offers nothing when the read has not arrived", () => {
+    expect(tagOptions(undefined)).toEqual([]);
+  });
+});
+
+describe("extraKeyOptions", () => {
+  const VOCABULARY: WorkspaceVocabulary = {
+    tags: [],
+    extraKeys: [
+      { key: "assignee", count: 4 },
+      { key: "Assignee", count: 1 },
+    ],
+  };
+
+  it("offers the invented field names, counted, case preserved", () => {
+    // Case is preserved because `json_extract` is case-sensitive: `Assignee`
+    // finds different documents from `assignee`, so they are two entries.
+    expect(extraKeyOptions(VOCABULARY)).toEqual([
+      { value: "assignee", detail: "4 documents" },
+      { value: "Assignee", detail: "1 document" },
+    ]);
+  });
+
+  it("offers nothing when the read has not arrived, or the workspace invented none", () => {
+    expect(extraKeyOptions(undefined)).toEqual([]);
+    expect(extraKeyOptions({ tags: [], extraKeys: [] })).toEqual([]);
   });
 });
 

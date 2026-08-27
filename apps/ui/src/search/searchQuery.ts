@@ -73,7 +73,16 @@ export const EMPTY_SEARCH_QUERY: SearchQuery = {
  * `includeArchived` included, since CONTRACT-012's rider landed (sprint-010
  * adjudication 3).
  */
-export type SearchApiParams = DocsFilter;
+/**
+ * **Minus `extra`**, the open namespace SPEC.md §5 opens (CONTRACT-091). Every
+ * member of this type is a chip in the overlay's row, and no chip is a namespace
+ * whose name the workspace chose — there is nowhere in a chip row to type one.
+ * Excluding it keeps this a map of strings, which is what
+ * {@link toViewFrontmatter} relies on when it stringifies a saved search into a
+ * view document's `query:` map. A column's query editor is where an invented
+ * field is filtered on, and that path does not come through here.
+ */
+export type SearchApiParams = Omit<DocsFilter, "extra">;
 
 /** The sort a text search wants; the contract rejects it without a `q`. */
 export const RELEVANCE_SORT = "relevance";

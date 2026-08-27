@@ -41,7 +41,7 @@
 // reader has no way to catch.
 
 import type { DocStatus, ViewQuery, Warning } from "@corpus/contract";
-import { DocsQuerySchema, KanbanSchema, type Kanban } from "@corpus/contract";
+import { DocsQuerySchema, KanbanSchema, splitExtraParams, type Kanban } from "@corpus/contract";
 import { classifyPath, type ProjectionDb } from "../projection/index.js";
 import type { FilterQuery } from "./filters.js";
 import { matchesQuery } from "./query.js";
@@ -117,10 +117,21 @@ export function boardScopeQuery(query: ViewQuery | null): FilterQuery {
   // spell one query two ways.
   for (const [key, value] of Object.entries(query ?? {})) raw[key] = valueToWire(value);
   raw["includeArchived"] = "true";
-  const parsed = DocsQuerySchema.safeParse(raw);
+  // `extra.<key>` is neither an unknown key nor a field of the object schema, so
+  // it has to be lifted before the parse or a board scoped by an invented field
+  // would silently stop filtering on it (SPEC.md §5). A malformed key throws,
+  // and this function's documented fallback — the widest scope, visibly wrong
+  // rather than invisibly wrong — is the right answer to that too.
+  let split;
+  try {
+    split = splitExtraParams(raw);
+  } catch {
+    return { includeArchived: true };
+  }
+  const parsed = DocsQuerySchema.safeParse(split.params);
   if (!parsed.success) return { includeArchived: true };
   const { sort: _sort, limit: _limit, offset: _offset, ...filters } = parsed.data;
-  return filters;
+  return split.extra === undefined ? filters : { ...filters, extra: split.extra };
 }
 
 /**

@@ -1,4 +1,11 @@
-import { DOC_SORTS, DocRowSchema, type DocList, type DocRow } from "@corpus/contract";
+import {
+  DOC_SORTS,
+  DocRowSchema,
+  EXTRA_KEY_PATTERN,
+  EXTRA_PARAM_PREFIX,
+  type DocList,
+  type DocRow,
+} from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
 import { UsageError } from "../../errors.js";
 import { parseTriStateBoolean, plural } from "../../input.js";
@@ -89,12 +96,85 @@ const IS_PARENT_FLAG: FlagSpec = {
  */
 const LIST_FILTER_FLAGS = insertFlagAfter(DOC_FILTER_FLAGS, "unread", IS_PARENT_FLAG);
 
+/**
+ * `--extra key=value`, the open namespace SPEC.md §5's **Structured fields**
+ * opens. List-only, exactly as `--is-parent` is: `/api/search` does not carry
+ * it, so a flag for it on `corpus search` would go nowhere on the wire.
+ *
+ * **`key=value` rather than `--extra.key value`.** A flag name cannot carry the
+ * key without teaching the parser an open namespace, and this CLI does not grow
+ * a second parser for a shape the server owns. Split on the **first** `=`, so a
+ * value may contain one.
+ */
+const EXTRA_FLAG: FlagSpec = {
+  name: "extra",
+  type: "string",
+  repeated: true,
+  valueName: "key=value",
+  description:
+    "Filter on a frontmatter field this workspace invented (SPEC.md §5): `--extra assignee=theo`. " +
+    "Repeatable, and keys AND together like every other filter. A key must be an identifier — " +
+    "letters, digits, `_`, `-` — and the value takes glob patterns on the same terms as " +
+    "`--title`. A document that does not carry the key never matches, and there is no way to ask " +
+    "for one that lacks it. Where the field holds a list, the filter matches if any entry does. " +
+    "The same key twice: last one wins.",
+};
+
+/**
+ * `--extra` occurrences, parsed and checked **before any request**.
+ *
+ * The key rule comes from the contract rather than being restated here, so a
+ * refusal the server would make is made locally instead of costing a round trip
+ * — the stance every enumerated filter on this verb already takes.
+ */
+function collectExtra(context: WorkspaceCommandContext): Record<string, string> {
+  const found: Record<string, string> = {};
+  for (const entry of context.flags.strings("extra")) {
+    const at = entry.indexOf("=");
+    if (at <= 0) {
+      throw new UsageError(`--extra takes \`key=value\`, and \`${entry}\` has no \`=\`.`, {
+        hint: "Write it as `--extra assignee=theo`. No request was sent.",
+      });
+    }
+    const key = entry.slice(0, at);
+    const value = entry.slice(at + 1);
+    if (!EXTRA_KEY_PATTERN.test(key)) {
+      throw new UsageError(
+        `\`${key}\` is not a field name: it must be an identifier — letters, digits, \`_\` and ` +
+          "`-`, starting with a letter or `_`.",
+        { hint: "No request was sent." },
+      );
+    }
+    if (value === "") {
+      throw new UsageError(`--extra ${key}= has no value.`, {
+        hint:
+          "There is no way to ask for a document that *lacks* a field. To find every document " +
+          `that has one, write \`--extra ${key}='*'\`. No request was sent.`,
+      });
+    }
+    found[key] = value;
+  }
+  return found;
+}
+
 export async function runDocList(context: WorkspaceCommandContext): Promise<void> {
   const fields = requestedFields(context);
   const query = collectQuery(context);
 
+  // `extra.<key>` goes on the wire as one parameter per key, which no generated
+  // parameter type can name: the namespace is open, and OpenAPI 3.1 has no
+  // serialization style for a dot-delimited one. `openapi-fetch` serialises
+  // whatever entries it is handed, so the dotted keys are merged into a widened
+  // record here rather than threaded through `DocsListQuery` — which would have
+  // to grow an index signature and would then silence a typo in every other
+  // filter this file names.
+  const wire: Record<string, unknown> = { ...query };
+  for (const [key, value] of Object.entries(collectExtra(context))) {
+    wire[`${EXTRA_PARAM_PREFIX}${key}`] = value;
+  }
+
   const result = await context.client.request((api) =>
-    api.GET("/api/docs", Object.keys(query).length === 0 ? {} : { params: { query } }),
+    api.GET("/api/docs", Object.keys(wire).length === 0 ? {} : { params: { query: wire } }),
   );
 
   context.out.emit(fields === undefined ? result : projectFields(result, fields));
@@ -297,6 +377,9 @@ export const listCommand: WorkspaceCommandSpec = {
     // plus this verb's own one spliced back into its published position
     // rather than the shared list being cut in two.
     ...LIST_FILTER_FLAGS,
+    // List-only, like `--is-parent` above it and for the same reason: the
+    // signed `/api/search` parameter string does not carry `extra`.
+    EXTRA_FLAG,
     {
       name: "sort",
       type: "string",
@@ -347,6 +430,19 @@ export const listCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc list --needs me --folder finance",
       description: "What wants attention inside one folder — the board's Attention view, filtered.",
+    },
+    {
+      command: "corpus doc list --extra assignee=theo --status open",
+      description:
+        "Everything assigned to one person, where `assignee:` is a frontmatter field this " +
+        "workspace invented and no schema change was needed to start filtering on it " +
+        "(SPEC.md §5).",
+    },
+    {
+      command: "corpus doc list --title 'Catch-Up*' --sort -updated",
+      description:
+        "Glob matching on a field (SPEC.md §9.2), newest first. **Quote the pattern** — an " +
+        "unquoted `*` is expanded by the shell before this command sees it.",
     },
     {
       command: 'corpus doc list --stage ",triage" --type note',

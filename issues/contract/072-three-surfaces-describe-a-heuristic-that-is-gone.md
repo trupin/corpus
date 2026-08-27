@@ -4,8 +4,9 @@
 contract
 
 ## Status
-in_progress — surface 1 (the published contract) is **done** in PR #55; surfaces
-2 (`packages/kit`) and 3 (`apps/ui/e2e`) remain
+done — surface 1 (the published contract) landed in PR #55; surfaces 2
+(`packages/kit`) and 3 (`apps/ui/e2e`) landed 2026-08-26 in Phase 50, which
+touched the same files.
 
 **Amended 2026-08-22 by SHARED-065 (Phase 41). Not closed, and not rewritten
 blind.** Surfaces 2 and 3 survive Phase 41 whole: `packages/kit` is kept (SHARED-067
@@ -79,8 +80,8 @@ redundant and a reader should not try to collapse them.
 ## Acceptance Criteria
 - [x] Surface 1 (`packages/contract`, published in `openapi.json`) matches the
       implemented predicate — done in PR #55, 2026-08-22
-- [ ] Surface 2 (`packages/kit/src/row/useRowSignals.ts` docblock)
-- [ ] Surface 3 (`apps/ui/e2e/stubCorpus.ts:979` comment)
+- [x] Surface 2 (`packages/kit/src/row/useRowSignals.ts` docblock)
+- [x] Surface 3 (`apps/ui/e2e/stubCorpus.ts` comment — it had moved to line 1248)
 - [x] `openapi.json` and `src/client/schema.generated.ts` regenerate; regeneration
       is a no-op over the new source
 - [x] The deliberate omission of `t.status` is stated, not left to be inferred
@@ -92,55 +93,17 @@ prose being true; the guard is review.
 
 ## E2E Verification Log
 
-### 2026-08-22 — contract surface only (contract-dev, model: Opus 5)
+**Implemented on: opus.** Prose only — no behaviour changes, so there is nothing
+to exercise. The evidence is that all three surfaces now say the same thing the
+predicate does:
 
-Carved out of the PR #55 review as a MAJOR finding: interface documentation must
-move with the behaviour in the same PR, so the contract half landed there rather
-than waiting for this issue. The kit docblock and the e2e stub comment stay here.
+- `packages/contract` — corrected in PR #55, published in `openapi.json`.
+- `packages/kit/src/row/useRowSignals.ts` — the docblock said the agent "was
+  drawn into an open thread and the last turn is not yet its reply". It now says
+  the queue owes the thread something, and records that the shape not changing
+  is exactly why the sentence survived a release after it went false.
+- `apps/ui/e2e/stubCorpus.ts` — the comment restated the deleted SQL as the
+  server's rule. It now says the stub runs no queue, which is the real reason
+  the dot is missing there, and names the old rule as the old rule. It had moved
+  from line 979 to 1248 since the issue was filed.
 
-**Read first, not trusted:** `apps/server/src/docs/needs.ts` —
-`AWAITING_AGENT_SQL`, `OUTSTANDING_EVENT_STATUSES` and `FAILED_JOB_SQL`. The new
-description is written from that fragment: an event whose status is one of
-`pending`, `in-progress`, `deferred` and whose payload carries the thread's id as
-a top-level value, matched by value (`json_each`) exactly as `FAILED_JOB_SQL`
-matches one, because two sibling predicates in one file may not read a payload
-two ways.
-
-**Changed** (`packages/contract/src/schemas/query.ts`, `threadRowShape`):
-
-1. `awaitingAgent` — rewritten. It now states the queue predicate, names the
-   three non-terminal statuses and why `deferred` is among them, states the
-   payload-matching rule and the plugin-event-type consequence, states
-   **explicitly** that it reads no thread state (`agent`, `status`, `lastAuthor`)
-   and that resolving a thread does not clear it because resolving cancels no
-   queued event — the same call UI-058 made when it dropped the client's
-   `!resolved` gate — and records that the kit's `GET /api/jobs` scan asks a
-   different question of the same source (per-job `status` + `lastLine` to
-   separate §8's *working* from *waiting*, and windowed where this column is
-   not), so a reader does not try to collapse the two.
-2. `agent` — **one line beyond the reported finding**, same drift, same field
-   group. Its description claimed the column was "backing the pending-agent
-   indicator", which SERVER-054 made false in this PR. It now names the column as
-   the `agent=` filter's, and says it only ever climbs, so it reports thread
-   history and never what the queue holds now.
-
-**Evidence:**
-
-- `npm run build` → exit 0. `npm run generate -w packages/contract` → exit 0,
-  wrote `openapi.json` + `src/client/schema.generated.ts`.
-- **Regeneration is a no-op over the new source** (the drift check's own first
-  test): generated twice, `shasum -a 256` identical across the second run —
-  `c522d0cb…` (`openapi.json`), `cfe0eefd…` (`schema.generated.ts`).
-- `tsx scripts/check-generated-artifacts.ts` → the API-contract group reports the
-  4 changed lines per artifact against `HEAD` and nothing else. That branch is
-  the `diffAgainstHead` half firing on an **uncommitted** change (it prints the
-  diff summary, which the hash branch does not), so it clears once the
-  orchestrator commits. `CLI reference is up to date`.
-- Published prose verified by reading it back out of the generated document at
-  `#/components/schemas/DocRow/properties/awaitingAgent`, and out of the
-  generated client's JSDoc at `schema.generated.ts:4292`.
-- `VITEST_MAX_THREADS=4 vitest run packages/contract scripts` → 84 files, 3591
-  tests, all passing. `eslint` + `prettier --check` on the three touched files →
-  clean. `tsc --noEmit -p packages/contract` → clean.
-- No shape change: `awaitingAgent` is still `boolean | null`, `agent` still
-  `ThreadAgent | null`. Only `description`/`@description` lines moved.

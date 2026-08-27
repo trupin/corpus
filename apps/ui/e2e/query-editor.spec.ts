@@ -1,4 +1,10 @@
-import { DocsQuerySchema, type DocList, type DocRow, type FolderTree } from "@corpus/contract";
+import {
+  DocsQuerySchema,
+  type DocList,
+  type DocRow,
+  type FolderTree,
+  type WorkspaceVocabulary,
+} from "@corpus/contract";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
@@ -62,6 +68,33 @@ async function seedVocabulary(page: Page): Promise<void> {
             { path: "inbox", name: "inbox", count: 5, totalCount: 5, children: [] },
           ],
         } satisfies FolderTree),
+      });
+    },
+  );
+
+  /*
+   * `GET /api/vocabulary` — where the tag menu's values come from since UI-178.
+   *
+   * They used to be counted off the sampled page of rows below, which this
+   * helper serves; the endpoint replaced that sample so the list is exhaustive
+   * rather than drawn from one page. The helper still owns what the editor sees,
+   * so it answers both — and the tags here are the tags its own rows carry, so
+   * the two halves of the fixture cannot drift apart.
+   */
+  await page.route(
+    (url) => url.pathname === "/api/vocabulary",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tags: [
+            { value: "finance", count: 1 },
+            { value: "housing", count: 1 },
+            { value: "urgent", count: 2 },
+          ],
+          extraKeys: [],
+        } satisfies WorkspaceVocabulary),
       });
     },
   );
@@ -208,7 +241,9 @@ test.describe("the column query editor", () => {
     await expect(optionText(page).filter({ hasText: "finance" })).toHaveCount(1);
     await expect(optionText(page).filter({ hasText: "inbox" })).toHaveCount(1);
 
-    // Tags come off the rows, counted.
+    // Tags come from the workspace's own vocabulary, counted (UI-178). They
+    // used to be counted off the sampled page of rows, which meant a tag on a
+    // document older than one page was never offered.
     await field(page).press("ControlOrMeta+a");
     await field(page).pressSequentially("tag=");
     await expect(optionText(page).filter({ hasText: "finance" })).toHaveCount(1);

@@ -22,7 +22,7 @@
 // guard is what a reader would otherwise add back.
 
 import type { DocsQuery } from "@corpus/contract";
-import { STALE_TIERS } from "@corpus/contract";
+import { hasGlob, STALE_TIERS } from "@corpus/contract";
 import { normalizeInstant } from "../core/time.js";
 import { SNIPPET_CLOSE, SNIPPET_ELLIPSIS, SNIPPET_OPEN, SNIPPET_TOKENS } from "./fts.js";
 import { toFtsMatchExpression } from "./fts.js";
@@ -88,6 +88,33 @@ function csv(value: string): string[] {
 }
 
 const LIKE_SPECIAL = /[\\%_]/g;
+
+/**
+ * SPEC.md §9.2's **Pattern matching**, as the one predicate every glob-bearing
+ * filter is built from (SHARED-011's rider, signed 2026-08-04).
+ *
+ * **`GLOB`, not `LIKE`.** SQLite's `GLOB` is already the vocabulary the spec
+ * describes — `*` for any run, `?` for one. Translating to `LIKE` would mean two
+ * conversions in opposite directions: escaping `%` and `_` so a literal one
+ * cannot act as a wildcard, and rewriting `*`/`?` into them. `GLOB` needs
+ * neither.
+ *
+ * **Case-insensitive, spelled out.** `GLOB` is case-sensitive and `LIKE` is not,
+ * so a raw `GLOB` would make `title=` behave one way and `tag=` — which has
+ * lowercased both sides since it was written — behave another. `lower()` on both
+ * sides is one rule across the four fields, and it is what the published
+ * descriptions promise.
+ *
+ * **A value with no wildcard is matched exactly, as it always was.** That is
+ * what makes the rider additive: `folder=work` is the prefix match it has always
+ * been, and `folder=work/*` matched nothing before this existed, so no stored
+ * query changes its result. Substring matching is spelled `*mortgage*` and is
+ * not a third mode.
+ */
+function textMatch(binder: Binder, expression: string, prefix: string, value: string): string {
+  const bound = binder.next(prefix, value.toLowerCase());
+  return hasGlob(value) ? `lower(${expression}) GLOB ${bound}` : `lower(${expression}) = ${bound}`;
+}
 
 /** Escapes a LIKE prefix so a folder named `q_1` cannot match `q11`. */
 function likePrefix(value: string): string {
@@ -289,6 +316,35 @@ export function compileFilters(
   binder.fixed("today", today);
   for (const tier of STALE_TIERS) binder.fixed(`cutoff_${tierParam(tier)}`, cutoffs[tier]);
 
+  // SPEC.md §9.2's **Pattern matching**, and the two filters the rider created
+  // (SHARED-011). They sit here, beside `type`, because they are the plainest
+  // predicates in the builder and a reader looking for "match this text" should
+  // find them before the staleness ramp.
+  if (query.title !== undefined) {
+    conditions.push(textMatch(binder, "d.title", "title", query.title));
+  }
+
+  if (query.body !== undefined) {
+    // The projection's `documents.body_excerpt` is an **excerpt** — matching
+    // against it would silently answer for the first few hundred characters and
+    // call it the body. The whole text lives in the `search` FTS5 table, one row
+    // per ref, which is also where `q` reads it, so the two filters agree about
+    // what a document's body is.
+    //
+    // A thread's turns are rows of that table under the thread's own `doc_id`,
+    // so a pattern reaches turn text exactly as `q` does. Correlated rather than
+    // joined: this builder's contract is that its conditions name `d`, `t` and
+    // `s` and no other alias.
+    conditions.push(
+      `EXISTS (SELECT 1 FROM search fb WHERE fb.doc_id = d.id AND ${textMatch(
+        binder,
+        "fb.body",
+        "body",
+        query.body,
+      )})`,
+    );
+  }
+
   if (query.type !== undefined) {
     const types = csv(query.type).map((type) => binder.next("type", type));
     conditions.push(types.length === 0 ? "0" : `d.type IN (${types.join(", ")})`);
@@ -315,15 +371,39 @@ export function compileFilters(
   );
 
   if (query.tag !== undefined) {
-    const tags = csv(query.tag).map((tag) => binder.next("tag", tag.toLowerCase()));
+    const values = csv(query.tag);
+    // The `IN` form is kept byte for byte when no value is a pattern, rather
+    // than rewritten into a chain of equalities that happens to mean the same.
+    // Every tag query shipped before SHARED-011 therefore compiles to the SQL it
+    // always compiled to, and the query plan with it.
+    const branches = values.some(hasGlob)
+      ? values.map((tag) => textMatch(binder, "tg.value", "tag", tag))
+      : null;
+    const predicate =
+      branches === null
+        ? `lower(tg.value) IN (${values.map((tag) => binder.next("tag", tag.toLowerCase())).join(", ")})`
+        : branches.join(" OR ");
     conditions.push(
-      tags.length === 0
+      values.length === 0
         ? "0"
-        : `EXISTS (SELECT 1 FROM json_each(d.tags_json) tg WHERE lower(tg.value) IN (${tags.join(", ")}))`,
+        : `EXISTS (SELECT 1 FROM json_each(d.tags_json) tg WHERE ${predicate})`,
     );
   }
 
-  if (query.folder !== undefined) {
+  if (query.folder !== undefined && hasGlob(query.folder)) {
+    // A pattern names a path, so it is matched against the stored path and
+    // skips `folderPathPrefix`'s normalisation entirely (SHARED-011). There is
+    // no honest way to normalise `work/*`: the bare-name form appends
+    // `data/docs/` and a trailing slash, and a pattern may legitimately end mid
+    // segment. So both spellings are accepted — `work/*` and `data/docs/work/*`
+    // — by matching the pattern with the root prefix optional.
+    //
+    // `folderScope` is refused alongside a pattern by the contract, so the
+    // `self` narrowing is unreachable here rather than silently skipped.
+    const path = query.folder.replace(/^\/+/, "");
+    const bare = path.startsWith(`${DOCS_ROOT}/`) ? path.slice(DOCS_ROOT.length + 1) : path;
+    conditions.push(textMatch(binder, "d.path", "folder", `${DOCS_ROOT}/${bare}`));
+  } else if (query.folder !== undefined) {
     // §10 folder scoping, and how far under the folder it reaches (CONTRACT-081).
     //
     // The **unescaped** prefix is what the `self` form measures: `likePrefix`
@@ -361,6 +441,42 @@ export function compileFilters(
       conditions.push(
         `(d.path LIKE ${prefix} ESCAPE '\\' OR EXISTS (
          SELECT 1 FROM documents p WHERE p.id = t.parent_id AND p.path LIKE ${prefix} ESCAPE '\\'))`,
+      );
+    }
+  }
+
+  // SPEC.md §5's **Structured fields**: the frontmatter keys a workspace invents,
+  // read out of the projection's `extra_json` column — which has been written
+  // since the projection was first built and, until now, read by nothing.
+  //
+  // **The JSON path binds.** `json_extract(d.extra_json, @path)` takes the path
+  // as a parameter, so a key never becomes SQL text. The contract validates the
+  // key to an identifier as well; this bind is the guard that holds whether or
+  // not that validation stays correct.
+  if (query.extra !== undefined) {
+    for (const [key, value] of Object.entries(query.extra)) {
+      const path = binder.next("extraPath", `$."${key}"`);
+      // **One `EXISTS` covers the scalar, the array and the absence**, because
+      // `json_each(X, P)` over a scalar yields that scalar as its single row and
+      // over a missing path yields nothing. So the array case — "any element
+      // matches", the way `tag` has always ORed — needs no second branch, and a
+      // document lacking the key cannot match whatever the value.
+      //
+      // **`json_type(d.extra_json, path)`, never `json_type(json_extract(…))`.**
+      // The one-argument form re-parses what it is handed, and an extracted
+      // string like `theo` is not valid JSON, so `json_type(json_extract(…))`
+      // raises `malformed JSON` on any document whose field holds a word. That
+      // was written here first and every `assignee` query died on it. The
+      // two-argument form reads the type at the path without re-parsing.
+      //
+      // The guard's only job is to keep an *object* out: `json_each` would
+      // otherwise walk its members, and `extra.address=London` matching a nested
+      // `{ city: "London" }` is a claim nobody has made.
+      conditions.push(
+        `EXISTS (
+         SELECT 1 FROM json_each(d.extra_json, ${path}) ex
+          WHERE json_type(d.extra_json, ${path}) <> 'object'
+            AND ${textMatch(binder, "ex.value", "extra", value)})`,
       );
     }
   }

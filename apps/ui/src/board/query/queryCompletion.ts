@@ -112,6 +112,14 @@ export interface QueryCompletion {
  * menu already knows about. A value completion inserts the bare value: what
  * follows it is `&`, `,` or nothing, and guessing which would be wrong two
  * times out of three.
+ *
+ * **A field name ending in `.` is a prefix, not a name** (SPEC.md §5's
+ * **Structured fields**). `extra.` opens a namespace whose tail the workspace
+ * chose, so what has to follow it is the key and not the operator. Appending
+ * `=` there would complete to `extra=`, which is a filter the server does not
+ * honour — the menu would be handing the person a broken query. The rule is
+ * spelled on the **shape of the name** rather than on the name itself, so this
+ * module keeps knowing nothing about which fields exist.
  */
 export function applyQueryCompletion(
   text: string,
@@ -123,7 +131,8 @@ export function applyQueryCompletion(
   // and a second operator would break the very query it is fixing.
   const operator = trigger.kind === "field" ? equalsAfter(text, trigger.end) : -1;
   const equipped = operator !== -1;
-  const inserted = trigger.kind === "field" && !equipped ? `${value}=` : value;
+  const namespace = value.endsWith(".");
+  const inserted = trigger.kind === "field" && !equipped && !namespace ? `${value}=` : value;
   // The replacement swallows the gap between the name and its operator, so a
   // repair does not leave the space that hid the operator in the first place.
   const tail = equipped ? operator : trigger.end;

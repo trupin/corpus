@@ -4,7 +4,7 @@
 shared
 
 ## Status
-todo — signed by the user 2026-08-04; apply to SPEC.md at phase kickoff.
+done — signed by the user 2026-08-04, applied to SPEC.md 2026-08-26 at Phase 50's kickoff.
 
 ## Priority
 P1
@@ -14,7 +14,10 @@ fable
 
 ## Dependencies
 - Depends on: —
-- Blocks: CONTRACT-030, SERVER-056, UI-069
+- Blocks: CONTRACT-091, CONTRACT-092, SERVER-158, SERVER-159, CLI-072, UI-177, UI-178
+- _(The chain was first written as CONTRACT-030/SERVER-056/UI-069. Those numbers were
+  taken by unrelated jobs-by-origin work long before this rider reached a phase, so the
+  line is corrected here rather than left pointing at three issues about job queries.)_
 
 ## Spec References
 - §5 (views and queries), §9.2 (`GET /api/docs` filters), §2.1 (frontmatter)
@@ -72,6 +75,27 @@ APPEND to §5 (views and queries):
 > pattern with a leading wildcard cannot use an index and scans, which is a
 > performance property, not a limit.
 
+## Where the text landed (2026-08-26)
+
+The rider says "APPEND to §5 (views and queries)". §5 is **The document model**
+today, and the collection query lives in §9.2 — the section was split after the
+signature. The two paragraphs went to the section that now covers each subject,
+each applied verbatim:
+
+- **Structured fields** → §5, beside the line that already introduces extra
+  frontmatter.
+- **Pattern matching** → §9.2, directly under the `GET /api/docs` bullet.
+
+Each carries a note naming the signature date and the split, so a reader finds
+the other half.
+
+**One consequence, recorded rather than assumed.** `title=Catch-Up*` is the
+rider's own example, and the collection query carried no `title` filter and no
+`body` filter. The signed text therefore creates two filters. §9.2's parameter
+line is a catalogue of that endpoint's parameters, so it gained `title=`,
+`body=` and `extra.<key>=`. That is bookkeeping in a list. The behaviour is
+stated in the signed paragraphs and nowhere else.
+
 ## Design questions for the implementing chain
 - **Namespacing.** `assignee=theo` reads better than `extra.assignee=theo`, but a
   bare name collides the day a core field of that name is added, and the closed
@@ -91,8 +115,8 @@ APPEND to §5 (views and queries):
   enumerate.
 
 ## Acceptance Criteria
-- [ ] Both paragraphs applied to SPEC.md verbatim at phase kickoff
-- [ ] The chain does not start before the text is in place
+- [x] Both paragraphs applied to SPEC.md verbatim at phase kickoff
+- [x] The chain does not start before the text is in place
 
 ## Technical Design
 ### Files to Create/Modify
@@ -105,5 +129,5 @@ None — spec text.
 _N/A — spec change._
 
 ## Completion Checklist (orchestrator)
-- [ ] SPEC.md updated
-- [ ] Committed with `[SHARED-011]` prefix
+- [x] SPEC.md updated
+- [x] Committed with `[SHARED-011]` prefix

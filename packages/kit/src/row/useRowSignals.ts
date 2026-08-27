@@ -71,10 +71,18 @@ export interface AgentActivity {
 /**
  * Whether the agent owes this row something (SPEC.md §8).
  *
- * Two honest sources, no timer: `DocRow.awaitingAgent` — the agent was drawn
- * into an open thread and the last turn is not yet its reply — and the jobs
- * projection, which names the document a queue event originated from. Neither is
- * a progress estimate, because there isn't one.
+ * Two honest sources, no timer: `DocRow.awaitingAgent` — **the queue still owes
+ * this thread something**, meaning an event in a non-terminal status carries the
+ * thread's id — and the jobs projection, which names the document a queue event
+ * originated from. Neither is a progress estimate, because there isn't one.
+ *
+ * `awaitingAgent` used to be a heuristic over thread state ("the agent was drawn
+ * into an open thread and the last turn is not yet its reply"), and SERVER-054
+ * replaced it with the queue predicate above. **The shape did not change**, so
+ * nothing here broke and this sentence stayed false for a release
+ * (CONTRACT-072). The difference that matters to a reader of this file: it reads
+ * no thread state at all, so resolving a thread does not clear it — resolving
+ * cancels no queued event.
  *
  * **One shared query, never one per row** (UI-069, corrected by UI-075). A row
  * hook runs once per card: a column of two hundred rows asking a
@@ -98,7 +106,8 @@ export interface AgentActivity {
  * agent has `awaitingAgent` set by the server, which is not windowed and not a
  * scan. So the dot stays lit on the evidence that survives; what is lost is the
  * job's `lastLine` as the dot's label, and it falls back to naming the wait
- * instead.
+ * instead. (The two sources read the same queue by different routes, which is
+ * why one covering the other's gap is sound rather than lucky.)
  *
  * **Working outranks waiting** when this row has several outstanding events, and
  * only that way round: one of them being held is enough to make "the agent is

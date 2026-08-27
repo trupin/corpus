@@ -34,15 +34,25 @@ const open = (name: string): WriteWorkspace => {
   return ws;
 };
 
-/** The one pending event's payload, straight off disk. */
+/**
+ * The `comment.created` payload, straight off disk.
+ *
+ * **Named by type rather than taken as "the only one"** (SERVER-160). A
+ * standalone creation that asks for the agent now enqueues two events: the
+ * `resident.designated` that asks the orchestrator to launch a listener for the
+ * new lane, and the message itself. Both are real, and this file is about the
+ * second.
+ */
 function onlyPayload(workspace: WriteWorkspace): Record<string, unknown> {
-  const files = pendingEvents(workspace);
-  expect(files).toHaveLength(1);
-  const raw = readFileSync(
-    join(workspace.root, ".corpus", "queue", "pending", files[0] ?? ""),
-    "utf8",
+  const events = pendingEvents(workspace).map(
+    (file) =>
+      JSON.parse(
+        readFileSync(join(workspace.root, ".corpus", "queue", "pending", file), "utf8"),
+      ) as { type: string; payload: Record<string, unknown> },
   );
-  return (JSON.parse(raw) as { payload: Record<string, unknown> }).payload;
+  const comments = events.filter((event) => event.type === "comment.created");
+  expect(comments).toHaveLength(1);
+  return comments[0]?.payload ?? {};
 }
 
 /**

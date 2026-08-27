@@ -544,6 +544,22 @@ function createStubApp() {
     ),
   );
   /**
+   * CONTRACT-092. Counts and no values: what a workspace names its fields is
+   * bounded, what those fields hold is not (SPEC.md §5).
+   */
+  app.openapi(contractRoutes.getVocabulary, (c) =>
+    c.json(
+      {
+        tags: [
+          { value: "finance", count: 3 },
+          { value: "urgent", count: 1 },
+        ],
+        extraKeys: [{ key: "assignee", count: 2 }],
+      },
+      200,
+    ),
+  );
+  /**
    * The four folder acts (CONTRACT-075). Each answers with the documents it
    * changed and the field that changed on each, so the stub is what a caller
    * type-checks against: three different result shapes, one per act.

@@ -258,6 +258,9 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/search",
 
   "GET /api/tree",
+  // CONTRACT-092, beside the tree because the two are the same kind of thing:
+  // a cheap aggregate a picker reads to know what it may offer.
+  "GET /api/vocabulary",
   "POST /api/folders/rename",
   "POST /api/folders/archive",
   "POST /api/folders/unarchive",

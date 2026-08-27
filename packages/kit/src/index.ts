@@ -58,6 +58,11 @@ export { useDocs } from "./query/useDocs.js";
 export { useDoc } from "./query/useDoc.js";
 export { useThread } from "./query/useThread.js";
 export { useTree } from "./query/useTree.js";
+// What this workspace's own vocabulary is — the tags and the invented
+// frontmatter keys the query editor completes from (CONTRACT-092). A hint
+// source and never a gate: a failed read offers no completions and refuses
+// nothing.
+export { useVocabulary } from "./query/useVocabulary.js";
 // Ranked retrieval (SPEC.md §9.2) — a separate seam from `useDocs` on purpose:
 // which endpoint a surface reads from is a product decision, not a parameter.
 export { useRelatedDocs } from "./query/useRelatedDocs.js";
@@ -163,6 +168,7 @@ export {
   jobsListKey,
   JOBS_KEY,
   QUEUE_KEY,
+  VOCABULARY_KEY,
   // `REFLECT_KEY` joined in UI-153, for `AGENTS_KEY`'s reason above: the
   // Reflect control reads `GET /api/workspace/reflect` from `apps/ui`, and a
   // consumer that cached it under a key no `invalidate` frame names would serve

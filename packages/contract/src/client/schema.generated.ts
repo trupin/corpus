@@ -62,6 +62,10 @@ export interface paths {
                     offset?: number;
                     /** @description Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry `snippets`; without `q` every row's `snippets` array is empty. */
                     q?: string;
+                    /** @description Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
+                    title?: string;
+                    /** @description Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
+                    body?: string;
                     /** @description Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
                     type?: string;
                     /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter. */
@@ -70,9 +74,9 @@ export interface paths {
                     stage?: string;
                     /** @description Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's "include archived" reading (SPEC.md §10) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`. */
                     includeArchived?: boolean;
-                    /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
+                    /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
                     tag?: string;
-                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. */
+                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`. */
                     folder?: string;
                     /** @description Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     parent?: string;
@@ -96,6 +100,10 @@ export interface paths {
                     folderScope?: "tree" | "self";
                     /** @description The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
                     needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
+                    /** @description **Spelled `extra.<key>=<value>` on the wire** — `extra.assignee=theo` — one parameter per key. It is published here under the bare name `extra` because a parameter's published name must equal the schema key it comes from, and OpenAPI 3.1 has no serialization style for a dot-delimited open namespace (`deepObject` would mean `extra[assignee]`). The generated client takes it as the record it is and expands it at the boundary. Filter on a frontmatter field this workspace invented (SPEC.md §5). One parameter per key — `extra.assignee=theo` — and keys AND together like every other filter. A key must be an identifier (letters, digits, `_`, `-`), and a malformed one is a `400` naming it. The value takes glob patterns on the same terms as `title`. A document that does not carry the key never matches, whatever the value, and there is **no way to ask for absence**: an empty value is refused rather than read as a null sentinel. Where the field holds a JSON array the filter matches if **any element** matches, the way `tag` already ORs. Not offered on `/api/search`. */
+                    extra?: {
+                        [key: string]: string;
+                    };
                     /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §10 key — a **board's position among boards** — with the documented tiebreak: `order` with nulls last (a board with no `order` key is placed, never dropped), then `title`, then `id`. The board bar's whole set is therefore one bounded query, `type=board&sort=order`, with each board's `columns`, `kanban` and `defaultOpen` on the rows. */
                     sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "order" | "relevance";
                 };
@@ -1126,6 +1134,10 @@ export interface paths {
                 query: {
                     /** @description The query, and the only required parameter. Phase A matches it lexically (FTS5) across document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from Phase B the same string is also matched semantically and the two relevances combine into one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything. */
                     q: string;
+                    /** @description Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
+                    title?: string;
+                    /** @description Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
+                    body?: string;
                     /** @description Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6). */
                     type?: string;
                     /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §10); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter. */
@@ -1134,9 +1146,9 @@ export interface paths {
                     stage?: string;
                     /** @description Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's "include archived" reading (SPEC.md §10) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`. */
                     includeArchived?: boolean;
-                    /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
+                    /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. */
                     tag?: string;
-                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. */
+                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`. */
                     folder?: string;
                     /** @description Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     parent?: string;
@@ -1229,6 +1241,54 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["FolderTree"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tags and invented frontmatter keys this workspace uses
+         * @description Backs the query editor's completion and the search overlay's `tag:` chip (SPEC.md §5, §10). Every tag and every extra frontmatter key present in the corpus, each with the number of documents carrying it, most-used first. Archived documents are excluded, the way every list excludes them by default, and so are the **skills and agent definitions the tool installed** — `name` and `description` on a `SKILL.md` are Claude Code's frontmatter (SPEC.md §7), not a convention this workspace invented, and on a fresh workspace they outnumber everything a person wrote. They stay filterable; they are absent from this *menu*. **Keys, not their values**: what a `customer` field holds is unbounded and what a workspace names its fields is not. An empty corpus answers two empty arrays, never a `404`. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The vocabulary in use, most-used first. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceVocabulary"];
                     };
                 };
                 /** @description Missing or invalid workspace bearer token. */
@@ -5601,6 +5661,24 @@ export interface components {
             /** @description `count` plus every descendant folder's count. */
             totalCount: number;
             children: components["schemas"]["FolderNode"][];
+        };
+        WorkspaceVocabulary: {
+            /** @description Every tag in use, most-used first and then alphabetical — deterministic, so a client renders the order it is given rather than sorting again. */
+            tags: components["schemas"]["TagUse"][];
+            /** @description Every extra frontmatter key in use (SPEC.md §5), ordered the same way. */
+            extraKeys: components["schemas"]["ExtraKeyUse"][];
+        };
+        TagUse: {
+            /** @description The tag, lowercased — the form the `tag` filter matches. */
+            value: string;
+            /** @description Documents carrying it, counted once each. */
+            count: number;
+        };
+        ExtraKeyUse: {
+            /** @description The frontmatter key, exactly as written. **Case is preserved**, because `json_extract` is case-sensitive and `Owner` is genuinely a different field from `owner` — unlike a tag, whose filter matches case-insensitively. */
+            key: string;
+            /** @description Documents carrying it, counted once each. */
+            count: number;
         };
         RenameFolderResult: {
             /** @description **Every document this act changed**, including ones the request never named individually (SPEC.md §9.2): a folder act is a bulk act, and threads inherit their parent document's folder (§6), so a folder's threads are listed beside its documents. Empty when the folder held nothing. Each row carries the id and the field that changed and nothing else — enough to update a client in place, so no refetch is needed. */

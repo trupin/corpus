@@ -283,6 +283,14 @@ function fromHttpException(error: HTTPException): HttpError {
  */
 export function toHttpError(error: unknown): HttpError {
   if (error instanceof HttpError) return error;
+  // **Reachable only from a `try`/`catch`, never from a handler that throws.**
+  // Zod 4's `ZodError` does not extend `Error`, and Hono routes a non-`Error`
+  // throw to neither `app.onError` nor here — the client gets a bare `500` with
+  // an empty body and the request never reaches the log. A handler that parses
+  // with Zod must therefore catch its own `ZodError` and raise an `HttpError`
+  // (`docs/routes.ts`'s `readExtraFilters` is the worked example, and the
+  // defect that taught it). This branch stays because the surfaces that *do*
+  // call `toHttpError` directly still hand it one.
   if (error instanceof z.ZodError) {
     return badRequest("request failed validation", toValidationIssues(error));
   }

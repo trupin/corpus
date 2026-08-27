@@ -156,13 +156,22 @@ test.describe("the search overlay", () => {
   });
 
   /**
-   * UI-026 eval FAIL-1. A ranked hit carries no tags, so the chip has no
-   * vocabulary to offer until CONTRACT-026 supplies one — and until then it must
-   * look as unusable as it is. Disabled, dimmed, refusing the pointer, with a
-   * `title` that explains itself; a real mouse press over it changes nothing,
-   * which is now what it promises rather than what it hides.
+   * UI-026 eval FAIL-1, and the state that outlived its cause.
+   *
+   * The chip had no vocabulary at all until `GET /api/vocabulary` shipped
+   * (CONTRACT-092), because a ranked hit carries no tags. It has one now — but
+   * **this test runs with no server**, like most of this file, so the read fails
+   * and the chip falls back to exactly the state it used to live in
+   * permanently. That fallback is the property worth keeping: a control that
+   * cannot act must look as unusable as it is rather than swallow the click, and
+   * a vocabulary is a hint the editor may be missing rather than something it
+   * can require.
+   *
+   * The chip cycling on a real vocabulary is the test below this one.
    */
-  test("the tag chip is visibly disabled and explains itself", async ({ page }) => {
+  test("the tag chip is visibly disabled and explains itself when it has nothing to offer", async ({
+    page,
+  }) => {
     await openOverlay(page);
 
     const tag = page.locator(".search-filters .chip", { hasText: "tag:" });
@@ -195,6 +204,41 @@ test.describe("the search overlay", () => {
       );
     }
     expect(visited.some(Boolean)).toBe(false);
+  });
+
+  /**
+   * CONTRACT-026, closed. `filters.ts` wrote down what would fix it — "the day
+   * this function returns real tags, the chip becomes a normal cycling chip
+   * again with no other edit" — and this is that day, in a real browser.
+   *
+   * The stub derives its vocabulary from the documents it was seeded with, so
+   * the tags offered here are the tags on those documents and nothing invented.
+   */
+  test("the tag chip cycles the workspace's own tags once there is a vocabulary", async ({
+    page,
+  }) => {
+    await stubCorpus(page, [
+      { ...MORTGAGE, tags: ["finance", "housing"] },
+      { ...THREAD, tags: ["finance"] },
+    ]);
+    await openOverlay(page);
+
+    const tag = page.locator(".search-filters .chip", { hasText: "tag:" });
+    await expect(tag).toBeEnabled();
+    // No apology left to make.
+    await expect(tag).not.toHaveAttribute("title", /Search results/);
+
+    // Most-used first, which is the order the server sends and the client keeps.
+    await tag.click();
+    await expect(tag).toHaveText("tag: finance");
+    await expect(tag).toHaveAttribute("aria-pressed", "true");
+
+    await tag.click();
+    await expect(tag).toHaveText("tag: housing");
+
+    // …and back to "any", so the filter can always be dropped.
+    await tag.click();
+    await expect(tag).toHaveText("tag: any");
   });
 
   test("the create row appears at two characters and reads as the prototype writes it", async ({

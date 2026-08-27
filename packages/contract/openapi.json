@@ -2407,6 +2407,65 @@
           "children"
         ]
       },
+      "WorkspaceVocabulary": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagUse"
+            },
+            "description": "Every tag in use, most-used first and then alphabetical — deterministic, so a client renders the order it is given rather than sorting again."
+          },
+          "extraKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtraKeyUse"
+            },
+            "description": "Every extra frontmatter key in use (SPEC.md §5), ordered the same way."
+          }
+        },
+        "required": [
+          "tags",
+          "extraKeys"
+        ]
+      },
+      "TagUse": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The tag, lowercased — the form the `tag` filter matches."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Documents carrying it, counted once each."
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ]
+      },
+      "ExtraKeyUse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The frontmatter key, exactly as written. **Case is preserved**, because `json_extract` is case-sensitive and `Owner` is genuinely a different field from `owner` — unlike a tag, whose filter matches case-insensitively."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Documents carrying it, counted once each."
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ]
+      },
       "RenameFolderResult": {
         "type": "object",
         "properties": {
@@ -5536,6 +5595,28 @@
             "schema": {
               "type": "string",
               "minLength": 1,
+              "description": "Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
+            },
+            "required": false,
+            "description": "Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
+            "name": "title",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
+            },
+            "required": false,
+            "description": "Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
+            "name": "body",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
               "description": "Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6)."
             },
             "required": false,
@@ -5582,10 +5663,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme."
+              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
             },
             "required": false,
-            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme.",
+            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
             "name": "tag",
             "in": "query"
           },
@@ -5593,10 +5674,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree."
+              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`."
             },
             "required": false,
-            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree.",
+            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`.",
             "name": "folder",
             "in": "query"
           },
@@ -5755,6 +5836,20 @@
             "required": false,
             "description": "The Attention filter (SPEC.md §10). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder.",
             "name": "needs",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "**Spelled `extra.<key>=<value>` on the wire** — `extra.assignee=theo` — one parameter per key. It is published here under the bare name `extra` because a parameter's published name must equal the schema key it comes from, and OpenAPI 3.1 has no serialization style for a dot-delimited open namespace (`deepObject` would mean `extra[assignee]`). The generated client takes it as the record it is and expands it at the boundary. Filter on a frontmatter field this workspace invented (SPEC.md §5). One parameter per key — `extra.assignee=theo` — and keys AND together like every other filter. A key must be an identifier (letters, digits, `_`, `-`), and a malformed one is a `400` naming it. The value takes glob patterns on the same terms as `title`. A document that does not carry the key never matches, whatever the value, and there is **no way to ask for absence**: an empty value is refused rather than read as a null sentinel. Where the field holds a JSON array the filter matches if **any element** matches, the way `tag` already ORs. Not offered on `/api/search`."
+            },
+            "required": false,
+            "description": "**Spelled `extra.<key>=<value>` on the wire** — `extra.assignee=theo` — one parameter per key. It is published here under the bare name `extra` because a parameter's published name must equal the schema key it comes from, and OpenAPI 3.1 has no serialization style for a dot-delimited open namespace (`deepObject` would mean `extra[assignee]`). The generated client takes it as the record it is and expands it at the boundary. Filter on a frontmatter field this workspace invented (SPEC.md §5). One parameter per key — `extra.assignee=theo` — and keys AND together like every other filter. A key must be an identifier (letters, digits, `_`, `-`), and a malformed one is a `400` naming it. The value takes glob patterns on the same terms as `title`. A document that does not carry the key never matches, whatever the value, and there is **no way to ask for absence**: an empty value is refused rather than read as a null sentinel. Where the field holds a JSON array the filter matches if **any element** matches, the way `tag` already ORs. Not offered on `/api/search`.",
+            "name": "extra",
             "in": "query"
           },
           {
@@ -6920,6 +7015,28 @@
             "schema": {
               "type": "string",
               "minLength": 1,
+              "description": "Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
+            },
+            "required": false,
+            "description": "Match a document's title. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
+            "name": "title",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
+            },
+            "required": false,
+            "description": "Match a document's body text. Threads carry their turns in their body, so a glob here reaches turn text as stored. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
+            "name": "body",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
               "description": "Comma-separated document types; values OR together. Core values: note, thread, view, board, template, skill, agent-def. Open rather than enumerated because a workspace may hold documents of a type this build has never heard of, and they are searchable like any other (SPEC.md §5, §12's M6)."
             },
             "required": false,
@@ -6966,10 +7083,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme."
+              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance."
             },
             "required": false,
-            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme.",
+            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance.",
             "name": "tag",
             "in": "query"
           },
@@ -6977,10 +7094,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree."
+              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`."
             },
             "required": false,
-            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree.",
+            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §10). How far down it reaches is `folderScope`'s to say on the collection query, which defaults to the tree. **Takes glob patterns** (SPEC.md §9.2): `*` matches any run of characters and `?` matches one, so `Catch-Up*` means what it looks like. A value carrying neither character is matched exactly as it always was, so no stored query changes meaning. Matching is case-insensitive. Distinct from `q`, which ranks whole words across the corpus; a glob matches this field literally and says nothing about relevance. A pattern is matched against the stored workspace-relative path and bypasses the bare-name normalisation a wildcard-free `folder` gets, so write `data/docs/work/*` or `work/*` and mean the path. `folderScope` cannot narrow a pattern and the pair is refused with `400`.",
             "name": "folder",
             "in": "query"
           },
@@ -7178,6 +7295,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FolderTree"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vocabulary": {
+      "get": {
+        "tags": [
+          "tree"
+        ],
+        "summary": "The tags and invented frontmatter keys this workspace uses",
+        "description": "Backs the query editor's completion and the search overlay's `tag:` chip (SPEC.md §5, §10). Every tag and every extra frontmatter key present in the corpus, each with the number of documents carrying it, most-used first. Archived documents are excluded, the way every list excludes them by default, and so are the **skills and agent definitions the tool installed** — `name` and `description` on a `SKILL.md` are Claude Code's frontmatter (SPEC.md §7), not a convention this workspace invented, and on a fresh workspace they outnumber everything a person wrote. They stay filterable; they are absent from this *menu*. **Keys, not their values**: what a `customer` field holds is unbounded and what a workspace names its fields is not. An empty corpus answers two empty arrays, never a `404`. Read-only; no acting party.",
+        "responses": {
+          "200": {
+            "description": "The vocabulary in use, most-used first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceVocabulary"
                 }
               }
             }

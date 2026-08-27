@@ -54,6 +54,7 @@ import {
 } from "./threads.js";
 import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
+import { getVocabulary } from "./vocabulary.js";
 import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
 export * from "./agents.js";
@@ -87,6 +88,7 @@ export * from "./thread-resident.js";
 export * from "./thread-scope.js";
 export * from "./threads.js";
 export * from "./tree.js";
+export * from "./vocabulary.js";
 export * from "./turn-append.js";
 export * from "./upgrade.js";
 
@@ -185,6 +187,7 @@ export const contractRoutes = {
   searchCorpus,
 
   getTree,
+  getVocabulary,
   renameFolder,
   archiveFolder,
   unarchiveFolder,

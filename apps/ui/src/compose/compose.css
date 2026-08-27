@@ -51,45 +51,60 @@
   background: var(--accent-wash);
 }
 
-.compose-actions {
+/*
+ * **The settings row** (UI-180): who answers, and who will own the
+ * conversation. Above the actions and separated from the textarea by the
+ * divider the actions used to carry, so the foot reads as one block of two
+ * lines rather than as two bars.
+ *
+ * It exists because the action row below is `design/index.html`'s and holds
+ * five things, while the product had grown it to seven. See `ComposeOverlay.tsx`
+ * for the measurement and for why the split is along what the controls are.
+ */
+.compose-settings {
   display: flex;
   gap: 10px;
   align-items: center;
-  padding: 10px 16px;
+  padding: 8px 16px 0;
   border-top: 1px solid var(--line);
   background: var(--surface-2);
 }
 
+.compose-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 16px 10px;
+  background: var(--surface-2);
+}
+
 /*
- * The address line (UI-126) sits in this bar and holds the slot
- * `@corpus/kit/address.css` gives it, unshrunk (UI-137) — it used to be
- * overridden here with `min-width: 0`, and `agent will answer` was clipped to
- * 89px of the 107 it needs as a result.
+ * The hint, on one line (UI-180).
  *
- * **Above roughly a 470px viewport, nothing had to be taken from anything to
- * pay for that.** This hint is the item with slack: it wraps to further lines
- * inside the same bar, so the whole of it is still read, and that is why there
- * is no `text-overflow` here and there is one on the thread composer's hint —
- * that foot is a single 17px row, and a hint that wrapped there would make the
- * composer taller instead of giving anything up.
+ * **This used to be allowed to wrap, and the reasoning was sound when it was
+ * written.** The note here said the hint "is the item with slack: it wraps to
+ * further lines inside the same bar, so the whole of it is still read", and
+ * measured the bar at 74.1px with the wrap against 96.1px without it. That was
+ * a bar of six items. UI-173 then added a seventh — the owner picker, 145px —
+ * and the slack was gone: the hint went to three lines, and so did `Capture
+ * ⇧⌘↵` and `Ask ⌘↵`, whose labels are not slack at all. A person called it
+ * crowded and ugly, and was right.
  *
- * That qualifier is the whole of what the deleted `min-width: 0` used to buy.
- * It let the address shrink, and a shrinking address is what kept the two
- * submits on the bar at the panel's narrowest. With the address floored, the
- * bar's items have a minimum, and below it they would overflow the card rather
- * than yield. Measured on this machine, at the compose panel's own widths:
- *
- *     viewport 520   panel 472   bar 470   content needs 417   one row of controls
- *     viewport 480   panel 432   bar 430   content needs 417   still fits
- *     viewport 440   panel 392   bar 390   content needs 417   overflows by 27px
- *
- * so the real edge is a viewport near 467px. The valve below restores the
- * protection, and takes it from the arrangement rather than from the sentence.
+ * Moving the two pickers to their own line gave this row 286px back — it needs
+ * 526px of the 606px the panel offers — so the hint fits whole with room to
+ * spare and never has to choose between wrapping and truncating. `nowrap` is
+ * the assertion that it must not go back to choosing: if a ninth control ever
+ * arrives, this row overflows visibly instead of quietly growing a second line,
+ * which is the failure that can be seen.
  */
 .compose-actions .hint {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-3);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /*
@@ -100,9 +115,9 @@
  *
  * It is behind a query and not simply on, because `flex-wrap: wrap` is not free
  * up here: an item whose basis is its content takes a new line rather than
- * shrink, so an always-wrapping bar sends this hint to its full 259px and puts
- * `Ask ⌘↵` on a second row at every width. Measured at 1280: bar height 74.1px
- * as shipped against 96.1px with the wrap unconditional.
+ * shrink, so an always-wrapping bar puts `Ask ⌘↵` on a second row at every
+ * width. It now guards a row of five rather than of seven (UI-180), so it fires
+ * later than it used to and the settings row above it wraps on its own terms.
  *
  * **560px and not 467px** because 467 is one machine's arithmetic in one
  * machine's glyphs, and a machine whose mono and buttons draw wider reaches the
@@ -113,7 +128,8 @@
  * and a viewport query lands exactly where a container query would.
  */
 @media (max-width: 560px) {
-  .compose-actions {
+  .compose-actions,
+  .compose-settings {
     flex-wrap: wrap;
   }
 }
@@ -170,9 +186,8 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  margin-left: 10px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--ink-3);
 }
 
@@ -180,14 +195,29 @@
   white-space: nowrap;
 }
 
+/*
+ * **The owner picker wears the address line's register** (UI-180). The two sit
+ * side by side and are the same kind of thing to a person — *pick who* — while
+ * being two different kinds of thing to the DOM: one is `@corpus/kit`'s pill
+ * (`button.address-line`) and this is a native `<select>`. Nothing makes them
+ * agree except saying so, and they did not: 11px against 10.5px, a 6px radius
+ * against a pill, different padding, different heights in the same row. A
+ * person said "the drop downs aren't even consistent" and that was the whole of
+ * it.
+ *
+ * Every value below is `button.address-line`'s, read from
+ * `packages/kit/src/address/address.css`. `foot-geometry.spec.ts` asserts the
+ * two **against each other** rather than against these literals, so the day the
+ * kit's pill changes, this goes red instead of quietly drifting again.
+ */
 .compose-resident select {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--ink-2);
-  background: none;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 2px 4px;
+  border-radius: 999px;
+  padding: 2px 9px;
   max-width: 16ch;
 }
 

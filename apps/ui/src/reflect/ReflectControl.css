@@ -54,6 +54,22 @@
 }
 
 /*
+ * The label's words, either side of the count (UI-181).
+ *
+ * `.reflect-ask` is a flex row, so a bare text run inside it is an **anonymous
+ * flex item**, and CSS strips whitespace at both ends of one. The label is
+ * composed as `Reflect · ` + `5` + ` changes since 1w` and both of those spaces
+ * were being thrown away at layout — `textContent` and the accessible name kept
+ * them, which is why the two assertions guarding this label never saw it.
+ *
+ * `pre` rather than `nowrap`: `nowrap` still collapses a leading space, and a
+ * leading space is exactly what the trail carries.
+ */
+.reflect-said {
+  white-space: pre;
+}
+
+/*
  * The count's own box (SPEC.md §10's rider, signed 2026-08-20 — "a count
  * reaching two digits" is named in it).
  *
@@ -100,6 +116,29 @@
  *
  * Both labels are sized for the wider of the two (`auto off`), so flipping the
  * switch never re-widths the bar either.
+ *
+ * **The slot is measured in the switch's own font, and that is the fix**
+ * (UI-179). It used to be `7ch` on a wrapper that inherited the bar's
+ * proportional face, while the switch inside it draws in `var(--mono)` at
+ * `10.5px` — so `ch` measured one font and the content drew in another. Measured
+ * in a real browser: the switch's right edge landed **8.4px past** the slot's,
+ * and because the slot is `flex: none` the overflow spilled rightwards and ate
+ * the `gap: 6px` before the clock. That is the whole of what a person saw and
+ * called broken: `auto off` sitting hard against `reflected 1d` while the ask
+ * beside it had a normal gap.
+ *
+ * So the wrapper now carries the switch's font, and the width is stated as what
+ * it holds: eight characters — `auto off`, the longer label — plus the tracking
+ * those characters carry (`letter-spacing: 0.04em`, which `ch` does not
+ * measure and which was the last 2.9px of the overflow) plus the chrome the
+ * switch spends on everything that is not the word (`2 × 6px` padding and
+ * `2 × 1px` border). Every term is checkable against the button below rather
+ * than trusted.
+ *
+ * **The `margin-left` is gone with it.** It made the gap before the switch 14px
+ * and the gap after it 6px, which was a second reason the row read as
+ * lopsided even before the overflow. One rhythm: `.reflect`'s own `gap`, on
+ * both sides.
  */
 .reflect-auto {
   align-self: center;
@@ -107,8 +146,9 @@
   align-items: center;
   justify-content: flex-start;
   flex: none;
-  width: 7ch;
-  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  width: calc(8ch + 0.32em + 14px);
 }
 
 .reflect-auto-switch {

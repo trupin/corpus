@@ -1,4 +1,4 @@
-import type { FolderTree, SearchHit } from "@corpus/contract";
+import type { FolderTree, SearchHit, WorkspaceVocabulary } from "@corpus/contract";
 import { folderChoices } from "../board/newList";
 import { resultKind } from "./results";
 import type { SearchQuery } from "./searchQuery";
@@ -95,33 +95,21 @@ export function folderOptions(tree: FolderTree | undefined): readonly (string | 
 }
 
 /**
- * Tag options, and why there are none to offer any more.
+ * The `tag:` chip's cycle, from the workspace's own vocabulary
+ * (`GET /api/vocabulary`, CONTRACT-092 — which closed CONTRACT-026).
  *
- * They used to be read off the rows on screen: `GET /api/docs` returns document
- * rows, and a row carries its `tags`. `GET /api/search` returns **hits** — id,
- * title, heading path, snippet — and that frugality is the endpoint's whole
- * reason to exist, so there is no tag anywhere in the response to collect.
+ * **It could not be answered here until there was a vocabulary endpoint.** A
+ * ranked hit carries no tags, deliberately (`SearchHit` is an address list, not
+ * a row), so the chip could display and clear a tag and never offer one — the
+ * defect UI-026's eval recorded as FAIL-1. This function returned `[null]` and
+ * its own docblock said what would fix it: "the day this function returns real
+ * tags, the chip becomes a normal cycling chip again with no other edit." That
+ * is what happened, and {@link tagChipState} needed no change at all.
  *
- * The three alternatives were all worse than an honest gap. A tag-collection
- * route does not exist in the §9.2 grammar and inventing one for a chip is a
- * contract change. Keeping a second `GET /api/docs` request alive purely to
- * stock a dropdown reintroduces exactly the per-query second request the
- * overlay's data path is built to prevent. Guessing a vocabulary is a lie.
- *
- * So the `tag:` chip stays in the row — it still displays a tag set from a
- * restored query, and still clears it — but it can no longer *offer* one. A
- * source for the workspace's tag vocabulary is a contract question, escalated
- * rather than improvised (sprint-022 TEST-1027, CONTRACT-026).
- *
- * Until that lands the chip must not *look* like the working ones: a control
- * that renders as an affordance and does nothing is a defect whatever its cause
- * (UI-026 eval FAIL-1). {@link tagChipState} is what keeps the two honest, and
- * it reads the vocabulary rather than hard-coding the gap — the day this
- * function returns real tags, the chip becomes a normal cycling chip again with
- * no other edit.
+ * `null` leads, because "any" is where the cycle starts and returns to.
  */
-export function tagOptions(): readonly (string | null)[] {
-  return [null];
+export function tagOptions(vocabulary?: WorkspaceVocabulary): readonly (string | null)[] {
+  return [null, ...(vocabulary?.tags ?? []).map((tag) => tag.value)];
 }
 
 /**

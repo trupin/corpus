@@ -338,8 +338,26 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
 
         <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
 
-        <div className="compose-actions">
-          <AttachButton surface="compose" onFiles={intake.add} />
+        {/*
+         * **Two rows, because the prototype's one row holds five things and
+         * this one holds seven** (UI-180, reported 2026-08-27).
+         *
+         * `design/index.html`'s `.compose-actions` is `clip · hint · spacer ·
+         * Capture · Ask`, and it fits. The product then added the address line
+         * (UI-126, 140px) and the owner picker (UI-173, 145px) to the same row
+         * without re-measuring it, and 286px went into a bar with about 70px of
+         * slack. Every item shrank below its content: the hint wrapped to three
+         * lines, and `Capture ⇧⌘↵` and `Ask ⌘↵` broke across three lines each.
+         * Measured in a real browser at the panel's own 640px: the bar needed
+         * 841px and had 606px.
+         *
+         * The split is along what the controls *are*, not along what fits. These
+         * two say **who answers and who will own it** — settings for the send,
+         * read before pressing. The row below is the send itself. So the
+         * prototype's action row is restored exactly, and the two controls it
+         * never budgeted for get a line of their own.
+         */}
+        <div className="compose-settings">
           <ComposerAddress address={address} surface="compose" />
           {/*
            * **Who will own the conversation** (UI-173).
@@ -380,6 +398,10 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="compose-actions">
+          <AttachButton surface="compose" onFiles={intake.add} />
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
           <button

@@ -86,10 +86,10 @@ export const GRACE_WINDOW = formatAge(AGENT_PRESENCE_WINDOW_SECONDS * 1000);
  * lanes should not have to skip prose.
  */
 export const FALLBACK_NOTE =
-  `a lane with no listener is not a failure: past the grace window (${GRACE_WINDOW}) its pending ` +
-  "work becomes visible to the orchestrator's own `corpus queue claim-all`, so it is done more " +
-  "slowly and without the conversation's warmth — never silently not done. Start a listener " +
-  "with `corpus queue idle --thread <id>`; parking is what presence is.";
+  "a lane with no listener is not a failure, but its work waits: nobody else can claim it. The " +
+  "orchestrator's job is to **launch** a listener for it — that is what the pending count on " +
+  "each row is for. Start one by hand with `corpus queue idle --thread <id>`; parking is what " +
+  "presence is.";
 
 /**
  * What the contract says an empty roster means: a bug, not a quiet workspace.
@@ -286,10 +286,11 @@ export const agentsCommand: WorkspaceCommandSpec = {
     "reads as just after a restart, since presence is held in memory and nothing about it is " +
     "persisted; `lapsed` means a listener was there and has " +
     `been gone longer than the grace window (${GRACE_WINDOW}). In both cases that lane's pending ` +
-    "work becomes visible to the orchestrator's unscoped `corpus queue claim-all`, computed when " +
-    "the claim is made and never written into the events — so a resident that comes back finds " +
-    "its lane exactly as it left it, and in the meantime the work is done more slowly rather " +
-    "than not at all.\n\n" +
+    "work **waits for a listener** — it does not fall to anybody else. The rider signed " +
+    "2026-08-25 removed the fallback that used to make a lapsed lane's work claimable by the " +
+    "orchestrator: answering in a resident's place is a different agent writing in its name, " +
+    "not a slower version of the same answer. So a lane's `pending` count is a launch " +
+    "instruction, and the orchestrator reads this roster to know which lanes are owed one.\n\n" +
     "The `summary` is display material: the contract promises its length and nothing about its " +
     "content, and how it is derived may change. **Never parse it** — everything worth branching " +
     "on is a field of its own under `--json`, which carries the roster exactly as the server " +

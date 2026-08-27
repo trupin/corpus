@@ -53,6 +53,12 @@ describe("the shared document filters", () => {
     expect(listCommand.flags.map((flag) => flag.name)).toEqual([
       "q",
       "type",
+      // SHARED-011's rider (2026-08-04, applied 2026-08-26). They are in the
+      // **shared** list, so they land on `corpus search` too: the contract puts
+      // them on `docFilterShape` because they are structural filters exactly as
+      // `--tag` is, and §9.2's parameter line for ranked retrieval names them.
+      "title",
+      "body",
       "tag",
       "folder",
       "status",
@@ -68,6 +74,10 @@ describe("the shared document filters", () => {
       "due",
       "since",
       "stale",
+      // SHARED-011's open namespace, list-only for the same reason
+      // `--is-parent` is: §9.2's signed `/api/search` parameter string does not
+      // carry `extra`, so a flag for it on `search` would go nowhere.
+      "extra",
       "sort",
       "limit",
       "offset",
@@ -92,6 +102,22 @@ describe("the shared document filters", () => {
     expect(searchCommand.flags.map((flag) => flag.name)).not.toContain("is-parent");
     expect(listCommand.flags.map((flag) => flag.name)).toContain("is-parent");
   });
+
+  /** `extra` is held out for the same reason, and pinned the same way. */
+  it("keeps --extra off search, where the contract does not declare it", () => {
+    expect(DOC_FILTER_FLAGS.map((flag) => flag.name)).not.toContain("extra");
+    expect(searchCommand.flags.map((flag) => flag.name)).not.toContain("extra");
+    expect(listCommand.flags.map((flag) => flag.name)).toContain("extra");
+  });
+
+  /**
+   * The glob-bearing filters, by contrast, **are** shared — so a workspace can
+   * narrow a ranked search by title the way it narrows a list.
+   */
+  it.each(["title", "body"])("puts --%s on both verbs", (name) => {
+    expect(searchCommand.flags.map((flag) => flag.name)).toContain(name);
+    expect(listCommand.flags.map((flag) => flag.name)).toContain(name);
+  });
 });
 
 describe("insertFlagAfter", () => {
@@ -100,6 +126,12 @@ describe("insertFlagAfter", () => {
   it("places a verb's own flag after a named shared one", () => {
     expect(insertFlagAfter(DOC_FILTER_FLAGS, "unread", extra).map((flag) => flag.name)).toEqual([
       "type",
+      // SHARED-011's rider (2026-08-04, applied 2026-08-26). They are in the
+      // **shared** list, so they land on `corpus search` too: the contract puts
+      // them on `docFilterShape` because they are structural filters exactly as
+      // `--tag` is, and §9.2's parameter line for ranked retrieval names them.
+      "title",
+      "body",
       "tag",
       "folder",
       "status",

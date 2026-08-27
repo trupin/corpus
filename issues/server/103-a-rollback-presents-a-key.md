@@ -6,7 +6,26 @@ server (blocked on a contract decision — see Dependencies)
 
 ## Status
 
-blocked
+closed — obsoleted: the route this issue reproduces against was deleted by the rider signed 2026-08-12.
+
+**Closed 2026-08-26 (Phase 50): the verb this issue is about no longer exists.**
+
+This issue reproduces unrecoverable data loss through
+`POST /api/skills/{name}/rollback`. The rider signed 2026-08-12 deleted that
+route — §7's loop safety became "a write whose content came from history", which
+reconciles anchors, validates, commits under the acting party and is protected
+by §7's key exactly as every other write is. `packages/contract/src/routes/skills.ts`
+says so at its head, `inventory.ts` records the removal, and `skills.test.ts`
+exercises the absence.
+
+So the defect is gone with the code that held it, and the design question this
+issue could not answer alone — where a key comes from when the canonical case is
+a document that cannot be read — was answered by removing the caller rather than
+by sourcing the key.
+
+Closed rather than done: nothing landed for it. A `P0` row describing
+unrecoverable data loss in a deleted route is the tracker telling a reader
+something untrue, which is the only reason this was worth a commit at all.
 
 ## Priority
 

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { WorkspaceVocabulary } from "@corpus/contract";
 import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
@@ -23,6 +24,8 @@ interface HarnessOptions {
   readonly onCommit?: () => void;
   readonly onCancel?: () => void;
   readonly rows?: readonly unknown[];
+  /** What `GET /api/vocabulary` answers — the `extra.` completions (UI-178). */
+  readonly vocabulary?: WorkspaceVocabulary;
 }
 
 /**
@@ -30,7 +33,11 @@ interface HarnessOptions {
  * outside it, exactly as `ColumnHead` holds the draft.
  */
 function renderEditor(options: HarnessOptions = {}): { value: () => string } {
-  const wire = boardTransport({ defaultRows: (options.rows ?? ROWS) as never, tree: TREE });
+  const wire = boardTransport({
+    defaultRows: (options.rows ?? ROWS) as never,
+    tree: TREE,
+    ...(options.vocabulary === undefined ? {} : { vocabulary: options.vocabulary }),
+  });
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   let latest = options.initial ?? "";
 
@@ -105,6 +112,76 @@ describe("QueryEditor", () => {
       });
       fireEvent.keyDown(field(), { key: "Enter" });
       expect(editor.value()).toBe("status=");
+    });
+
+    /**
+     * SPEC.md §5's **Structured fields**. The menu must leave the caret where
+     * the workspace's own key goes, because completing to `extra=` would hand
+     * the person a filter the server does not honour.
+     */
+    it("completes the open namespace to its dot, not to an operator", async () => {
+      const editor = renderEditor();
+      type("extr");
+      await waitFor(() => {
+        expect(options().some((text) => text.startsWith("extra."))).toBe(true);
+      });
+      fireEvent.keyDown(field(), { key: "Enter" });
+      expect(editor.value()).toBe("extra.");
+    });
+
+    it("says in the menu that the tail is the workspace's own", async () => {
+      renderEditor();
+      type("extra");
+      await waitFor(() => {
+        expect(screen.getAllByRole("option")[0]?.textContent).toContain("extra.assignee=theo");
+      });
+    });
+
+    /**
+     * CONTRACT-092. An invented field appears in no list anywhere, so this menu
+     * is the only place a person can find the convention their own workspace
+     * uses — and the only completion in the editor that offers part of a field
+     * *name*.
+     */
+    it("offers the workspace's invented keys after the dot", async () => {
+      const editor = renderEditor({
+        vocabulary: {
+          tags: [],
+          extraKeys: [
+            { key: "assignee", count: 4 },
+            { key: "estimate", count: 1 },
+          ],
+        },
+      });
+      type("extra.ass");
+      await waitFor(() => {
+        expect(options().some((text) => text.startsWith("extra.assignee"))).toBe(true);
+      });
+      // The other key does not match the prefix, so it is not offered.
+      expect(options().some((text) => text.startsWith("extra.estimate"))).toBe(false);
+
+      fireEvent.keyDown(field(), { key: "Tab" });
+      expect(editor.value()).toBe("extra.assignee=");
+    });
+
+    it("says how many documents carry each invented key", async () => {
+      renderEditor({
+        vocabulary: { tags: [], extraKeys: [{ key: "assignee", count: 4 }] },
+      });
+      type("extra.");
+      await waitFor(() => {
+        expect(screen.getAllByRole("option")[0]?.textContent).toContain("4 documents");
+      });
+    });
+
+    it("offers nothing after the dot when the workspace invented no fields", async () => {
+      renderEditor({ vocabulary: { tags: [], extraKeys: [] } });
+      type("extra.");
+      // Silence, not a stale field list: `extra.` is a real prefix and the menu
+      // has nothing honest to put under it.
+      await waitFor(() => {
+        expect(screen.queryByRole("listbox")).toBeNull();
+      });
     });
 
     it("offers every published field when the caret opens a fresh one", async () => {

@@ -1,6 +1,6 @@
 import { AUTOCOMPLETE_LIMIT, handleAutocompleteKeyDown, type AutocompleteItem } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { QUERY_FIELDS, queryField, type ValueSource } from "./grammar";
+import { QUERY_FIELDS, queryField, type QueryField, type ValueSource } from "./grammar";
 import {
   applyQueryCompletion,
   detectQueryTrigger,
@@ -35,6 +35,15 @@ function optionsFor(source: ValueSource, vocabulary: QueryVocabulary): readonly 
       return vocabulary.folder;
     case "docId":
       return vocabulary.docId;
+    /*
+     * SPEC.md §5's **Structured fields**. There is nothing to offer *after* the
+     * `=`: the vocabulary is the workspace's own values, and a workspace with a
+     * `customer` field on four hundred documents would put four hundred strings
+     * in one menu. What can be offered is the **key**, before the `=`, and
+     * UI-178 is where that arrives from.
+     */
+    case "extraKey":
+      return [];
     case "free":
       return [];
   }
@@ -54,15 +63,68 @@ function matches(option: ValueOption, needle: string): boolean {
   );
 }
 
-function fieldItems(needle: string): readonly AutocompleteItem[] {
+/**
+ * What accepting a field puts in the box.
+ *
+ * An open namespace is offered as `extra.` rather than `extra`, and the trailing
+ * dot is what tells {@link applyQueryCompletion} to stop before the `=` — the
+ * caret then sits exactly where the workspace's own key goes (SPEC.md §5).
+ * Offering the bare name would complete to `extra=`, which is a query the server
+ * does not honour.
+ */
+function fieldToken(field: QueryField): string {
+  return field.values.kind === "extraKey" ? `${field.name}.` : field.name;
+}
+
+function fieldItems(needle: string, vocabulary: QueryVocabulary): readonly AutocompleteItem[] {
+  const namespace = openNamespace(needle);
+  if (namespace !== undefined) return extraKeyItems(namespace, vocabulary);
   return QUERY_FIELDS.filter(
     (field) => needle === "" || field.name.toLowerCase().startsWith(needle),
   ).map((field) => ({
     key: `field:${field.name}`,
-    token: field.name,
-    label: field.name,
+    token: fieldToken(field),
+    label: fieldToken(field),
     description: field.summary,
   }));
+}
+
+/**
+ * The part of a field token that sits after an open namespace's dot, or
+ * `undefined` when the token is an ordinary field name.
+ *
+ * Matched against the grammar's own namespace fields rather than the literal
+ * string `extra.`, so this file keeps naming no field.
+ */
+function openNamespace(needle: string): string | undefined {
+  for (const field of QUERY_FIELDS) {
+    if (field.values.kind !== "extraKey") continue;
+    const prefix = `${field.name.toLowerCase()}.`;
+    if (needle.startsWith(prefix)) return needle.slice(prefix.length);
+  }
+  return undefined;
+}
+
+/**
+ * The **field names** a workspace invented, offered after `extra.`
+ * (SPEC.md §5's **Structured fields**, CONTRACT-092).
+ *
+ * This is the only completion in the editor that offers part of a field name,
+ * and it has to be: an invented field appears in no list anywhere, so a person
+ * who has not memorised their own convention has no way to find it. The token
+ * carries the whole dotted name, because that is what the caret is replacing.
+ */
+function extraKeyItems(needle: string, vocabulary: QueryVocabulary): readonly AutocompleteItem[] {
+  const field = QUERY_FIELDS.find((entry) => entry.values.kind === "extraKey");
+  if (field === undefined) return [];
+  return vocabulary.extraKey
+    .filter((option) => matches(option, needle))
+    .map((option) => ({
+      key: `extra:${option.value}`,
+      token: `${field.name}.${option.value}`,
+      label: `${field.name}.${option.value}`,
+      description: option.detail,
+    }));
 }
 
 function valueItems(
@@ -125,7 +187,8 @@ export function useQueryAutocomplete({
   const items = useMemo<readonly AutocompleteItem[]>(() => {
     if (kind === undefined) return [];
     const needle = query.toLowerCase();
-    const all = kind === "field" ? fieldItems(needle) : valueItems(field, needle, vocabulary);
+    const all =
+      kind === "field" ? fieldItems(needle, vocabulary) : valueItems(field, needle, vocabulary);
     return all.slice(0, AUTOCOMPLETE_LIMIT);
   }, [field, kind, query, vocabulary]);
 

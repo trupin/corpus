@@ -391,6 +391,12 @@ describe("generated OpenAPI document", () => {
 describe("GET /api/docs parameter grammar", () => {
   const SPEC_PARAMS = [
     "q",
+    // SHARED-011's rider, signed 2026-08-04 and applied 2026-08-26. The rider's
+    // own example is `title=Catch-Up*`, and the collection query carried neither
+    // filter — so the signed text creates two, and they sit beside `q` because
+    // that is where a reader looks for a filter over a document's text.
+    "title",
+    "body",
     "type",
     "status",
     // Rider 5, 2026-08-22: §9.2's own parameter string puts `stage` here,
@@ -417,6 +423,11 @@ describe("GET /api/docs parameter grammar", () => {
     // modifies `folder` rather than selecting a set of its own.
     "folderScope",
     "needs",
+    // SHARED-011's open namespace, and the second docs-only filter. Published
+    // under its bare name because a parameter's published name must equal the
+    // schema key, and OpenAPI 3.1 has no style for a dot-delimited namespace —
+    // the wire form is `extra.<key>=<value>` and the description says so.
+    "extra",
     "sort",
   ];
 
@@ -717,9 +728,20 @@ describe("the retrieval surface (CONTRACT-022)", () => {
   });
 
   describe("the search parameter grammar", () => {
-    /** Edit 7's signed parameter string, in its signed order. */
+    /**
+     * Edit 7's signed parameter string, in its signed order.
+     *
+     * `title` and `body` joined it on 2026-08-26, when the rider signed
+     * 2026-08-04 created them (SPEC.md §5's **Structured fields**, §9.2's
+     * **Pattern matching**). They are in the shared filter shape rather than on
+     * the collection query alone because they are structural filters exactly as
+     * `tag` is, and this module's rule is that such a filter reaches both
+     * endpoints or is named as an exception. `extra` is named as one.
+     */
     const SIGNED_PARAMS = [
       "q",
+      "title",
+      "body",
       "type",
       "status",
       "stage",
@@ -751,7 +773,7 @@ describe("the retrieval surface (CONTRACT-022)", () => {
       }
     });
 
-    it.each(["sort", "offset", "isParent"])("declares no %s", (name) => {
+    it.each(["sort", "offset", "isParent", "folderScope", "extra"])("declares no %s", (name) => {
       expect(parameter(SEARCH_PATH, "get", name)).toBeUndefined();
     });
 
