@@ -1872,6 +1872,8 @@ rendered boxes and `innerText`.
 | UI-181 | The Reflect label runs its count into its noun (user report) | done | P0 | opus | — |
 | SERVER-160 | Pressing Ask tells the orchestrator nothing, so nobody answers | done | P0 | opus | — |
 | CLI-073 | The roster promises a fallback that was deleted | done | P0 | opus | — |
+| AGENT-056 | Reaping before reading the roster duplicates a working listener | done | P0 | opus | — |
+| SHARED-074 | May the reaper touch a resident lane's held work? | todo | P1 | fable | — |
 
 **`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
 query-surface defect in the same files, and reading it properly showed it is

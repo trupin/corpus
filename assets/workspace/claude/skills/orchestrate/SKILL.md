@@ -202,13 +202,14 @@ field. So steps 2, 3 and 4 of *The loop* are one invocation:
 
 ```bash
 corpus batch <<'CORPUS_EOF'
-[["queue","reap-stale"],["agents"],["queue","claim-all"]]
+[["agents"],["queue","reap-stale"],["queue","claim-all"]]
 CORPUS_EOF
 ```
 
 None of the three wants what another printed, which is what makes them one array. Their
-**order** still matters, and a batch keeps it: reaping requeues a dead session's events in
-time for the claim below it to collect them. Read all three reports — they are three steps
+**order** still matters, and a batch keeps it: the roster is read **before** the reap (see step
+2), and the reap requeues a dead session's events in time for the claim below it to collect
+them. Read all three reports — they are three steps
 still, and one invocation merges nothing you owe attention to. What it saves is two process
 starts a pass — 1003 ms as three commands against 415 ms as one, on the machine that was
 measured on.
@@ -235,18 +236,38 @@ claims moves to `in-progress/` and is worked by nobody, with no error anywhere a
 in the console to show for it. Run these steps in order, indefinitely:
 
 1. **Attribute, once per session, before anything else.** `export CORPUS_FROM=agent`.
-2. **Reap.** `corpus queue reap-stale` returns events a dead session stranded in-progress.
-   Run it every pass: after a clean park it reaps nothing and stays silent, and after an
-   unclean stop it is what returns stranded work to `pending/`.
-3. **Read the roster.** `corpus agents`, one read, naming every lane: yours, and one for each
-   conversation that has a resident, with **whether anybody is listening on it and how much
-   work is waiting there**. Keep what it printed — step 6 is what acts on it.
+2. **Read the roster — before you reap, and this order is load-bearing.** `corpus agents`, one
+   read, naming every lane: yours, and one for each conversation that has a resident, with
+   **whether anybody is listening on it, whether it is working, and how much work is waiting
+   there**. Keep what it printed — step 6 is what acts on it.
 
-   **Those two fields together are the launch decision**: a lane that is **not live** and has
-   **something pending** is a conversation somebody is waiting on and nobody is answering. You
-   cannot take that work, so this row is the only thing that tells you it exists. A lane that
-   is not live with nothing pending is idle and perfectly healthy — launching for it would
-   give this workspace one agent per conversation that has ever existed.
+   **Read it first, because reaping destroys the field the launch decision needs**
+   (AGENT-056). A reap returns a lane's held event to `pending/`, and `working` is derived
+   from held work — so *after* a reap, a resident in the middle of a long turn reads exactly
+   like a lane whose listener died: `not live · not working · 1 waiting`. That is the launch
+   condition, and launching there puts a second listener on a conversation that already has
+   one thinking. This step used to come after the reap, and the reason given was that "the
+   roster you read afterwards is telling the truth about what is being done" — which is true
+   only of lanes whose listener is *gone*. For a live one it is exactly backwards.
+
+   Read before the reap and every case comes out right: a working lane reads `working` and is
+   left alone; a lane whose dead listener held work also reads `working` and is left alone
+   **for one pass**, its event is reaped below, and the next pass launches for it; a lane whose
+   work was never claimed reads `not working · waiting` and is launched for at once.
+
+   One pass of delay for a crashed listener is the whole price, and it buys the duplicate away.
+   By this section's own asymmetry — a wasted session against an unanswered conversation — that
+   is the cheap side of the trade, not a departure from it.
+3. **Reap.** `corpus queue reap-stale` returns events a dead session stranded in-progress.
+   Run it every pass: after a clean park it reaps nothing and stays silent, and after an
+   unclean stop it is what returns stranded work to `pending/`. **Nothing you launch this pass
+   is decided by what it prints** — step 2 already made that decision, on purpose.
+
+   **Those three fields together are the launch decision**: a lane that is **not live**, **not
+   working**, and has **something pending** is a conversation somebody is waiting on and nobody
+   is answering. You cannot take that work, so this row is the only thing that tells you it
+   exists. A lane that is not live with nothing pending is idle and perfectly healthy —
+   launching for it would give this workspace one agent per conversation that has ever existed.
 
    It is also the whole of your restart recovery: designations live on their threads and
    survive, while listeners are processes and do not.
@@ -607,13 +628,22 @@ switch.
 
   **Working is not presence, and must never be read as it.** A listener that died mid-event
   leaves its event held until `corpus queue reap-stale` returns it to pending — so a dead lane
-  can read `working` until you reap it, and reaping is what closes that. It is in step 2 of the
-  loop for exactly this reason: reap first, and the roster you read afterwards is telling the
-  truth about what is being done.
+  reads `working` until it is reaped.
 
-  This covers the two cases no event announces — a listener that crashed or was killed, and
-  your own restart, where every designation is still sitting on its thread and every listener
-  is gone. Both read `working: false` once you have reaped, which is why the reap comes first. It is **once per pass, per lane, and never per event**: a lane that has been
+  **That is why the roster is read *before* the reap, and it used to say the opposite**
+  (AGENT-056). The old rule was "reap first, and the roster you read afterwards is telling the
+  truth about what is being done", which holds for a lane whose listener is gone and is exactly
+  backwards for one that is alive: `working` is derived from held work, so reaping strips it
+  from the busy resident and the dead one alike, and a long turn then reads as the launch
+  condition. Reading first costs a crashed lane **one pass** — it reads `working` this pass,
+  its event is reaped, and the next pass launches for it — and costs a live lane nothing at
+  all.
+
+  This still covers the two cases no event announces — a listener that crashed or was killed,
+  and your own restart, where every designation is still sitting on its thread and every
+  listener is gone. A restart's lanes hold nothing, so they read `working: false` on the first
+  read and launch at once; a crash that was holding work takes the extra pass. It is **once per
+  pass, per lane, and never per event**: a lane that has been
   unattended may be holding a dozen messages and it still wants one listener, and a
   `resident.designated` for a lane you have already launched into this pass launches nothing
   further. And if a lane you launched

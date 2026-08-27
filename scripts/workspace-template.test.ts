@@ -2991,13 +2991,23 @@ describe("orchestrate skill body", () => {
       expect(routing).toMatch(/Those three fields together are the decision/);
       expect(routing).toMatch(/idle and perfectly healthy/);
       expect(routing).toMatch(/is a \*\*busy agent\*\*/);
-      // And the bound: `working` outlives a dead agent until the reap, which is
-      // why the reap is step 2 and the roster read is step 3.
+      /*
+       * And the bound: `working` outlives a dead agent until the reap.
+       *
+       * **Which is why the roster is read *before* the reap** (AGENT-056), and
+       * the skill used to say the opposite. Reaping strips `working` from a
+       * resident mid-turn exactly as it does from one that died, so a
+       * reap-then-read loop turns every long turn into the launch condition.
+       * One pass of delay for a crashed listener is the whole price.
+       */
       expect(routing).toMatch(/\*\*Working is not presence, and must never be read as it\.\*\*/);
-      expect(routing).toMatch(/reaping is what closes that/);
-      expect(routing).toMatch(/\*\*once per pass,\s+per lane, and never per event\*\*/);
+      expect(routing).toMatch(/why the roster is read \*before\* the reap/);
+      expect(routing).toMatch(/is exactly\s+backwards for one that is alive/);
+      // The old rule survives only as the thing being corrected, in quotes.
+      expect(routing).toMatch(/The old rule was "reap first/);
+      expect(routing).toMatch(/\*\*once per\s+pass, per lane, and never per event\*\*/);
       expect(routing).toMatch(
-        /where every designation is still sitting on its thread and every listener\s+is gone/,
+        /where every designation is still sitting on its thread and every\s+listener is gone/,
       );
       expect(routing).toMatch(
         /a\s+`resident.designated` for a lane you have already launched into this pass launches nothing\s+further/,
@@ -3013,10 +3023,12 @@ describe("orchestrate skill body", () => {
       expect(routing).toMatch(/\*\*standing down, never as a failed launch\*\*/);
       // The roster is read before the claim, and acted on before the dispatch.
       const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
-      expect(loop).toMatch(/\*\*Read the roster\.\*\*/);
+      expect(loop).toMatch(/\*\*Read the roster — before you reap/);
       expect(loop).toContain("corpus agents");
+      // The reap follows it, and says so (AGENT-056).
+      expect(loop).toMatch(/Nothing you launch this pass\s+is decided by what it prints/);
       const order = [
-        "**Read the roster.**",
+        "**Read the roster — before you reap, and this order is load-bearing.**",
         "**Claim, then read what it printed.**",
         "**Launch the listeners the roster asked for, and then dispatch",
       ].map((label) => loop.indexOf(label));
@@ -6951,11 +6963,20 @@ describe("the claim goes back in the batch (AGENT-052)", () => {
 
   it("puts the loop's head in one array, claim last, in the order the loop runs", () => {
     expect(headBlock, "no batch in the skill claims anything").toBeDefined();
-    // The three commands of steps 2, 3 and 4, in that order. Order is not
-    // decoration: reaping requeues a dead session's events, and the claim below
-    // it is what collects them.
-    expect(headBlock).toEqual([["queue", "reap-stale"], ["agents"], ["queue", "claim-all"]]);
-    expect(section).toMatch(/reaping requeues a dead session's events in\s+time for the claim/);
+    /*
+     * The three commands of steps 2, 3 and 4, in that order.
+     *
+     * **The roster comes before the reap** (AGENT-056), and the order is the
+     * whole defect it fixes: `working` is derived from held work, so a reap
+     * strips it from a resident that is mid-turn exactly as it does from one
+     * that died — and the lane then reads as the launch condition, putting a
+     * second listener on a conversation that already has one thinking. The
+     * claim stays last: reaping requeues a dead session's events, and the claim
+     * below it is what collects them.
+     */
+    expect(headBlock).toEqual([["agents"], ["queue", "reap-stale"], ["queue", "claim-all"]]);
+    expect(section).toMatch(/the roster is read \*\*before\*\* the reap/);
+    expect(section).toMatch(/requeues a dead session's events in\s+time for the claim/);
     // The claim is the last entry, which is the whole answer to a failing tail.
     expect(headBlock?.at(-1)?.join(" ")).toBe("queue claim-all");
     // The loop's own step list points at it and does not restate it. It also
