@@ -596,6 +596,30 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
   });
 
 /**
+ * A raw query record, split into the flat parameters {@link DocsQuerySchema}
+ * validates and the `extra` record {@link collectExtraFilters} lifts.
+ *
+ * Three call sites turn a raw record into a query — the collection route, a
+ * board's scope query, and a bulk Save's whole-result-set query — and each one
+ * would otherwise have to remember that `extra.assignee` is neither an unknown
+ * parameter nor a field of the object schema. Forgetting is silent in two of the
+ * three: a stored query would simply stop filtering.
+ */
+export interface SplitQuery {
+  readonly params: Record<string, string>;
+  readonly extra: Record<string, string> | undefined;
+}
+
+export function splitExtraParams(raw: Readonly<Record<string, string | undefined>>): SplitQuery {
+  const params: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (name.startsWith(EXTRA_PARAM_PREFIX) || value === undefined) continue;
+    params[name] = value;
+  }
+  return { params, extra: collectExtraFilters(raw) };
+}
+
+/**
  * FTS5's `snippet()` output, converted server-side into alternating matched and
  * unmatched segments. Structured rather than marked-up HTML so the UI renders
  * highlights without `dangerouslySetInnerHTML` and without an escaping contract

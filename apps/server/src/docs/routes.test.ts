@@ -51,7 +51,12 @@ beforeAll(() => {
     updated: daysAgo(2),
   });
   ws.doc({ id: "doc_old", path: "data/docs/finance/old.md", updated: daysAgo(200) });
-  ws.doc({ id: "doc_note", path: "data/docs/inbox/note.md", updated: daysAgo(1) });
+  ws.doc({
+    id: "doc_note",
+    path: "data/docs/inbox/note.md",
+    updated: daysAgo(1),
+    frontmatter: { assignee: "theo" },
+  });
   ws.thread({
     id: "th_one",
     parent: "doc_mortgage",
@@ -82,6 +87,42 @@ describe("GET /api/docs", () => {
       "th_one",
       "doc_old",
     ]);
+  });
+
+  /**
+   * SPEC.md §5's **Structured fields**, at the route rather than in the builder.
+   *
+   * These exist because the unit tests passed while the route answered `500`
+   * with an empty body: Zod 4's `ZodError` does not extend `Error`, so a handler
+   * that throws one reaches neither `app.onError` nor `toHttpError`. Every
+   * assertion below is a status code the E2E run measured.
+   */
+  describe("extra.<key>", () => {
+    it("filters on a frontmatter field the workspace invented", async () => {
+      const body = DocListSchema.parse(await json("/api/docs?extra.assignee=theo"));
+      expect(body.items.map((item) => item.id)).toEqual(["doc_note"]);
+    });
+
+    it.each([
+      ["extra.1bad=x", "identifier"],
+      ["extra.=x", "identifier"],
+      ["extra.assignee=", "absence"],
+    ])("refuses %s with a 400 that names the parameter", async (query, expected) => {
+      const response = await get(`/api/docs?${query}`);
+      expect(response.status).toBe(400);
+      const error = ApiErrorSchema.parse(await response.json());
+      expect(error.code).toBe("bad_request");
+      const message = error.issues?.[0]?.message ?? "";
+      expect(message).toContain(expected);
+      // The parameter, not merely "a parameter": the caller mistyped one of
+      // several and has to be told which.
+      expect(message).toContain(query.split("=")[0] ?? "");
+    });
+
+    it("refuses a scope alongside a glob folder", async () => {
+      const response = await get("/api/docs?folder=finance/*&folderScope=self");
+      expect(response.status).toBe(400);
+    });
   });
 
   it("composes filters from the query string", async () => {

@@ -25,8 +25,11 @@
 // unknown keys rather than rejecting them, so the keys are checked against its
 // shape here before it ever runs.
 
+import { z } from "zod";
 import {
   DocsQuerySchema,
+  EXTRA_PARAM_PREFIX,
+  splitExtraParams,
   type BulkWholeResultSetEntry,
   type DocsQuery,
   type ValidationIssue,
@@ -71,6 +74,15 @@ export function compileSelectionQuery(query: ViewQuery): DocsQuery {
   const wire: Record<string, string> = {};
   const unknown: ValidationIssue[] = [];
   for (const [key, value] of Object.entries(query)) {
+    // `extra.<key>` is a filter the collection query accepts and a name
+    // `QUERY_KEYS` cannot hold, because the namespace is open (SPEC.md §5). It
+    // is checked below by the same lift the route uses — which refuses a
+    // malformed key by name — so it must not be reported as a filter that does
+    // not exist.
+    if (key.startsWith(EXTRA_PARAM_PREFIX)) {
+      wire[key] = valueToWire(value);
+      continue;
+    }
     if (!QUERY_KEYS.has(key)) {
       unknown.push({
         path: `${ISSUE_PATH}.${key}`,
@@ -87,7 +99,24 @@ export function compileSelectionQuery(query: ViewQuery): DocsQuery {
     validationError("the whole-result-set query names a filter that does not exist", unknown);
   }
 
-  const parsed = DocsQuerySchema.safeParse(wire);
+  // A Save's query decides what gets **written**, so unlike a stored view it
+  // degrades on nothing: a malformed extra key is a `400` naming it, exactly as
+  // an unknown filter above is.
+  let split;
+  try {
+    split = splitExtraParams(wire);
+  } catch (error) {
+    if (!(error instanceof z.ZodError)) throw error;
+    validationError(
+      "the whole-result-set query is not a query the corpus can run",
+      error.issues.map((issue) => ({
+        path: [ISSUE_PATH, ...issue.path.map(String)].join("."),
+        message: issue.message,
+      })),
+    );
+  }
+
+  const parsed = DocsQuerySchema.safeParse(split.params);
   if (!parsed.success) {
     validationError(
       "the whole-result-set query is not a query the corpus can run",
@@ -97,7 +126,7 @@ export function compileSelectionQuery(query: ViewQuery): DocsQuery {
       })),
     );
   }
-  return parsed.data;
+  return split.extra === undefined ? parsed.data : { ...parsed.data, extra: split.extra };
 }
 
 /**

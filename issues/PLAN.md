@@ -1820,7 +1820,7 @@ parameter catalogue names them.
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-091 | `extra.<key>` is a filter, and title/body/tag/folder take globs | done | P1 | opus | SHARED-011 |
 | CONTRACT-092 | A vocabulary endpoint: the tags and `extra` keys this workspace uses | todo | P2 | opus | CONTRACT-091 |
-| SERVER-158 | The projection answers a glob, and reads `extra_json` | todo | P1 | opus | CONTRACT-091 |
+| SERVER-158 | The projection answers a glob, and reads `extra_json` | done | P1 | opus | CONTRACT-091 |
 | SERVER-159 | Enumerate the workspace's vocabulary from the projection | todo | P2 | opus | CONTRACT-092 |
 | CLI-072 | `corpus doc list` takes the same filters the board does | todo | P1 | opus | CONTRACT-091, SERVER-158 |
 | UI-177 | The query editor treats `extra.` as open, and stops calling a real field unknown | todo | P1 | opus | CONTRACT-091, SERVER-158 |
