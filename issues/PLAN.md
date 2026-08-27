@@ -1234,7 +1234,7 @@ left in a report.
 | UI-158 | "Move to folder…" has no dialog, and UI-150 assumed one existed | done | P1 | UI-150 |
 | UI-159 | The column strip took the comment composer's room, and its Send button left the viewport | done | P0 | UI-151 |
 | UI-160 | A kanban's status chip may be decided by a different board (PR #58 review finding) | done | P2 | UI-152, SERVER-138 |
-| CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | in_progress | P2 | — |
+| CONTRACT-072 | Three surfaces still describe the heuristic SERVER-054 deleted | done | P2 | — |
 | CONTRACT-073 | Non-terminal queue status is one reading of §7, written twice (SERVER-054 escalation) | done | P2 | — |
 | SERVER-134 | A derived due date reaches the projection, the queries and the file (PLUGINS-018's server half) | done | P0 | PLUGINS-018 |
 | UI-146 | The document body rises 75px after it is on screen, and a right-click jumps it 188px (UI-093 consequence) | done | P0 | — |

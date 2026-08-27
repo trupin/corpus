@@ -1245,10 +1245,13 @@ export async function stubCorpus(
    *   server counts a document's child threads whose last turn is newer than the
    *   seen mark; this stub holds no seen mark, so an unseeded parent of an
    *   unread conversation still wears no pill here.
-   * - `awaitingAgent` is always `false` on a thread. The server's rule is
-   *   `agent <> 'none' AND status = 'open' AND last_author = 'user'`, which a
-   *   thread created through this stub's own `POST /api/threads` with
-   *   `requestsAgent` satisfies — so the row's working dot is missing.
+   * - `awaitingAgent` is always `false` on a thread. The server's rule is a
+   *   **queue** question since SERVER-054 — true exactly when some event in a
+   *   non-terminal status carries the thread's id — and this stub runs no queue,
+   *   so nothing here can ever owe a thread anything and the row's working dot
+   *   is missing. (It used to be the thread-state heuristic
+   *   `agent <> 'none' AND status = 'open' AND last_author = 'user'`, and this
+   *   comment described that for a release after it was gone — CONTRACT-072.)
    * - `attention` carries only `unread-reply` and `form` (see {@link attentionOf}).
    *   The server also emits `stale`, `due` and `failed-job`, none of which are
    *   thread-scoped, so `needs=stale` answers empty here on a corpus the server
