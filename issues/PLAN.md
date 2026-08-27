@@ -1783,6 +1783,16 @@ named here in prose and counted there.
 without leaving — and the two arcs in it were the only two blocked issues in the
 tracker.
 
+**No pr-reviewer ran on PR #66**, for the same reason as #62 through #65: the
+session carries a standing directive not to spawn subagents unless the user asks.
+Recorded here rather than left as a silent gap in the Definition of Done. What
+stood in for it: `CI / validate` green on the merged head, the full local gate
+(15,863 unit tests, 650 browser specs), and fourteen falsifications — each one
+breaking a fix on purpose and turning a named number of tests red. One of those
+falsifications corrected a test rather than confirming it: the composer's squeeze
+assertion passed with every control crammed back into one row, because "the
+legend is one line" is satisfied by one *truncated* line.
+
 **No pr-reviewer ran on PR #65**, and the reason is the same as for #62, #63 and
 #64: the session carries a standing directive not to spawn subagents unless the
 user asks. Recorded here rather than left as a silent gap in the Definition of
