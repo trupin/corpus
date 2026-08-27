@@ -1,5 +1,10 @@
 import { join } from "node:path";
-import { ApiErrorSchema, DocListSchema, FolderTreeSchema } from "@corpus/contract";
+import {
+  ApiErrorSchema,
+  DocListSchema,
+  FolderTreeSchema,
+  ValidationErrorSchema,
+} from "@corpus/contract";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type CorpusServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
@@ -110,9 +115,12 @@ describe("GET /api/docs", () => {
     ])("refuses %s with a 400 that names the parameter", async (query, expected) => {
       const response = await get(`/api/docs?${query}`);
       expect(response.status).toBe(400);
-      const error = ApiErrorSchema.parse(await response.json());
+      // `ValidationErrorSchema`, not the `ApiError` union: `issues` lives on
+      // this member alone, so parsing the union would leave the field
+      // unresolvable and the assertion below untyped.
+      const error = ValidationErrorSchema.parse(await response.json());
       expect(error.code).toBe("bad_request");
-      const message = error.issues?.[0]?.message ?? "";
+      const message = error.issues[0]?.message ?? "";
       expect(message).toContain(expected);
       // The parameter, not merely "a parameter": the caller mistyped one of
       // several and has to be told which.
