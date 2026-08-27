@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { CreateDocRequestSchema } from "./doc.js";
 import {
+  collectExtraFilters,
   DEFAULT_DOC_SORT,
   DOC_SORTS,
   DUE_KEYWORDS,
@@ -9,7 +11,10 @@ import {
   DocsQuerySchema,
   DocSortSchema,
   DueKeywordSchema,
+  EXTRA_KEY_PATTERN,
+  EXTRA_PARAM_PREFIX,
   FOLDER_SCOPES,
+  hasGlob,
   NEEDS_FILTERS,
   NEEDS_REASONS,
   NeedsFilterSchema,
@@ -814,5 +819,137 @@ describe("DocList", () => {
   it("round-trips an empty page", () => {
     const list = { items: [], page: { total: 0, limit: 50, offset: 0 } };
     expect(DocListSchema.parse(list)).toEqual(list);
+  });
+});
+
+/**
+ * SPEC.md §5's **Structured fields** and §9.2's **Pattern matching** — the rider
+ * signed 2026-08-04 (SHARED-011), on the wire.
+ */
+
+/** `collectExtraFilters`, with its `ZodError` unpacked into readable issues. */
+function safeCollect(raw: Record<string, string>): {
+  ok: boolean;
+  issues?: { path: PropertyKey[]; message: string }[];
+} {
+  try {
+    collectExtraFilters(raw);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        ok: false,
+        issues: error.issues.map((issue) => ({ path: [...issue.path], message: issue.message })),
+      };
+    }
+    throw error;
+  }
+}
+
+describe("structured fields and glob patterns", () => {
+  it("puts `title` and `body` on the shape, and rejects the empty string like `q`", () => {
+    expect(DocsQuerySchema.parse({ title: "Catch-Up*" }).title).toBe("Catch-Up*");
+    expect(DocsQuerySchema.parse({ body: "rate assumption" }).body).toBe("rate assumption");
+    expect(DocsQuerySchema.safeParse({ title: "" }).success).toBe(false);
+    expect(DocsQuerySchema.safeParse({ body: "" }).success).toBe(false);
+  });
+
+  /**
+   * `apps/ui/src/board/query/grammar.ts` derives the query editor's field list
+   * from this shape at runtime, so a filter that is not here is a filter the
+   * editor calls unknown.
+   */
+  it("keeps `.shape` enumerable, with the three new names in it", () => {
+    const names = Object.keys(DocsQuerySchema.shape);
+    expect(names).toContain("title");
+    expect(names).toContain("body");
+    expect(names).toContain("extra");
+  });
+
+  it.each([
+    ["Catch-Up*", true],
+    ["who?", true],
+    ["finance", false],
+    ["", false],
+  ])("reads %s as a pattern: %s", (value, expected) => {
+    expect(hasGlob(value)).toBe(expected);
+  });
+
+  describe("collectExtraFilters", () => {
+    it("lifts the dotted parameters and leaves every other one alone", () => {
+      expect(collectExtraFilters({ type: "note", "extra.assignee": "theo" })).toEqual({
+        assignee: "theo",
+      });
+    });
+
+    it("answers undefined when no parameter opens the namespace", () => {
+      expect(collectExtraFilters({ type: "note", tag: "finance" })).toBeUndefined();
+    });
+
+    it("collects several keys, which AND together downstream", () => {
+      expect(collectExtraFilters({ "extra.assignee": "theo", "extra.customer": "acme" })).toEqual({
+        assignee: "theo",
+        customer: "acme",
+      });
+    });
+
+    it("refuses a key that is not an identifier, naming it", () => {
+      const result = safeCollect({ "extra.1x": "y", 'extra.a"b': "x" });
+      expect(result.ok).toBe(false);
+      // The offending parameter, so a caller who mistyped one of several sees
+      // which — a record's own key failure says only "Invalid key in record".
+      expect(result.issues?.[0]?.path).toEqual(["extra.1x"]);
+      expect(result.issues?.[0]?.message).toContain("identifier");
+      expect(result.issues?.[0]?.message).toContain("extra.1x");
+    });
+
+    it("names the parameter when a value is missing, and says absence is not askable", () => {
+      const result = safeCollect({ "extra.assignee": "" });
+      expect(result.issues?.[0]?.path).toEqual(["extra.assignee"]);
+      expect(result.issues?.[0]?.message).toContain("absence");
+    });
+
+    it("refuses the empty key", () => {
+      expect(() => collectExtraFilters({ [EXTRA_PARAM_PREFIX]: "x" })).toThrow();
+    });
+
+    /**
+     * There is no absence sentinel, deliberately: `stage=`'s empty element is a
+     * core field's null sentinel and an open namespace does not get a second one.
+     */
+    it("refuses an empty value rather than reading it as absence", () => {
+      expect(() => collectExtraFilters({ "extra.assignee": "" })).toThrow();
+    });
+
+    it("takes a value carrying a glob, which is the field's own business", () => {
+      expect(collectExtraFilters({ "extra.assignee": "t*" })).toEqual({ assignee: "t*" });
+    });
+  });
+
+  it("refuses a key that is not an identifier through the schema too", () => {
+    expect(DocsQuerySchema.safeParse({ extra: { "a.b": "x" } }).success).toBe(false);
+    expect(DocsQuerySchema.safeParse({ extra: { assignee: "theo" } }).success).toBe(true);
+  });
+
+  it.each(["owner", "_x", "a-b", "A1"])("accepts %s as a key", (key) => {
+    expect(EXTRA_KEY_PATTERN.test(key)).toBe(true);
+  });
+
+  it.each(["1x", "a b", "a.b", "", 'a"b'])("refuses %s as a key", (key) => {
+    expect(EXTRA_KEY_PATTERN.test(key)).toBe(false);
+  });
+
+  /**
+   * `folderScope=self` measures a literal prefix length, which a pattern does
+   * not have. Refused rather than answered with a plausible-looking list — the
+   * same rule `parent` + `isParent=true` is refused under.
+   */
+  it("refuses `folderScope` alongside a glob `folder`", () => {
+    expect(DocsQuerySchema.safeParse({ folder: "work/*", folderScope: "self" }).success).toBe(
+      false,
+    );
+    expect(DocsQuerySchema.safeParse({ folder: "work", folderScope: "self" }).success).toBe(true);
+    // Without a scope, a pattern is perfectly ordinary.
+    expect(DocsQuerySchema.safeParse({ folder: "work/*" }).success).toBe(true);
   });
 });

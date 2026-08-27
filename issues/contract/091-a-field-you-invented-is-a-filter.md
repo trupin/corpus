@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -33,17 +33,17 @@ This issue puts both on the wire and nowhere else. The SQL is SERVER-158's.
 
 ## Acceptance Criteria
 
-- [ ] `title` and `body` are filters on the collection query, published in
+- [x] `title` and `body` are filters on the collection query, published in
       `openapi.json`, and accepted by `GET /api/docs`
-- [ ] `extra.<key>=<value>` parses into a validated record on `DocsQuery`
-- [ ] A key that is not a safe identifier is refused with `400`, naming the key
-- [ ] `DocsQuerySchema.shape` still exists and still enumerates every field —
+- [x] `extra.<key>=<value>` parses into a validated record on `DocsQuery`
+- [x] A key that is not a safe identifier is refused with `400`, naming the key
+- [x] `DocsQuerySchema.shape` still exists and still enumerates every field —
       `apps/ui/src/board/query/grammar.ts` reads it at runtime
-- [ ] The four glob-bearing filters document glob semantics in their published
+- [x] The four glob-bearing filters document glob semantics in their published
       description, including that a glob is distinct from `q=`
-- [ ] `/api/search` gains `title` and `body` too, and does **not** gain `extra`
+- [x] `/api/search` gains `title` and `body` too, and does **not** gain `extra`
       (see below)
-- [ ] `npm run openapi:check` regenerates cleanly
+- [x] `npm run openapi:check` regenerates cleanly
 
 ## Technical Design
 
@@ -123,9 +123,90 @@ then `npm run build -w packages/contract` and a `tsc` that consumes
 `DocsQuery["extra"]`.
 
 ## E2E Verification Log
-_Filled by the implementer._
+
+**Implemented on: opus.**
+
+### The design the issue proposed, and where it had to change
+
+The issue said to lift `extra.<key>` before the object schema runs. Probed
+first, because the whole point of not using `z.preprocess` was keeping `.shape`:
+
+```
+preprocess has shape: false
+refined  has shape: true
+catchall has shape: true
+```
+
+So `z.preprocess` was out on its own terms. `.catchall()` survives, but it puts
+an index signature on `DocsQuery`, which would silence a typo in every server
+property access — a worse trade than the one being avoided. The lift is an
+exported function, `collectExtraFilters`, and the server calls it.
+
+**The generator refused the parameter name.**
+
+```
+ConflictError { message: 'Conflicting names for parameter',
+                data: { key: 'name', values: [ 'extra', 'extra.<key>' ] } }
+```
+
+A published parameter's name must equal its schema key, and OpenAPI 3.1 has no
+serialization style for a dot-delimited open namespace (`deepObject` would mean
+`extra[assignee]`). So the parameter is published as `extra`, typed as the
+record it is, and its description opens with the wire spelling. `toQueryParams`
+in `@corpus/kit` expands the record into dotted parameters at the boundary.
+
+**`title` and `body` landed on both endpoints, and that moved a signed line.**
+`openapi.test.ts` pins §9.2's signed `/api/search` parameter string, and adding
+them to the shared filter shape broke it. The choice was between putting them on
+the collection query alone — which adds a third entry to §9.2's *exception*
+enumeration, also a signed sentence — and putting them on both. Both edits touch
+signed text, so the one that keeps "a filter added here lands on both endpoints
+with no second edit" wins. §9.2's search parameter line and its exception list
+were amended together, and each amendment says it follows from the rider.
+
+### Generated output
+
+```
+$ npm run generate -w packages/contract
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+```
+
+The generated client types, read back out of `schema.generated.ts`:
+
+- `/api/docs` gained `title?: string`, `body?: string`, and
+  `extra?: { [key: string]: string }`
+- `/api/search` gained `title?: string` and `body?: string`, and **not** `extra`
+
+### Falsification
+
+`hasGlob` is the judgment the SQL will repeat, and the refinement could pass
+while absent, so both were broken and watched:
+
+```
+$ # hasGlob -> return false
+      Tests  3 failed | 188 passed (191)
+   × reads Catch-Up* as a pattern: true
+   × reads who? as a pattern: true
+   × refuses `folderScope` alongside a glob `folder`
+
+$ # per-key validation deleted, leaving the record schema to catch it
+      Tests  1 failed | 190 passed (191)
+   × refuses a key that is not an identifier, naming it
+```
+
+Both restored, 191 passing.
+
+### Suites
+
+```
+$ vitest run packages/contract/src/openapi.test.ts packages/contract/src/schemas/query.test.ts
+   Tests  777 passed (777)
+$ vitest run packages/kit/src/client/createCorpusClient.test.ts
+   Tests  40 passed (40)
+```
 
 ## Completion Checklist (domain agent)
-- [ ] Tests pass
-- [ ] `openapi.json` regenerated and committed
-- [ ] Lint and typecheck clean
+- [x] Tests pass
+- [x] `openapi.json` regenerated and committed
+- [x] Lint and typecheck clean

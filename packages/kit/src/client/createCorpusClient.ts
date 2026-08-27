@@ -41,6 +41,7 @@ import type {
   UpgradeStarted,
 } from "@corpus/contract";
 import {
+  EXTRA_PARAM_PREFIX,
   ReattachConflictErrorSchema,
   StaleKeyErrorSchema,
   UnknownRecipientErrorSchema,
@@ -914,10 +915,25 @@ function unwrap<T>(operation: string, result: FetchResult<T>): T {
  * comma-free on write, so no escaping scheme is needed). Everything else passes
  * through for `openapi-fetch` to serialise — including parameters the kit has
  * never heard of, so a contract that grows a filter does not need a kit release.
+ *
+ * **`extra` is the one parameter that changes shape here** (SPEC.md §5's
+ * **Structured fields**). It is a record on the way in — `{ assignee: "theo" }`
+ * — because that is what the contract types and what a caller holds, and it goes
+ * on the wire as one parameter per key: `extra.assignee=theo`. OpenAPI 3.1 has
+ * no serialization style for a dot-delimited open namespace, so the published
+ * parameter carries the bare name and this is where the two forms meet. A caller
+ * that already holds the dotted spelling may pass it through untouched, since
+ * unknown parameters are forwarded — both spellings reach the same query string.
  */
 export function toQueryParams(filter: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(filter)) {
+    if (key === "extra" && value !== null && typeof value === "object" && !Array.isArray(value)) {
+      for (const [name, own] of Object.entries(value as Record<string, unknown>)) {
+        params[`${EXTRA_PARAM_PREFIX}${name}`] = own;
+      }
+      continue;
+    }
     params[key] = Array.isArray(value) ? value.join(",") : value;
   }
   return params;

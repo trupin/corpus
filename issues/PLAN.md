@@ -1818,7 +1818,7 @@ parameter catalogue names them.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| CONTRACT-091 | `extra.<key>` is a filter, and title/body/tag/folder take globs | todo | P1 | opus | SHARED-011 |
+| CONTRACT-091 | `extra.<key>` is a filter, and title/body/tag/folder take globs | done | P1 | opus | SHARED-011 |
 | CONTRACT-092 | A vocabulary endpoint: the tags and `extra` keys this workspace uses | todo | P2 | opus | CONTRACT-091 |
 | SERVER-158 | The projection answers a glob, and reads `extra_json` | todo | P1 | opus | CONTRACT-091 |
 | SERVER-159 | Enumerate the workspace's vocabulary from the projection | todo | P2 | opus | CONTRACT-092 |

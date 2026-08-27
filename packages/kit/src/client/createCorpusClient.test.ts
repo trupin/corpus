@@ -322,6 +322,27 @@ describe("toQueryParams", () => {
   it("is empty for an empty filter", () => {
     expect(toQueryParams({})).toEqual({});
   });
+
+  /**
+   * SPEC.md §5's **Structured fields**: the caller holds a record and the wire
+   * carries one parameter per key, because OpenAPI has no style for a
+   * dot-delimited open namespace.
+   */
+  it("expands `extra` into one dotted parameter per key", () => {
+    expect(toQueryParams({ type: "note", extra: { assignee: "theo", customer: "acme" } })).toEqual({
+      type: "note",
+      "extra.assignee": "theo",
+      "extra.customer": "acme",
+    });
+  });
+
+  it("forwards a caller that already holds the dotted spelling", () => {
+    expect(toQueryParams({ "extra.assignee": "theo" })).toEqual({ "extra.assignee": "theo" });
+  });
+
+  it("leaves an empty `extra` record contributing nothing", () => {
+    expect(toQueryParams({ q: "x", extra: {} })).toEqual({ q: "x" });
+  });
 });
 
 /**
