@@ -1850,7 +1850,7 @@ were always in scope.
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | UI-179 | The Reflect control's parts do not line up (user report) | done | P0 | opus | — |
-| UI-180 | The composer's foot is crowded, and its two pickers do not match (user report) | todo | P0 | opus | — |
+| UI-180 | The composer's foot is crowded, and its two pickers do not match (user report) | done | P0 | opus | — |
 
 **`CONTRACT-066` was proposed for this release and is cut.** It was taken for a
 query-surface defect in the same files, and reading it properly showed it is

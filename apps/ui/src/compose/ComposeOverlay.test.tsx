@@ -70,7 +70,7 @@ const settle = (): Promise<void> =>
 
 describe("ComposeOverlay", () => {
   describe("the panel", () => {
-    it("is the prototype's: a scrim, a 640px compose panel, and the actions in order", () => {
+    it("is the prototype's: a scrim, a 640px compose panel, and its foot in two rows", () => {
       const { container } = mount();
       expect(container.querySelector(".overlay.open")).not.toBeNull();
       const panel = container.querySelector(".search-panel.compose-panel");
@@ -79,23 +79,35 @@ describe("ComposeOverlay", () => {
       expect(panel?.getAttribute("aria-label")).toBe("Ask or capture");
       expect(panel?.getAttribute("data-dropzone")).toBe("compose");
 
-      const actions = [...(panel?.querySelectorAll(".compose-actions > *") ?? [])].map(
-        (node) => node.className || node.tagName.toLowerCase(),
-      );
-      // The address line (UI-126) sits between the 📎 and the hint, and the
-      // owner picker (UI-173) beside it — two acts, two controls, adjacent
-      // because a person choosing one is deciding about the other. The two
-      // submits keep the bar's tail, which is the key contract's order.
-      expect(actions).toEqual([
+      const names = (css: string) =>
+        [...(panel?.querySelectorAll(css) ?? [])].map(
+          (node) => node.className || node.tagName.toLowerCase(),
+        );
+
+      /*
+       * **The foot is two rows** (UI-180). The action row below is
+       * `design/index.html`'s, restored exactly: five things, in the
+       * prototype's order, with the two submits on the tail because that is the
+       * key contract's order.
+       *
+       * The address line (UI-126) and the owner picker (UI-173) were added to
+       * that row and never budgeted for — 286px into a bar with 70px of slack —
+       * so the hint wrapped to three lines and both submit labels broke across
+       * three. They now share a row of their own, adjacent because a person
+       * choosing one is deciding about the other.
+       */
+      expect(names(".compose-settings > *")).toEqual(["composer-address", "compose-resident"]);
+      expect(names(".compose-actions > *")).toEqual([
         "clip",
         "input",
-        "composer-address",
-        "compose-resident",
         "hint",
         "spacer",
         "btn-capture",
         "btn-ask",
       ]);
+      // Settings first: they are read before the send is pressed.
+      const foot = [...(panel?.children ?? [])].map((node) => node.className);
+      expect(foot.indexOf("compose-settings")).toBeLessThan(foot.indexOf("compose-actions"));
       expect(button(container, "btn-capture").textContent).toBe(CAPTURE_LABEL);
       expect(button(container, "btn-ask").textContent).toBe(ASK_LABEL);
       expect(panel?.querySelector(".compose-actions .hint")?.textContent).toBe(COMPOSE_HINT);

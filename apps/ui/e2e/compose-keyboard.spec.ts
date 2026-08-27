@@ -61,6 +61,14 @@ const COMPOSE_PANEL = `
     <div class="search-panel compose-panel" data-dropzone="compose">
       <textarea data-composer="compose"></textarea>
       <div class="pending-atts"><span class="att-chip">a.png<button>✕</button></span></div>
+      <!-- The settings row the product added to the prototype's foot (UI-180):
+           the address line and the owner picker, which the prototype never had
+           and which this fixture has to carry for the CSS under test to have
+           something to style. -->
+      <div class="compose-settings">
+        <span class="composer-address"></span>
+        <label class="compose-resident"><span class="compose-resident-label">owner</span><select><option>its own agent</option></select></label>
+      </div>
       <div class="compose-actions">
         <button class="clip">📎</button>
         <span class="hint">@ agents · / skills · [[ refs · ↵ newline</span>
@@ -130,21 +138,39 @@ test.describe("the compose panel", () => {
     expect(textarea["border-style"]).toBe("none");
   });
 
+  /**
+   * The foot is **two** surface-2 rows under one hairline since UI-180: the
+   * settings row carries the divider that separates the foot from the
+   * textarea, and the action row below it carries none — two hairlines inside
+   * one foot would read as two bars rather than as one block of two lines.
+   */
   test("bars the actions across a surface-2 foot under a hairline", async ({ page }) => {
     const styles = await measure(page, COMPOSE_PANEL, [
+      [
+        ".compose-settings",
+        ["display", "align-items", "gap", "padding", "background-color", "border-top-width"],
+      ],
       [
         ".compose-actions",
         ["display", "align-items", "gap", "padding", "background-color", "border-top-width"],
       ],
       [".compose-actions .hint", ["font-size", "color"]],
     ]);
+    const settings = styles[".compose-settings"] ?? {};
+    expect(settings["display"]).toBe("flex");
+    expect(settings["align-items"]).toBe("center");
+    expect(settings["gap"]).toBe("10px");
+    expect(settings["padding"]).toBe("8px 16px 0px");
+    expect(settings["background-color"]).toBe(LIGHT_SURFACE_2);
+    expect(settings["border-top-width"]).toBe("1px");
+
     const actions = styles[".compose-actions"] ?? {};
     expect(actions["display"]).toBe("flex");
     expect(actions["align-items"]).toBe("center");
     expect(actions["gap"]).toBe("10px");
-    expect(actions["padding"]).toBe("10px 16px");
+    expect(actions["padding"]).toBe("8px 16px 10px");
     expect(actions["background-color"]).toBe(LIGHT_SURFACE_2);
-    expect(actions["border-top-width"]).toBe("1px");
+    expect(actions["border-top-width"]).toBe("0px");
     expect(styles[".compose-actions .hint"]?.["font-size"]).toBe("10.5px");
     expect(styles[".compose-actions .hint"]?.["color"]).toBe(LIGHT_INK_3);
   });
@@ -366,24 +392,27 @@ test.describe("the top bar's way in", () => {
     );
   });
 
-  test("orders the actions 📎 · address · hint · Capture · Ask", async ({ page }) => {
+  test("orders the foot: address · owner, then 📎 · hint · Capture · Ask", async ({ page }) => {
     await page.keyboard.press("c");
     await expect(page.locator(".compose-actions .btn-capture")).toHaveText("Capture ⇧⌘↵");
     await expect(page.locator(".compose-actions .btn-ask")).toHaveText("Ask ⌘↵");
-    const order = await page
-      .locator(".compose-actions > *")
-      .evaluateAll((nodes: Element[]): string[] =>
-        nodes.map((node) => node.className || node.tagName.toLowerCase()),
-      );
-    // The address line (UI-126) sits between the 📎 and the hint, and the owner
-    // picker (UI-173) beside it — two acts, two controls, adjacent because a
-    // person choosing one is deciding about the other. The submits keep the
-    // bar's tail, which is the key contract's order.
-    expect(order).toEqual([
+    const names = (css: string) =>
+      page
+        .locator(css)
+        .evaluateAll((nodes: Element[]): string[] =>
+          nodes.map((node) => node.className || node.tagName.toLowerCase()),
+        );
+
+    // The address line (UI-126) and the owner picker (UI-173) share a row of
+    // their own since UI-180 — two acts, two controls, adjacent because a
+    // person choosing one is deciding about the other, and above the send
+    // because they are read before it is pressed. The action row below is
+    // `design/index.html`'s, restored exactly; the submits keep its tail, which
+    // is the key contract's order.
+    expect(await names(".compose-settings > *")).toEqual(["composer-address", "compose-resident"]);
+    expect(await names(".compose-actions > *")).toEqual([
       "clip",
       "input",
-      "composer-address",
-      "compose-resident",
       "hint",
       "spacer",
       "btn-capture",
