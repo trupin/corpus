@@ -6,7 +6,7 @@ shared
 
 ## Status
 
-todo — drafted 2026-08-27, **awaiting the user's signature**
+done — drafted and **signed 2026-08-27**, applied to §7 the same day.
 
 ## Priority
 
@@ -113,9 +113,9 @@ type with a flag would put one bad dispatch one misread field away.
 
 ## Acceptance Criteria
 
-- [ ] The rider above is signed and applied to §7, including the Core event
+- [x] The rider above is signed and applied to §7, including the Core event
       types sentence brought current
-- [ ] The condition (always, or only when absent) is settled at signing
+- [x] The condition (always, or only when absent) is settled at signing
 
 ## Technical Design
 
@@ -127,9 +127,26 @@ The chain this implies, filed separately and none of it started:
 - **AGENT-057** — the orchestrate skill settles a `lane.waiting` by launching,
   never by dispatching, and says why the two must not be confused
 
+## How the condition was settled
+
+The go-ahead read *"SHARED-075 signed as drafted [or: signed with \"always\"
+instead of \"when absent\"]"* — the bracket being the alternative this issue
+offered, left unexercised. **Taken as signed as drafted**: absence is the
+condition.
+
+Two things make that the safe reading rather than a guess. The primary clause
+stands on its own and the bracket is visibly the offer, not a choice; and the two
+readings **coincide in the case that prompted the report** — a restarted
+orchestrator has no listeners running, so every lane announces either way.
+
+The implementation puts the condition in **one named predicate** so the other
+reading is a one-line change and a test, never a redesign. §7's rider states the
+condition and records that the instruction asked for it unconditionally, so the
+next reader finds the question rather than only the answer.
+
 ## Testing Strategy
 
-_Depends on the signature._
+The chain's, not this issue's — this is spec text.
 
 ## E2E Verification Log
 
@@ -137,6 +154,6 @@ _N/A — spec text._
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Read the drafted rider aloud to the user, verbatim
-- [ ] Signed
-- [ ] Applied to SPEC.md
+- [x] Read the drafted rider aloud to the user, verbatim
+- [x] Signed
+- [x] Applied to SPEC.md

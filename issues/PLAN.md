@@ -1807,9 +1807,12 @@ branch — each turning a named number of tests red.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-075 | A lane nobody can work announces itself to the orchestrator | todo | P0 | fable | — |
+| SHARED-075 | A lane nobody can work announces itself to the orchestrator | done | P0 | fable | — |
+| CONTRACT-093 | `lane.waiting` is a core event type | todo | P0 | opus | SHARED-075 |
+| SERVER-161 | An unattended lane's arrival announces itself | todo | P0 | opus | CONTRACT-093 |
+| AGENT-057 | The orchestrator settles a waiting lane by launching, never by answering | todo | P0 | fable | SERVER-161 |
 
-**Awaiting a signature**, and the draft is in the issue. It is the half of
+**Signed 2026-08-27** and applied the same day. It is the half of
 SERVER-160 that v0.26.0 left open and named as open: a conversation being
 **created** now reaches the orchestrator, and every later message to it does
 not. The user hit it by restarting the orchestrator, which kills every listener
