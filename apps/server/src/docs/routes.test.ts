@@ -4,6 +4,7 @@ import {
   DocListSchema,
   FolderTreeSchema,
   ValidationErrorSchema,
+  WorkspaceVocabularySchema,
 } from "@corpus/contract";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type CorpusServer } from "../app.js";
@@ -79,6 +80,18 @@ beforeAll(() => {
 afterAll(async () => {
   await server.close();
   ws.close();
+});
+
+describe("GET /api/vocabulary", () => {
+  it("answers the tags and invented keys the workspace uses", async () => {
+    const body = WorkspaceVocabularySchema.parse(await json("/api/vocabulary"));
+    expect(body.tags).toEqual([{ value: "finance", count: 1 }]);
+    expect(body.extraKeys).toEqual([{ key: "assignee", count: 1 }]);
+  });
+
+  it("refuses without a token", async () => {
+    expect((await get("/api/vocabulary", {})).status).toBe(401);
+  });
 });
 
 describe("GET /api/docs", () => {

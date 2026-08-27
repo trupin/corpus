@@ -5,6 +5,7 @@ import { badRequest, toValidationIssues } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { SemanticRetrieval } from "../semantic/index.js";
 import { queryDocs } from "./query.js";
+import { workspaceVocabulary } from "./vocabulary.js";
 import type { StalenessThresholds } from "./staleness.js";
 import { relatedDocs } from "./related.js";
 import { folderTree } from "./tree.js";
@@ -95,6 +96,11 @@ export function mountDocsRoutes(
   });
 
   app.openapi(contractRoutes.getTree, (c) => c.json(folderTree(projection), 200));
+
+  // The other cheap aggregate a picker reads (CONTRACT-092): which tags and
+  // which invented frontmatter keys this workspace actually uses. A pure
+  // projection read, so it mounts here beside the tree.
+  app.openapi(contractRoutes.getVocabulary, (c) => c.json(workspaceVocabulary(projection), 200));
 
   // The third pure projection read (SPEC.md §7 Retrieval discipline, §9.2):
   // expansion from a known document through the `links` graph. Reads `links`

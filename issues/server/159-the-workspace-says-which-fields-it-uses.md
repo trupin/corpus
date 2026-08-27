@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -26,14 +26,14 @@ frontmatter key the corpus actually carries, each with a document count.
 
 ## Acceptance Criteria
 
-- [ ] `GET /api/vocabulary` answers the contract's shape
-- [ ] Tags come from `tags_json`, keys from `extra_json`, both counted by
+- [x] `GET /api/vocabulary` answers the contract's shape
+- [x] Tags come from `tags_json`, keys from `extra_json`, both counted by
       **distinct document**, not by occurrence
-- [ ] The default archived exclusion applies, the way every list applies it — an
+- [x] The default archived exclusion applies, the way every list applies it — an
       archived document's tags do not appear
-- [ ] Ordering is count descending, then name ascending
-- [ ] An empty corpus answers two empty arrays with `200`
-- [ ] It refuses without a token
+- [x] Ordering is count descending, then name ascending
+- [x] An empty corpus answers two empty arrays with `200`
+- [x] It refuses without a token
 
 ## Technical Design
 
@@ -81,9 +81,45 @@ Real server, real workspace. `curl` the route and compare its counts against
 `corpus doc list --tag <t> --json | jq '.page.total'` for two tags.
 
 ## E2E Verification Log
-_Filled by the implementer._
+
+**Implemented on: opus.**
+
+### The two asymmetries this had to get right
+
+- **Tags collapse by case, extra keys do not.** The `tag` filter matches
+  case-insensitively, so offering `Finance` and `finance` would be two menu
+  entries for one query. An extra key reaches SQL as a JSON path and
+  `json_extract` is case-sensitive, so `Owner` and `owner` genuinely find
+  different documents and collapsing them would offer a key that answers wrongly.
+- **`count(DISTINCT d.id)`, not `count(*)`.** `json_each` yields one row per
+  element, so a document carrying a tag twice — which nothing forbids in a
+  hand-written file — would otherwise count as two.
+
+Both are pinned by tests.
+
+### What running it added
+
+See CONTRACT-092's log: the first real answer put Claude Code's `name` and
+`description` at the top of the list, from the skills `corpus init` installs.
+`rankableSql` — the list the §7 rider signed 2026-08-24 — is now applied to both
+statements, reusing a signed decision rather than inventing one.
+
+### E2E, against the real server
+
+```
+$ curl … /api/vocabulary
+tags: [{'value': 'work', 'count': 2}]
+keys: [{'key': 'assignee', 'count': 2}, {'key': 'estimate', 'count': 1},
+       {'key': 'for', 'count': 1}, {'key': 'owners', 'count': 1}]
+
+$ curl -o /dev/null -w "%{http_code}" … /api/vocabulary   # no token
+401
+```
+
+The counts agree with the documents on disk: two notes carry `assignee`, one
+carries `estimate` and one carries `owners`.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests pass
-- [ ] E2E log filled
-- [ ] Lint and typecheck clean
+- [x] Tests pass
+- [x] E2E log filled
+- [x] Lint and typecheck clean
