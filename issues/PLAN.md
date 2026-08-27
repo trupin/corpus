@@ -1783,6 +1783,11 @@ named here in prose and counted there.
 without leaving — and the two arcs in it were the only two blocked issues in the
 tracker.
 
+**No pr-reviewer ran on PR #67**, the same standing directive as #62 through
+#66. What stood in: `CI / validate` green on the merged head, the full local gate
+(15,871 unit tests, 650 browser specs run in three shards), and the falsifications
+named in each issue file.
+
 **No pr-reviewer ran on PR #66**, for the same reason as #62 through #65: the
 session carries a standing directive not to spawn subagents unless the user asks.
 Recorded here rather than left as a silent gap in the Definition of Done. What
