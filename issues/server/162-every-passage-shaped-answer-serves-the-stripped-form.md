@@ -89,10 +89,14 @@ embedder is given.
 `chunkId` hashes `indexText` rather than `text`. §5 says styling a phrase never
 changes what it retrieves for, and hashing the stripped form makes that true of
 the chunk's identity too — styling a word no longer forces a re-embed that would
-produce the same vector. **Consequence, recorded**: every existing chunk id
-changes once on the first projection after this lands, so a workspace re-embeds
-its corpus one time. That is a one-off cost on an index that is already rebuilt
-from scratch when the model changes.
+produce the same vector.
+
+**No existing corpus re-embeds, and the first draft of this paragraph said it
+would.** `stripStyling` returns marker-free text *identically*, so for every
+document that carries no marker the hash input is byte-for-byte what it was and
+the chunk id does not move. Only a document somebody styles pays anything, and
+what it pays is one embedding for the chunk they edited — the same price any
+edit costs.
 
 ### What does not change
 
