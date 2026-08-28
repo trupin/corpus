@@ -2,6 +2,7 @@ import {
   remarkCorpusRefs,
   remarkCorpusStyling,
   remarkTableCellBreaks,
+  styleBlockOf,
   styleOf,
   type StyleInfo,
 } from "@corpus/kit";
@@ -137,6 +138,14 @@ function blockNodes(children: readonly MdNode[], source: string): PmNode[] {
 }
 
 function blockNode(md: MdNode, source: string): PmNode | null {
+  const styleBlock = styleBlockOf(md as never);
+  if (styleBlock !== null) {
+    return node(NODE.styledBlock, orEmptyParagraph(blockNodes(md.children ?? [], source)), {
+      align: styleBlock.align ?? null,
+      indent: styleBlock.indent ?? null,
+    });
+  }
+
   switch (md.type) {
     case "paragraph":
       return node(NODE.paragraph, inlineNodes(md.children ?? [], [], source));

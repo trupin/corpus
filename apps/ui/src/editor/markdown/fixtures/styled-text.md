@@ -27,3 +27,26 @@ A marker inside code is a sample: `==this==` and `[that]{color="accent"}`.
 ==not a marker==
 <u>nor this</u>
 ```
+
+::: {align="center"}
+
+A centred block, with its own ==highlight==.
+
+:::
+
+::: {indent="2"}
+
+An indented block holding a list:
+
+- one
+- two
+
+::: {align="right"}
+
+And a block inside a block.
+
+:::
+
+:::
+
+A line that only mentions ::: is prose.

@@ -1,5 +1,7 @@
 import {
+  blockFenceAttributes,
   formatStyleAttributes,
+  isBlockFenceClose,
   scanInlineStyles,
   type InlineStyleKind,
   type StyleAttributes,
@@ -35,10 +37,15 @@ import {
 /** The mdast node type a recognised marker becomes. */
 export const STYLE_NODE_TYPE = "corpusStyle";
 
+/** The mdast node type a `::: {…}` … `:::` pair becomes (UI-183). */
+export const STYLE_BLOCK_NODE_TYPE = "corpusStyleBlock";
+
 /** Which of §5's three inline forms a node came from. */
 export const STYLE_KIND_ATTRIBUTE = "data-corpus-style";
 export const STYLE_COLOR_ATTRIBUTE = "data-corpus-color";
 export const STYLE_HIGHLIGHT_ATTRIBUTE = "data-corpus-highlight";
+export const STYLE_ALIGN_ATTRIBUTE = "data-corpus-align";
+export const STYLE_INDENT_ATTRIBUTE = "data-corpus-indent";
 
 /**
  * Structural view of the mdast nodes this transform touches — the same reasoning
@@ -304,6 +311,119 @@ function transformRun(children: readonly StyledMdast[], source: string): StyledM
 }
 
 /**
+ * The one line a fence paragraph holds, or `null` when the node is not one.
+ *
+ * A fence stands alone as its own paragraph, which is what
+ * `blockFenceAttributes` already requires of the line. A `:::` that shares a
+ * paragraph with prose is prose, and deciding otherwise would mean re-deciding
+ * where a paragraph ends — the markdown parser this module is not.
+ */
+function fenceLine(node: StyledMdast): string | null {
+  if (node.type !== "paragraph") return null;
+  const children = node.children ?? [];
+  if (children.length !== 1) return null;
+  const only = children[0];
+  if (only === undefined || only.type !== "text" || typeof only.value !== "string") return null;
+  return only.value;
+}
+
+/** The node a styled block becomes, carrying its layout for the renderer. */
+function styleBlockNode(attrs: StyleAttributes, children: StyledMdast[]): StyledMdast {
+  const properties: Record<string, string> = {};
+  const classes = ["md-style-block"];
+  if (attrs.align !== undefined) {
+    properties[STYLE_ALIGN_ATTRIBUTE] = attrs.align;
+    classes.push(`md-style-align-${attrs.align}`);
+  }
+  if (attrs.indent !== undefined) {
+    properties[STYLE_INDENT_ATTRIBUTE] = String(attrs.indent);
+    classes.push(`md-style-indent-${String(attrs.indent)}`);
+  }
+  return {
+    type: STYLE_BLOCK_NODE_TYPE,
+    data: { hName: "div", hProperties: { ...properties, className: classes.join(" ") } },
+    children,
+  };
+}
+
+/** What a styled block carries, or `null` when the node is not one. */
+export function styleBlockOf(node: StyledMdast): StyleAttributes | null {
+  if (node.type !== STYLE_BLOCK_NODE_TYPE) return null;
+  const properties = node.data?.["hProperties"];
+  if (typeof properties !== "object" || properties === null) return null;
+  const record = properties as Record<string, unknown>;
+  const attrs: { align?: string; indent?: number } = {};
+  const align = record[STYLE_ALIGN_ATTRIBUTE];
+  if (typeof align === "string") attrs.align = align;
+  const indent = record[STYLE_INDENT_ATTRIBUTE];
+  if (typeof indent === "string") attrs.indent = Number(indent);
+  return attrs as StyleAttributes;
+}
+
+/**
+ * A run of block children with each `::: {…}` … `:::` pair folded into one node.
+ *
+ * Only the **outermost** pair is folded per pass; an inner one is still a pair
+ * of fence paragraphs inside the new node's children, and is folded when the
+ * walk recurses into it. Depth counting is what finds the right closer — an
+ * inner `:::` must not end the outer block.
+ *
+ * An opening fence with no closer is left exactly as it was. Nothing was
+ * wrapped, so nothing is dropped, and a document that merely mentions the
+ * syntax keeps the line it wrote.
+ */
+function pairBlockFences(children: readonly StyledMdast[]): StyledMdast[] | null {
+  let changed = false;
+  const out: StyledMdast[] = [];
+  let index = 0;
+
+  while (index < children.length) {
+    const child = children[index];
+    if (child === undefined) break;
+    const line = fenceLine(child);
+    const attrs = line === null ? null : blockFenceAttributes(line);
+    if (attrs === null) {
+      out.push(child);
+      index += 1;
+      continue;
+    }
+
+    let depth = 1;
+    let close = -1;
+    for (let scan = index + 1; scan < children.length; scan += 1) {
+      const candidate = children[scan];
+      if (candidate === undefined) continue;
+      const candidateLine = fenceLine(candidate);
+      if (candidateLine === null) continue;
+      if (blockFenceAttributes(candidateLine) !== null) {
+        depth += 1;
+        continue;
+      }
+      if (!isBlockFenceClose(candidateLine)) continue;
+      depth -= 1;
+      if (depth === 0) {
+        close = scan;
+        break;
+      }
+    }
+
+    if (close === -1 || close === index + 1) {
+      // Unclosed, or empty: a styled block with nothing in it is not something
+      // the file can say, so both fences stay the paragraphs they were.
+      out.push(child);
+      index += 1;
+      continue;
+    }
+
+    out.push(styleBlockNode(attrs, children.slice(index + 1, close)));
+    changed = true;
+    index = close + 1;
+  }
+
+  return changed ? out : null;
+}
+
+/**
  * Every parent whose children are an inline run, transformed.
  *
  * `code` and `inlineCode` hold no children, so a marker written inside either is
@@ -313,8 +433,13 @@ function transformRun(children: readonly StyledMdast[], source: string): StyledM
 function walk(node: StyledMdast, source: string): void {
   const children = node.children;
   if (children === undefined) return;
-  const replaced = transformRun(children, source);
-  const next = replaced ?? children;
+  // Blocks first: a fence paragraph is consumed before the inline pass ever
+  // looks at it, and the blocks it wrapped are scanned when the walk descends.
+  const blocked = pairBlockFences(children);
+  if (blocked !== null) node.children = blocked;
+  const current = blocked ?? children;
+  const replaced = transformRun(current, source);
+  const next = replaced ?? current;
   for (const child of next) walk(child, source);
   if (replaced !== null) node.children = replaced;
 }

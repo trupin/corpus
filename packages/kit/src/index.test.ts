@@ -167,10 +167,14 @@ const RUNTIME_SURFACE = [
   "remarkTableCellBreaks",
   // SPEC.md §5's styling forms, as mdast nodes (UI-182)
   "remarkCorpusStyling",
+  "styleBlockOf",
   "styleDelimiters",
   "styleOf",
+  "STYLE_ALIGN_ATTRIBUTE",
+  "STYLE_BLOCK_NODE_TYPE",
   "STYLE_COLOR_ATTRIBUTE",
   "STYLE_HIGHLIGHT_ATTRIBUTE",
+  "STYLE_INDENT_ATTRIBUTE",
   "STYLE_KIND_ATTRIBUTE",
   "STYLE_NODE_TYPE",
   // images: one renderer, and the door to the app's viewer

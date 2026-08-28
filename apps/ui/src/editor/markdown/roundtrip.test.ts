@@ -346,3 +346,83 @@ describe("styled text", () => {
     expect(serializeDoc(parseMarkdown(plain))).toBe(plain);
   });
 });
+
+/**
+ * SPEC.md §5's block form (UI-183). `styled-text.md` carries the canonical
+ * shapes; these are the near-misses and the one property the fixture cannot
+ * show — that the blank lines around the fences are load-bearing.
+ */
+describe("a styled block", () => {
+  const blockAttrs = (markdown: string): unknown[] => {
+    const found: unknown[] = [];
+    const walk = (node: unknown): void => {
+      if (typeof node !== "object" || node === null) return;
+      const record = node as { type?: string; attrs?: unknown; content?: unknown[] };
+      if (record.type === "styledBlock") found.push(record.attrs);
+      for (const child of record.content ?? []) walk(child);
+    };
+    walk(parseMarkdown(markdown));
+    return found;
+  };
+
+  it("reads each layout property, and both together", () => {
+    expect(blockAttrs('::: {align="center"}\n\nA.\n\n:::\n')).toEqual([
+      { align: "center", indent: null },
+    ]);
+    expect(blockAttrs('::: {indent="2"}\n\nA.\n\n:::\n')).toEqual([{ align: null, indent: 2 }]);
+    expect(blockAttrs('::: {align="right" indent="1"}\n\nA.\n\n:::\n')).toEqual([
+      { align: "right", indent: 1 },
+    ]);
+  });
+
+  it("nests", () => {
+    const nested =
+      '::: {align="center"}\n\nOuter.\n\n::: {indent="1"}\n\nInner.\n\n:::\n\nStill outer.\n\n:::\n';
+    expect(blockAttrs(nested)).toEqual([
+      { align: "center", indent: null },
+      { align: null, indent: 1 },
+    ]);
+    expect(canonicalizeMarkdown(nested)).toBe(nested);
+  });
+
+  it.each([
+    ["an inline attribute on a block", '::: {color="accent"}\n\nA.\n\n:::\n'],
+    ["no attributes", "::: {}\n\nA.\n\n:::\n"],
+    ["an unclosed fence", '::: {align="center"}\n\nA.\n'],
+    ["an empty block", '::: {align="center"}\n\n:::\n'],
+    ["fences glued to their content", '::: {align="center"}\nA.\n:::\n'],
+    ["a fence inside a code block", '```\n::: {align="center"}\n:::\n```\n'],
+  ])("reads %s as prose, and leaves the bytes alone", (_label, markdown) => {
+    expect(blockAttrs(markdown)).toEqual([]);
+    expect(canonicalizeMarkdown(markdown)).toBe(markdown);
+  });
+
+  it("keeps every block kind it wrapped", () => {
+    const rich =
+      '::: {align="right"}\n\n## A heading\n\n- one\n- two\n\n| a | b |\n| - | - |\n\n:::\n';
+    expect(canonicalizeMarkdown(canonicalizeMarkdown(rich))).toBe(canonicalizeMarkdown(rich));
+    expect(blockAttrs(rich)).toHaveLength(1);
+  });
+
+  it("prints the fences on their own lines, so the block reads back", () => {
+    // The falsifiable property. Printed flush, the opening fence and the first
+    // paragraph are one paragraph to every parser, and the block is gone.
+    const printed = serializeDoc(parseMarkdown('::: {align="center"}\n\nA.\n\n:::\n'));
+    expect(printed).toBe('::: {align="center"}\n\nA.\n\n:::\n');
+    expect(blockAttrs(printed)).toHaveLength(1);
+  });
+
+  it("drops a block carrying no layout at all", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "styledBlock",
+          attrs: { align: null, indent: null },
+          content: [{ type: "paragraph", content: [{ type: "text", text: "a" }] }],
+        },
+      ],
+    };
+    expect(serializeDoc(doc as never)).toBe("> a\n");
+  });
+});

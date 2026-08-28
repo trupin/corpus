@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -127,7 +127,49 @@ the round trip go red — the fences would be absorbed into the content paragrap
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+**Unit.** `apps/ui` and `packages/kit`: **4,915 passed, 0 failed**, 247 files.
+The block form's canonical shapes are in `fixtures/styled-text.md`, so they are
+asserted byte-identical, idempotent, and traceable by `offsetMap.test.ts`.
+
+**The strongest evidence came from a test that already existed.**
+`serialize.test.ts` reads the block types a list item may hold **out of the live
+schema** rather than from a list, so adding `styledBlock` made that test fail
+until the node was registered — and then ran every ordered pair of it with every
+other block type through the round trip. Its docblock says why: "a block type
+the editor grows later arrives as a failure in this file instead of as an
+adjacency nobody thought to write a case for — which is how the reported one
+shipped." That is exactly what happened, and all 121 pairs pass.
+
+**Falsification, two breaks.**
+
+| Break | Result |
+| --- | --- |
+| Print the fences flush against their content instead of on their own lines | **38 failed** |
+| Stop counting depth when looking for the closing fence | 2 failed |
+
+The first is the one that matters. Printed flush, the opening fence and the
+first paragraph are one paragraph to every markdown parser, so the block does
+not read back at all — and 38 tests say so.
+
+**The round trip, case by case**:
+
+```
+'::: {align="center"}  … :::'                     OK
+'::: {indent="2"}      … :::'                     OK
+'::: {align="right" indent="1"} … :::'            OK
+nested: an inner block inside an outer one        OK
+a heading, a list and a fenced block inside one   OK
+a highlight inside a styled block                 OK
+'::: {color="accent"}' (inline attribute)         OK — stays prose
+an unclosed fence                                 OK — stays prose
+fences glued to their content                     OK — stays prose
+a fence inside a fenced code block                OK — stays prose
+```
+
+**In-browser evidence** is logged in **UI-184** and in
+`apps/ui/e2e/styled-text.spec.ts`, where alignment first has a rendering.
 
 ## Completion Checklist (domain agent)
 

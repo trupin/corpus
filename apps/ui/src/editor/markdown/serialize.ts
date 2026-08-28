@@ -1,5 +1,10 @@
 import { styleDelimiters, type StyleInfo } from "@corpus/kit";
-import type { StyleRole } from "@corpus/contract";
+import {
+  formatStyleAttributes,
+  type StyleAlign,
+  type StyleIndent,
+  type StyleRole,
+} from "@corpus/contract";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import { unified, type Processor } from "unified";
@@ -62,6 +67,8 @@ const AUTOLINK_TYPE = "corpusAutolink";
  */
 const STYLE_FLUSH_TYPE = "corpusStyleFlush";
 const STYLE_LOOSE_TYPE = "corpusStyleLoose";
+/** The block form's wrapper (SPEC.md §5, UI-183): `::: {…}` … `:::`. */
+const STYLE_BLOCK_TYPE = "corpusStyleBlockOut";
 
 /* ── Position trace (UI-007's offset map, at its source) ────────────── */
 
@@ -230,6 +237,24 @@ function blockNode(node: PmNode): MdNode | null {
       };
     case NODE.blockquote:
       return { type: "blockquote", children: blockChildren(node.content ?? []) };
+    case NODE.styledBlock: {
+      const attrs: { align?: StyleAlign; indent?: StyleIndent } = {};
+      const align = optionalStringAttr(attr(node, "align"));
+      if (align !== null) attrs.align = align as StyleAlign;
+      const indent = attr(node, "indent");
+      if (typeof indent === "number") attrs.indent = indent as StyleIndent;
+      const children = blockChildren(node.content ?? []);
+      // A block with neither property says nothing the file can hold; its
+      // contents stay where they are rather than gaining two bare fences.
+      if (align === null && typeof indent !== "number") {
+        return { type: "blockquote", children };
+      }
+      return {
+        type: STYLE_BLOCK_TYPE,
+        data: { fence: `::: {${formatStyleAttributes(attrs)}}` },
+        children,
+      };
+    }
     case NODE.bulletList:
       return {
         type: "list",
@@ -1014,6 +1039,11 @@ interface PhrasingState {
   containerPhrasing(node: unknown, info: PrintInfo): string;
 }
 
+/** The same, for a construct whose children are blocks rather than inline. */
+interface FlowState {
+  containerFlow(node: unknown, info: PrintInfo): string;
+}
+
 interface PrintInfo {
   readonly before?: string;
   readonly after?: string;
@@ -1136,10 +1166,27 @@ function styledHandler(node: MdNode, _parent: unknown, state: PrintState, info: 
   return safeInCell(open, state) + inner + safeInCell(close, state);
 }
 
+/**
+ * A styled block: its two fence lines, with the printer's own block walk
+ * between them.
+ *
+ * The blank lines are load-bearing. Printed flush, the opening fence and the
+ * first paragraph are **one paragraph** to every markdown parser, and the block
+ * would not read back at all — the same class of failure `separateListItemBlocks`
+ * exists for, and the reason the round trip asserts this shape.
+ */
+function styledBlockHandler(node: MdNode, _parent: unknown, state: PrintState): string {
+  const fence = node.data?.["fence"];
+  const open = typeof fence === "string" ? fence : ":::";
+  const inner = (state as unknown as FlowState).containerFlow(node, {});
+  return `${open}\n\n${inner}\n\n:::`;
+}
+
 function handlers(escapeText: boolean): Record<string, PrintHandler> {
   return {
     [STYLE_FLUSH_TYPE]: styledHandler,
     [STYLE_LOOSE_TYPE]: styledHandler,
+    [STYLE_BLOCK_TYPE]: styledBlockHandler,
     [REF_TYPE]: verbatim,
     [RAW_BLOCK_TYPE]: verbatim,
     [RAW_INLINE_TYPE]: verbatim,
@@ -1179,7 +1226,7 @@ function handlers(escapeText: boolean): Record<string, PrintHandler> {
  * `[` needs no rule: the printer already treats it as unsafe in phrasing, so an
  * attribute span's opening bracket is escaped by both.
  */
-const STYLE_UNSAFE = [{ character: "=", after: "=", inConstruct: "phrasing" }];
+const STYLE_UNSAFE = [{ character: "=", after: "=", inConstruct: "phrasing" as const }];
 
 let minimalPrinter: Processor | undefined;
 let defensivePrinter: Processor | undefined;

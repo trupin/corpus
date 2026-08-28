@@ -2,7 +2,14 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { describe, expect, it } from "vitest";
-import { remarkCorpusStyling, styleOf, STYLE_NODE_TYPE, type StyledMdast } from "./styled.js";
+import {
+  remarkCorpusStyling,
+  styleBlockOf,
+  styleOf,
+  STYLE_BLOCK_NODE_TYPE,
+  STYLE_NODE_TYPE,
+  type StyledMdast,
+} from "./styled.js";
 
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkCorpusStyling).freeze();
 
@@ -115,5 +122,68 @@ describe("markers next to constructs the scanner must not cut", () => {
 
   it("recognises two markers in one run", () => {
     expect(kinds("==a== and ==b==")).toEqual(["highlight", "highlight"]);
+  });
+});
+
+describe("the block form (UI-183)", () => {
+  const blocks = (node: StyledMdast, out: StyledMdast[] = []): StyledMdast[] => {
+    if (node.type === STYLE_BLOCK_NODE_TYPE) out.push(node);
+    for (const child of node.children ?? []) blocks(child, out);
+    return out;
+  };
+
+  const CENTRED = '::: {align="center"}\n\nCentred prose.\n\n:::\n';
+
+  it("folds a fence pair into one node holding the blocks between them", () => {
+    const found = blocks(parse(CENTRED));
+    expect(found).toHaveLength(1);
+    expect(styleBlockOf(found[0] ?? { type: "x" })).toEqual({ align: "center" });
+    expect((found[0]?.children ?? []).map((child) => child.type)).toEqual(["paragraph"]);
+  });
+
+  it("carries an indent level as a number", () => {
+    const found = blocks(parse('::: {indent="2"}\n\nProse.\n\n:::\n'));
+    expect(styleBlockOf(found[0] ?? { type: "x" })).toEqual({ indent: 2 });
+  });
+
+  it("nests, and an inner close does not end the outer block", () => {
+    const nested =
+      '::: {align="center"}\n\nOuter.\n\n::: {indent="1"}\n\nInner.\n\n:::\n\nStill outer.\n\n:::\n';
+    const found = blocks(parse(nested));
+    expect(found).toHaveLength(2);
+    expect(styleBlockOf(found[0] ?? { type: "x" })).toEqual({ align: "center" });
+    expect(styleBlockOf(found[1] ?? { type: "x" })).toEqual({ indent: 1 });
+    // Three paragraphs and the inner block, all inside the outer one.
+    expect((found[0]?.children ?? []).map((child) => child.type)).toEqual([
+      "paragraph",
+      STYLE_BLOCK_NODE_TYPE,
+      "paragraph",
+    ]);
+  });
+
+  it("keeps every block kind that was inside it", () => {
+    const rich = '::: {align="right"}\n\n## A heading\n\n- one\n- two\n\n```\ncode\n```\n\n:::\n';
+    const found = blocks(parse(rich));
+    expect((found[0]?.children ?? []).map((child) => child.type)).toEqual([
+      "heading",
+      "list",
+      "code",
+    ]);
+  });
+
+  it("still styles inline markers inside a styled block", () => {
+    const inner = '::: {align="center"}\n\nA ==bright== line.\n\n:::\n';
+    expect(kinds(inner)).toEqual(["highlight"]);
+  });
+
+  it.each([
+    ["an inline attribute", '::: {color="accent"}\n\nProse.\n\n:::\n'],
+    ["no attributes", "::: {}\n\nProse.\n\n:::\n"],
+    ["an unclosed fence", '::: {align="center"}\n\nProse.\n'],
+    ["an empty block", '::: {align="center"}\n\n:::\n'],
+    ["fences glued to the prose", '::: {align="center"}\nProse.\n:::\n'],
+    ["a fence inside a code block", '```\n::: {align="center"}\n:::\n```\n'],
+  ])("leaves %s as prose", (_label, markdown) => {
+    expect(blocks(parse(markdown))).toEqual([]);
   });
 });

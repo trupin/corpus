@@ -275,9 +275,13 @@ export {
 // inline run — which the reader and the document editor must do identically.
 export {
   remarkCorpusStyling,
+  styleBlockOf,
   styleDelimiters,
   styleOf,
+  STYLE_ALIGN_ATTRIBUTE,
+  STYLE_BLOCK_NODE_TYPE,
   STYLE_COLOR_ATTRIBUTE,
+  STYLE_INDENT_ATTRIBUTE,
   STYLE_HIGHLIGHT_ATTRIBUTE,
   STYLE_KIND_ATTRIBUTE,
   STYLE_NODE_TYPE,
