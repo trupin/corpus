@@ -214,6 +214,89 @@ test.describe("the toolbar writes what the file can hold", () => {
     expect(cleared).toContain("A plain paragraph.");
   });
 
+  test("a link is written from the bar, and unset from it", async ({ page }) => {
+    const corpus = await openFocus(page, "doc_fmt");
+    await selectBlock(page, 1);
+    await page.locator(`${BAR} button[data-fmt="link"]`).click();
+    // The address is asked for in the bar rather than in a browser dialog: a
+    // modal prompt blocks the page and cannot be styled, and this is a document
+    // editor, not an alert.
+    const input = page.locator(`${BAR} [data-fmt-link-input]`);
+    await expect(input).toBeVisible();
+    await input.fill("https://example.com/rates");
+    await input.press("Enter");
+
+    await expect
+      .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    expect((await corpus.doc("doc_fmt"))?.body).toContain(
+      "[A plain paragraph.](https://example.com/rates)",
+    );
+
+    // The same button takes it off again — from a caret **inside** the link,
+    // which is the ordinary gesture and the one that used to report active and
+    // then do nothing.
+    await page.locator(".focus .ProseMirror a").click();
+    await expect(page.locator(`${BAR} button[data-fmt="link"]`)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const writes = (await corpus.of("PUT", "/api/docs/doc_fmt")).length;
+    await page.locator(`${BAR} button[data-fmt="link"]`).click();
+    await expect
+      .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
+      .toBeGreaterThan(writes);
+    expect((await corpus.doc("doc_fmt"))?.body).not.toContain("https://example.com/rates");
+  });
+
+  test("an image is written from the bar", async ({ page }) => {
+    const corpus = await openFocus(page, "doc_fmt");
+    await caretIn(page, 1);
+    await page.keyboard.press("End");
+    await page.locator(`${BAR} button[data-fmt="image"]`).click();
+    const input = page.locator(`${BAR} [data-fmt-image-input]`);
+    await expect(input).toBeVisible();
+    await input.fill("https://example.com/chart.png");
+    await input.press("Enter");
+
+    await expect
+      .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    expect((await corpus.doc("doc_fmt"))?.body).toContain("![](https://example.com/chart.png)");
+  });
+
+  test("a table and a divider are written from the bar", async ({ page }) => {
+    const corpus = await openFocus(page, "doc_fmt");
+    await caretIn(page, 1);
+    await page.keyboard.press("End");
+    await page.locator(`${BAR} button[data-fmt="rule"]`).click();
+    await page.locator(`${BAR} button[data-fmt="table"]`).click();
+
+    await expect
+      .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    const body = (await corpus.doc("doc_fmt"))?.body ?? "";
+    expect(body).toContain("---");
+    expect(body).toMatch(/\|[^\n]*\|/);
+  });
+
+  test("clear formatting takes the marks off and leaves the block alone", async ({ page }) => {
+    const corpus = await openFocus(page, "doc_fmt");
+    // The paragraph that already carries a bold word.
+    await selectBlock(page, 2);
+    await page.locator(`${BAR} button[data-fmt="clear"]`).click();
+
+    await expect
+      .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    const body = (await corpus.doc("doc_fmt"))?.body ?? "";
+    expect(body).toContain("Another bold paragraph.");
+    // The heading above it is untouched: "clear formatting" means marks, not
+    // nodes — turning a heading somebody was standing in into a paragraph is
+    // not what anyone reading a document means by it.
+    expect(body).toContain("## A heading");
+  });
+
   test("the caret stays where it was when a button is pressed", async ({ page }) => {
     await openFocus(page, "doc_fmt");
     await caretIn(page, 1);

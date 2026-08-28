@@ -438,6 +438,11 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           onClick={() => {
             setImageOpen(false);
             if (editor.isActive(MARK.link)) {
+              // The ordinary gesture is a caret *inside* a link rather than a
+              // selection over one, and `unsetLink` already handles it: TipTap's
+              // command is `unsetMark(name, { extendEmptyMarkRange: true })`.
+              // Extending the range here as well was written, and removed — it
+              // changed nothing, and the comment justifying it was wrong.
               void editor.chain().focus().unsetLink().run();
               setLinkOpen(false);
               return;

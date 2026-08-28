@@ -230,6 +230,26 @@ reading of an element somebody has tampered with. The same review found the
 heading control was the one control not running through the shared
 selection-restoring path; it does now.
 
+### Four controls had no test at all, and testing them found two things
+
+Link, image, table, divider and clear formatting shipped in the first draft with
+no coverage. Four more browser tests were written before the release rather than
+after, and they cost one CI cycle each way.
+
+**Link removal looked broken and was not.** A probe showed the button reporting
+*active* with the caret inside a link, so a `extendMarkRange` was added before
+`unsetLink` and a comment written explaining that without it the control "says it
+did something and did not". Falsifying the fix turned nothing red — because
+TipTap's own `unsetLink` is `unsetMark(name, { extendEmptyMarkRange: true })` and
+had been handling it all along. The extension and its comment are gone. The
+lesson is the ordinary one: a fix whose removal breaks no test is a fix whose
+premise was never checked.
+
+**The test's own gesture was the unreliable part.** A second triple click over a
+paragraph that had just become a link selected nothing at all, which is what made
+the control look inactive. The assertion now clicks *into* the link — the gesture
+a person actually makes — and reads the state there.
+
 ### Acceptance, against the rider
 
 - Present with no mode and no click — asserted, and asserted absent in a column
