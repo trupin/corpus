@@ -101,6 +101,62 @@ describe("MarkdownView", () => {
     vi.unstubAllGlobals();
   });
 
+  describe("styled text (SPEC.md §5, UI-184)", () => {
+    const draw = (markdown: string): HTMLElement => {
+      const harness = createCorpusTestHarness({ fetch: wire().fetch });
+      return render(<MarkdownView markdown={markdown} className="doc-body" />, {
+        wrapper: harness.Wrapper,
+      }).container;
+    };
+
+    it("renders each inline form as its own element", () => {
+      expect(draw("<u>a</u>").querySelector("u")?.textContent).toBe("a");
+      expect(draw("==a==").querySelector("mark")?.textContent).toBe("a");
+      const span = draw('[a]{color="warning"}').querySelector("span.md-style-color-warning");
+      expect(span?.textContent).toBe("a");
+    });
+
+    it("paints a colour and a highlight as two different things", () => {
+      const coloured = draw('[a]{color="warning"}');
+      const highlighted = draw('[a]{highlight="warning"}');
+      expect(coloured.querySelector(".md-style-color-warning")).not.toBeNull();
+      expect(coloured.querySelector(".md-style-highlight-warning")).toBeNull();
+      expect(highlighted.querySelector(".md-style-highlight-warning")).not.toBeNull();
+      expect(highlighted.querySelector(".md-style-color-warning")).toBeNull();
+    });
+
+    it("renders a styled block with its layout", () => {
+      const block = draw('::: {align="center" indent="2"}\n\nA.\n\n:::').querySelector(
+        "div.md-style-block",
+      );
+      expect(block).not.toBeNull();
+      expect(block?.classList.contains("md-style-align-center")).toBe(true);
+      expect(block?.classList.contains("md-style-indent-2")).toBe(true);
+      expect(block?.querySelector("p")?.textContent).toBe("A.");
+    });
+
+    it("renders a marker inside a turn body the same way it does in a document", () => {
+      // Turns go through this component too, so one rule serves both (§6, §10).
+      expect(draw("A reply with a ==bright== word.").querySelector("mark")).not.toBeNull();
+    });
+
+    it("leaves a marker inside code as the characters written", () => {
+      const drawn = draw("`==a==` and\n\n```\n==b==\n```");
+      expect(drawn.querySelector("mark")).toBeNull();
+      expect(drawn.textContent).toContain("==a==");
+      expect(drawn.textContent).toContain("==b==");
+    });
+
+    it("still injects no raw HTML, with the styling plugin in the pipeline", () => {
+      // The guarantee `<u>` must not have weakened: the plugin recognises two
+      // tokens and emits an element for them; nothing else is passed through.
+      const drawn = draw('<script>alert(1)</script>\n\n<b>bold?</b>\n\n<u class="x">a</u>');
+      expect(drawn.querySelector("script")).toBeNull();
+      expect(drawn.querySelector("b")).toBeNull();
+      expect(drawn.querySelector("u")).toBeNull();
+    });
+  });
+
   it("renders a ref as the target's current title", async () => {
     const harness = createCorpusTestHarness({ fetch: wire({ docs: { doc_b: "Rates" } }).fetch });
     const { container } = render(<MarkdownView markdown="see [[doc_b]]" />, {

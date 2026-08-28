@@ -168,8 +168,14 @@ fences glued to their content                     OK — stays prose
 a fence inside a fenced code block                OK — stays prose
 ```
 
-**In-browser evidence** is logged in **UI-184** and in
-`apps/ui/e2e/styled-text.spec.ts`, where alignment first has a rendering.
+Alignment first has a rendering in UI-184, so the in-browser evidence lives
+there.
+
+**In-browser confirmation ran** (logged in full under UI-184): the same spec
+asserts the centred block computes `text-align: center` while the paragraph
+above it does not, that `:::` never appears as visible text, and that the two
+fence lines survive an edit made elsewhere in the document. 5 passed, and
+breaking `align-center` to `text-align: left` turns one of them red.
 
 ## Completion Checklist (domain agent)
 

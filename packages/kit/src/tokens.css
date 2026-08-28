@@ -59,6 +59,14 @@
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --style-accent: #2e4b78;
+  --style-warning: #a34620;
+  --style-positive: #4e7a46;
+  --style-muted: #565d66;
+  --style-accent-wash: rgba(59, 95, 151, 0.22);
+  --style-warning-wash: rgba(196, 85, 46, 0.22);
+  --style-positive-wash: rgba(78, 122, 70, 0.22);
+  --style-muted-wash: rgba(86, 93, 102, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -87,6 +95,14 @@
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --style-accent: #a3bee6;
+    --style-warning: #d97853;
+    --style-positive: #7fa877;
+    --style-muted: #a6abb3;
+    --style-accent-wash: rgba(127, 161, 212, 0.28);
+    --style-warning-wash: rgba(217, 120, 83, 0.28);
+    --style-positive-wash: rgba(127, 168, 119, 0.28);
+    --style-muted-wash: rgba(166, 171, 179, 0.2);
   }
 }
 
@@ -115,6 +131,14 @@
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --style-accent: #2e4b78;
+  --style-warning: #a34620;
+  --style-positive: #4e7a46;
+  --style-muted: #565d66;
+  --style-accent-wash: rgba(59, 95, 151, 0.22);
+  --style-warning-wash: rgba(196, 85, 46, 0.22);
+  --style-positive-wash: rgba(78, 122, 70, 0.22);
+  --style-muted-wash: rgba(86, 93, 102, 0.16);
 }
 
 :root[data-theme="dark"] {
@@ -142,4 +166,12 @@
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --style-accent: #a3bee6;
+  --style-warning: #d97853;
+  --style-positive: #7fa877;
+  --style-muted: #a6abb3;
+  --style-accent-wash: rgba(127, 161, 212, 0.28);
+  --style-warning-wash: rgba(217, 120, 83, 0.28);
+  --style-positive-wash: rgba(127, 168, 119, 0.28);
+  --style-muted-wash: rgba(166, 171, 179, 0.2);
 }

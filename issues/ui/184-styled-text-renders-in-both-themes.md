@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -124,7 +124,73 @@ go red. A test that reads the light value in both themes proves nothing.
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+**Unit.** `tokens.test.ts` 87 passed, `MarkdownView.test.tsx` 23 passed, the
+whole kit markdown suite 174 passed.
+
+**The roles are measured, not looked at.** Sixteen assertions compute WCAG
+contrast: each of the four roles against the page background, in both themes,
+and `--ink` against each highlight wash **composited over the background** — a
+wash measured on its own would say nothing about the words on it.
+
+That measurement changed a value. `--style-warning` is **not** `--signal`:
+the product's rust measures **4.08:1** on the light background, which is fine
+behind a chip's bolder label and short of AA for a sentence. The light role is
+darkened to `#a34620` (**5.63:1**); the dark role is `--signal` unchanged
+(**5.84:1**).
+
+**Falsification, three token breaks.**
+
+| Break | Result |
+| --- | --- |
+| Light `--style-warning` set back to `--signal` | 2 failed |
+| Dark `--style-accent` copied from the light value | 3 failed |
+| A highlight wash made opaque | 2 failed |
+
+**Browser, real page, real computed styles** —
+`apps/ui/e2e/styled-text.spec.ts`, **5 passed**:
+
+```
+✓ each form is visibly different from the prose around it
+✓ a styled block is laid out, and its prose stays prose
+✓ the fence lines are not visible as text
+✓ each role answers the theme
+✓ typing in one paragraph saves every marker in the others unchanged
+```
+
+Every assertion reads a **computed style** or an **outgoing request body**. A
+class name being present says only that the markup was written — it says nothing
+about whether the phrase looks different from the prose around it, which was the
+entire question. So the highlight is asserted against the editor's own
+background, the two colour roles against each other and against the body ink,
+and the theme by reading one role's colour under `data-theme="light"` and again
+under `"dark"`.
+
+**Falsification in the browser too**, because CSS is exactly where a passing
+assertion can be vacuous:
+
+| Break | Result |
+| --- | --- |
+| The highlight paints `transparent` | 1 failed — the visibility test |
+| `align-center` set to `text-align: left` | 1 failed — the layout test |
+
+**The last spec is the arc's real proof.** It opens the document in a real
+browser, types into the *plain* paragraph, waits for the autosave `PUT`, and
+reads the saved body back: every marker in the other paragraphs is byte-intact,
+the fence lines are still there, and the typed words landed. That is UI-182's
+and UI-183's round trip through a live editor rather than through a string.
+
+**Out of scope, and named**: §5's style document. The four roles ship as the
+workspace default in `tokens.css`, ported verbatim from `design/index.html` and
+checked by the existing parity test, so a body that says `color="warning"` is
+correct in both themes today and re-themable later without touching any body.
+
+**One call recorded**: a bare `==highlight==` names no role, and rather than
+invent a fifth colour outside the palette — the obvious candidate, a highlighter
+yellow, is one shade from `--sepia`, which is the dedicated staleness axis and is
+never reused — the default *is* a role. `==x==` and `[x]{highlight="accent"}`
+paint the same, and one of them is shorter to type.
 
 ## Completion Checklist (domain agent)
 

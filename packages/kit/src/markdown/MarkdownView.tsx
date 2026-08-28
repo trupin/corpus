@@ -7,6 +7,7 @@ import { useDoc } from "../query/useDoc.js";
 import { CodeFence } from "./CodeFence.js";
 import { CorpusImage } from "./CorpusImage.js";
 import { REF_ALIAS_ATTRIBUTE, REF_ID_ATTRIBUTE, remarkCorpusRefs } from "./refs.js";
+import { remarkCorpusStyling } from "./styled.js";
 import { remarkTableCellBreaks } from "./tableBreaks.js";
 
 /**
@@ -19,6 +20,13 @@ import { remarkTableCellBreaks } from "./tableBreaks.js";
  * text and never as elements. There is no sanitizer to configure and therefore
  * none to get wrong — the same reasoning `SnippetSchema` uses for search
  * highlights.
+ *
+ * **Two tokens are qualified**, and neither opens that path. A `<br>` inside a
+ * table cell becomes a real break (UI-064, below); a `<u>`…`</u>` pair becomes
+ * an underline (SPEC.md §5, UI-184). Both are produced by a plugin that
+ * recognises exactly those tokens in the mdast tree and emits an element for
+ * them — no markup is passed through, and every other tag in every other
+ * position stays the inert text it is today.
  *
  * **One token is qualified, and only inside a table cell** (UI-064): a bare
  * `<br>` there becomes a real line break, because a break in a cell has no
@@ -82,10 +90,17 @@ type OpenRef = ((docId: string) => void) | undefined;
  * a `[[ref]]` cannot contain a newline, so neither plugin can see text the
  * other needed. `remarkTableCellBreaks` is independent of both — it rewrites
  * `html` nodes, and neither of the others reads or produces one.
+ *
+ * `remarkCorpusStyling` runs **first**, and that is not cosmetic: it tells an
+ * escaped delimiter from a written one by reading each text node's position
+ * against the source, and a node another plugin has already split carries no
+ * position. The same ordering holds in the editor's own pipeline, which is what
+ * keeps the reader and the editor one reading of a file.
  */
-const REMARK_PLUGINS = [remarkGfm, remarkTableCellBreaks, remarkCorpusRefs];
+const REMARK_PLUGINS = [remarkGfm, remarkCorpusStyling, remarkTableCellBreaks, remarkCorpusRefs];
 const REMARK_PLUGINS_HARD_BREAKS = [
   remarkGfm,
+  remarkCorpusStyling,
   remarkTableCellBreaks,
   remarkCorpusRefs,
   remarkBreaks,

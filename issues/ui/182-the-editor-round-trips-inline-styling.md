@@ -211,10 +211,15 @@ the nesting is now pinned by a test rather than left to insertion order.
 "==see [[doc_a1b2c3]] now=="        OK      "```\n==a==\n```"               OK
 ```
 
-**In-browser evidence** for the marks a person can see is logged in **UI-184**,
-where the styling first has a rendering, and in `apps/ui/e2e/styled-text.spec.ts`
-which covers the arc end to end. A mark with no CSS is invisible, so a browser
-check here would have proved nothing this suite does not.
+A mark with no CSS is invisible, so the in-browser evidence lives with UI-184,
+where the styling first has a rendering.
+
+**In-browser confirmation ran** (logged in full under UI-184):
+`apps/ui/e2e/styled-text.spec.ts` opens the document in a real browser, types
+into the one paragraph carrying no styling, waits for the autosave `PUT`, and
+reads the saved body back — `<u>underlined</u>`, `==highlighted==` and both
+attribute spans are byte-intact, and the typed words landed. That is this
+issue's round trip through a live editor rather than through a string. 5 passed.
 
 ## Completion Checklist (domain agent)
 

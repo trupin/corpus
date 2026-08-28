@@ -631,3 +631,117 @@
    */
   background: linear-gradient(to bottom, transparent, var(--surface-2) 55%);
 }
+
+/*
+ * Styled text (SPEC.md §5, UI-184).
+ *
+ * One set of rules for both surfaces. The editor puts `.doc-body` on its
+ * contenteditable element and its marks render the same class names, so a
+ * styled phrase looks identical whether a caret is in it or not — which is what
+ * makes §10's "there is no edit mode" true visually as well as behaviourally.
+ *
+ * Colour is never written here. Every value is one of the four named roles from
+ * `tokens.css`, each with a light and a dark value, so a body that says
+ * `color="warning"` renders correctly in both themes and can be re-themed
+ * without touching any body (§5).
+ *
+ * **A bare `==highlight==` uses the accent role's wash.** §5 says a colour is a
+ * named role, and the bare form names none — so rather than inventing a fifth
+ * colour outside the palette (the obvious candidate, a highlighter yellow, is
+ * one shade from `--sepia`, which is the dedicated staleness axis and is never
+ * reused), the default *is* a role: `==x==` and `[x]{highlight="accent"}` paint
+ * the same, and one of them is shorter to type.
+ */
+
+.doc-body u,
+.doc-body .md-style-underline {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.doc-body mark,
+.doc-body .md-style-highlight {
+  background: var(--style-accent-wash);
+  color: inherit;
+  /* The wash is a band behind the words, not a chip: no radius, and padding
+     only sideways, so two highlighted phrases on consecutive lines do not
+     overlap each other's boxes. */
+  padding: 0 0.1em;
+}
+
+.doc-body .md-style-color-accent {
+  color: var(--style-accent);
+}
+
+.doc-body .md-style-color-warning {
+  color: var(--style-warning);
+}
+
+.doc-body .md-style-color-positive {
+  color: var(--style-positive);
+}
+
+.doc-body .md-style-color-muted {
+  color: var(--style-muted);
+}
+
+.doc-body .md-style-highlight-accent {
+  background: var(--style-accent-wash);
+  padding: 0 0.1em;
+}
+
+.doc-body .md-style-highlight-warning {
+  background: var(--style-warning-wash);
+  padding: 0 0.1em;
+}
+
+.doc-body .md-style-highlight-positive {
+  background: var(--style-positive-wash);
+  padding: 0 0.1em;
+}
+
+.doc-body .md-style-highlight-muted {
+  background: var(--style-muted-wash);
+  padding: 0 0.1em;
+}
+
+/*
+ * The block form. Alignment and indent are the two properties §5 admits, and
+ * both are layout rather than colour — a styled block never paints anything, so
+ * a centred passage reads as the same prose it was.
+ */
+
+.doc-body .md-style-block {
+  /* Not a container of its own: margins collapse through it, so a centred
+     paragraph sits exactly where an uncentred one would. */
+  display: block;
+}
+
+.doc-body .md-style-align-left {
+  text-align: left;
+}
+
+.doc-body .md-style-align-center {
+  text-align: center;
+}
+
+.doc-body .md-style-align-right {
+  text-align: right;
+}
+
+.doc-body .md-style-align-justify {
+  text-align: justify;
+}
+
+.doc-body .md-style-indent-1 {
+  padding-left: 2ch;
+}
+
+.doc-body .md-style-indent-2 {
+  padding-left: 4ch;
+}
+
+.doc-body .md-style-indent-3 {
+  padding-left: 6ch;
+}
