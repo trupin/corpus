@@ -451,7 +451,7 @@ describe("the fixture corpus", () => {
     .sort();
 
   it("is the same corpus the round-trip suite runs over", () => {
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(18);
   });
 
   it.each(names)("%s: every run quotes exactly the text it points at", (name) => {

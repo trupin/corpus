@@ -1,3 +1,5 @@
+import { styleDelimiters, type StyleInfo } from "@corpus/kit";
+import type { StyleRole } from "@corpus/contract";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import { unified, type Processor } from "unified";
@@ -53,6 +55,13 @@ const REF_TYPE = "corpusRef";
 const RAW_BLOCK_TYPE = "corpusRawBlock";
 const RAW_INLINE_TYPE = "corpusRawInline";
 const AUTOLINK_TYPE = "corpusAutolink";
+/**
+ * The two styled wrappers (SPEC.md §5, UI-182). Two types rather than one so the
+ * flanking rule can be stated by type: `==` must sit flush against its own text
+ * exactly as `**` must, while `<u>` and `[…]{…}` may hold a space at either edge.
+ */
+const STYLE_FLUSH_TYPE = "corpusStyleFlush";
+const STYLE_LOOSE_TYPE = "corpusStyleLoose";
 
 /* ── Position trace (UI-007's offset map, at its source) ────────────── */
 
@@ -397,8 +406,26 @@ function tableMdast(node: PmNode): MdNode {
 
 /* ── Inline ─────────────────────────────────────────────────────────── */
 
-/** Marks in the order they must nest: link outermost, then strike/bold/italic, code innermost. */
-const MARK_ORDER: readonly string[] = [MARK.link, MARK.strike, MARK.bold, MARK.italic, MARK.code];
+/**
+ * Marks in the order they must nest: link outermost, then the styling wrappers,
+ * then strike/bold/italic, code innermost.
+ *
+ * The styling marks sit outside emphasis because that is what the file reads
+ * best as — `==**a**==` rather than `**==a==**` — and because an attribute span
+ * is the widest statement of the three: it can carry two roles at once, so it
+ * wraps rather than being wrapped. Code stays innermost, unchanged: nothing
+ * inside a code span was ever a mark.
+ */
+const MARK_ORDER: readonly string[] = [
+  MARK.link,
+  MARK.styleSpan,
+  MARK.underline,
+  MARK.highlight,
+  MARK.strike,
+  MARK.bold,
+  MARK.italic,
+  MARK.code,
+];
 
 function markRank(mark: PmMark): number {
   const index = MARK_ORDER.indexOf(mark.type);
@@ -497,7 +524,14 @@ function splitTextNode(node: MdNode, offset: number): MdNode {
 }
 
 /** Wrappers whose delimiters have to sit flush against their own text. */
-const FLANKING_WRAPPERS: ReadonlySet<string> = new Set(["strong", "emphasis", "delete"]);
+const FLANKING_WRAPPERS: ReadonlySet<string> = new Set([
+  "strong",
+  "emphasis",
+  "delete",
+  // `== a ==` neither opens nor closes, for the same reason `** a **` does not.
+  // `<u> a </u>` and `[ a ]{…}` are legitimate and are deliberately not here.
+  STYLE_FLUSH_TYPE,
+]);
 
 /**
  * An emphasis wrapper, with any whitespace at its edges moved outside it.
@@ -674,6 +708,23 @@ function runsToMdast(nodes: readonly PmNode[], applied: readonly PmMark[]): MdNo
   return out;
 }
 
+/**
+ * A styling wrapper, carrying the delimiters the kit names for it.
+ *
+ * The delimiters are data rather than a second `switch` in the handler: the
+ * spelling of a marker belongs to the grammar (`@corpus/contract`, through
+ * `styleDelimiters`), and a serializer that wrote its own `==` would be the
+ * second copy of a format rule this repository keeps refusing to grow.
+ */
+function styledMdast(info: StyleInfo, children: MdNode[]): MdNode {
+  const { open, close } = styleDelimiters(info);
+  return {
+    type: info.kind === "highlight" ? STYLE_FLUSH_TYPE : STYLE_LOOSE_TYPE,
+    data: { open, close },
+    children,
+  };
+}
+
 function wrapMark(mark: PmMark, children: MdNode[]): MdNode {
   switch (mark.type) {
     case MARK.bold:
@@ -682,6 +733,21 @@ function wrapMark(mark: PmMark, children: MdNode[]): MdNode {
       return { type: "emphasis", children };
     case MARK.strike:
       return { type: "delete", children };
+    case MARK.underline:
+      return styledMdast({ kind: "underline", attrs: {} }, children);
+    case MARK.highlight:
+      return styledMdast({ kind: "highlight", attrs: {} }, children);
+    case MARK.styleSpan: {
+      const attrs: { color?: StyleRole; highlight?: StyleRole } = {};
+      const color = optionalStringAttr(mark.attrs?.["color"]);
+      if (color !== null) attrs.color = color as StyleRole;
+      const highlight = optionalStringAttr(mark.attrs?.["highlight"]);
+      if (highlight !== null) attrs.highlight = highlight as StyleRole;
+      // A span with neither role is not something the file can say; the mark
+      // disappears and its content stays exactly where it was.
+      if (color === null && highlight === null) return { type: "paragraph", children };
+      return styledMdast({ kind: "span", attrs }, children);
+    }
     case MARK.code: {
       // `inlineCode` is a leaf in mdast: its value is the concatenated text,
       // and any nested emphasis inside a code span was never emphasis anyway.
@@ -933,6 +999,21 @@ interface PrintState {
   safe(value: string, info: unknown): string;
 }
 
+/**
+ * The printer's own walk over a node's inline children — how a construct it does
+ * not know still prints everything inside it through the handlers it does.
+ *
+ * Declared as its own view of the state, and reached by one cast in
+ * {@link styledHandler}, because its real parameter is `mdast-util-to-markdown`'s
+ * nominal `Parents` union. Widening {@link PrintState} to name it would make
+ * every handler in this module structurally incompatible with the printer's own
+ * `Handle` type — and importing the union is the dependency `mdast.ts` explains
+ * why this module does not take.
+ */
+interface PhrasingState {
+  containerPhrasing(node: unknown, info: PrintInfo): string;
+}
+
 interface PrintInfo {
   readonly before?: string;
   readonly after?: string;
@@ -1032,8 +1113,33 @@ function autolinkHandler(
   return emit(node, safeInCell(`[${value}](${value})`, state));
 }
 
+/**
+ * A styling wrapper: its delimiters, with the printer's own walk between them.
+ *
+ * `containerPhrasing` is given the delimiters as the surrounding context so that
+ * the text handler's flanking and escaping decisions see what will really sit
+ * beside them — a `*` first inside a `==…==` is still flanked by a delimiter,
+ * not by the start of a line.
+ */
+function styledHandler(node: MdNode, _parent: unknown, state: PrintState, info: PrintInfo): string {
+  const data = node.data ?? {};
+  const open = typeof data["open"] === "string" ? data["open"] : "";
+  const close = typeof data["close"] === "string" ? data["close"] : "";
+  const inner = (state as unknown as PhrasingState).containerPhrasing(node, {
+    ...info,
+    before: open,
+    after: close,
+  });
+  // No `emit` here: the children emitted themselves through their own handlers,
+  // and recording the wrapper as well would count its content twice in the
+  // offset trace.
+  return safeInCell(open, state) + inner + safeInCell(close, state);
+}
+
 function handlers(escapeText: boolean): Record<string, PrintHandler> {
   return {
+    [STYLE_FLUSH_TYPE]: styledHandler,
+    [STYLE_LOOSE_TYPE]: styledHandler,
     [REF_TYPE]: verbatim,
     [RAW_BLOCK_TYPE]: verbatim,
     [RAW_INLINE_TYPE]: verbatim,
@@ -1052,6 +1158,29 @@ function handlers(escapeText: boolean): Record<string, PrintHandler> {
   };
 }
 
+/**
+ * The one thing the **defensive** printer has to be taught, and why it is taught
+ * only to that one.
+ *
+ * {@link serializeDoc} keeps the minimal output when the two printers' outputs
+ * parse alike, and falls back to the defensive one when they do not — on the
+ * assumption that the printer's own escaping is at least as safe as ours. For a
+ * construct the printer has never heard of that assumption is inverted: literal
+ * `==x==` in prose is escaped correctly by `escape.ts` and left bare by the
+ * printer, so the two parse *differently*, the net picks the defensive output,
+ * and the highlight nobody wrote is written into the user's file.
+ *
+ * Rather than weaken the net, the printer is told that `=` before `=` is unsafe
+ * (SPEC.md §5, UI-182). Both printers then escape the same delimiter and the net
+ * compares like with like. It over-escapes — `a == b` needs no backslash and
+ * gets one — which costs nothing at all, because that output is only ever
+ * *used* when the two disagree about meaning, and here they no longer do.
+ *
+ * `[` needs no rule: the printer already treats it as unsafe in phrasing, so an
+ * attribute span's opening bracket is escaped by both.
+ */
+const STYLE_UNSAFE = [{ character: "=", after: "=", inConstruct: "phrasing" }];
+
 let minimalPrinter: Processor | undefined;
 let defensivePrinter: Processor | undefined;
 
@@ -1064,7 +1193,12 @@ function printer(escapeText: boolean): Processor {
     return minimalPrinter;
   }
   defensivePrinter ??= unified()
-    .use(remarkStringify, { ...PRINT_OPTIONS, join: printJoin(), handlers: handlers(false) })
+    .use(remarkStringify, {
+      ...PRINT_OPTIONS,
+      join: printJoin(),
+      handlers: handlers(false),
+      unsafe: STYLE_UNSAFE,
+    })
     .use(remarkGfm)
     .freeze() as unknown as Processor;
   return defensivePrinter;

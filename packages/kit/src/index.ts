@@ -269,6 +269,21 @@ export {
   REF_PATTERN,
   type DocRef,
 } from "./markdown/refs.js";
+// SPEC.md §5's styling forms as mdast nodes. The grammar lives in
+// `@corpus/contract` (the server strips markers and cannot import this package);
+// what is exported here is the tree work — finding a marker across a parsed
+// inline run — which the reader and the document editor must do identically.
+export {
+  remarkCorpusStyling,
+  styleDelimiters,
+  styleOf,
+  STYLE_COLOR_ATTRIBUTE,
+  STYLE_HIGHLIGHT_ATTRIBUTE,
+  STYLE_KIND_ATTRIBUTE,
+  STYLE_NODE_TYPE,
+  type StyledMdast,
+  type StyleInfo,
+} from "./markdown/styled.js";
 // The one raw-HTML token Corpus reads as markdown, and only inside a table cell
 // (UI-064). Exported because the document editor parses with the same rule —
 // reader and editor must not be two readings of one file.

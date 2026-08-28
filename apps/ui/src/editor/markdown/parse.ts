@@ -1,4 +1,10 @@
-import { remarkCorpusRefs, remarkTableCellBreaks } from "@corpus/kit";
+import {
+  remarkCorpusRefs,
+  remarkCorpusStyling,
+  remarkTableCellBreaks,
+  styleOf,
+  type StyleInfo,
+} from "@corpus/kit";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified, type Processor } from "unified";
@@ -32,6 +38,12 @@ function markdownProcessor(): Processor {
   processor ??= unified()
     .use(remarkParse)
     .use(remarkGfm)
+    // Styling runs **before** anything that splits a text node: it tells an
+    // escaped delimiter from a written one by reading each node's position
+    // against the source, and a split node carries no position (SPEC.md §5,
+    // UI-182). `remarkCorpusRefs` still finds every ref, because it recurses
+    // into whatever children this leaves behind.
+    .use(remarkCorpusStyling as never)
     // Typed loosely on purpose: the kit exports a plain mdast transform rather
     // than a unified-typed plugin, precisely so it does not drag unified's
     // types into every consumer.
@@ -58,7 +70,9 @@ export function parseToMdast(markdown: string): MdRoot {
   const tree = processorInstance.parse(markdown);
   // `MdRoot` is this repo's structural view of mdast (see `mdast.ts`); unified
   // types the tree with `@types/mdast`'s nominal one.
-  return processorInstance.runSync(tree) as unknown as MdRoot;
+  // The source goes in as the file: `remarkCorpusStyling` reads it back to tell
+  // `\==x\==` from `==x==`, which the tree alone cannot say.
+  return processorInstance.runSync(tree, markdown) as unknown as MdRoot;
 }
 
 /**
@@ -97,7 +111,7 @@ function emptyParagraph(): PmNode {
  * inserted as the text it is.
  */
 const MARKDOWN_CONSTRUCT =
-  /(^|\n) {0,3}(#{1,6} |[-*+] |\d{1,9}[.)] |> |```|~~~|\||\[\^)|\*\*|__|~~|`[^`\n]+`|\[[^\]\n]*\]\(|!\[[^\]\n]*\]\(|\[\[[A-Za-z][A-Za-z0-9]*_/;
+  /(^|\n) {0,3}(#{1,6} |[-*+] |\d{1,9}[.)] |> |```|~~~|\||\[\^)|\*\*|__|~~|`[^`\n]+`|\[[^\]\n]*\]\(|!\[[^\]\n]*\]\(|\[\[[A-Za-z][A-Za-z0-9]*_|==[^\s=]|<\/?u>|\]\{[a-z]+="/;
 
 export function looksLikeMarkdown(text: string): boolean {
   return MARKDOWN_CONSTRUCT.test(text);
@@ -223,6 +237,23 @@ function rawBlockNode(md: MdNode, source: string): PmNode | null {
 
 /* ── Inline ─────────────────────────────────────────────────────────── */
 
+/**
+ * The mark a styled node carries.
+ *
+ * A `span` keeps its attributes because two spans with different roles are two
+ * marks — `sameMark` compares attributes, so a run of `color="accent"` beside a
+ * run of `color="warning"` prints as two markers rather than merging into one
+ * that says the wrong thing.
+ */
+function styleMark(style: StyleInfo): PmMark {
+  if (style.kind === "underline") return { type: MARK.underline };
+  if (style.kind === "highlight") return { type: MARK.highlight };
+  return {
+    type: MARK.styleSpan,
+    attrs: { color: style.attrs.color ?? null, highlight: style.attrs.highlight ?? null },
+  };
+}
+
 function withMark(marks: readonly PmMark[], mark: PmMark): PmMark[] {
   return marks.some((existing) => existing.type === mark.type) ? [...marks] : [...marks, mark];
 }
@@ -245,6 +276,11 @@ function textNode(value: string, marks: readonly PmMark[]): PmNode[] {
 }
 
 function inlineNode(md: MdNode, marks: readonly PmMark[], source: string): PmNode[] {
+  const style = styleOf(md as never);
+  if (style !== null) {
+    return inlineNodes(md.children ?? [], withMark(marks, styleMark(style)), source);
+  }
+
   const ref = refAttributesOf(md);
   if (ref !== null) {
     // Marks carry through: `**[[doc_x|alias]]**` is a bolded reference, and

@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -164,7 +164,57 @@ go red; a round-trip test that passes with escaping absent is not testing it.
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+**Unit.** `apps/ui` and `packages/kit` together: **4,835 passed, 0 failed**, 247
+files. `styled.test.ts` in the kit is 22 of them; the editor's markdown suites
+are 727. The new fixture `fixtures/styled-text.md` joins the round-trip corpus,
+so it is asserted byte-identical *and* idempotent, and `offsetMap.test.ts` runs
+the same corpus — every trace run in the styled fixture quotes exactly the text
+it addresses.
+
+**Falsification, five breaks, each re-run.**
+
+| Break | Result |
+| --- | --- |
+| The escape mask ignores which characters the author escaped | 4 failed |
+| The defensive printer is not taught that `=` before `=` is unsafe | 3 failed |
+| `escape.ts` stops escaping a flanking `=` | 1 failed |
+| The highlight is not a flanking wrapper | 1 failed |
+| The three styling marks come out of `MARK_ORDER` | 1 failed |
+
+**Two of those tests did not exist until the falsification demanded them**, and
+that is the finding worth recording.
+
+Removing `escape.ts`'s `=` rule failed **nothing** at first. The reason is that
+the safety net covers it: with the rule gone the minimal output means something
+different from the defensive one, so `serializeDoc` falls back to the defensive
+output — which is *correct*, and which re-escapes every `*`, `_` and `[` in the
+same paragraph. The rule earns its place by preventing churn, not corruption, so
+the test now names the witness: a paragraph holding both `snake_case` and a
+literal `\==…\==` must come back with `snake_case` unescaped.
+
+Removing the styling marks from `MARK_ORDER` also failed nothing, for a plainer
+reason: `==**a**==` and `**==a==**` both round-trip. Only one of them can be
+what this serializer writes, or two editors produce two files for one paste, so
+the nesting is now pinned by a test rather than left to insertion order.
+
+**The round trip, case by case** (`serializeDoc(parseMarkdown(x)) === x`):
+
+```
+"<u>a</u>"                          OK      "==a **b** c=="                 OK
+"==a=="                             OK      "==a <u>b</u> c=="              OK
+'[a]{color="accent"}'               OK      '[==a==]{color="accent"}'       OK
+'[a]{color="warning" highlight=…}'  OK      "\==a\=="                       OK
+"# A ==bright== title"              OK      "a == b"                        OK
+"- A ==bright== item"               OK      "`==a==`"                       OK
+"==see [[doc_a1b2c3]] now=="        OK      "```\n==a==\n```"               OK
+```
+
+**In-browser evidence** for the marks a person can see is logged in **UI-184**,
+where the styling first has a rendering, and in `apps/ui/e2e/styled-text.spec.ts`
+which covers the arc end to end. A mark with no CSS is invisible, so a browser
+check here would have proved nothing this suite does not.
 
 ## Completion Checklist (domain agent)
 

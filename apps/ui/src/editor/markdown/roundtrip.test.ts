@@ -52,10 +52,11 @@ describe("the fixture corpus", () => {
       "raw-constructs.md",
       "refs.md",
       "rules-and-breaks.md",
+      "styled-text.md",
       "tables.md",
       "task-lists.md",
     ]);
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(18);
   });
 
   it.each(names)("%s round-trips byte for byte", (name) => {
@@ -184,5 +185,164 @@ describe("the empty document", () => {
     expect(serializeDoc(parseMarkdown(""))).toBe("");
     expect(serializeDoc(parseMarkdown("\n\n\n"))).toBe("");
     expect(serializeDoc({ type: "doc", content: [{ type: "paragraph" }] })).toBe("");
+  });
+});
+
+/**
+ * SPEC.md §5's styling forms (UI-182). `styled-text.md` above already asserts
+ * the corpus property; what is here is the two directions the fixture cannot
+ * show — a marker the editor must *not* invent, and prose the serializer must
+ * escape so the next read does not invent one.
+ */
+describe("styled text", () => {
+  const marksOf = (markdown: string): string[] => {
+    const seen: string[] = [];
+    const walk = (node: unknown): void => {
+      if (typeof node !== "object" || node === null) return;
+      const record = node as { marks?: { type: string }[]; content?: unknown[] };
+      for (const mark of record.marks ?? []) seen.push(mark.type);
+      for (const child of record.content ?? []) walk(child);
+    };
+    walk(parseMarkdown(markdown));
+    return seen;
+  };
+
+  it("reads each of the three forms as its own mark", () => {
+    expect(marksOf("<u>a</u>\n")).toEqual(["underline"]);
+    expect(marksOf("==a==\n")).toEqual(["highlight"]);
+    expect(marksOf('[a]{color="accent"}\n')).toEqual(["styleSpan"]);
+  });
+
+  it("reads a marker that spans other inline nodes", () => {
+    // The delimiters sit in two different text nodes with a `strong` between
+    // them, which is the case a text-node split cannot see at all.
+    expect(marksOf("==a **b** c==\n")).toContain("highlight");
+    expect(marksOf("==a **b** c==\n")).toContain("bold");
+  });
+
+  it.each([
+    ["an escaped highlight", "\\==a\\==\n"],
+    ["an escaped span", '\\[a]{color="accent"}\n'],
+    ["spaced equals", "a == b\n"],
+    ["an uppercase tag", "<U>a</U>\n"],
+    ["an unknown attribute", '[a]{colour="accent"}\n'],
+    ["a block attribute written inline", '[a]{align="center"}\n'],
+    ["a marker in a code span", "`==a==`\n"],
+    ["a marker in a fenced block", "```\n==a==\n```\n"],
+  ])("invents no styling mark for %s", (_label, markdown) => {
+    // `code` is a mark too, and a code span legitimately produces one; what
+    // must not appear is any of §5's three.
+    const styling = marksOf(markdown).filter((mark) =>
+      ["underline", "highlight", "styleSpan"].includes(mark),
+    );
+    expect(styling).toEqual([]);
+  });
+
+  it("escapes prose that would otherwise be read as a marker", () => {
+    // Typed by somebody who meant the characters. Serialising must escape them,
+    // and the escaped form must read back as the same characters — otherwise the
+    // next save writes a highlight nobody asked for.
+    const typed = parseMarkdown("\\==not a highlight\\==\n");
+    const printed = serializeDoc(typed);
+    expect(printed).toBe("\\==not a highlight\\==\n");
+    expect(marksOf(printed)).toEqual([]);
+  });
+
+  it("escapes the delimiter without re-escaping the paragraph around it", () => {
+    // The reason `escape.ts` learns `=` at all. The defensive printer already
+    // escapes it (`STYLE_UNSAFE`), so the safety net would produce a *correct*
+    // file either way — but the defensive path re-escapes everything else in
+    // the paragraph too, and sprint-011 TEST-22 is that a save touches nothing
+    // the user did not. `snake_case` is the witness: minimal leaves it, the
+    // printer's own escaping writes `snake\_case`.
+    const source = "prose with snake_case and \\==not a highlight\\==\n";
+    expect(canonicalizeMarkdown(source)).toBe(source);
+  });
+
+  it("does not escape equals that could not open a marker", () => {
+    expect(canonicalizeMarkdown("a == b\n")).toBe("a == b\n");
+    expect(canonicalizeMarkdown("x = y\n")).toBe("x = y\n");
+  });
+
+  it("moves an edge space outside a highlight, as it does for emphasis", () => {
+    // `== a ==` closes nothing. The space belongs beside the marker.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "a b ", marks: [{ type: "highlight" }] },
+            { type: "text", text: "c" },
+          ],
+        },
+      ],
+    };
+    expect(serializeDoc(doc as never)).toBe("==a b== c\n");
+  });
+
+  it("nests styling outside emphasis, so one document has one spelling", () => {
+    // `==**a**==` and `**==a==**` are the same document; only one of them can
+    // be what this serializer writes, or two editors produce two files for one
+    // paste. MARK_ORDER decides, and this pins the decision.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "a",
+              marks: [{ type: "bold" }, { type: "highlight" }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(serializeDoc(doc as never)).toBe("==**a**==\n");
+  });
+
+  it("prints a span's attributes in one canonical order", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "a",
+              marks: [{ type: "styleSpan", attrs: { highlight: "muted", color: "accent" } }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(serializeDoc(doc as never)).toBe('[a]{color="accent" highlight="muted"}\n');
+  });
+
+  it("drops a span mark carrying no role at all", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "a",
+              marks: [{ type: "styleSpan", attrs: { color: null, highlight: null } }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(serializeDoc(doc as never)).toBe("a\n");
+  });
+
+  it("leaves a document with no styling byte-identical", () => {
+    const plain = readFileSync(join(FIXTURES, "emphasis.md"), "utf8");
+    expect(serializeDoc(parseMarkdown(plain))).toBe(plain);
   });
 });
