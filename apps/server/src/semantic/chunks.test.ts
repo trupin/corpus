@@ -10,7 +10,7 @@
 // is actually about is the *work*: the chunks whose content changed are the
 // chunks that need re-embedding, and content-addressed ids make that set exact.
 
-import { rmSync, unlinkSync } from "node:fs";
+import { readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createWorkspace, docMarkdown, type Workspace } from "../docs/corpus-fixture.js";
@@ -438,6 +438,79 @@ describe("db rebuild", () => {
       }
     } finally {
       rmSync(ws.root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("styling markers never reach the semantic index (SERVER-162)", () => {
+  const STYLED = 'The [mortgage]{color="warning"} rate ==rose== sharply, per <u>Ofgem</u>.\n';
+
+  it("stores the stripped text as the chunk's body, and keeps the offsets on the file", () => {
+    const ws = createWorkspace("chunks-styled");
+    try {
+      ws.doc({
+        id: "doc_styled",
+        path: "data/docs/styled.md",
+        title: "Rates",
+        body: STYLED,
+      });
+      ws.reproject();
+
+      const body = ws.db
+        .prepare("SELECT body FROM chunk_search WHERE doc_id = 'doc_styled'")
+        .get() as { body: string };
+      expect(body.body).toContain("The mortgage rate rose sharply, per Ofgem.");
+      expect(body.body).not.toContain("color=");
+      expect(body.body).not.toContain("==");
+      expect(body.body).not.toContain("<u>");
+
+      // The offsets still address the file, so a resolved passage reads the
+      // bytes that are there — markers included.
+      const [row] = chunkRows(ws, "doc_styled");
+      expect(row).toBeDefined();
+      const file = readFileSync(join(ws.config.workspaceRoot, "data/docs/styled.md"), "utf8");
+      const bodyStart = file.indexOf("The [mortgage]");
+      expect(bodyStart).toBeGreaterThan(0);
+      expect(row?.char_length).toBe((row?.end_offset ?? 0) - (row?.start_offset ?? 0));
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("finds a chunk by a word that sits inside a styled phrase", () => {
+    const ws = createWorkspace("chunks-styled-find");
+    try {
+      ws.doc({ id: "doc_s", path: "data/docs/s.md", title: "Rates", body: STYLED });
+      ws.reproject();
+      const hits = ws.db
+        .prepare("SELECT doc_id FROM chunk_search WHERE chunk_search MATCH 'mortgage'")
+        .all() as { doc_id: string }[];
+      expect(hits.map((hit) => hit.doc_id)).toEqual(["doc_s"]);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("gives two documents that differ only in styling the same chunk text", () => {
+    const styledWs = createWorkspace("chunks-styled-a");
+    const plainWs = createWorkspace("chunks-styled-b");
+    try {
+      styledWs.doc({ id: "doc_x", path: "data/docs/x.md", title: "Rates", body: STYLED });
+      styledWs.reproject();
+      plainWs.doc({
+        id: "doc_x",
+        path: "data/docs/x.md",
+        title: "Rates",
+        body: "The mortgage rate rose sharply, per Ofgem.\n",
+      });
+      plainWs.reproject();
+
+      const bodyOf = (ws: Workspace): string =>
+        (ws.db.prepare("SELECT body FROM chunk_search").get() as { body: string }).body;
+      expect(bodyOf(styledWs)).toBe(bodyOf(plainWs));
+    } finally {
+      styledWs.close();
+      plainWs.close();
     }
   });
 });

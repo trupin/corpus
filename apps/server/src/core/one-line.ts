@@ -25,6 +25,13 @@
  * and is not getting one (sprint-019 Adjudication 5); a heuristic that ate `**`
  * would also eat a document that is *about* asterisks. The line is a taste of
  * the text as written.
+ *
+ * **One thing has already been removed by the time text arrives here**, and it
+ * is not an exception to the rule above. SPEC.md §5's styling markers are taken
+ * out at the projection (`stripStyling`, SERVER-162), so the excerpts and
+ * snippets this shapes never carried one. That transform names four constructs
+ * the spec declares and is blind to every other; a document about asterisks
+ * still keeps all of them, here and there.
  */
 
 /**

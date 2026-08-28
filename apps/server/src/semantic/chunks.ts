@@ -89,13 +89,19 @@ export function insertChunkRows(
       // `chunk_search` has no key to ignore against, so it follows the decision
       // `chunks` just made rather than making its own.
       if (inserted.changes === 0) continue;
+      // `chunk.indexText`, not `chunk.text`: this column is the one source for
+      // all three of §5's passage-shaped answers — the chunk FTS index, the
+      // text the embedder is given (`worker.ts`) and the passage the semantic
+      // surface returns (`passages.ts`) — and none of them may carry a styling
+      // marker. `chunks.start_offset` still addresses the file, so a passage
+      // resolved by offset still reads the bytes that are there.
       insertSearch.run(
         chunk.id,
         passage.ref,
         docId,
         chunk.ord,
         chunk.headingPath,
-        toIndexableText(chunk.text),
+        toIndexableText(chunk.indexText),
       );
       written.push(chunk);
     }

@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -139,7 +139,76 @@ go red. Two separate call sites, two separate falsifications.
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+**Unit.** `project-document.test.ts` 61 passed, `chunker.test.ts` 33 passed,
+`chunks.test.ts` 15 passed. The whole `semantic/` and `projection/` suites:
+703 passed, 0 failed.
+
+**Falsification, three call sites, three separate breaks.**
+
+| Break | Result |
+| --- | --- |
+| `insertSearchRows` indexes `passage.body` again | 1 failed |
+| `bodyExcerpt` excerpts the raw body again | 1 failed |
+| `chunkBody` sets `indexText = text` | 2 failed in `chunks.test.ts`, 2 in `chunker.test.ts` |
+
+Restored: 61, 33 and 15 passed.
+
+One assertion is deliberately **not** a falsifier and is kept anyway: "finds a
+word that sits inside a styled phrase" passes with the strip removed, because
+FTS5 tokenises on non-alphanumerics and finds `mortgage` inside
+`[mortgage]{color="warning"}` either way. It is a requirement the strip must not
+break, not evidence the strip is there. The snippet-cleanliness assertion is
+what proves the strip.
+
+**E2E, real server, real CLI, real workspace.** Built CLI at
+`apps/cli/dist/bin/corpus.js`, a fresh `corpus init` workspace on **port 8766**
+(never 8765 — that is the user's own server).
+
+```
+$ corpus server start
+corpus 0.27.0 listening on http://127.0.0.1:8766 (pid 4852)
+```
+
+The document written to disk:
+
+```markdown
+The [mortgage]{color="warning"} rate ==rose== sharply, per <u>Ofgem</u>.
+
+::: {align="center"}
+
+A centred note.
+
+:::
+```
+
+`corpus search mortgage` — the document is found, and the snippet carries no
+marker and no fence line:
+
+```
+doc_ratesE2E   Mortgage rates   The mortgage rate rose sharply, per Ofgem. A centred note.
+```
+
+`corpus doc show doc_ratesE2E` — the raw body, every marker intact:
+
+```
+The [mortgage]{color="warning"} rate ==rose== sharply, per <u>Ofgem</u>.
+
+::: {align="center"}
+
+A centred note.
+
+:::
+```
+
+Both halves of §5 hold in the running product: the passage is stripped, the
+document is not. The run reported "ranking is degraded — the semantic index is
+stale", which is expected in a workspace with no embedding provider configured
+and is unrelated to this change; the chunk half is covered by the `chunk_search`
+assertions above.
+
+Server stopped (pid 4852). The user's server on 8765 was never touched.
 
 ## Completion Checklist (domain agent)
 
