@@ -135,10 +135,10 @@ and `--ink` against each highlight wash **composited over the background** — a
 wash measured on its own would say nothing about the words on it.
 
 That measurement changed a value. `--style-warning` is **not** `--signal`:
-the product's rust measures **4.08:1** on the light background, which is fine
+the product's rust measures **4.15:1** on the light background, which is fine
 behind a chip's bolder label and short of AA for a sentence. The light role is
 darkened to `#a34620` (**5.63:1**); the dark role is `--signal` unchanged
-(**5.84:1**).
+(**5.78:1**).
 
 **Falsification, three token breaks.**
 

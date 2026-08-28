@@ -197,10 +197,10 @@ describe("tokens.css vs design/index.html", () => {
  * prevent, and no amount of looking at one theme finds it.
  *
  * This is why `--style-warning` is not simply `--signal`. The rust the product
- * uses for chips and destructive actions measures 4.08:1 on the light
+ * uses for chips and destructive actions measures **4.15:1** on the light
  * background — fine behind a chip's larger, bolder label, and short of the bar
- * for a sentence. The light role is darkened to clear it; the dark one, which
- * measures 5.84:1, is `--signal` unchanged.
+ * for a sentence. The light role is darkened to **5.63:1**; the dark one, which
+ * measures **5.78:1**, is `--signal` unchanged.
  */
 function channel(value: number): number {
   const ratio = value / 255;
