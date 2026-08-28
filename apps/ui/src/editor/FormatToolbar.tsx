@@ -150,6 +150,19 @@ const BLOCK_BUTTONS: readonly ToggleSpec[] = [
   },
 ];
 
+/**
+ * The level a menu value names, or `null` for Text.
+ *
+ * Narrowed by searching {@link HEADING_LEVELS} rather than cast: the command's
+ * parameter is a union of six literals, and asserting a `number` into it would
+ * be a claim about the `<option>` list that nothing checks. A value outside the
+ * list is Text, which is the safe reading of an element somebody has tampered
+ * with.
+ */
+function headingLevel(value: string): (typeof HEADING_LEVELS)[number] | null {
+  return HEADING_LEVELS.find((level) => String(level) === value) ?? null;
+}
+
 /** The heading level the cursor is in, as the `<select>`'s value. */
 export function headingValue(editor: Editor): string {
   for (const level of HEADING_LEVELS) {
@@ -323,14 +336,11 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           value={headingValue(editor)}
           onChange={(event) => {
             closePopovers();
-            const level = Number(event.target.value);
-            if (level === 0) void editor.chain().focus().setParagraph().run();
-            else
-              void editor
-                .chain()
-                .focus()
-                .setHeading({ level: level as 1 })
-                .run();
+            const level = headingLevel(event.target.value);
+            withSelection((target) => {
+              if (level === null) void target.chain().focus().setParagraph().run();
+              else void target.chain().focus().setHeading({ level }).run();
+            });
           }}
         >
           <option value={PARAGRAPH_VALUE}>Text</option>

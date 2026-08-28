@@ -220,6 +220,16 @@ editor. Capturing on `mousedown` instead was the first attempt and is wrong: a
 keyboard user tabs to the control and changes it with the arrow keys, and no
 pointer event happens at all.
 
+### One more thing, found in self-review
+
+The heading control cast a `number` into TipTap's six-literal `Level` union —
+`setHeading({ level: level as 1 })` — which is a claim about the `<option>` list
+that nothing checks, and it read as `1` for every level. It narrows by searching
+`HEADING_LEVELS` now, and a value outside the list is Text, which is the safe
+reading of an element somebody has tampered with. The same review found the
+heading control was the one control not running through the shared
+selection-restoring path; it does now.
+
 ### Acceptance, against the rider
 
 - Present with no mode and no click — asserted, and asserted absent in a column
