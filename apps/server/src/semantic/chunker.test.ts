@@ -329,3 +329,33 @@ describe("determinism", () => {
     expect(JSON.parse(output.trim())).toEqual(ids(chunkBody(body, SOURCE)));
   });
 });
+
+describe("styling markers and the index (SERVER-162)", () => {
+  const STYLED = 'The [rate]{color="warning"} ==rose==, per <u>Ofgem</u>.\n';
+
+  it("keeps `text` verbatim, so the offsets still address the file", () => {
+    const [chunk] = chunkBody(STYLED, SOURCE);
+    expect(chunk).toBeDefined();
+    expect(STYLED.slice(chunk?.start ?? 0, chunk?.end ?? 0)).toBe(chunk?.text);
+    expect(chunk?.text).toContain('color="warning"');
+  });
+
+  it("indexes the stripped form", () => {
+    const [chunk] = chunkBody(STYLED, SOURCE);
+    expect(chunk?.indexText).toBe("The rate rose, per Ofgem.\n");
+  });
+
+  it("gives two bodies that differ only in styling the same chunk id", () => {
+    const plain = "The rate rose, per Ofgem.\n";
+    const [styled] = chunkBody(STYLED, SOURCE);
+    const [bare] = chunkBody(plain, SOURCE);
+    expect(styled?.id).toBe(bare?.id);
+  });
+
+  it("leaves a body with no marker untouched in both fields", () => {
+    const plain = "# Heading\n\nOrdinary **prose** with a `code == span`.\n";
+    for (const chunk of chunkBody(plain, SOURCE)) {
+      expect(chunk.indexText).toBe(chunk.text);
+    }
+  });
+});

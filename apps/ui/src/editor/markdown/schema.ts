@@ -10,6 +10,8 @@ import StarterKit from "@tiptap/starter-kit";
 import type { Schema } from "@tiptap/pm/model";
 import { DocRef } from "./refNode.js";
 import { RawBlock, RawInline } from "./rawNodes.js";
+import { StyledBlock } from "./styledBlock.js";
+import { HighlightMark, StyleSpanMark, UnderlineMark } from "./styledMarks.js";
 import { CorpusTable } from "./tableNode.js";
 
 /**
@@ -96,6 +98,10 @@ export function corpusExtensions(): Extensions {
     DocRef,
     RawBlock,
     RawInline,
+    StyledBlock,
+    UnderlineMark,
+    HighlightMark,
+    StyleSpanMark,
   ];
 }
 
@@ -136,6 +142,8 @@ export const NODE = {
   docRef: "docRef",
   rawBlock: "rawBlock",
   rawInline: "rawInline",
+  /** SPEC.md §5's block styling; see `styledBlock.ts`. */
+  styledBlock: "styledBlock",
 } as const;
 
 export const MARK = {
@@ -144,6 +152,10 @@ export const MARK = {
   code: "code",
   strike: "strike",
   link: "link",
+  /** SPEC.md §5's styling forms; see `styledMarks.ts`. */
+  underline: "underline",
+  highlight: "highlight",
+  styleSpan: "styleSpan",
 } as const;
 
 /**

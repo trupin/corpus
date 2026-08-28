@@ -708,6 +708,66 @@ describe("projectDocument — full-text search", () => {
   });
 });
 
+describe("projectDocument — styled text is stripped before it is indexed (SERVER-162)", () => {
+  const STYLED = `---\nid: doc_styled\ntype: note\ntitle: Rates\n---\n\nThe [mortgage]{color="warning"} rate ==rose== sharply, per <u>Ofgem</u>.\n`;
+
+  it("indexes a body with no styling marker in it", () => {
+    project("data/docs/styled.md", STYLED);
+    const row = db.prepare("SELECT body FROM search WHERE ref = 'doc_styled'").get() as {
+      body: string;
+    };
+    expect(row.body).toContain("The mortgage rate rose sharply, per Ofgem.");
+    expect(row.body).not.toContain("color=");
+    expect(row.body).not.toContain("==");
+    expect(row.body).not.toContain("<u>");
+  });
+
+  it("finds a word that sits inside a styled phrase", () => {
+    project("data/docs/styled.md", STYLED);
+    expect(db.prepare("SELECT ref FROM search WHERE search MATCH 'mortgage'").all()).toEqual([
+      { ref: "doc_styled" },
+    ]);
+    expect(db.prepare("SELECT ref FROM search WHERE search MATCH 'rose'").all()).toEqual([
+      { ref: "doc_styled" },
+    ]);
+    expect(db.prepare("SELECT ref FROM search WHERE search MATCH 'ofgem'").all()).toEqual([
+      { ref: "doc_styled" },
+    ]);
+  });
+
+  it("previews a row without its markers", () => {
+    project("data/docs/styled.md", STYLED);
+    expect(rowFor("doc_styled")["body_excerpt"]).toBe(
+      "The mortgage rate rose sharply, per Ofgem.\n",
+    );
+  });
+
+  it("leaves a marker inside a fenced block alone, because it is a code sample", () => {
+    project(
+      "data/docs/sample.md",
+      `---\nid: doc_sample\ntype: note\ntitle: How to\n---\n\nWrite it like this:\n\n\`\`\`\n==sample==\n\`\`\`\n`,
+    );
+    const row = db.prepare("SELECT body FROM search WHERE ref = 'doc_sample'").get() as {
+      body: string;
+    };
+    expect(row.body).toContain("==sample==");
+  });
+
+  it("indexes a body with no styling exactly as it did before", () => {
+    const plain = `---\nid: doc_plain\ntype: note\ntitle: Rates\n---\n\nThe **mortgage** rate rose sharply.\n`;
+    project("data/docs/plain.md", plain);
+    const row = db.prepare("SELECT body FROM search WHERE ref = 'doc_plain'").get() as {
+      body: string;
+    };
+    expect(row.body).toBe("\nThe **mortgage** rate rose sharply.\n");
+  });
+
+  it("keeps the file's own bytes", () => {
+    const abs = project("data/docs/styled.md", STYLED);
+    expect(readFileSync(abs, "utf8")).toBe(STYLED);
+  });
+});
+
 describe("projectDocument — replacement and removal", () => {
   const DOC = `---\nid: doc_aaa\ntype: note\ntitle: A\nanchors:\n  anc_a:\n    exact: "anchored"\n---\n\nSee [[th_zzz]] — anchored here.\n`;
 

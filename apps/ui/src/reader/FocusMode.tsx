@@ -1,8 +1,10 @@
 import type { RevealTarget, RowNotice } from "@corpus/kit";
-import { useCallback, useEffect, useRef, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import type { Editor } from "@tiptap/react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import { useCommentsTab } from "../comments/useCommentsTab";
+import { FormatToolbar } from "../editor/FormatToolbar";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
@@ -152,6 +154,14 @@ function FocusReader({
     onNotify,
   });
 
+  /**
+   * The document editor, when one is mounted (UI-101).
+   *
+   * `DocView` publishes it and `null` is the gate: a `thread`, a `view` and the
+   * comments list mount no editor, so the toolbar simply is not there for them.
+   */
+  const [editor, setEditor] = useState<Editor | null>(null);
+
   const navigate = useCallback(
     (next: string, nextReveal?: RevealTarget) => {
       // Rider 3: a link followed inside full screen closes the overlay and
@@ -206,6 +216,7 @@ function FocusReader({
           onGone={stack.back}
           onNotify={onNotify}
         />
+        <FormatToolbar editor={editor} />
         <div
           ref={surface.scrollRef}
           className="focus-scroll"
@@ -217,6 +228,7 @@ function FocusReader({
             <DocWidthContext.Provider value={docWidth}>
               <DocView
                 reader={reader}
+                onEditor={setEditor}
                 selectTitle={false}
                 flashThread={surface.flashThread}
                 tab={comments.tab}

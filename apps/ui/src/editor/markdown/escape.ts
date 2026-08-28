@@ -133,6 +133,11 @@ function needsEscape(
     case "~":
       return next === "~" || previous === "~";
     // An autolink or an HTML tag.
+    case "=":
+      // `==` is a highlight only where it flanks (SPEC.md §5, and emphasis's own
+      // rule). Escaping the first `=` of such a pair is what keeps prose that
+      // spells `==x==` prose, rather than a highlight the next read invents.
+      return opensHighlight(line, index) || closesHighlight(line, index);
     case "<":
       return /[A-Za-z/!?]/.test(next);
     // A character reference; anything else is a literal ampersand.
@@ -143,6 +148,22 @@ function needsEscape(
     default:
       return false;
   }
+}
+
+/** Whether `=` at `index` opens a highlight: `==` with content flush after it. */
+function opensHighlight(line: string, index: number): boolean {
+  if (line[index + 1] !== "=") return false;
+  if (line[index - 1] === "=" || line[index + 2] === "=") return false;
+  const after = line[index + 2];
+  return after !== undefined && !WHITESPACE.test(after);
+}
+
+/** Whether `=` at `index` closes one: `==` with content flush before it. */
+function closesHighlight(line: string, index: number): boolean {
+  if (line[index + 1] !== "=") return false;
+  if (line[index - 1] === "=" || line[index + 2] === "=") return false;
+  const before = line[index - 1];
+  return before !== undefined && !WHITESPACE.test(before);
 }
 
 export interface EscapeContext {

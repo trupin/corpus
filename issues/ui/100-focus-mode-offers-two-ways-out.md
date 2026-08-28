@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -145,8 +145,50 @@ focus mode on a document does not push that document onto its own stack.
 
 ## E2E Verification Log
 
-_[Agent fills: model run on, whether the cause was (a) or (b), commands,
-observed output.]_
+### Reproduction (bugs only)
+
+Implemented on: **opus**.
+
+**It does not reproduce, and the reproduction is the finding.** The issue
+insisted the diagnosis come before any change — case (a), a self-push onto the
+nav stack, or case (b), two genuinely different controls that read alike — and
+the live answer is neither.
+
+A browser probe opened `Alpha note` in a column, pressed `f`, and read every
+button in the focus header:
+
+```
+column head : ["‹ Inbox", "⋯", "⤢"]
+focus  head : [{ text: "✕ Close", class: "back" }, { text: "⋯", class: "expand" }]
+```
+
+One exit. No chevron, no second control, nothing named after the document
+already open.
+
+**Why it went away, which matters more than that it did.** SHARED-072's
+navigation rework made a link followed inside full screen **close the overlay**
+and land as a path at the board's left edge (Rider 3, `FocusMode.tsx`'s
+`navigate`). The focus stack therefore never gains depth, `previous` is always
+`null`, and `showsBack` — which has said `variant !== "focus" || previous !==
+null` all along, with unit tests agreeing — never renders the button.
+
+So this was fixed **by consequence**, by work aimed at something else.
+
+### Post-Implementation Verification
+
+What landed is the guard, because a fix by consequence is the kind that comes
+back: the next feature to give focus mode a stack of its own would restore the
+symptom with every existing unit test still green. Nothing asserted the
+**rendered header**, which is where the person was looking.
+
+`apps/ui/e2e/focus-exit.spec.ts` — 1 passed. It opens the real overlay and
+asserts exactly one control that leaves it, that its text is `✕ Close`, and that
+it is not named after the open document.
+
+**Falsification**: `showsBack` forced to `return true` — the spec fails on the
+count. Restored, it passes.
+
+No product code changed. The header was already right.
 
 ## Completion Checklist (domain agent)
 

@@ -377,3 +377,105 @@
 .doc-body .changelog-more.expanded {
   border-bottom: none;
 }
+
+/*
+ * The persistent formatting toolbar (SPEC.md §10, rider signed 2026-08-12;
+ * UI-101), ported from `design/index.html`'s `.fmt-bar` block.
+ *
+ * It sits between the focus header and the scrolling surface — `flex: none`, so
+ * it never scrolls away and never takes room from the document. Column readers
+ * do not get one (SHARED-034's sign-off: a persistent bar costs vertical space a
+ * column cannot spare), which is why the rules are keyed on the class the
+ * overlay renders and not on the editor.
+ *
+ * No colour literal appears below: every value is a token, which is what makes
+ * the theme toggle total.
+ */
+
+.fmt-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Wraps rather than truncating: the bar is a row of controls, and a control
+     that has been squeezed out of sight is a control nobody can reach. */
+  flex-wrap: wrap;
+  padding: 6px 26px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex: none;
+}
+
+.fmt-bar .fmt-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fmt-bar .fmt-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 3px 6px;
+}
+
+.fmt-bar button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.fmt-bar button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* An active mark reads as active — the rider's own requirement, and the half a
+   toolbar that only writes would skip. */
+.fmt-bar button.on {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.fmt-bar button:focus-visible,
+.fmt-bar select:focus-visible,
+.fmt-bar input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fmt-bar select {
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.fmt-bar .fmt-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.fmt-bar .fmt-link input {
+  min-width: 220px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}

@@ -525,14 +525,14 @@ cheapest moment for that to happen.
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
 | UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | done | P2 | — |
-| UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
+| UI-100 | Focus mode shows two controls that read as the same exit | done | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc | done | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar | done | P1 | SHARED-035 |
 | SHARED-037 | The patch operation reaches §9.2 before it reaches the code | done | P1 | — |
 | CONTRACT-046 | The only body edit is a whole-body replacement | done | P1 | SHARED-037 |
 | SERVER-079 | Apply an anchored string patch through the ordinary write path | done | P1 | SHARED-037, CONTRACT-046 |
 | CLI-035 | `corpus doc patch` — edit a line without shipping the document | done | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
-| UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
+| UI-101 | Build the persistent formatting toolbar for focus mode | done | P1 | SHARED-034 |
 
 ## Phase 29 — Commit windows: a commit per act, not per save (2026-08-10)
 
@@ -1947,3 +1947,61 @@ recommendation.
 selection defects (`UI-060`, `UI-061`), and the agent-facing CLI debt
 (`CLI-047`, `CLI-051`, `CLI-023`, `CONTRACT-085`). Each is a different sentence.
 The CLI debt is deferred for the third time, deliberately and in writing.
+
+---
+
+## Phase 52 — You can format a document, and the file keeps what you did (2026-08-28, v0.28.0 scope)
+
+Two riders signed on **2026-08-12** have no code behind them, and they are one
+arc. §5 says Corpus markdown admits `<u>underline</u>`, `==highlight==` and
+Pandoc attribute markers, with a closed vocabulary of `color`, `highlight`,
+`align` and `indent`. §10 says focus mode carries a formatting toolbar that is
+always present above the document and reports what the text already is. The
+editor's schema has none of the three forms, and the app has only the floating
+toolbar that appears on selection.
+
+**They cannot be split.** §10 bounds the toolbar's controls to exactly what §5
+admits, so a toolbar built without the styling would be short of the set that
+was signed — a control that "did nothing at all while appearing to work" is the
+failure the rider names.
+
+**The grammar is stated once.** Three consumers need the same answer about what
+a marker is: the editor parses and prints them, the reader renders them, and the
+server strips them out of everything passage-shaped. `apps/server` may not import
+`packages/kit`, so the grammar goes in `packages/contract` — `headings.ts`'s
+reasoning (CONTRACT-070) applied to a second format rule.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CONTRACT-094 | The styling grammar, and the one strip transform | done | P0 | opus | — |
+| UI-182 | The editor round-trips inline styling | done | P0 | opus | CONTRACT-094 |
+| UI-183 | The editor round-trips a styled block | done | P0 | opus | CONTRACT-094, UI-182 |
+| UI-184 | Styled text renders, in both themes, through four named roles | done | P0 | opus | CONTRACT-094, UI-182, UI-183 |
+| SERVER-162 | Every passage-shaped answer serves the stripped form | done | P0 | opus | CONTRACT-094 |
+
+`UI-101` (the persistent toolbar) and `UI-100` (focus mode's two exits) keep
+their existing rows in Phase 14; `scripts/check-issues.ts` allows one row per
+id, so they are named here in prose and counted there. `UI-100` rides along
+because the toolbar rebuilds the header it lives in.
+
+**Out of scope, and named rather than implied**: §5's **style document**. Its
+third bullet gives the four colour roles a home in a `type: style` document with
+per-element font, size, weight and spacing, and §13 leans on the same map for
+publishing. It is a subsystem of its own. The toolbar needs only the roles,
+which ship as the workspace default — so a body that says `color="warning"`
+is correct in both themes today and re-themable later without touching any
+body, which is what §5 asks of the *body*. §5 keeps one unkept sentence, on the
+record.
+
+**The riskiest item is UI-183**, the fenced div. It is the one form with no
+mdast counterpart, and the round trip has to stay lossless against documents
+that already exist. If it slips it goes, and the toolbar's alignment and indent
+controls go with it. The inline marks carry the release's sentence — if those
+will not hold, there is no release to cut.
+
+**Also left out**: the agent-facing CLI debt (`CLI-051`, `CLI-047`, `CLI-023`,
+`CONTRACT-085`), deferred a fourth time and recommended as the next release;
+the source-trace selection defects (`UI-060`, `UI-061`), which live in threads
+rather than the editor; and the housekeeping rows (`UI-083`, `CONTRACT-066`,
+`SERVER-101`, `SERVER-106`, `SHARED-003`, `INFRA-018`, `SERVER-150`). `UI-081`
+stays blocked on one unsigned §10 sentence.

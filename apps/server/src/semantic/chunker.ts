@@ -23,6 +23,7 @@ import {
   overlapsRange,
   renderHeadingPath,
   splitLines,
+  stripStyling,
   type Line,
   type TextRange,
 } from "@corpus/contract";
@@ -75,6 +76,18 @@ export interface Chunk {
   readonly end: number;
   /** The chunk's text, verbatim — `body.slice(start, end)`. */
   readonly text: string;
+  /**
+   * The same text with SPEC.md §5's styling markers removed — what is indexed,
+   * embedded and served as a passage.
+   *
+   * `text` stays verbatim because {@link Chunk.start} and {@link Chunk.end}
+   * address the **file**, and a passage resolved by those offsets has to read
+   * the bytes that are there. What must never carry a marker is the index:
+   * §5 says "the index never embeds a marker, so styling a phrase never changes
+   * what it retrieves for", and an embedding computed over `[rate]{color="warning"}`
+   * is an embedding of attribute syntax.
+   */
+  readonly indexText: string;
 }
 
 export interface ChunkSource {
@@ -97,6 +110,11 @@ export interface ChunkSource {
 /**
  * A chunk's identity: `sha256(document id, heading path, content)`, truncated to
  * 128 bits.
+ *
+ * **Content is the stripped text**, not the file's bytes (SERVER-162). §5 says
+ * styling a phrase never changes what it retrieves for, and hashing the stripped
+ * form makes that true of the chunk's *identity* too — colouring a word no
+ * longer invalidates an embedding that would come back identical.
  *
  * Exactly three inputs, encoded through `JSON.stringify` so the encoding is
  * injective — a heading containing the separator, or a body containing the
@@ -227,14 +245,16 @@ export function chunkBody(body: string, source: ChunkSource): Chunk[] {
     for (const range of splitSection(lines, fenced, section)) {
       const text = body.slice(range.start, range.end);
       if (text.trim() === "") continue;
+      const indexText = stripStyling(text);
       chunks.push({
-        id: chunkId(source.docId, headings, text),
+        id: chunkId(source.docId, headings, indexText),
         ord: chunks.length,
         headings,
         headingPath: renderHeadingPath(headings, source.title),
         start: range.start,
         end: range.end,
         text,
+        indexText,
       });
     }
   }

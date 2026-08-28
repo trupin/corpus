@@ -16,6 +16,7 @@ import {
   DocumentIdSchema,
   TextQuoteSelectorSchema,
   ThreadAgentSchema,
+  stripStyling,
   type DocStatus,
   type TextQuoteSelector,
 } from "@corpus/contract";
@@ -268,8 +269,12 @@ const noIdReason = (relativePath: string): string =>
  * a row's document preview and its turn preview trim and truncate alike.
  */
 export function bodyExcerpt(body: string): string {
-  const start = body.search(/\S/);
-  return start < 0 ? "" : body.slice(start, start + EXCERPT_LENGTH);
+  // Stripped first (SERVER-162): an excerpt is a passage-shaped answer, and §5
+  // says every one of them serves the stripped form. A row that previewed
+  // `A [rate]{color="warning"} rose` would spend its 280 characters on syntax.
+  const stripped = stripStyling(body);
+  const start = stripped.search(/\S/);
+  return start < 0 ? "" : stripped.slice(start, start + EXCERPT_LENGTH);
 }
 
 /** Removes every row derived from the document currently projected at `path`. */
@@ -610,13 +615,18 @@ function insertSearchRows(
   // are the FTS layer's own markup, and text that carries them would come back
   // from `snippet()` marked as a hit the query never produced (SERVER-022
   // finding 11). The file itself keeps its bytes.
+  //
+  // The body goes through `stripStyling` first (SERVER-162, SPEC.md §5): a
+  // snippet is a passage-shaped answer and may carry no styling marker, and a
+  // search for a word inside a styled phrase has to find it. The title does
+  // not — a title is frontmatter, not a body, and §5 puts styling in bodies.
   for (const passage of passages) {
     insert.run(
       passage.ref,
       passage.kind,
       fields.id,
       passage.kind === "doc" ? toIndexableText(fields.title) : "",
-      toIndexableText(passage.body),
+      toIndexableText(stripStyling(passage.body)),
     );
   }
 }

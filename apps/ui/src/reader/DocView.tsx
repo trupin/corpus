@@ -6,7 +6,8 @@ import {
   type RevealTarget,
   type RowNotice,
 } from "@corpus/kit";
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
+import type { Editor } from "@tiptap/react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
 import { CommentsTab } from "../comments/CommentsTab";
@@ -159,6 +160,16 @@ export interface DocViewProps {
   readonly onFilters: (filters: CommentFilters) => void;
   /** Back to the document, then reveal this conversation at its anchor (UI-037). */
   readonly onReveal: (threadId: string) => void;
+  /**
+   * The live editor, republished for a host that draws chrome around it.
+   *
+   * Focus mode's formatting toolbar (UI-101) is above this component rather than
+   * inside it, and it needs the instance to report what the text already is.
+   * `null` is not an absence to work around — it is the gate: no editor is
+   * mounted for a `thread`, for a `view`, or while the comments list is showing,
+   * so a host that has none renders no toolbar and needs no predicate of its own.
+   */
+  readonly onEditor?: ((editor: Editor | null) => void) | undefined;
 }
 
 export function DocView({
@@ -171,6 +182,7 @@ export function DocView({
   onReveal,
   onNavigate,
   onNotify,
+  onEditor,
 }: DocViewProps): ReactElement {
   const { doc } = reader;
   /*
@@ -283,6 +295,18 @@ export function DocView({
     captureComment: anchors.captureComment,
     onNotify,
   });
+
+  /*
+   * The editor, handed to whatever chrome the host draws around this component
+   * (UI-101). An effect rather than a render-time call: publishing during render
+   * would set a parent's state while a child is rendering.
+   */
+  useEffect(() => {
+    onEditor?.(anchors.editor);
+    return () => {
+      onEditor?.(null);
+    };
+  }, [anchors.editor, onEditor]);
 
   useMarginLayout({
     main: anchors.mainRef,

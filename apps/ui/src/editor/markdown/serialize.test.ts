@@ -893,6 +893,11 @@ describe("blocks inside a list item", () => {
       ],
     },
     rawBlock: { type: NODE.rawBlock, attrs: { source: "<div>Bee raw.</div>" } },
+    styledBlock: {
+      type: NODE.styledBlock,
+      attrs: { align: "center", indent: null },
+      content: [paragraph(text("Bee centred."))],
+    },
   };
 
   /**

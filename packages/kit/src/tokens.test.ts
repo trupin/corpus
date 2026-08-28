@@ -96,6 +96,14 @@ const EXPECTED_TOKENS = [
   "--shadow-soft",
   "--signal",
   "--signal-wash",
+  "--style-accent",
+  "--style-accent-wash",
+  "--style-muted",
+  "--style-muted-wash",
+  "--style-positive",
+  "--style-positive-wash",
+  "--style-warning",
+  "--style-warning-wash",
   "--surface",
   "--surface-2",
 ];
@@ -155,7 +163,9 @@ describe("tokens.css vs design/index.html", () => {
 
   it("finds the prototype's own token blocks (guards the parser, not the port)", () => {
     expect(prototypeRoot.size).toBe(EXPECTED_TOKENS.length);
-    expect(prototypeDark.size).toBe(21);
+    // The dark blocks restate colours only, so they carry every token except the
+    // three type families — 21 before SPEC.md §5's styling roles, 29 after.
+    expect(prototypeDark.size).toBe(29);
   });
 
   it.each([...prototypeRoot].map(([name, value]) => [name, value] as const))(
@@ -173,4 +183,106 @@ describe("tokens.css vs design/index.html", () => {
       expect(kitDarkAttr.get(name)).toBe(value);
     },
   );
+});
+
+/**
+ * The four colour roles §5 names, measured rather than eyeballed.
+ *
+ * SPEC.md §5: "the roles are `accent`, `warning`, `positive` and `muted`, each
+ * with a light and a dark value, so a document that says `color="warning"`
+ * renders correctly in both". "Correctly" for a body is legible, and a styled
+ * phrase is ordinary body text at ordinary size — so WCAG AA for normal text,
+ * 4.5:1, is the bar. It is checked in both themes because a role that clears it
+ * in light and fails in dark is exactly the failure the two values exist to
+ * prevent, and no amount of looking at one theme finds it.
+ *
+ * This is why `--style-warning` is not simply `--signal`. The rust the product
+ * uses for chips and destructive actions measures **4.15:1** on the light
+ * background — fine behind a chip's larger, bolder label, and short of the bar
+ * for a sentence. The light role is darkened to **5.63:1**; the dark one, which
+ * measures **5.78:1**, is `--signal` unchanged.
+ */
+function channel(value: number): number {
+  const ratio = value / 255;
+  return ratio <= 0.03928 ? ratio / 12.92 : Math.pow((ratio + 0.055) / 1.055, 2.4);
+}
+
+function rgbOf(value: string): [number, number, number, number] {
+  const hex = /^#([0-9a-f]{6})$/i.exec(value.trim());
+  if (hex !== null) {
+    const digits = hex[1] ?? "";
+    return [
+      Number.parseInt(digits.slice(0, 2), 16),
+      Number.parseInt(digits.slice(2, 4), 16),
+      Number.parseInt(digits.slice(4, 6), 16),
+      1,
+    ];
+  }
+  const rgba = /^rgba?\(([^)]+)\)$/i.exec(value.trim());
+  if (rgba === null) throw new Error(`not a colour: ${value}`);
+  const parts = (rgba[1] ?? "").split(",").map((part) => Number(part.trim()));
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0, parts[3] ?? 1];
+}
+
+/** `over` composited onto `under`, so a translucent wash can be measured. */
+function composite(over: string, under: string): string {
+  const [r1, g1, b1, alpha] = rgbOf(over);
+  const [r0, g0, b0] = rgbOf(under);
+  const mix = (top: number, bottom: number): number =>
+    Math.round(top * alpha + bottom * (1 - alpha));
+  return `rgb(${String(mix(r1, r0))}, ${String(mix(g1, g0))}, ${String(mix(b1, b0))})`;
+}
+
+function luminance(value: string): number {
+  const [r, g, b] = rgbOf(value);
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrast(one: string, two: string): number {
+  const a = luminance(one);
+  const b = luminance(two);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+const ROLES = ["accent", "warning", "positive", "muted"] as const;
+const AA_NORMAL_TEXT = 4.5;
+
+describe("the styling colour roles are legible in both themes", () => {
+  const themes = [
+    ["light", () => kitRoot],
+    ["dark", () => kitDarkMedia],
+  ] as const;
+
+  it.each(themes.flatMap(([theme, block]) => ROLES.map((role) => [theme, role, block] as const)))(
+    "%s: color=%s clears AA on the page background",
+    (_theme, role, block) => {
+      const tokens = block();
+      const ink = tokens.get(`--style-${role}`);
+      const background = tokens.get("--bg");
+      expect(ink).toBeDefined();
+      expect(background).toBeDefined();
+      expect(contrast(ink ?? "", background ?? "")).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    },
+  );
+
+  it.each(themes.flatMap(([theme, block]) => ROLES.map((role) => [theme, role, block] as const)))(
+    "%s: text on the %s highlight clears AA",
+    (_theme, role, block) => {
+      const tokens = block();
+      const wash = tokens.get(`--style-${role}-wash`);
+      const background = tokens.get("--bg");
+      const ink = tokens.get("--ink");
+      expect(wash).toBeDefined();
+      // A highlight is a translucent band over the page, and the words on it
+      // stay `--ink`. Measuring the wash alone would say nothing about either.
+      const painted = composite(wash ?? "", background ?? "");
+      expect(contrast(ink ?? "", painted)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    },
+  );
+
+  it("keeps the two themes' values distinct, so neither is a copy of the other", () => {
+    for (const role of ROLES) {
+      expect(kitRoot.get(`--style-${role}`)).not.toBe(kitDarkMedia.get(`--style-${role}`));
+    }
+  });
 });
