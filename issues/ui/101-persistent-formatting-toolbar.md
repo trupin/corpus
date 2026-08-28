@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -146,8 +146,96 @@ focus mode and absent in a column.
 
 ## E2E Verification Log
 
-_[Agent fills: model run on, the control set built, per-control round-trip
-evidence including the markdown produced, observed output.]_
+### Post-Implementation Verification
+
+Implemented on: **opus**.
+
+**What shipped.** `apps/ui/src/editor/FormatToolbar.tsx`, rendered by
+`FocusMode` between the header and the scrolling surface, with its look ported
+from a new `.fmt-bar` block added to `design/index.html` in the same change.
+`DocView` gained one prop — the live editor — and **`null` is the whole gate**:
+it mounts an editor only for a body it edits, so a `thread`, a `view` and the
+comments list publish none and the toolbar is simply not there. No second
+predicate to keep in step with `editorHandlesType`.
+
+**The control set**, bounded by what round-trips through the file: block style
+(Text, Heading 1–6), bold, italic, strikethrough, underline, highlight, inline
+code, colour role, bulleted / numbered / task list, quote, code block,
+alignment, indent, link, image, table, divider, clear formatting. Undo and redo
+are **absent by decision**, not omission (SHARED-034's sign-off).
+
+**Unit.** `FormatToolbar.test.ts` — 7 passed, over the four readers that make the
+bar report state. The commands themselves are exercised in the browser, where a
+wrong one shows up in the saved file.
+
+**Browser** — `apps/ui/e2e/format-toolbar.spec.ts`, **9 passed**, six
+consecutive runs:
+
+```
+✓ is present without a mode or a click, and only in focus mode
+✓ the heading control names the block the caret is in
+✓ an active mark shows as active, and the caret moving is enough
+✓ a thread gets no toolbar, because no editor is mounted for one
+✓ a mark applied from the bar reaches the saved markdown
+✓ a colour role reaches the file as a named role, never a colour
+✓ alignment wraps the block, and clearing it removes the wrapper
+✓ the caret stays where it was when a button is pressed
+✓ the selection toolbar is unchanged and still carries Comment
+```
+
+### Three things the falsification found, and none of them were visible before it
+
+**1. A subscription that did nothing, and a comment that claimed it did.** The
+effect listened to both `selectionUpdate` and `transaction`, with a docblock
+saying a caret moved by arrow key fires only the first. Removing
+`selectionUpdate` failed **nothing**: a selection change *is* a transaction, and
+TipTap fires `transaction` for it. The subscription is gone and the comment now
+records the correction instead of the claim.
+
+**2. A cleared alignment became a quotation.** Removing the toolbar's "clear the
+last property → lift the block" branch also failed nothing — because the
+serializer was catching it, by printing an attribute-less styled block as a
+**blockquote**. That round-trips, and it silently turns a paragraph somebody
+un-centred into a quotation: valid markdown, different document, invisible to
+every round-trip test. The serializer now **unwraps** such a block, splicing its
+contents back into the parent, and the browser test asserts the wrapper is gone
+from the document as well as from the file.
+
+**3. A test that was failing for a reason that was not the toolbar.** The
+selection helper used `Home` then `Shift+End`. On macOS Chromium reads those as
+*document* navigation inside a contenteditable, so it sometimes selected two
+paragraphs and sometimes nothing — one run in three failed on a synchronisation
+point. Diagnosed rather than retried (INFRA-020): it is a triple click now, six
+consecutive green runs at a steady 8.7s, against 16.8s on the runs that were
+retrying.
+
+### One design call worth recording
+
+**A `<select>` cannot have its `mousedown` cancelled** — cancelling it is what
+stops the menu opening — so using one takes focus off the editor, the browser
+collapses the selection, and ProseMirror adopts the collapse. By the time
+`change` fires the user's words are no longer selected. The bar therefore
+**mirrors the selection as it changes** and restores it when focus has left the
+editor. Capturing on `mousedown` instead was the first attempt and is wrong: a
+keyboard user tabs to the control and changes it with the arrow keys, and no
+pointer event happens at all.
+
+### Acceptance, against the rider
+
+- Present with no mode and no click — asserted, and asserted absent in a column
+- Exactly the bounded control set, undo/redo excluded — enumerated above
+- Reports state: the heading control names the level, an active mark reads
+  active — both asserted from a caret move alone
+- Mark controls act on the selection, block controls on the block at the caret —
+  asserted through the saved file
+- Round-trips and stays clean markdown — the saved body carries `<u>…</u>` and
+  `{color="warning"}`, no hex, no `rgb`
+- The selection toolbar is unchanged and still carries Comment — asserted
+- Keyboard operable, and the caret does not move when a button is pressed —
+  asserted by typing straight afterwards
+- Markdown input shortcuts unchanged — the editor's own 1,011 tests still pass
+- Column readers unaffected — asserted
+- Not for a `thread` or a `view` — asserted, through the one gate
 
 ## Completion Checklist (domain agent)
 

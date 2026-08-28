@@ -412,7 +412,7 @@ describe("a styled block", () => {
     expect(blockAttrs(printed)).toHaveLength(1);
   });
 
-  it("drops a block carrying no layout at all", () => {
+  it("unwraps a block carrying no layout, rather than turning it into a quotation", () => {
     const doc = {
       type: "doc",
       content: [
@@ -423,6 +423,9 @@ describe("a styled block", () => {
         },
       ],
     };
-    expect(serializeDoc(doc as never)).toBe("> a\n");
+    // `::: {}` is not a fence the grammar admits, so the wrapper cannot survive.
+    // Printing it as a blockquote round-trips and quietly turns a paragraph the
+    // user un-centred into a quotation — valid markdown, different document.
+    expect(serializeDoc(doc as never)).toBe("a\n");
   });
 });

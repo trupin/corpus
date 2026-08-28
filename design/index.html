@@ -183,6 +183,17 @@
   .save-chip.saving { color: var(--sepia-ink); }
   .save-chip.saved { color: var(--good); }
 
+  /* ── Focus mode's persistent formatting toolbar (SPEC.md §10, signed 2026-08-12) ── */
+  .fmt-bar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 6px 26px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; }
+  .fmt-bar .fmt-group { display: flex; align-items: center; gap: 2px; }
+  .fmt-bar .fmt-divider { width: 1px; align-self: stretch; background: var(--line); margin: 3px 6px; }
+  .fmt-bar button { min-width: 26px; height: 26px; padding: 0 6px; border-radius: 6px; font-size: 12.5px; color: var(--ink-2); background: none; border: 0; cursor: pointer; }
+  .fmt-bar button:hover { background: var(--surface-2); color: var(--ink); }
+  .fmt-bar button.on { background: var(--accent-wash); color: var(--accent-ink); }
+  .fmt-bar button:disabled { opacity: 0.4; cursor: default; }
+  .fmt-bar select { height: 26px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-2); font-family: var(--sans); font-size: 12px; padding: 0 4px; }
+  .fmt-bar .fmt-link { display: flex; align-items: center; gap: 4px; padding: 4px 6px; }
+  .fmt-bar .fmt-link input { height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 11.5px; padding: 0 6px; min-width: 220px; }
   .sel-toolbar { position: fixed; z-index: 50; display: none; gap: 2px; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); padding: 4px; }
   .sel-toolbar.open { display: flex; }
   .sel-toolbar button { padding: 4px 10px; border-radius: 6px; font-size: 12.5px; color: var(--ink-2); }
@@ -619,6 +630,42 @@
     <button class="back" data-close-focus>✕ Close</button>
     <span class="focus-hint">esc closes · click anywhere to edit</span>
     <span class="reader-id" id="focus-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments data-tab="document" aria-pressed="false" hidden>💬 <span class="comments-count">0</span></button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button>
+  </div>
+  <div class="fmt-bar" role="toolbar" aria-label="Formatting">
+    <div class="fmt-group">
+      <select aria-label="Block style"><option>Text</option><option selected>Heading 2</option><option>Heading 3</option></select>
+    </div>
+    <span class="fmt-divider"></span>
+    <div class="fmt-group">
+      <button class="on" aria-pressed="true" title="Bold"><b>B</b></button>
+      <button aria-pressed="false" title="Italic"><i>I</i></button>
+      <button aria-pressed="false" title="Strikethrough"><s>S</s></button>
+      <button aria-pressed="false" title="Underline"><u>U</u></button>
+      <button aria-pressed="false" title="Highlight">▮</button>
+      <button aria-pressed="false" title="Inline code">&lt;/&gt;</button>
+      <select aria-label="Text colour"><option>Colour</option><option>Accent</option><option>Warning</option><option>Positive</option><option>Muted</option></select>
+    </div>
+    <span class="fmt-divider"></span>
+    <div class="fmt-group">
+      <button aria-pressed="false" title="Bulleted list">•</button>
+      <button aria-pressed="false" title="Numbered list">1.</button>
+      <button aria-pressed="false" title="Checklist">☑</button>
+      <button aria-pressed="false" title="Quote">❝</button>
+      <button aria-pressed="false" title="Code block">▤</button>
+    </div>
+    <span class="fmt-divider"></span>
+    <div class="fmt-group">
+      <select aria-label="Alignment"><option>Align</option><option>Left</option><option>Centre</option><option>Right</option><option>Justify</option></select>
+      <select aria-label="Indent"><option>Indent</option><option>1</option><option>2</option><option>3</option></select>
+    </div>
+    <span class="fmt-divider"></span>
+    <div class="fmt-group">
+      <button aria-pressed="false" title="Link">🔗</button>
+      <button title="Image">🖼</button>
+      <button title="Table">▦</button>
+      <button title="Divider">—</button>
+      <button title="Clear formatting">⌫</button>
+    </div>
   </div>
   <div class="focus-scroll" id="focus-scroll"><div class="focus-inner" id="focus-inner"></div></div>
 </div>

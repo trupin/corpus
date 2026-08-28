@@ -212,9 +212,34 @@ export function toMdast(doc: PmNode): MdRoot {
   return { type: "root", children: blockChildren(doc.content ?? []) };
 }
 
+/**
+ * A styled block carrying neither `align` nor `indent`.
+ *
+ * There is no such thing in the file: `::: {}` is not a fence
+ * `@corpus/contract` admits, and the two properties are all §5 gives the form.
+ * A block that has lost both — the toolbar's "clear the alignment" on a block
+ * that had nothing else — is therefore **unwrapped**, its contents spliced into
+ * the parent exactly where they were.
+ *
+ * The rejected alternative was printing it as a blockquote, which is what this
+ * used to do. It round-trips, and it silently turns a paragraph the user
+ * un-centred into a quotation — a change of meaning nobody asked for, and one
+ * the round-trip tests cannot see because the result is valid markdown.
+ */
+function bareStyledBlock(node: PmNode): boolean {
+  if (node.type !== NODE.styledBlock) return false;
+  return (
+    optionalStringAttr(attr(node, "align")) === null && typeof attr(node, "indent") !== "number"
+  );
+}
+
 function blockChildren(nodes: readonly PmNode[]): MdNode[] {
   const out: MdNode[] = [];
   for (const child of nodes) {
+    if (bareStyledBlock(child)) {
+      out.push(...blockChildren(child.content ?? []));
+      continue;
+    }
     const mapped = blockNode(child);
     if (mapped !== null) out.push(mapped);
   }
@@ -243,16 +268,12 @@ function blockNode(node: PmNode): MdNode | null {
       if (align !== null) attrs.align = align as StyleAlign;
       const indent = attr(node, "indent");
       if (typeof indent === "number") attrs.indent = indent as StyleIndent;
-      const children = blockChildren(node.content ?? []);
-      // A block with neither property says nothing the file can hold; its
-      // contents stay where they are rather than gaining two bare fences.
-      if (align === null && typeof indent !== "number") {
-        return { type: "blockquote", children };
-      }
+      // A block carrying neither property is handled in `blockChildren`, which
+      // splices its contents into their parent — see {@link bareStyledBlock}.
       return {
         type: STYLE_BLOCK_TYPE,
         data: { fence: `::: {${formatStyleAttributes(attrs)}}` },
-        children,
+        children: blockChildren(node.content ?? []),
       };
     }
     case NODE.bulletList:

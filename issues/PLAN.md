@@ -525,14 +525,14 @@ cheapest moment for that to happen.
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
 | UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
 | UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | done | P2 | — |
-| UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
+| UI-100 | Focus mode shows two controls that read as the same exit | done | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc | done | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar | done | P1 | SHARED-035 |
 | SHARED-037 | The patch operation reaches §9.2 before it reaches the code | done | P1 | — |
 | CONTRACT-046 | The only body edit is a whole-body replacement | done | P1 | SHARED-037 |
 | SERVER-079 | Apply an anchored string patch through the ordinary write path | done | P1 | SHARED-037, CONTRACT-046 |
 | CLI-035 | `corpus doc patch` — edit a line without shipping the document | done | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
-| UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
+| UI-101 | Build the persistent formatting toolbar for focus mode | done | P1 | SHARED-034 |
 
 ## Phase 29 — Commit windows: a commit per act, not per save (2026-08-10)
 
@@ -1973,11 +1973,11 @@ reasoning (CONTRACT-070) applied to a second format rule.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| CONTRACT-094 | The styling grammar, and the one strip transform | todo | P0 | opus | — |
-| UI-182 | The editor round-trips inline styling | todo | P0 | opus | CONTRACT-094 |
-| UI-183 | The editor round-trips a styled block | todo | P0 | opus | CONTRACT-094, UI-182 |
-| UI-184 | Styled text renders, in both themes, through four named roles | todo | P0 | opus | CONTRACT-094, UI-182, UI-183 |
-| SERVER-162 | Every passage-shaped answer serves the stripped form | todo | P0 | opus | CONTRACT-094 |
+| CONTRACT-094 | The styling grammar, and the one strip transform | done | P0 | opus | — |
+| UI-182 | The editor round-trips inline styling | done | P0 | opus | CONTRACT-094 |
+| UI-183 | The editor round-trips a styled block | done | P0 | opus | CONTRACT-094, UI-182 |
+| UI-184 | Styled text renders, in both themes, through four named roles | done | P0 | opus | CONTRACT-094, UI-182, UI-183 |
+| SERVER-162 | Every passage-shaped answer serves the stripped form | done | P0 | opus | CONTRACT-094 |
 
 `UI-101` (the persistent toolbar) and `UI-100` (focus mode's two exits) keep
 their existing rows in Phase 14; `scripts/check-issues.ts` allows one row per
