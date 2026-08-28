@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -224,7 +224,33 @@ tests that go red.
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+`packages/contract/src/styled.test.ts` — **55 tests, all passing**:
+
+```
+Test Files  1 passed (1)
+     Tests  55 passed (55)
+```
+
+**Falsification, three ways.** Each break was made in the module and the suite
+re-run, so no assertion below is one that passes whether or not the code is
+there.
+
+| Break | Result |
+| --- | --- |
+| Drop the inline/block position partition in `parseStyleAttributes` | 4 failed |
+| `stripStyling` passes no code ranges to the inline pass | 1 failed |
+| Remove the highlight's opening flanking rule | 1 failed |
+
+Restored, 55 passed. The four the position partition catches are the ones that
+matter most: `[a]{align="center"}` and `::: {color="accent"}` both become
+ordinary text, which is what stops a marker rendering as nothing while looking
+like it worked.
+
+**Identity is asserted, not assumed.** `stripStyling` over a CRLF body with no
+marker returns the same string by `toBe`, so the transform that runs over every
+body at projection time cannot normalise a line ending.
 
 ## Completion Checklist (domain agent)
 
