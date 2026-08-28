@@ -2005,3 +2005,23 @@ the source-trace selection defects (`UI-060`, `UI-061`), which live in threads
 rather than the editor; and the housekeeping rows (`UI-083`, `CONTRACT-066`,
 `SERVER-101`, `SERVER-106`, `SHARED-003`, `INFRA-018`, `SERVER-150`). `UI-081`
 stays blocked on one unsigned §10 sentence.
+
+**No pr-reviewer ran on PR #68**, the same standing directive as #62 through
+#67. What stood in: `CI / validate` green on the merged head — build, lint,
+format, typecheck, 16,111 unit tests and the merged ≥90% coverage gate — the
+full local gate (669 browser specs in three shards), and twenty-one
+falsifications, each breaking a fix on purpose and naming how many tests went
+red.
+
+**Three of those falsifications turned nothing red, and each was a finding.** An
+event subscription that claimed to catch caret moves and caught nothing was
+deleted. A cleared alignment was printing as a **blockquote** — valid markdown,
+different document, invisible to every round-trip test — and now unwraps. And a
+fix written for link removal was **reverted** after its falsification came back
+clean: TipTap's own `unsetLink` already extends an empty mark range, so the fix
+and its confident comment were both wrong.
+
+**Two published claims were corrected before the tag**: the release said a
+workspace would re-embed once, which is false — a marker-free body strips to
+itself, so no chunk id moves — and the contrast figures were computed by hand
+and were off by a tenth.
