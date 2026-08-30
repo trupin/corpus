@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done — **answered and built by CLI-074 and AGENT-058, v0.29.0**
 
 ## Priority
 

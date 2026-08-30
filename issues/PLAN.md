@@ -214,7 +214,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | done | P1 | — |
 | UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | done | P2 | UI-005 |
 | UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | done | P2 | UI-005 |
-| CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
+| CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | done | P2 | CLI-003 |
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | done | P2 | CLI-001 |
@@ -744,7 +744,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | done | P2 | SERVER-112 |
 | CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
-| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
+| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | done | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | done | P1 | — |
 | CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | done | P1 | — |
 
@@ -1014,7 +1014,7 @@ uncertain.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
+| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | done | P1 | — |
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
@@ -1644,7 +1644,7 @@ user, not work).
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | done | P2 | opus | — |
 | CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | done | P1 | opus | SERVER-144 |
-| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
+| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | done | P2 | opus | SERVER-132 |
 | SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
@@ -2055,8 +2055,8 @@ itself.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| CLI-074 | A value the shell never sees | todo | P0 | fable | — |
-| AGENT-058 | The skills carry somebody's words by path, not through the shell | todo | P0 | fable | CLI-074 |
+| CLI-074 | A value the shell never sees | done | P0 | fable | — |
+| AGENT-058 | The skills carry somebody's words by path, not through the shell | done | P0 | fable | CLI-074 |
 
 `CLI-051` keeps its existing row in the unrowed backlog, `CLI-047` and `CLI-023`
 keep theirs, and `CONTRACT-085` keeps its Phase 45 row;
