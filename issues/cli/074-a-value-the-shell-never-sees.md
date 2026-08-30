@@ -250,6 +250,33 @@ break in it. One trailing newline is now removed — which is also what
 `$(cat …)` already did, so a rewritten skill gets the value it got before. The
 **body** still keeps its bytes, because a document's final newline is content.
 
+### The batch did not carry it, and the skill said it did
+
+Found by testing a claim I had already written into the orchestrate skill: *an
+entry carries somebody's words the same way any other command does —
+`"--flag-file", "title=…"`*. It did not. `corpus batch` parses each entry through
+`parseFlags` in a synchronous pre-flight, and resolution reads files, so nothing
+resolved and the entry failed with `--title is required.`
+
+Correcting the prose was the wrong fix. A batch is the agent's **efficient**
+path, and if the mechanism did not work there the safe path and the fast path
+would be different paths — an agent told to pick one picks the fast one, and the
+alternative inside a batch is a `-m` value escaped into JSON, which is the class
+of hazard this flag removes.
+
+So the batch resolves them, in **one pass of its own before the first command
+runs**. `prepareEntry` stays synchronous, because it is the pass that refuses a
+malformed batch before anything happens and an entry's refusal must not wait on
+another entry's disk. An unreadable path refuses the whole batch at exit `2`,
+and the test asserts that nothing ran first:
+
+```
+$ corpus batch --from agent < batch.json
+──── 1: doc create --type note --flag-file title=… ────
+created doc_bgstq7ei — data/docs/inbox/a-title-from-a-file-inside-a-batch-18-400.md
+title: A title from a file, inside a batch — $18,400
+```
+
 ### And the CLI's own hygiene rule caught the docblock
 
 `hygiene.test.ts` refuses any heredoc in the CLI's source that terminates with
