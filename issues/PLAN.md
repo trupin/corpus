@@ -2025,3 +2025,61 @@ and its confident comment were both wrong.
 workspace would re-embed once, which is false — a marker-free body strips to
 itself, so no chunk id moves — and the contrast figures were computed by hand
 and were off by a tenth.
+
+---
+
+## Phase 53 — Your words reach a document as your words (2026-08-30, v0.29.0 scope)
+
+`CLI-051` was carried for four releases as "CLI ergonomics debt". Reading it
+properly, it is not debt: it is a security defect with a proof of concept
+measured on 2026-08-19 and reproduced again on 2026-08-30 against v0.28.0.
+
+**The mechanism.** The agent must build a person's words into a shell heredoc,
+and the skills tell it exactly how. If those words contain a line reading the
+terminator, the heredoc closes early, **the lines after it run as commands**, and
+their stdout is captured into the value. The recorded run created a file, exited
+`0`, and committed a document whose tail was intact — so nothing read as
+truncated. A dropped tail is noticeable. A missing middle with a command's output
+in its place is not.
+
+The arrival vector is ordinary: somebody pastes a terminal transcript into a
+conversation.
+
+**Guidance cannot close it**, and that is why this is a release rather than a
+paragraph. AGENT-035's rule is about how the agent *builds* a value, and the
+agent builds this one correctly. The content decides the outcome.
+
+**The arc is two issues and neither is optional.** A mechanism nobody reaches for
+is worse than none, because it looks like the problem is solved — CLI-051 says so
+itself.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CLI-074 | A value the shell never sees | todo | P0 | fable | — |
+| AGENT-058 | The skills carry somebody's words by path, not through the shell | todo | P0 | fable | CLI-074 |
+
+`CLI-051` keeps its existing row in the unrowed backlog, `CLI-047` and `CLI-023`
+keep theirs, and `CONTRACT-085` keeps its Phase 45 row;
+`scripts/check-issues.ts` allows one row per id, so all four are named here in
+prose and counted there.
+
+**Riding along**, and all of it is the debt the release was originally proposed
+as — three issues in files the arc already opens:
+
+- **`CLI-047`** — `doc create` prints no key, so a create-then-edit turn re-reads
+  bytes it just wrote
+- **`CLI-023`** — no `corpus tree` verb, so the agent cannot see folder structure
+  at all
+- **`CONTRACT-085`** — `doc check` cannot name a malformed `resident:` block; the
+  finding lives in the projection doctor, which is not where anyone looks
+
+**The riskiest item is AGENT-058.** Sixty-four heredocs across four files, and
+its hardest criterion — no behavioural rule weakened — is one no green suite can
+confirm. If it slips, the three ride-alongs go first and it finishes; if the
+*mechanism* will not hold there is no release, because the debt alone does not
+earn one.
+
+**Left out**: the source-trace selection defects (`UI-060`, `UI-061`), which live
+in threads and are their own sentence, and the housekeeping rows (`UI-083`,
+`CONTRACT-066`, `SERVER-101`, `SERVER-106`, `SHARED-003`, `INFRA-018`,
+`SERVER-150`). `UI-081` stays blocked on one unsigned §10 line.
