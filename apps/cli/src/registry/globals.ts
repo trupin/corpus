@@ -18,6 +18,24 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
       "no follow-up beyond the message, so absence never has to be guessed at.",
   },
   {
+    // Spelled literally, not imported: `parse-args.ts` imports this module, so
+    // taking its constant here would be a cycle evaluated at module level.
+    // `globals.test.ts` asserts the two agree.
+    name: "flag-file",
+    type: "string",
+    repeated: true,
+    valueName: "flag=path",
+    description:
+      "Take a flag's value from a file, byte for byte: `--flag-file title=/tmp/title.txt`. " +
+      "Repeatable, and it works for any flag on any command that takes text. " +
+      "**Use it for words somebody else wrote.** A value passed this way never goes through a " +
+      "shell, so nothing in it can be expanded, quoted or run — including a line that happens to " +
+      "read like the end of a heredoc, which is how a pasted terminal transcript once executed " +
+      "its own commands and put their output in a document as though a person had written it " +
+      "(CLI-051). Giving both the flag and its `--flag-file` is refused rather than one silently " +
+      "winning.",
+  },
+  {
     name: "workspace",
     type: "string",
     valueName: "path",

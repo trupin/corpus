@@ -19,6 +19,21 @@ export class ParsedFlags {
     this.#values = values;
   }
 
+  /**
+   * The same flags with one value replaced — how `--flag-file` puts a file's
+   * bytes where the flag's value would have been (CLI-074).
+   *
+   * A new instance rather than a mutation: a handler reads its flags through
+   * this class and must not be able to tell whether a value arrived on the
+   * command line or out of a file. That indistinguishability is the whole
+   * mechanism, and it is what makes it work for verbs nobody has written yet.
+   */
+  with(name: string, value: FlagValue): ParsedFlags {
+    const next = new Map(this.#values);
+    next.set(name, value);
+    return new ParsedFlags(next);
+  }
+
   boolean(name: string): boolean {
     const value = this.#values.get(name);
     return typeof value === "boolean" ? value : false;
@@ -96,11 +111,49 @@ export function mergedFlags(flags: readonly FlagSpec[]): readonly FlagSpec[] {
 export interface ParsedFlagsAndPositionals {
   readonly flags: ParsedFlags;
   readonly positionals: readonly string[];
+  /**
+   * Flag names the caller actually typed.
+   *
+   * Distinct from "has a value", because {@link applyDefaults} gives absent
+   * flags their defaults — so a flag can hold a value nobody asked for. The
+   * difference matters to exactly one caller: `--flag-file title=…` beside
+   * `--title` is a conflict, and a default must not be mistaken for one.
+   */
+  readonly provided: ReadonlySet<string>;
 }
 
 export function parseCommandInput(target: ParseTarget, tokens: readonly string[]): ParsedInput {
   const { flags, positionals } = parseFlags(target, tokens);
   return { args: bindPositionals(target, positionals), flags };
+}
+
+/** The flag `--flag-file` is, spelled once. */
+export const FLAG_FILE = "flag-file";
+
+/** One `--flag-file <name>=<path>`, split but not yet read. */
+export interface FlagFileRequest {
+  readonly name: string;
+  readonly path: string;
+}
+
+/**
+ * The `<name>=<path>` pairs the caller gave, split on the **first** `=`.
+ *
+ * First, because a flag name never contains one and a path may. Splitting on the
+ * last would make `--flag-file title=/tmp/a=b.txt` name a flag called
+ * `title=/tmp/a`, which exists nowhere and would be reported as a misspelling of
+ * something the caller never typed.
+ */
+export function flagFileRequests(flags: ParsedFlags): readonly FlagFileRequest[] {
+  return flags.strings(FLAG_FILE).map((raw) => {
+    const separator = raw.indexOf("=");
+    if (separator <= 0) {
+      throw new UsageError(`--${FLAG_FILE} ${raw} is not <flag>=<path>.`, {
+        hint: `Usage: --${FLAG_FILE} title=/tmp/title.txt`,
+      });
+    }
+    return { name: raw.slice(0, separator), path: raw.slice(separator + 1) };
+  });
 }
 
 /**
@@ -119,6 +172,7 @@ export function parseFlags(
   );
 
   const values = new Map<string, FlagValue>();
+  const provided = new Set<string>();
   const positionals: string[] = [];
   const remaining = [...tokens];
   let literal = false;
@@ -155,6 +209,8 @@ export function parseFlags(
       throw unknownFlagError(token, target.name, specs);
     }
 
+    provided.add(spec.name);
+
     if (spec.type === "boolean") {
       values.set(spec.name, readBoolean(spec, inlineValue));
       continue;
@@ -178,7 +234,7 @@ export function parseFlags(
   }
 
   applyDefaults(values, specs);
-  return { flags: new ParsedFlags(values), positionals };
+  return { flags: new ParsedFlags(values), positionals, provided };
 }
 
 /**

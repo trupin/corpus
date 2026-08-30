@@ -448,10 +448,10 @@ when it is a whole-body edit under a key, the reply's shape, `--model` naming wh
 ran, the trace line on a turn that wrote, a labeled fence for anything the person will lift
 and reuse and the backtick count that keeps it in one piece, and a form when the turn's
 purpose is to get something from them. One rule in that turn belongs to neither skill: a value
-you carry out of this conversation into a flag — a title, a tag, an `--extra` value — is built
-in a heredoc and passed by name, never quoted into the command. **What the shell does to a
-value you quote into a flag is the orchestrate skill's to state, and it is stated there
-alone.**
+you carry out of this conversation into a flag — a title, a tag, an `--extra` value — is
+written to a file and named with `--flag-file`, never quoted into the command. **What the
+shell does to a value you quote into a flag is the orchestrate skill's to state, and it is
+stated there alone.**
 
 What being resident adds is context you already have and must actually use. You have read
 every turn of this conversation and you wrote half of them. Do not re-derive from scratch

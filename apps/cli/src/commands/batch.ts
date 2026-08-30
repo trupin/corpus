@@ -22,7 +22,14 @@ import {
   type InputDependencies,
 } from "../input.js";
 import { createNestedOutput } from "../output.js";
-import { bindPositionals, parseFlags, type ParsedArgs, type ParsedFlags } from "../parse-args.js";
+import {
+  bindPositionals,
+  parseFlags,
+  type ParsedArgs,
+  type ParsedFlags,
+  type ParsedFlagsAndPositionals,
+} from "../parse-args.js";
+import { resolveFlagFiles } from "../flag-file.js";
 import type {
   CommandSpec,
   WorkspaceCommandContext,
@@ -99,6 +106,17 @@ interface PreparedEntry {
   readonly args: ParsedArgs;
   readonly flags: ParsedFlags;
   /**
+   * The whole parse, kept so `--flag-file` can be resolved (CLI-074).
+   *
+   * Resolution reads files and is therefore async, while {@link prepareEntry} is
+   * deliberately not: it is the pass that refuses a malformed batch **before
+   * anything runs**, and an entry's refusal must not wait on another entry's
+   * disk. So the parse is carried here and the reads happen in one pass of their
+   * own, still before the first command — which is the property the batch's
+   * grammar actually promises.
+   */
+  readonly parsed: ParsedFlagsAndPositionals;
+  /**
    * The entry's own `--from` if it names one, otherwise the batch's resolution
    * (`--from` on the batch ?? `CORPUS_FROM` ?? `user`) — the same chain a lone
    * invocation walks, with the batch standing in for the shell. Resolved in
@@ -109,12 +127,39 @@ interface PreparedEntry {
   readonly label: string;
 }
 
+/**
+ * Every entry's `--flag-file` read, before the first command runs.
+ *
+ * A batch is how the agent carries somebody's words efficiently, so the flag has
+ * to work here or the safe path and the fast path are different paths — and an
+ * agent told to pick one will pick the fast one. A failure refuses the whole
+ * batch, exactly as a malformed entry does: an unreadable path is the author's
+ * mistake, and finding it after three writes have landed is the partial state a
+ * pre-flight exists to prevent.
+ */
+async function resolveEntryFiles(
+  prepared: readonly PreparedEntry[],
+  context: WorkspaceCommandContext,
+  dependencies: InputDependencies,
+): Promise<readonly PreparedEntry[]> {
+  const out: PreparedEntry[] = [];
+  for (const entry of prepared) {
+    const flags = await resolveFlagFiles(entry.command, entry.parsed, context, dependencies);
+    out.push({ ...entry, flags });
+  }
+  return out;
+}
+
 export async function runBatch(
   context: WorkspaceCommandContext,
   dependencies: InputDependencies = {},
 ): Promise<void> {
   const entries = await readBatchInput(dependencies);
-  const prepared = entries.map((argv, index) => prepareEntry(context, argv, index + 1));
+  const prepared = await resolveEntryFiles(
+    entries.map((argv, index) => prepareEntry(context, argv, index + 1)),
+    context,
+    dependencies,
+  );
 
   const timeoutMs = context.flags.number("timeout");
   const clients = new Map<string, CliClient>();
@@ -331,7 +376,7 @@ function prepareEntry(
     );
   }
 
-  let parsed: { readonly flags: ParsedFlags; readonly positionals: readonly string[] };
+  let parsed: ParsedFlagsAndPositionals;
   let args: ParsedArgs;
   let actor: WorkspaceCommandContext["actor"];
   try {
@@ -361,7 +406,7 @@ function prepareEntry(
     }
   }
 
-  return { argv, command: spec, args, flags: parsed.flags, actor, label };
+  return { argv, command: spec, args, flags: parsed.flags, parsed, actor, label };
 }
 
 /**

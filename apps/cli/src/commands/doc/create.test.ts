@@ -15,7 +15,7 @@ const CREATED = { doc: DOC, warnings: [] };
 afterEach(closeStubServers);
 
 describe("corpus doc create", () => {
-  it("posts every documented flag and prints the new id and path", async () => {
+  it("posts every documented flag and prints the new id, the path and the key", async () => {
     const stub = await startStubServer(jsonResponder(201, CREATED));
     const harness = stubContext(stub, {
       flags: {
@@ -41,7 +41,13 @@ describe("corpus doc create", () => {
       tags: ["finance", "housing"],
       due: "2026-09-01",
     });
-    expect(harness.stdout()).toBe("created doc_a1b2c3 — data/docs/finance/mortgage-options.md\n");
+    // The key on the line after the confirmation (CLI-047), in the same shape
+    // every other write prints one — so a create-then-edit turn needs no read
+    // between the two, and an example that shows one is checkable against this.
+    expect(harness.stdout()).toBe(
+      "created doc_a1b2c3 — data/docs/finance/mortgage-options.md\n" +
+        "key 3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3\n",
+    );
   });
 
   it("omits `body` entirely when no source was given, so the template pre-fills", async () => {
@@ -293,7 +299,10 @@ describe("corpus doc create", () => {
         title: "Analyst",
       });
       // The reported path is the server's, never one the CLI assembled.
-      expect(harness.stdout()).toBe("created doc_a1b2c3 — .claude/agents/analyst.md\n");
+      expect(harness.stdout()).toBe(
+        "created doc_a1b2c3 — .claude/agents/analyst.md\n" +
+          "key 3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3\n",
+      );
     });
 
     it("reports the agent-def's real path under --json too", async () => {
@@ -409,7 +418,10 @@ describe("corpus doc create", () => {
         title: "Fin thread",
         folder: "finance",
       });
-      expect(harness.stdout()).toBe("created th_a1b2c3 — data/threads/th_a1b2c3.md\n");
+      expect(harness.stdout()).toBe(
+        "created th_a1b2c3 — data/threads/th_a1b2c3.md\n" +
+          "key 3b2ec1f04d75a2c6ef2b8b9a1f0c4d3e5a6b7c8d9e0f1a2b3c4d5e6f708192a3\n",
+      );
     });
 
     it("says in the help which root each type lands in, and who wins", () => {

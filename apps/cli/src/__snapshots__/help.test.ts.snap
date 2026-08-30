@@ -14,14 +14,15 @@ Flags:
   --aside <string>  **A digression to include**, repeatably. (repeatable)
 
 Global flags:
-  --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
-  --workspace <path>   Workspace to act on, instead of searching upward from the current directory.
-  --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
-  --verbose            Include the stack trace when an unexpected internal error occurs.
-  --no-color           Never emit ANSI colour.
-  -h, --help[=<mode>]  Show help for the current topic or command and exit.
-  --version            Print the version of the \`corpus\` tool and exit.
+  --from <user|agent>      Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`.
+  --json                   Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --flag-file <flag=path>  Take a flag's value from a file, byte for byte: \`--flag-file title=/tmp/title.txt\`. (repeatable)
+  --workspace <path>       Workspace to act on, instead of searching upward from the current directory.
+  --timeout <ms>           How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose                Include the stack trace when an unexpected internal error occurs.
+  --no-color               Never emit ANSI colour.
+  -h, --help[=<mode>]      Show help for the current topic or command and exit.
+  --version                Print the version of the \`corpus\` tool and exit.
 
 Run \`corpus expound --help\` for the full text and examples.
 "
@@ -44,14 +45,15 @@ Flags:
   --tag <string>    A repeatable string flag. (repeatable)
 
 Global flags:
-  --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
-  --workspace <path>   Workspace to act on, instead of searching upward from the current directory.
-  --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
-  --verbose            Include the stack trace when an unexpected internal error occurs.
-  --no-color           Never emit ANSI colour.
-  -h, --help[=<mode>]  Show help for the current topic or command and exit.
-  --version            Print the version of the \`corpus\` tool and exit.
+  --from <user|agent>      Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`.
+  --json                   Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --flag-file <flag=path>  Take a flag's value from a file, byte for byte: \`--flag-file title=/tmp/title.txt\`. (repeatable)
+  --workspace <path>       Workspace to act on, instead of searching upward from the current directory.
+  --timeout <ms>           How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose                Include the stack trace when an unexpected internal error occurs.
+  --no-color               Never emit ANSI colour.
+  -h, --help[=<mode>]      Show help for the current topic or command and exit.
+  --version                Print the version of the \`corpus\` tool and exit.
 
 Run \`corpus everything --help\` for the full text and examples.
 "
@@ -76,14 +78,15 @@ Flags:
   --tag <string>    A repeatable string flag. (repeatable)
 
 Global flags:
-  --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
-  --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
-  --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
-  --verbose            Include the stack trace when an unexpected internal error occurs.
-  --no-color           Never emit ANSI colour. Implied whenever stdout is not a TTY.
-  -h, --help[=<mode>]  Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
-  --version            Print the version of the \`corpus\` tool and exit.
+  --from <user|agent>      Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
+  --json                   Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
+  --flag-file <flag=path>  Take a flag's value from a file, byte for byte: \`--flag-file title=/tmp/title.txt\`. Repeatable, and it works for any flag on any command that takes text. **Use it for words somebody else wrote.** A value passed this way never goes through a shell, so nothing in it can be expanded, quoted or run — including a line that happens to read like the end of a heredoc, which is how a pasted terminal transcript once executed its own commands and put their output in a document as though a person had written it (CLI-051). Giving both the flag and its \`--flag-file\` is refused rather than one silently winning. (repeatable)
+  --workspace <path>       Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>           How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose                Include the stack trace when an unexpected internal error occurs.
+  --no-color               Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help[=<mode>]      Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
+  --version                Print the version of the \`corpus\` tool and exit.
 
 Examples:
   # Act loudly on doc-1.
@@ -106,14 +109,15 @@ Topics:
   widget  Manage widgets.
 
 Global flags:
-  --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
-  --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
-  --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
-  --verbose            Include the stack trace when an unexpected internal error occurs.
-  --no-color           Never emit ANSI colour. Implied whenever stdout is not a TTY.
-  -h, --help[=<mode>]  Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
-  --version            Print the version of the \`corpus\` tool and exit.
+  --from <user|agent>      Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
+  --json                   Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
+  --flag-file <flag=path>  Take a flag's value from a file, byte for byte: \`--flag-file title=/tmp/title.txt\`. Repeatable, and it works for any flag on any command that takes text. **Use it for words somebody else wrote.** A value passed this way never goes through a shell, so nothing in it can be expanded, quoted or run — including a line that happens to read like the end of a heredoc, which is how a pasted terminal transcript once executed its own commands and put their output in a document as though a person had written it (CLI-051). Giving both the flag and its \`--flag-file\` is refused rather than one silently winning. (repeatable)
+  --workspace <path>       Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>           How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose                Include the stack trace when an unexpected internal error occurs.
+  --no-color               Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help[=<mode>]      Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
+  --version                Print the version of the \`corpus\` tool and exit.
 
 Run \`corpus <command> --help\` or \`corpus <topic> --help\` for details.
 Add \`=brief\` to any of them for names and one line each.
@@ -134,14 +138,15 @@ Verbs:
   show  Show one widget.
 
 Global flags:
-  --from <user|agent>  Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
-  --json               Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
-  --workspace <path>   Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
-  --timeout <ms>       How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
-  --verbose            Include the stack trace when an unexpected internal error occurs.
-  --no-color           Never emit ANSI colour. Implied whenever stdout is not a TTY.
-  -h, --help[=<mode>]  Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
-  --version            Print the version of the \`corpus\` tool and exit.
+  --from <user|agent>      Who is acting, and therefore the git author of the server's auto-commit: \`user\` or \`agent\`. Defaults to \`user\`; set \`CORPUS_FROM=agent\` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent.
+  --json                   Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr. The error carries \`code\`, \`message\` and \`hint\` — the recovery, in the same words a person is shown — plus \`details\` and \`changed\` where they apply. \`hint\` is always present and is \`null\` when there is no follow-up beyond the message, so absence never has to be guessed at.
+  --flag-file <flag=path>  Take a flag's value from a file, byte for byte: \`--flag-file title=/tmp/title.txt\`. Repeatable, and it works for any flag on any command that takes text. **Use it for words somebody else wrote.** A value passed this way never goes through a shell, so nothing in it can be expanded, quoted or run — including a line that happens to read like the end of a heredoc, which is how a pasted terminal transcript once executed its own commands and put their output in a document as though a person had written it (CLI-051). Giving both the flag and its \`--flag-file\` is refused rather than one silently winning. (repeatable)
+  --workspace <path>       Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>           How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose                Include the stack trace when an unexpected internal error occurs.
+  --no-color               Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help[=<mode>]      Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
+  --version                Print the version of the \`corpus\` tool and exit.
 
 Run \`corpus widget <verb> --help\` for a verb's arguments.
 "

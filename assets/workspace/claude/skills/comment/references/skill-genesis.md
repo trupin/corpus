@@ -17,7 +17,7 @@ any skill.
   Claude Code, `id`/`type`/`title`/`tags`/`status` for Corpus — so both readers keep seeing
   it.
 - **Create a genuinely new skill when nothing installed fits**, with
-  `corpus skill create <name> --description "$description" --from agent` and a heredoc body.
+  `corpus skill create <name> --flag-file description=<path> --from agent` and a heredoc body.
 
 **Nothing searches for a skill, so a description is the only way one is found.** An undirected
 turn runs no step that lists this workspace's skills and matches them against what was asked —
@@ -51,17 +51,19 @@ whole of what you can do about that.
 anybody has to *find* is covered.
 
 **Creating one, in full.** The description is prose a person and another agent both read, and
-it comes out of what somebody kept telling you, so it is built the way a body is — in a
-heredoc, passed by name — and never quoted straight into the flag. Note where the fences sit:
+it comes out of what somebody kept telling you — so it goes in by path, never quoted straight
+into the flag. Write `/tmp/corpus-description.txt` with your file-writing tool:
+
+```
+Run the weekly review over the corpus — what changed, what drifted, what's owed.
+```
+
+The body below is **yours**, so it rides the command's own heredoc. Note where the fences sit:
 a heredoc terminator only closes the heredoc on a line of its own with nothing in front of it,
-so an indented copy of this block ends up with the rest of the file inside the description.
+so an indented copy of this block ends up with the rest of the file inside the body.
 
 ```bash
-description=$(cat <<'CORPUS_EOF'
-Run the weekly review over the corpus — what changed, what drifted, what's owed.
-CORPUS_EOF
-)
-corpus skill create weekly-review --description "$description" --from agent <<'CORPUS_EOF'
+corpus skill create weekly-review --flag-file description=/tmp/corpus-description.txt --from agent <<'CORPUS_EOF'
 # Weekly review
 
 Survey what changed this week, update what drifted, and reply with the findings.

@@ -639,3 +639,77 @@ describe("the registry entry", () => {
     expect(batchCommand.description).toContain("not** a promise of atomicity");
   });
 });
+
+describe("a batch carries somebody's words by path too (CLI-074)", () => {
+  /**
+   * The batch is the agent's efficient path. If `--flag-file` did not work here,
+   * the safe path and the fast path would be different paths — and an agent told
+   * to pick one picks the fast one. The alternative inside a batch is a `-m`
+   * value escaped into JSON, which is the class of hazard the flag removes.
+   */
+  const seen: string[] = [];
+  const registry: Registry = {
+    summary: "a flag-file surface.",
+    topics: [],
+    commands: [
+      {
+        name: "t",
+        summary: "Takes a value.",
+        args: [],
+        flags: [{ name: "title", type: "string", valueName: "text", description: "A title." }],
+        examples: [{ command: "corpus t", description: "Fixture." }],
+        handler: (context) => {
+          seen.push(context.flags.string("title") ?? "<none>");
+          return Promise.resolve();
+        },
+      } satisfies WorkspaceCommandSpec,
+    ],
+  };
+
+  const withFiles = (
+    commands: unknown,
+    files: Readonly<Record<string, string>>,
+  ): InputDependencies => ({
+    ...stdinWith(commands),
+    readTextFile: (path: string): Promise<string> => {
+      const found = files[path];
+      return found === undefined
+        ? Promise.reject(new Error(`no such file: ${path}`))
+        : Promise.resolve(found);
+    },
+  });
+
+  it("reads an entry's flag value from a file, with no shell anywhere", async () => {
+    seen.length = 0;
+    const h = await harness(registry);
+    await runBatch(
+      h.context,
+      withFiles([["t", "--flag-file", "title=/t.txt"]], {
+        "/t.txt": "O'Brien — $18,400 for the `whoami` job\n",
+      }),
+    );
+    // Byte-exact, one trailing newline removed as everywhere else.
+    expect(seen).toEqual(["O'Brien — $18,400 for the `whoami` job"]);
+  });
+
+  it("refuses the whole batch when a named file cannot be read", async () => {
+    seen.length = 0;
+    const h = await harness(registry);
+    // Before the first command, not after three have landed: an unreadable path
+    // is the author's mistake, and a partial batch is the state the pre-flight
+    // exists to prevent.
+    await expect(
+      runBatch(
+        h.context,
+        withFiles(
+          [
+            ["t", "--title", "ran first"],
+            ["t", "--flag-file", "title=/missing.txt"],
+          ],
+          {},
+        ),
+      ),
+    ).rejects.toThrow(/cannot read --flag-file/);
+    expect(seen, "a command ran before the batch was refused").toEqual([]);
+  });
+});

@@ -214,7 +214,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | done | P1 | — |
 | UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | done | P2 | UI-005 |
 | UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | done | P2 | UI-005 |
-| CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
+| CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | done | P2 | CLI-003 |
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
 | INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | done | P2 | CLI-001 |
@@ -744,7 +744,7 @@ it" invariant. **Fourth finding in three passes from one rule in two places.**
 | CONTRACT-053 | `QueueStatus.agent` is defined against the roster, and the two can legitimately disagree | done | P2 | SERVER-112 |
 | CLI-046 | `corpus queue status` never shows whether an agent is there | done | P1 | SERVER-112 |
 | CONTRACT-054 | Designating an archived agent succeeds silently, and the response cannot say so | done | P2 | — |
-| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | todo | P2 | — |
+| CLI-047 | `corpus doc create` prints no key, so a create-then-edit turn needs a second read | done | P2 | — |
 | CONTRACT-056 | `Job` carries no lane, so a surface showing "who is waiting on this" has to guess | done | P1 | — |
 | CONTRACT-057 | A roster row cannot say a lane is working, so a reader has to guess or parse prose (AGENT-029 finding) | done | P1 | — |
 
@@ -1014,7 +1014,7 @@ uncertain.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | todo | P1 | — |
+| CLI-051 | A flag value that never touches the shell (AGENT-035 finding) | done | P1 | — |
 | SERVER-126 | Should a description-less SKILL.md fail doc check? (SERVER-124 residual) | done | P2 | SERVER-124 |
 | CONTRACT-065 | A move refuses by its source, and nothing published says so (CONTRACT-064 sweep) | done | P2 | — |
 | CONTRACT-066 | A menu filters a page the server already truncated (PR #50 review 3 NIT) | todo | P2 | — |
@@ -1644,7 +1644,7 @@ user, not work).
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-084 | A save that accepts an error has no way to say so on the wire (SERVER-067 split) | done | P2 | opus | — |
 | CLI-069 | The help does not say which types retrieval skips (SERVER-144 handoff) | done | P1 | opus | SERVER-144 |
-| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | todo | P2 | opus | SERVER-132 |
+| CONTRACT-085 | `doc check` cannot name a malformed `resident:` block (SERVER-132 handoff) | done | P2 | opus | SERVER-132 |
 | SERVER-148 | The server supplies what the contract now declares (CONTRACT-029/035/036 halves) | done | P1 | opus | CONTRACT-029, CONTRACT-035, CONTRACT-036 |
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
@@ -2025,3 +2025,61 @@ and its confident comment were both wrong.
 workspace would re-embed once, which is false — a marker-free body strips to
 itself, so no chunk id moves — and the contrast figures were computed by hand
 and were off by a tenth.
+
+---
+
+## Phase 53 — Your words reach a document as your words (2026-08-30, v0.29.0 scope)
+
+`CLI-051` was carried for four releases as "CLI ergonomics debt". Reading it
+properly, it is not debt: it is a security defect with a proof of concept
+measured on 2026-08-19 and reproduced again on 2026-08-30 against v0.28.0.
+
+**The mechanism.** The agent must build a person's words into a shell heredoc,
+and the skills tell it exactly how. If those words contain a line reading the
+terminator, the heredoc closes early, **the lines after it run as commands**, and
+their stdout is captured into the value. The recorded run created a file, exited
+`0`, and committed a document whose tail was intact — so nothing read as
+truncated. A dropped tail is noticeable. A missing middle with a command's output
+in its place is not.
+
+The arrival vector is ordinary: somebody pastes a terminal transcript into a
+conversation.
+
+**Guidance cannot close it**, and that is why this is a release rather than a
+paragraph. AGENT-035's rule is about how the agent *builds* a value, and the
+agent builds this one correctly. The content decides the outcome.
+
+**The arc is two issues and neither is optional.** A mechanism nobody reaches for
+is worse than none, because it looks like the problem is solved — CLI-051 says so
+itself.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CLI-074 | A value the shell never sees | done | P0 | fable | — |
+| AGENT-058 | The skills carry somebody's words by path, not through the shell | done | P0 | fable | CLI-074 |
+
+`CLI-051` keeps its existing row in the unrowed backlog, `CLI-047` and `CLI-023`
+keep theirs, and `CONTRACT-085` keeps its Phase 45 row;
+`scripts/check-issues.ts` allows one row per id, so all four are named here in
+prose and counted there.
+
+**Riding along**, and all of it is the debt the release was originally proposed
+as — three issues in files the arc already opens:
+
+- **`CLI-047`** — `doc create` prints no key, so a create-then-edit turn re-reads
+  bytes it just wrote
+- **`CLI-023`** — no `corpus tree` verb, so the agent cannot see folder structure
+  at all
+- **`CONTRACT-085`** — `doc check` cannot name a malformed `resident:` block; the
+  finding lives in the projection doctor, which is not where anyone looks
+
+**The riskiest item is AGENT-058.** Sixty-four heredocs across four files, and
+its hardest criterion — no behavioural rule weakened — is one no green suite can
+confirm. If it slips, the three ride-alongs go first and it finishes; if the
+*mechanism* will not hold there is no release, because the debt alone does not
+earn one.
+
+**Left out**: the source-trace selection defects (`UI-060`, `UI-061`), which live
+in threads and are their own sentence, and the housekeeping rows (`UI-083`,
+`CONTRACT-066`, `SERVER-101`, `SERVER-106`, `SHARED-003`, `INFRA-018`,
+`SERVER-150`). `UI-081` stays blocked on one unsigned §10 line.

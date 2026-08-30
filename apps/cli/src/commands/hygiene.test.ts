@@ -435,6 +435,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "thread/scope.ts",
       "thread/show.ts",
       "thread/status.ts",
+      "tree.ts",
       "upgrade/index.ts",
       "upgrade/install.ts",
       "upgrade/journal.ts",
