@@ -2083,3 +2083,24 @@ earn one.
 in threads and are their own sentence, and the housekeeping rows (`UI-083`,
 `CONTRACT-066`, `SERVER-101`, `SERVER-106`, `SHARED-003`, `INFRA-018`,
 `SERVER-150`). `UI-081` stays blocked on one unsigned §10 line.
+
+**No pr-reviewer ran on PR #69**, the same standing directive as #62 through
+#68. What stood in: `CI / validate` green on the merged head — build, lint,
+format, typecheck, 16,142 unit tests and the merged ≥90% coverage gate — the
+reproduction and its fix both run against a real server on a real workspace, a
+drill through a freshly installed workspace, and seven falsifications.
+
+**Four findings came from guards that already existed**, which is the better
+evidence because nobody wrote them for this change. The workspace-template
+suite found two carried-value sites the sweep missed (they live in the comment
+skill's *references*, moved there by AGENT-047) and an example whose text the
+rewrite had dropped. Its heredoc counter found new prose that opened one it
+never closed — while warning against exactly that. And `codes.test.ts`, which
+checks the warning vocabulary **from behaviour**, refused a `resident-malformed`
+code the contract declared and the validator never emitted.
+
+**One claim in shipped prose was false when written.** The rewritten orchestrate
+skill told the agent it could carry somebody's words inside a batch. Testing the
+sentence showed the batch never resolved the files. The sentence was correct
+about what should be true, so the batch was fixed rather than the prose: a safe
+path and a fast path that differ is a choice an agent makes wrongly.
