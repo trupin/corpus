@@ -128,9 +128,9 @@ corpus doc list --type agent-def
 
 **Both values below are somebody else's, so both go in by path.** The name they asked for and
 the description of what they asked it to do are their words, not yours, and words you did not
-choose do not go on a command line. **What the shell would otherwise do to those two values is
-the orchestrate skill's to state, and it is stated there alone.** Here it binds both of them
-every time, the ones that look safe included — you cannot see afterwards what came out wrong,
+choose do not go on a command line. **What the shell would otherwise do to those two values
+is the orchestrate skill's to state, and it is stated there alone.** Here it binds both of
+them every time, the ones that look safe included — you cannot see afterwards what came out wrong,
 and the document is what a person reads.
 
 Write `/tmp/corpus-title.txt` with your file-writing tool:
@@ -166,18 +166,19 @@ it in from the title so the profile loads at all, and a title is a label rather 
 *Bookkeeper* tells whoever is choosing an agent nothing about when to choose this one. Replace
 it:
 
-Write `/tmp/corpus-description.txt`:
+Write `/tmp/corpus-description.txt`, which holds the whole `key=value` pair, because that is
+what `--extra` takes:
 
 ```
-Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
+description=Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
 ```
 
 ```bash
 corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-description.txt --from agent
 ```
 
-The file holds the whole `description=…` pair, because that is what `--extra` takes: the value
-runs to the end of the file, so a description with a line break in it needs nothing special.
+The value runs to the end of the file, so a description with a line break in it needs nothing
+special — and nothing about what they wrote can reach the shell.
 
 That is a quality step and not a repair — skip it and what you have is a working profile
 nobody has a reason to pick. `--extra` names its own delta and takes no key.
@@ -260,8 +261,20 @@ it should behave (say where every figure came from), and what it should not do (
 general agent, so it should not wander). The fourth, what a good answer looks like, is missing
 and is guessable rather than askable. Guess it, and say that you guessed.
 
-Write `/tmp/corpus-title.txt` (`Bookkeeper`) and `/tmp/corpus-description.txt` (the
-`description=…` pair below) with your file-writing tool, then:
+Both values are theirs, so both go in by path. Write the two files with your file-writing
+tool — `/tmp/corpus-title.txt`:
+
+```
+Bookkeeper
+```
+
+and `/tmp/corpus-description.txt`, which holds the whole `extra` pair:
+
+```
+description=Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
+```
+
+Then:
 
 ```bash
 corpus doc list --type agent-def

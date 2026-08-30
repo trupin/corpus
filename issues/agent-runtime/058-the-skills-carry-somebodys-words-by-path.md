@@ -194,8 +194,50 @@ terminator ends early — and a JSON string needs escaping besides. The bullet n
 says an entry carries somebody's words the same way any other command does, and
 points at redirecting the array from a file where it is long.
 
-**Suite.** `apps/cli` 2,217 passed, 109 files — including the workspace template
-tests, which are what prove the rewritten skills still install.
+### The guards found what the rewrite missed, twice
+
+`scripts/workspace-template.test.ts` pins the skills' prose sentence by sentence
+— 506 assertions, each with a measurement behind it. Fifteen went red, and two
+of those were **my omissions rather than the tests' staleness**:
+
+- **Two carried-value sites survived in the comment skill's references**, which
+  AGENT-047 moved out of `SKILL.md` and which my sweep of the four skill files
+  therefore never saw: a thread retitle in `worked-examples.md` and a
+  `skill create --description` in `skill-genesis.md`. Both are converted.
+- **The worked example lost its description text.** Rewriting the profile's
+  example left a sentence pointing at "the `description=…` pair below" and no
+  block below it. The guard that reads the description out of the example and
+  checks it is written as *when to reach for this one* is what caught it.
+
+A third failure was a real defect in the new prose: the paragraph warning against
+building the file with a shell **opened a heredoc it never closed**, which the
+open/close counter refused. The sentence names the construction now instead of
+demonstrating it — the same fault the CLI's own hygiene rule caught in CLI-074's
+docblock, in the same release.
+
+### What the guards became
+
+Each one was re-expressed to pin the new rule with the old rigour, and two
+changed shape rather than wording:
+
+- **The `IFS= read -r` repair is retired**, with the capture form it repaired.
+  Its replacement is a *prohibition*: no skill may capture a flag value out of a
+  heredoc, and the repair may not reappear — it truncates at one line, so it
+  would be silent data loss offered as a remedy.
+- **The terminator caveat became the argument.** It used to be the one residual
+  the construction did not cover, carried with a one-word fix. It is now the
+  reason the construction changed, and the guard asks the skill to say so —
+  including that you cannot inspect your way out of it, which is the sentence
+  that stops an agent deciding per message.
+
+**Falsification, three breaks, after the guards were updated.** Quoting a title
+back into the command: 2 failed. Deleting the "do not build the file with a
+shell either" warning: 1 failed. Deleting "a path has no terminator, so it has
+no line that can end it": 1 failed.
+
+**Suite.** 16,140 unit tests, 660 files, green — including the 506 workspace
+template assertions, which are what prove the rewritten skills still install and
+still say what they meant.
 
 ## Completion Checklist (domain agent)
 

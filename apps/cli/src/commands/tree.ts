@@ -51,7 +51,7 @@ export const treeCommand: WorkspaceCommandSpec = {
   name: "tree",
   summary: "The folder structure of `data/docs/`, with document counts.",
   description:
-    "One bounded call that answers *where does this go?* — every folder under `data/docs/`, " +
+    "One bounded call that answers _where does this go?_ — every folder under `data/docs/`, " +
     "indented by depth, with the number of documents filed directly in it and, where they " +
     "differ, the number including its descendants in parentheses. It is **structure, not " +
     "enumeration** (SPEC.md §7): no titles, no ids, no bodies, so it never stands in for a " +

@@ -1225,7 +1225,7 @@ lines — with the tail of the message intact, so nothing read as truncated. You
 your way out of that, because you would be inspecting the text you are least able to read, and
 the write succeeds either way. A path has no terminator, so it has no line that can end it.
 
-**Do not build the file with a shell either.** `cat > /tmp/title.txt <<'CORPUS_EOF'` is the
+**Do not build the file with a shell either.** Redirecting a heredoc into the file first is the
 same construction with the same failure, one step earlier. Use the tool that writes a file
 directly.
 

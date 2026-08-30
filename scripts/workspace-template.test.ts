@@ -1482,9 +1482,20 @@ describe("skills", () => {
 
     it("gives one construction and the test for when it applies", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
-      expect(flat).toMatch(/never goes on a command line as a literal/i);
-      expect(orchestrate).toMatch(/title=\$\(cat <<'CORPUS_EOF'\n/);
-      expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
+      // The construction is a **path** now (CLI-074, AGENT-058). What it
+      // replaced — a value captured out of a quoted heredoc — was correct for
+      // every character and wrong about one line, and the line was the person's
+      // to choose. The pins below moved with it; the two properties underneath
+      // them did not.
+      expect(flat).toMatch(/never goes on a command line at all/i);
+      expect(orchestrate).toMatch(
+        /corpus doc edit doc_a1b2c3 --flag-file title=\/tmp\/title\.txt --from agent/,
+      );
+      // The agent must be told to write the file with something that is not a
+      // shell, or it builds the file with a heredoc and has moved the defect
+      // one step earlier rather than removing it.
+      expect(flat).toMatch(/write it to a file with your file-writing tool/i);
+      expect(flat).toMatch(/\*\*Do not build the file with a shell either\.\*\*/);
       // No character list to remember is the whole reason this construction
       // wins over escaping; the skill has to say so, or an agent applies it
       // only to the characters it happens to notice.
@@ -1492,9 +1503,11 @@ describe("skills", () => {
       // Provenance, not inspection: an agent cannot reliably spot a `$`.
       expect(flat).toMatch(/\*\*The test is where the text came from, not what is in it\.\*\*/);
       expect(flat).toMatch(/`--title "Quarterly insurance review"` is fine as it stands/);
-      // One rule with the body case as its already-known instance, which is
-      // what the issue asked for instead of a second rule that agrees.
-      expect(flat).toMatch(/one rule rather than two/i);
+      // One rule covering a flag and a body alike, which is what kept this from
+      // becoming two rules that agree until one is edited.
+      expect(flat).toMatch(
+        /One rule, and the same one whether the words fill a document or a single flag/i,
+      );
     });
 
     it("says what to do when the shell complains, which is not a double quote", () => {
@@ -1507,78 +1520,39 @@ describe("skills", () => {
     });
 
     /**
-     * PR #50, MAJOR 3. The clause above forbids the reflex repair, so it has to
-     * hand over a repair that works — and the case it was reached for is
-     * precisely one the capture form can fail on. Measured on this machine,
-     * 2026-08-18, `/bin/bash` 3.2.57:
+     * **Retired with the construction it repaired** (AGENT-058), and this
+     * docblock is what stops it coming back.
      *
-     * ```
-     * $ /bin/bash live_bad.sh      # title=$(cat <<'CORPUS_EOF' / O'Brien report / … )
-     * live_bad.sh: line 4: unexpected EOF while looking for matching `''
-     * live_bad.sh: line 8: syntax error: unexpected end of file
-     * exit=2
-     * ```
+     * The clause it pinned handed the agent `IFS= read -r` after a parse error,
+     * because the *capture* form — a quoted heredoc inside `$( … )` — is
+     * refused by bash 3.2 on one unbalanced apostrophe, quote or backtick
+     * anywhere in the value. Measured 2026-08-18 across both shells; the
+     * measurement stands and is why nothing captures a value any more.
      *
-     * PR #50 second review, MINOR 4: the apostrophe is one instance, not the
-     * defect. Re-measured the same day against `bash` 3.2.57 and `zsh` 5.9,
-     * with the value in a quoted heredoc inside `$( … )` in each case — bash
-     * refuses all three and names a different unmatched character each time,
-     * zsh takes all three:
+     * With no capture there is no parse error to repair, and `IFS= read -r`
+     * would be worse than nothing if it stayed: it takes **one line** and drops
+     * the rest at exit `0`, which is a silent truncation offered as a remedy.
+     * The heredocs that remain are bodies the agent wrote, fed straight to a
+     * command with no substitution around them, so they cannot reach the failure
+     * either.
      *
-     * ```
-     * it's here    → bash: unexpected EOF while looking for matching `''   zsh: ok
-     * he said "go  → bash: unexpected EOF while looking for matching `"'   zsh: ok
-     * a ` tick     → bash: unexpected EOF while looking for matching ``'   zsh: ok
-     * ```
-     *
-     * `IFS= read -r` returned all three byte-exact under both shells, so the
-     * repair is general even though the old diagnosis was not. The pin below
-     * therefore rejects a cause written as a count of apostrophes: an agent
-     * that reads the explanation as the entry condition skips the repair on the
-     * two-thirds of cases the sentence left out.
-     *
-     * One apostrophe in somebody's sentence — *don't*, *it's*, *O'Brien* — is
-     * the commonest shape in the class this rule
-     * exists for. Told to build the value the same way and resend, an agent
-     * loops on an identical parse error with the one repair it would otherwise
-     * reach for ruled out. So the clause must name a construction that differs,
-     * and `IFS= read -r` does: the same quoted terminator with no command
-     * substitution around it, verified against the real CLI under both shells —
-     * `created doc_byx5msh7` under bash 3.2 and `created doc_6geg7o33` under zsh
-     * 5.9, both titles landing byte-exact with `$`, a backtick and two
-     * apostrophes in them.
-     *
-     * Its boundary is pinned with it, because `IFS= read -r` takes one line and
-     * drops the rest at exit `0` — the truncation that disqualified it as the
-     * *general* construction. A flag value is one line, so the repair is sound
-     * where it is offered; the skill has to say where that stops, or the next
-     * rewrite promotes it to the rule and starts truncating bodies.
+     * What replaces the pin is a prohibition: neither repair may reappear
+     * without the capture form reappearing first, and that is what the test
+     * below asserts.
      */
-    it("hands over a repair that is not the construction that just failed", () => {
-      const flat = orchestrate.replace(/\s+/g, " ");
-      // Not the same lines again: the resend is ruled out as explicitly as the
-      // double quote, since a resend is what the old clause prescribed.
-      expect(flat).toMatch(/\*\*Nor is it the same lines again\.\*\*/);
-      expect(flat).toMatch(/will not clear on a resend/i);
-      // The cause, stated so the agent stops treating the refusal as its error
-      // — and stated over the whole class, since bash 3.2 refuses a lone `"`
-      // and a stray backtick just as it refuses an apostrophe.
-      expect(flat).toMatch(/one unbalanced quoting character anywhere in the value/i);
-      expect(flat).toMatch(/an apostrophe in `it's`, a lone `"` .{0,40}and a stray backtick/i);
-      expect(flat).toMatch(/`zsh` 5\.9 takes all three/);
-      // A count is not the entry condition, and reading it as one is how an
-      // agent skips the repair on the cases the old sentence left out.
-      expect(flat).toMatch(/not about apostrophes and not about counting them/i);
-      expect(flat, "the cause is narrowed back to a count").not.toMatch(/odd number of/i);
-      // The repair itself, as a copyable line rather than a description.
-      expect(orchestrate).toMatch(/^IFS= read -r title <<'CORPUS_EOF'$/m);
-      expect(orchestrate).toMatch(/corpus doc edit doc_a1b2c3 --title "\$title" --from agent/);
-      // And its boundary, both halves: what it silently does, and the reason
-      // the flag case is unaffected by it.
-      expect(flat).toMatch(/\*\*That is a repair, not the rule/i);
-      expect(flat).toMatch(/takes \*\*one line\*\* and drops anything after it without saying so/);
-      expect(flat).toMatch(/never for a value that spans lines/i);
-      expect(flat).toMatch(/a body is fed to the command's own heredoc rather than captured/i);
+    it("no longer captures a value, so it offers no repair for capturing one", () => {
+      // The construction is gone from every skill, not only from the prose that
+      // used to describe it.
+      for (const { label, body } of installedSkillTexts) {
+        expect(body, `${label}: captures a flag value out of a heredoc`).not.toMatch(
+          /\w+=\$\(cat <<'CORPUS_EOF'/,
+        );
+      }
+      // And so is the repair, which truncates at one line and would be a silent
+      // data loss offered as a remedy.
+      expect(orchestrate, "the one-line repair outlived the failure it repaired").not.toMatch(
+        /IFS= read -r/,
+      );
     });
 
     /**
@@ -1614,29 +1588,52 @@ describe("skills", () => {
      * pins below are two — the prose states it as always, and every heredoc in
      * every shipped skill uses it.
      */
-    it("names the one residual the construction does not cover", () => {
+    /**
+     * The residual **became the reason** (AGENT-058). It was the one thing the
+     * old construction could not cover — a line, not a character — and the skill
+     * carried it as a caveat with a one-word fix. Measured again on 2026-08-30
+     * against v0.28.0, the caveat is not survivable by choosing a better word:
+     * a pasted vendor transcript containing the terminator ran `touch`, exited
+     * `0`, and committed a document holding a command's own output in place of
+     * the missing lines, tail intact.
+     *
+     * So it is no longer a caveat on the rule; it is the argument for it, and
+     * the skill has to make that argument or an agent reads the path form as
+     * ceremony and goes back to the heredoc it can see working.
+     */
+    it("makes the failure it removes the reason for the rule, not a caveat on it", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
       // The totality claim survives — qualified to characters, which is what it
       // was always true of.
       expect(flat).toMatch(/there is no character list to keep in your head/i);
-      expect(flat).toMatch(/it is not a character but a \*\*line\*\*/i);
+      // The failure, named as the reason the construction changed.
+      expect(flat).toMatch(/\*\*Why not a heredoc, which is what this skill used to say\.\*\*/);
+      expect(flat).toMatch(/one failure that is not about characters at all/i);
       // What goes wrong, and that it is a successful write rather than a refusal
       // — the reason it cannot be left to the recovery clause above.
-      expect(flat).toMatch(/hands the remainder to the shell as commands/i);
-      expect(flat).toMatch(/the write still succeeded, exit `0`/i);
+      expect(flat).toMatch(/runs the remainder \*\*as commands\*\*/i);
+      expect(flat).toMatch(/exited `0`/i);
+      expect(flat).toMatch(/with the tail of the message intact, so nothing read as truncated/i);
+      // And why inspection is not the way out, which is the sentence that stops
+      // an agent deciding per message whether this one is safe.
+      expect(flat).toMatch(/you cannot inspect your way out of that/i);
+      // The property that makes a path different in kind rather than in degree.
+      expect(flat).toMatch(/A path has no terminator, so it has no line that can end it/i);
     });
 
-    it("fixes the terminator once, with no text to weigh it against", () => {
+    it("fixes the terminator once, for the heredocs that remain", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
+      // A heredoc is still right for words the agent wrote, and those still
+      // need a terminator — so the rule survives, scoped to them.
+      expect(flat).toMatch(/\*\*Where a heredoc is still right\.\*\*/);
+      expect(flat).toMatch(/Words \*you\* wrote/);
       // Unconditional, and naming both words: the one to use and the one the
       // rest of the world's transcripts already end with.
-      expect(flat).toMatch(
-        /you choose it once, not per message: the terminator is always `CORPUS_EOF`, never `EOF`/i,
-      );
+      expect(flat).toMatch(/the terminator is always `CORPUS_EOF`, never `EOF`/i);
       expect(flat).toMatch(/every shell transcript on earth already ends its heredocs with/i);
       // And that choosing per message is the failure, not the fallback — the
       // clause that used to say the opposite.
-      expect(flat).toMatch(/weighing it is the inspection this whole construction exists to/i);
+      expect(flat).toMatch(/choosing per message is the weighing this rule exists to remove/i);
       expect(flat, "the terminator is chosen against the text again").not.toMatch(
         /choose a word it cannot|could contain one/i,
       );
@@ -1685,12 +1682,13 @@ describe("skills", () => {
         (count, skill) => count + (skill.body.match(/<<'CORPUS_EOF'/g)?.length ?? 0),
         0,
       );
-      // 34 across the four core skills at the time of the change. A floor, not
-      // the count: the pin is that the rule above is checking real examples.
-      // (It read 35 until INFRA-031 deleted the todos plugin's own skill;
-      // AGENT-047 moved several worked examples into the comment skill's
-      // references, so the sweep counts those files too.)
-      expect(total).toBeGreaterThanOrEqual(34);
+      // A floor, not the count: the pin is that the rule above is checking real
+      // examples. It read 35 until INFRA-031 deleted the todos plugin's own
+      // skill, then 34; AGENT-058 took it to 30 by moving every **carried**
+      // value out of a heredoc and onto a path. What is left is bodies the agent
+      // wrote itself, which is what the rule now says a heredoc is for — so the
+      // floor drops on purpose and the anti-vacuity still bites.
+      expect(total).toBeGreaterThanOrEqual(30);
     });
 
     /**
@@ -1699,19 +1697,27 @@ describe("skills", () => {
      * thread's real title is made out of the conversation, and the reported
      * defect was exactly a thread title.
      */
-    it("builds a thread's title in a heredoc, at both sites that set one", () => {
+    it("writes a thread's title to a file, at both sites that set one", () => {
       // The second site is worked example 2, which AGENT-047 moved into the
       // references — the package is where both sites live now.
       const comment = commentPackage;
-      const retitles = [...comment.matchAll(/corpus doc edit th_\w+ --title (\S+)/g)].map(
+      const retitles = [...comment.matchAll(/corpus doc edit th_\w+ (--\S+)/g)].map(
         (match) => match[1],
       );
       expect(retitles.length, "the comment skill retitles no thread").toBeGreaterThan(1);
       for (const argument of retitles) {
-        expect(argument, "a thread title is quoted straight into the command").toBe('"$title"');
+        // Not `--title "…"`, and not `--title "$title"` either: the value is
+        // named by path, so no shell reads it on the way in.
+        expect(argument, "a thread title reaches the command as an argument").toMatch(
+          /^--flag-file$/,
+        );
       }
-      // And the value really is built the safe way ahead of each of them.
-      expect(comment.match(/title=\$\(cat <<'CORPUS_EOF'\n/g)?.length ?? 0).toBe(retitles.length);
+      // Every retitle names a title file. Not an equality: the skill also tells
+      // the agent to create a document by path, which is the same rule at a
+      // different verb and would make the count say something it does not mean.
+      expect(comment.match(/--flag-file title=\S+/g)?.length ?? 0).toBeGreaterThanOrEqual(
+        retitles.length,
+      );
     });
 
     it("shows the cost at the site of the reported defect", () => {
@@ -1720,14 +1726,16 @@ describe("skills", () => {
       expect(flat).toMatch(/the wrong figure shown to the person who gave you the right one/i);
     });
 
-    it("passes a skill's description by name, like any other prose somebody reads", () => {
+    it("passes a skill's description by path, like any other prose somebody reads", () => {
       // The creation block lives in the genesis reference (AGENT-047); the
       // package is what the rule binds.
       const comment = commentPackage;
-      expect(comment).toMatch(/description=\$\(cat <<'CORPUS_EOF'\n/);
       for (const invocation of comment.match(/corpus skill create [^\n]*/g) ?? []) {
         expect(invocation, "a skill description is quoted straight into the command").toMatch(
-          /--description "\$description"/,
+          /--flag-file description=\S+/,
+        );
+        expect(invocation, "a skill description is still a shell argument").not.toMatch(
+          /--description /,
         );
       }
     });
@@ -3720,7 +3728,7 @@ describe("comment skill body", () => {
   });
 
   it("makes the standalone title an obligation, set through a document edit", () => {
-    expect(body).toMatch(/corpus doc edit th_\w+ --title "[^"]+" --from agent/);
+    expect(body).toMatch(/corpus doc edit th_\w+ --flag-file title=\S+ --from agent/);
     expect(body).toMatch(/a thread is a document/i);
     expect(body).toMatch(/obligation, not an option/i);
   });
@@ -4024,7 +4032,7 @@ describe("comment skill body", () => {
     // AGENT-035 moved the placeholder from `"<one line>"` to `"$description"`:
     // the description is somebody's words, so it arrives through a heredoc.
     expect(genesis).toContain(
-      'corpus skill create <name> --description "$description" --from agent',
+      "corpus skill create <name> --flag-file description=<path> --from agent",
     );
     expect(commentPackage).not.toMatch(/Propose a genuinely new skill/i);
     expect(commentPackage).not.toMatch(/cannot write into `\.claude\/`/i);
@@ -6207,12 +6215,22 @@ describe("profile skill body", () => {
    * below for why it has to.
    */
   const examplePath = /created doc_\w+ — (\.claude\/agents\/[a-z0-9-]+)\.md/.exec(body)?.[1];
-  const heredocValue = (variable: string): string | undefined =>
+  /**
+   * A value the skill tells the agent to write to a file, read out of the fenced
+   * block that shows the file's contents (AGENT-058).
+   *
+   * It used to read the value out of a captured heredoc. The construction is
+   * gone — a value somebody else wrote goes in by path now — so the example
+   * shows the *file* instead, and this reads that. What it protects is
+   * unchanged: the worked example's values are checked against the rules stated
+   * above them, and a prose edit that drops one still fails here.
+   */
+  const fileValue = (path: string): string | undefined =>
     new RegExp(
-      String.raw`^${variable}=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$`,
+      String.raw`\`/tmp/${path}\`[^\n]*(?::|pair, because that is\nwhat \`--extra\` takes:)\n\n\`\`\`\n([\s\S]*?)\n\`\`\``,
       "m",
     ).exec(body)?.[1];
-  const exampleTitle = heredocValue("title");
+  const exampleTitle = fileValue("corpus-title.txt");
   const exampleName = examplePath?.slice(".claude/agents/".length);
 
   it("carries its sections, each of them substantial", () => {
@@ -6233,8 +6251,8 @@ describe("profile skill body", () => {
   });
 
   it("teaches the create as the whole profile and the description as the judgement", () => {
-    expect(body).toMatch(/corpus doc create --type agent-def --title/);
-    expect(body).toMatch(/--extra description="\$description"/);
+    expect(body).toMatch(/corpus doc create --type agent-def --flag-file title=/);
+    expect(body).toMatch(/--flag-file extra=\S+/);
     // The reason the second command exists, stated as the consequence rather
     // than as a step: this is what a reader skips if it reads as bookkeeping.
     // Since SERVER-123 the consequence is a profile nobody picks, not one that
@@ -6431,9 +6449,9 @@ describe("profile skill body", () => {
   it("works an example description written as when to reach for the agent", () => {
     expect(body).toMatch(/write it as \*when to reach for this\s+one\*/);
     const worked = body.slice(body.indexOf("## Worked example"));
-    const description = /^description=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$/m.exec(
-      worked,
-    )?.[1];
+    // The example shows the file's contents, and `--extra` takes a `key=value`
+    // pair — so the description is what follows `description=` in that block.
+    const description = /```\ndescription=([\s\S]*?)\n```/.exec(worked)?.[1];
     expect(description, "the worked example builds no description").toBeDefined();
     expect(description).toMatch(/^Reach for this when /);
   });
@@ -6530,16 +6548,14 @@ describe("profile skill body", () => {
    * invocation, and a pointer instead of a second account.
    */
   it("routes every word a person reads through a heredoc, not a quoted argument", () => {
-    expect(body).toMatch(
-      /\*\*Both values below are somebody else's, so both go in through a heredoc, passed by name\.\*\*/,
-    );
+    expect(body).toMatch(/\*\*Both values below are somebody else's, so both go in by path\.\*\*/);
     // A pointer, not a restatement: the mechanism lives in one file, and this
     // skill says which. `one rule, one skill` holds the other half — that no
     // account of the expansion survives here.
     expect(body).toMatch(/is the orchestrate skill's to state, and it is\s+stated there alone\./);
     // The one thing this skill adds to the rule it defers to: here it is
     // unconditional, because both of its values are always somebody else's.
-    expect(body).toMatch(/binds both of them every time, the ones that look safe included/);
+    expect(body).toMatch(/binds both of\s+them every time, the ones that look safe included/);
 
     // Negative pins, over the **invocations** rather than the whole body: the
     // prose above names both broken forms on purpose, and a pin that could not
@@ -6550,6 +6566,9 @@ describe("profile skill body", () => {
     for (const line of commandLines) {
       expect(line, "a literal double-quoted --title is back").not.toMatch(/--title "(?!\$)/);
       expect(line, "an --extra value is single-quoted again").not.toMatch(/--extra [a-z-]+='/);
+      expect(line, "a value somebody wrote is quoted into the command again").not.toMatch(
+        /--(?:title|description) "/,
+      );
     }
 
     // And the safe form is what both writes spell, in both places they appear.
@@ -6557,25 +6576,22 @@ describe("profile skill body", () => {
       line.includes("corpus doc create --type agent-def"),
     );
     expect(creates.length, "the skill no longer writes a create").toBeGreaterThanOrEqual(2);
-    for (const line of creates) expect(line).toContain('--title "$title"');
-    const descriptionEdits = commandLines.filter((line) => line.includes("--extra description"));
+    for (const line of creates) expect(line).toMatch(/--flag-file title=\S+/);
+    const descriptionEdits = commandLines.filter((line) => line.includes("--flag-file extra="));
     expect(
       descriptionEdits.length,
       "the skill no longer sets a description",
     ).toBeGreaterThanOrEqual(2);
-    for (const line of descriptionEdits) {
-      expect(line).toContain('--extra description="$description"');
-    }
-    // Every value the skill passes by name is built by a quoted heredoc first.
-    for (const variable of ["title", "description"]) {
-      expect(heredocValue(variable), `${variable} is passed but never built`).toBeDefined();
-    }
+    // Every value the skill passes is shown as a file the agent writes first —
+    // an example that names a path it never says how to produce is not runnable,
+    // and an agent following it would reach for a shell to make the file.
+    expect(fileValue("corpus-title.txt"), "title is passed but never written").toBeDefined();
+    expect(body).toMatch(/```\ndescription=Reach for this when /);
     // The example carries the character the rule exists for; otherwise the
     // pattern that gets copied is the one that has never been exercised.
     const worked = body.slice(body.indexOf("## Worked example"));
-    const description = /^description=\$\(cat <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF\n\)$/m.exec(
-      worked,
-    )?.[1];
+    // Read out of the file the example shows, not a heredoc capture (AGENT-058).
+    const description = /```\ndescription=([\s\S]*?)\n```/.exec(worked)?.[1];
     expect(description, "the worked description carries no apostrophe").toMatch(/\w'\w/);
   });
 
@@ -6586,7 +6602,7 @@ describe("profile skill body", () => {
     const worked = body.slice(body.indexOf("## Worked example"));
     expect(worked, "no worked-example section").not.toBe("");
     const profileBody =
-      /--type agent-def --title "[^"]+" --from agent <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(
+      /--type agent-def --flag-file title=\S+ --from agent <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(
         worked,
       )?.[1];
     expect(profileBody, "no worked persona body").toBeDefined();
@@ -7497,7 +7513,7 @@ describe("one rule, one skill", () => {
         {
           skill: "comment",
           carries: wrapped(
-            "**What the shell does to a flag argument, and why the heredoc is the answer, is the orchestrate skill's to state, and it is stated there alone.**",
+            "**What the shell does to a flag argument, and why a path is the answer, is the orchestrate skill's to state, and it is stated there alone.**",
           ),
         },
         {
