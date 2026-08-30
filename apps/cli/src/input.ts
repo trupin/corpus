@@ -484,7 +484,7 @@ function readBodyFile(
  * because nothing this layer could add would be more specific.
  */
 export async function readFlagFile(
-  context: CommandContext,
+  context: Pick<CommandContext, "cwd">,
   flag: string,
   file: string,
   dependencies: InputDependencies,

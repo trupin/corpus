@@ -2,6 +2,7 @@ import { createClient } from "./client.js";
 import { resolveCommand } from "./dispatch.js";
 import { ExitCode, exitCodeFor } from "./errors.js";
 import { parseHelpMode, renderCommandHelp, renderRootHelp, renderTopicHelp } from "./help.js";
+import { resolveFlagFiles } from "./flag-file.js";
 import { resolveActor } from "./input.js";
 import { bindPositionals, parseFlags, type ParsedInput } from "./parse-args.js";
 import { registry as defaultRegistry } from "./registry/index.js";
@@ -61,7 +62,9 @@ export async function run(options: RunOptions): Promise<ExitCode> {
       return ExitCode.success;
     }
 
-    const { flags, positionals } = parseFlags(resolution.command, resolution.tokens);
+    const parsed = parseFlags(resolution.command, resolution.tokens);
+    const { positionals } = parsed;
+    let flags = parsed.flags;
     verbose = flags.boolean("verbose");
     out = createOutput({
       json: flags.boolean("json"),
@@ -88,6 +91,11 @@ export async function run(options: RunOptions): Promise<ExitCode> {
       out.write(`${options.version ?? readPackageVersion()}\n`);
       return ExitCode.success;
     }
+
+    // After `--help` and `--version`, which answer without reading anything, and
+    // before the handler, which must not be able to tell where a value came
+    // from (CLI-074).
+    flags = await resolveFlagFiles(resolution.command, parsed, { cwd: options.cwd });
 
     const args = bindPositionals(resolution.command, positionals);
     await invoke(resolution.command, { args, flags }, out, options, registry);

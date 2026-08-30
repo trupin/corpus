@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -125,9 +125,14 @@ as giving the flag twice, and is refused by the same rule.
 
 - An empty file is an empty value, not an absent one. A caller who wants a flag
   absent omits it.
-- A file with a trailing newline keeps it. Trimming would be an interpretation,
-  and `doc create --title` with a trailing newline is the caller's business —
-  the server's title normalisation is where that belongs, not here.
+- **One trailing newline is removed, and only one** — a decision changed during
+  implementation, after the first E2E showed why. Every ordinary way of writing a
+  file ends it with a newline, so keeping it gave every title a trailing blank,
+  which YAML serialised as a block scalar and the board would show as a title
+  with a line break. It is also what the idiom being replaced already did:
+  `$(cat <<'EOF' … EOF)` strips trailing newlines. The **body** keeps its bytes
+  exactly, because a document's final newline is content — the two rules differ
+  because a title and a document are different things, and the help says so.
 - A path that is a directory fails as unreadable, with the OS's own reason.
 - `--flag-file` before or after the flag it names is the same; resolution is not
   positional.
@@ -153,13 +158,104 @@ passes without it is testing nothing.
 
 ## E2E Verification Log
 
-### Reproduction (bugs only)
+### Reproduction, 2026-08-30, against v0.28.0
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+CLI-051's measurement was taken at v0.13.0. It reproduces unchanged. Real
+`corpus` 0.28.0, throwaway workspace, server on **8766** (never 8765).
+
+The agent follows the skill's rule exactly — somebody else's words, built in a
+`<<'CORPUS_EOF'` heredoc, passed by name — and the words are a pasted vendor
+transcript containing a line that reads `CORPUS_EOF`:
+
+```
+$ ls -l /tmp/corpus-cli051-pwned.txt
+-rw-r--r--  1 theophanerupin  wheel  0 Aug 30 11:48 /tmp/corpus-cli051-pwned.txt
+created doc_znxvmo5f — data/docs/inbox/vendor-transcript-18-400-quote.md   (exit 0)
+```
+
+The document that landed:
+
+```
+The vendor pasted their terminal session below.
+
+$ cat >/tmp/notes <<'CORPUS_EOF'
+SPLICED BY A COMMAND
+
+and this line is the rest of their message
+```
+
+`touch` ran. `echo`'s stdout is in the body, presented as the person's words. The
+tail is intact, so nothing reads as truncated.
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+**The same payload, through the mechanism.** Same workspace, same bytes, passed
+as `--flag-file title=… --file …`:
+
+```
+created doc_kuwkr3zk — data/docs/inbox/vendor-transcript-18-400-quote-the-whoami-job-2.md
+$ ls /tmp/corpus-cli051-pwned.txt
+ls: /tmp/corpus-cli051-pwned.txt: No such file or directory
+```
+
+Nothing executed. The body is **byte-identical** to what was sent, asserted by
+comparison rather than by eye — the `CORPUS_EOF` line, the `touch`, the `echo`
+are all in the document, as text, which is what they were. The title kept
+`$18,400` and its backticks.
+
+**Every refusal, against the real binary**, each exiting **2** and each carrying
+its repair:
+
+```
+--title Typed --flag-file title=…   --title was given twice: once directly, once from a file.
+--flag-file titel=…                 --flag-file names no flag --titel.   (hint: Did you mean --flag-file title=…?)
+--flag-file json=…                  --json takes no text, so it cannot come from a file.
+--flag-file title=/nope.txt         cannot read --flag-file /nope.txt.
+--flag-file title                   --flag-file title is not <flag>=<path>.
+```
+
+and under `--json` the same words reach the envelope:
+
+```json
+{"error":{"code":"usage_error","message":"--flag-file names no flag --titel.","hint":"Did you mean --flag-file title=…?"}}
+```
+
+**Unit.** `flag-file.test.ts` — 21 passed. Whole `apps/cli` suite: **2,217
+passed**, 109 files.
+
+**Falsification, three breaks.**
+
+| Break | Result |
+| --- | --- |
+| Remove the both-given refusal | 1 failed |
+| Strip *all* trailing newlines instead of one | 2 failed |
+| Split the pair on the last `=` instead of the first | 1 failed |
+
+### Two things the implementation changed about the design
+
+**A module cycle, found by a test rather than by reading.** `resolveFlagFiles`
+was written into `input.ts`, where every other value source lives. That closed a
+ring — `registry/globals.ts` imports `input.ts` for `FROM_FLAG`, and
+`parse-args.ts` imports `registry/globals.ts` — so the first module loaded built
+`GLOBAL_FLAGS` out of an uninitialised `FROM_FLAG`. It has its own module now,
+and the docblock says why so nobody moves it back.
+
+**The trailing newline rule was reversed.** The issue said the bytes are kept
+verbatim and trimming would be an interpretation. The first E2E showed the cost:
+every title acquired the newline an editor leaves at the end of a file, YAML
+serialised it as a block scalar, and the board would show a title with a line
+break in it. One trailing newline is now removed — which is also what
+`$(cat …)` already did, so a rewritten skill gets the value it got before. The
+**body** still keeps its bytes, because a document's final newline is content.
+
+### And the CLI's own hygiene rule caught the docblock
+
+`hygiene.test.ts` refuses any heredoc in the CLI's source that terminates with
+`EOF`, because an agent reading the source copies what it sees. The first draft
+of the trailing-newline docblock illustrated the old idiom with a literal
+`<<'EOF' … EOF`. The rule is right and the prose was wrong.
 
 ## Completion Checklist (domain agent)
 
