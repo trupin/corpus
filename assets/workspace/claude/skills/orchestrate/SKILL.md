@@ -172,9 +172,14 @@ Four things about the grammar, each a refusal when you get it wrong:
   `--from` wins over it. That is invariant 2 satisfied at the invocation rather than weakened:
   one statement of who is acting, covering everything the invocation does.
 - **The batch owns stdin, so an entry cannot take a body from there.** A body rides as a `-m`
-  value inside the entry, a JSON string with `\n` for its line breaks. No shell reads those
-  tokens at all, so somebody's words arrive intact without the construction *Writing a
-  document* requires of a flag.
+  value inside the entry, a JSON string with `\n` for its line breaks — which is fine for
+  words *you* wrote and is **not** the way to carry anybody else's. Two things happen to them
+  on the way in: you have to escape the value into JSON, and the array itself is usually
+  arriving on a heredoc, which a value containing that heredoc's terminator ends early. An
+  entry carries somebody's words the same way any other command does — `"--flag-file",
+  "title=/tmp/corpus-title.txt"` — so the JSON holds a path you chose and nothing you did not.
+  Where the array is long, write it to a file too and redirect it: `corpus batch < /tmp/batch.json`
+  reads the same array with no heredoc anywhere.
 - **The array itself arrives on a heredoc or a pipe**, which are the two transports read. A
   socket is never one: `spawn`, `exec` and a harness handing a child its input all give one,
   and the array is then refused at exit `2` before a byte of it is read. Anything driving this
@@ -1188,75 +1193,59 @@ argument, so the title lands as `OBriens report`, exit `0`, committed, both apos
 Each of those is a write that succeeded and a document that is wrong, and nothing afterwards
 tells you: not the confirmation, not the exit code, not the commit.
 
-**So text you are carrying over from somebody else never goes on a command line as a
-literal.** Build it in a heredoc whose terminator is quoted — which expands nothing at all —
-and pass it by name:
+**So text you are carrying over from somebody else never goes on a command line at all.**
+Write it to a file with your file-writing tool — which is not a shell and expands nothing —
+and name the file:
 
 ```bash
-title=$(cat <<'CORPUS_EOF'
-Kitchen rebuild — cabinet quote, $18,400
-CORPUS_EOF
-)
-corpus doc edit doc_a1b2c3 --title "$title" --from agent
+corpus doc edit doc_a1b2c3 --flag-file title=/tmp/title.txt --from agent
 ```
 
-Nothing inside a heredoc whose terminator is quoted is expanded, and `"$title"` expands the
-variable and nothing within it, so there is no character list to keep in your head: `$`, a
-backtick, a backslash, a `!`, an apostrophe and a quote all reach the server as themselves.
-
-One thing is left, and it is not a character but a **line**. The heredoc ends at the first line
-that is exactly its terminator, so a value carrying that line ends early and hands the
-remainder to the shell as commands. It is not caught by anything downstream: measured, the
-write still succeeded, exit `0`, the document committed with its body cut off at that line, and
-`command not found` the only sign it went wrong.
-
-Which line that is, is the one thing you choose, and **you choose it once, not per message: the
-terminator is always `CORPUS_EOF`, never `EOF`.** `EOF` is the word every shell transcript on
-earth already ends its heredocs with, and a pasted transcript is exactly the sort of text this
-rule exists to carry; `CORPUS_EOF` is not a word that turns up in anybody's prose, figures or
-paste. Use it everywhere — bodies, titles, replies, descriptions — so there is never a moment
-where you weigh the terminator against the text. Weighing it is the inspection this whole
-construction exists to replace, and you would be doing it on the text you are least able to
-read.
+`--flag-file <flag>=<path>` works for any flag on any command that takes text, and takes the
+file's bytes as the value. `--file <path>` does the same for a body. Between them there is no
+character list to keep in your head and nothing to weigh: `$`, a backtick, a backslash, a `!`,
+an apostrophe and a quote all reach the server as themselves, because nothing between your tool
+and the CLI is reading them.
 
 **The test is where the text came from, not what is in it.** Words you wrote yourself, out of
-ordinary vocabulary, have
-nothing in them for the shell to act on, and `--title "Quarterly insurance review"` is fine as
-it stands. Words you are carrying over are the other case — their question as a thread's
-title, a figure from their message, a name, a phrase you are handing back — because you did
-not choose those characters and so cannot know what is among them. Those go through the
-heredoc every time: a title, a tag, an `--extra` value, a description. It is the construction
-a body already uses, and that makes this one rule rather than two — a heredoc is how anybody's
-words reach the server intact, whether they fill a document or a single flag.
+ordinary vocabulary, have nothing in them for anything to act on, and `--title "Quarterly
+insurance review"` is fine as it stands. Words you are carrying over are the other case —
+their question as a thread's title, a figure from their message, a name, a phrase you are
+handing back — because you did not choose those characters and so cannot know what is among
+them. Those go in by path every time: a title, a tag, an `--extra` value, a description, a
+body. One rule, and the same one whether the words fill a document or a single flag.
+
+**Why not a heredoc, which is what this skill used to say.** A heredoc whose terminator is
+quoted expands nothing, and for every *character* it is correct. It has one failure that is not
+about characters at all: the heredoc ends at the first line that is exactly its terminator, so
+a value containing that line ends early and the shell runs the remainder **as commands**.
+Measured: a pasted vendor transcript containing a line reading `CORPUS_EOF` created a file,
+exited `0`, and committed a document holding a command's own output in place of the missing
+lines — with the tail of the message intact, so nothing read as truncated. You cannot inspect
+your way out of that, because you would be inspecting the text you are least able to read, and
+the write succeeds either way. A path has no terminator, so it has no line that can end it.
+
+**Do not build the file with a shell either.** `cat > /tmp/title.txt <<'CORPUS_EOF'` is the
+same construction with the same failure, one step earlier. Use the tool that writes a file
+directly.
+
+**Where a heredoc is still right.** Words *you* wrote — a reply you composed, a summary, a
+document you are drafting — have no such problem, and feeding them to a command on stdin is
+shorter than writing a file first. Where you do that, the terminator is always `CORPUS_EOF`,
+never `EOF`: `EOF` is the word every shell transcript on earth already ends its heredocs with,
+so it is the one most likely to appear in text, and choosing per message is the weighing this
+rule exists to remove.
 
 **When the shell refuses the line, the answer is never a double quote.** An unmatched quote or
 an unexpected end of file is the loud half of this same defect, and it is the better half:
 nothing ran, so nothing was written and nothing was lost. Reaching for a double quote to make
-the complaint go away is how a failure you can see turns into one you cannot.
+the complaint go away is how a failure you can see turns into one you cannot. If it is
+somebody's words in the line, the answer is the file.
 
-**Nor is it the same lines again.** A complaint about the construction above is usually not
-your mistake and will not clear on a resend: some shells read the `$( … )` around a heredoc
-before they reach its terminator, so one unbalanced quoting character anywhere in the value
-stops the whole command being parsed. Measured under `bash` 3.2, an apostrophe in `it's`, a
-lone `"` in a half-quoted sentence and a stray backtick each do it on their own, each reported
-as a different unmatched character; `zsh` 5.9 takes all three. So it is not about apostrophes
-and not about counting them: it is ordinary punctuation in the text you had the least choice
-about. Read the value in instead of capturing it — the same quoted terminator, with no command
-substitution around it to trip over:
-
-```bash
-IFS= read -r title <<'CORPUS_EOF'
-O'Brien — cabinet quote, $18,400
-CORPUS_EOF
-corpus doc edit doc_a1b2c3 --title "$title" --from agent
-```
-
-**That is a repair, not the rule, and its boundary is the reason:** it takes **one line** and
-drops anything after it without saying so. So it is right for a flag — a title, a tag, an
-`--extra` value, a description are each a single line — and never for a value that spans lines.
-Nothing is lost by that boundary. A value that spans lines is a body, and a body is fed to the
-command's own heredoc rather than captured into a variable first, so it never meets the defect
-this paragraph repairs.
+**Two refusals to expect from `--flag-file`, and both are the mechanism working.** Naming the
+flag and its file together is refused rather than one silently winning — pass the value one
+way. Naming a flag the command does not have is refused with the nearest one it does. Both
+exit `2`, both name the repair, and neither writes anything.
 
 **The whole-body edit, and the key that protects it.** When there is nothing to quote, the
 write replaces the body, and then: **read → work → write with the key you were given → keep

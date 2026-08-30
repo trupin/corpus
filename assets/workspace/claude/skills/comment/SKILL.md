@@ -195,22 +195,24 @@ happened in the reply, and never recreate what was deleted.
 
 A standalone thread arrives with a provisional title derived from its first turn. **After the
 first exchange, give it a real one** — a thread is a document, so the title is a document edit.
-A title made out of the conversation carries their words, so build it in a heredoc and pass it
-by name rather than quoting it into the command:
+A title made out of the conversation carries their words, so write it to a file and name the
+file rather than quoting it into the command:
+
+Write `/tmp/corpus-title.txt` with your file-writing tool:
+
+```
+Kitchen rebuild — cabinet quote, $18,400
+```
 
 ```bash
-title=$(cat <<'CORPUS_EOF'
-Kitchen rebuild — cabinet quote, $18,400
-CORPUS_EOF
-)
-corpus doc edit th_9f21c4 --title "$title" --from agent
+corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title.txt --from agent
 ```
 
 That is an obligation, not an option: an untitled conversation is unfindable on the board a
-week later, and you are the only party who knows what it turned out to be about. And the
-heredoc is not ceremony — quoted straight into the command, that title reaches the corpus as
+week later, and you are the only party who knows what it turned out to be about. And the file
+is not ceremony — quoted straight into the command, that title reaches the corpus as
 `cabinet quote, ,400`, with no error anywhere and the wrong figure shown to the person who
-gave you the right one. **What the shell does to a flag argument, and why the heredoc is the
+gave you the right one. **What the shell does to a flag argument, and why a path is the
 answer, is the orchestrate skill's to state, and it is stated there alone.** It binds every
 value you carry over from somebody: a title, a tag, an `--extra` value, a description.
 
@@ -261,8 +263,8 @@ Pick the smallest shape that actually answers the request.
   threads follow their text automatically — so **never hand-maintain the `anchors` map** and
   never mention anchor ids in an edit. Read the command's anchor report: it names any thread
   that came loose.
-- **Create a document** with `corpus doc create --type note --title "$title" --from agent` —
-  the title built in a heredoc first wherever it carries their words — when the
+- **Create a document** with `corpus doc create --type note --flag-file title=<path> --from agent`
+  — the title written to a file first wherever it carries their words — when the
   answer is durable — a decision, a preference, a fact that a future thread would need. Give
   it a folder, tag it, and reference it from the reply.
 - **Act on a whole folder only where the folder is what the person named.** That boundary is

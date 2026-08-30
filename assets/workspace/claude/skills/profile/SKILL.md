@@ -126,29 +126,31 @@ writing. The list is small and typed — this is not a corpus sweep:
 corpus doc list --type agent-def
 ```
 
-**Both values below are somebody else's, so both go in through a heredoc, passed by name.**
-The name they asked for and the description of what they asked it to do are their words, not
-yours, and words you did not choose are not put on a command line as a literal. **What the
-shell would otherwise do to those two values is the orchestrate skill's to state, and it is
-stated there alone.** Here it binds both of them every time, the ones that look safe included
-— you cannot see afterwards what came out wrong, and the document is what a person reads.
+**Both values below are somebody else's, so both go in by path.** The name they asked for and
+the description of what they asked it to do are their words, not yours, and words you did not
+choose do not go on a command line. **What the shell would otherwise do to those two values is
+the orchestrate skill's to state, and it is stated there alone.** Here it binds both of them
+every time, the ones that look safe included — you cannot see afterwards what came out wrong,
+and the document is what a person reads.
 
-```bash
-title=$(cat <<'CORPUS_EOF'
+Write `/tmp/corpus-title.txt` with your file-writing tool:
+
+```
 Bookkeeper
-CORPUS_EOF
-)
 ```
 
 **Create the document.** `agent-def` has a document root of its own, so pass no `--folder`:
 the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
-corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
+corpus doc create --type agent-def --flag-file title=/tmp/corpus-title.txt --from agent <<'CORPUS_EOF'
 The body — the persona, written to the rules above.
 CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
 ```
+
+The body stays on stdin because it is **yours** — the persona you just wrote to the rules
+above, not anybody's words you are carrying.
 
 **The name is not yours to set.** The server writes it into the frontmatter from the filename
 it just allocated, because that filename *is* the address: `.claude/agents/bookkeeper.md` is
@@ -164,13 +166,18 @@ it in from the title so the profile loads at all, and a title is a label rather 
 *Bookkeeper* tells whoever is choosing an agent nothing about when to choose this one. Replace
 it:
 
-```bash
-description=$(cat <<'CORPUS_EOF'
-Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
-CORPUS_EOF
-)
-corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
+Write `/tmp/corpus-description.txt`:
+
 ```
+Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place.
+```
+
+```bash
+corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-description.txt --from agent
+```
+
+The file holds the whole `description=…` pair, because that is what `--extra` takes: the value
+runs to the end of the file, so a description with a line break in it needs nothing special.
 
 That is a quality step and not a repair — skip it and what you have is a working profile
 nobody has a reason to pick. `--extra` names its own delta and takes no key.
@@ -253,14 +260,13 @@ it should behave (say where every figure came from), and what it should not do (
 general agent, so it should not wander). The fourth, what a good answer looks like, is missing
 and is guessable rather than askable. Guess it, and say that you guessed.
 
+Write `/tmp/corpus-title.txt` (`Bookkeeper`) and `/tmp/corpus-description.txt` (the
+`description=…` pair below) with your file-writing tool, then:
+
 ```bash
 corpus doc list --type agent-def
 no documents match.
-title=$(cat <<'CORPUS_EOF'
-Bookkeeper
-CORPUS_EOF
-)
-corpus doc create --type agent-def --title "$title" --from agent <<'CORPUS_EOF'
+corpus doc create --type agent-def --flag-file title=/tmp/corpus-title.txt --from agent <<'CORPUS_EOF'
 You keep this workspace's money documents in one shape.
 
 - Every figure you write carries its source: the id of the document it came from, and that document's date. A figure you cannot source does not go in the answer — say it is unsourced instead.
@@ -270,11 +276,7 @@ You keep this workspace's money documents in one shape.
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
 CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-description=$(cat <<'CORPUS_EOF'
-Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
-CORPUS_EOF
-)
-corpus doc edit doc_b7c1d5 --extra description="$description" --from agent
+corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-description.txt --from agent
 edited doc_b7c1d5
 key 4f2a9c7e1b8d0356a4e9c2f7b1d84a06e35c9f2b7a08d146e2c95b3f7a1d0e84
 ```

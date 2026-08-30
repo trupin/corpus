@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -119,7 +119,83 @@ Prose has no unit test. What stands in:
 
 ### Post-Implementation Verification
 
-_[filled by the implementer]_
+Implemented on: **opus**.
+
+**What changed.** The rule is rewritten once, in `orchestrate/SKILL.md`, where it
+was already stated alone. Carried words go to a file written with the agent's own
+file-writing tool and are named with `--flag-file` or `--file`. Heredocs stay for
+words the agent wrote itself, and keep `CORPUS_EOF` there. Every cross-reference
+in the other three skills now points at the new rule.
+
+Heredocs, before and after: `orchestrate` 28 → 25, `comment` 12 → 10,
+`profile` 14 → 6, `converse` 10 → 10. **64 → 51.** What is left is bodies the
+agent composed — replies, drafted documents, batch arrays — which is what the
+rule now says a heredoc is for. `converse` is unchanged in count because it
+demonstrates no carried flag value of its own; its one sentence about the rule is
+a cross-reference, and it was updated.
+
+The rule also got **shorter**: 935 words → 841, and simpler, because a path has
+no terminator to choose, no `IFS= read` repair and no single-line boundary. That
+matters beyond tidiness — AGENT-047 measured the comment skill at 15,228 tokens
+read whole on every event.
+
+**The drill.** `corpus init` a fresh workspace so the rewritten skills are what
+installed, server on **8766**. A person's message carrying every hostile thing at
+once: a line reading exactly `CORPUS_EOF`, `$18,400`, `` `whoami` ``, and
+apostrophes in `O'Brien's` and `it's`.
+
+```
+created doc_u7o2qp55 — data/docs/inbox/o-brien-s-quote-18-400-for-the-whoami-job.md
+$ ls /tmp/corpus-drill-pwned.txt
+ls: /tmp/corpus-drill-pwned.txt: No such file or directory
+```
+
+Compared byte for byte rather than by eye:
+
+```
+body byte-exact: True
+title stored : O'Brien's quote — $18,400 for the `whoami` job
+title sent   : O'Brien's quote — $18,400 for the `whoami` job
+title exact  : True
+```
+
+### The control taught something the reproduction had not
+
+Running the **old** construction on this same payload did not execute anything.
+It failed loudly instead:
+
+```
+control3.sh: line 13: unexpected EOF while looking for matching `''
+exit 2
+```
+
+**The old construction fails two ways and the person's words choose which.** If
+what follows the terminator line parses as shell, it *runs* — silently, which is
+CLI-074's recorded reproduction. If it contains an unbalanced quote, the shell
+refuses and nothing happens — loud, which is this payload, because it says
+`O'Brien's` after the terminator. Both are failures. Only one is visible. Nothing
+about the value tells you in advance which you are getting, which is the argument
+for the mechanism stated better than either case alone.
+
+**And two earlier attempts at that control were not faithful**, which is worth
+recording because of what it shows. The first put an apostrophe in the *title*
+capture and so failed on the loud path before reaching the payload at all. The
+second read the body from a file with `cat` — which is already most of the new
+shape, so of course nothing ran. It took three tries to demonstrate the old way
+on purpose. That is how narrow the safe path was, and it was never marked on the
+map.
+
+**Also corrected: a safety claim the batch grammar did not have.** The orchestrate
+skill said an entry's `-m` value means "no shell reads those tokens at all, so
+somebody's words arrive intact without the construction *Writing a document*
+requires of a flag." That is true of expansion and false of termination: the
+array itself usually arrives on a heredoc, which a carried value containing that
+terminator ends early — and a JSON string needs escaping besides. The bullet now
+says an entry carries somebody's words the same way any other command does, and
+points at redirecting the array from a file where it is long.
+
+**Suite.** `apps/cli` 2,217 passed, 109 files — including the workspace template
+tests, which are what prove the rewritten skills still install.
 
 ## Completion Checklist (domain agent)
 
