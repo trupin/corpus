@@ -11,7 +11,7 @@ import { openapi } from "./openapi-metadata.js";
  * ships in `apps/server/src/core/check.ts`, and this module is deliberately a
  * transcription of its vocabulary rather than a second description of it:
  *
- * - {@link CHECK_CODES} is `CHECK_CODES`' fourteen values, verbatim.
+ * - {@link CHECK_CODES} is `CHECK_CODES`' fifteen values, verbatim.
  * - {@link CheckFindingSchema}'s fields are `CheckFinding`'s field names,
  *   verbatim (`code`, `severity`, `docId`, `path`, `detail`).
  * - {@link CheckReportSchema}'s `errors`/`warnings` are `CheckReport`'s, plus
@@ -52,13 +52,23 @@ export const CHECK_CODES = [
   "unterminated-fence",
   "anchor-unresolved",
   "ref-unresolved",
+  "resident-malformed",
 ] as const;
 
 /**
- * Exactly the two states §11 carves out as warnings: an anchor that is
+ * Exactly the states §11 carves out as warnings: an anchor that is
  * well-formed but no longer resolves (an orphaned thread — a normal outcome of
  * editing, §6), and a `[[ref]]` whose target does not exist *yet* (how a corpus
- * grows, §5). Every other code is an error.
+ * grows, §5), and a `resident:` block that does not parse. Every other code is
+ * an error.
+ *
+ * `resident-malformed` is a warning for a reason that is not "it seems minor"
+ * (CONTRACT-085). A designation is **user-only state on a thread the user owns**,
+ * and every non-warning code blocks the write — so reporting it as an error
+ * would make the broken thread permanently unwritable, which is SERVER-123's
+ * regression in a second shape and is exactly why this was not filed under
+ * `frontmatter-invalid` instead. The fault is already in the bytes; a save is
+ * refused for what a save can break.
  *
  * `anchor-unused` is deliberately **not** here: §11 lists "every anchor belongs
  * to an existing thread" among the rules a mutation must satisfy, so a highlight
@@ -69,12 +79,16 @@ export const CHECK_CODES = [
  * save — the two families here are about the *verdict*, not about what the write
  * path refuses.
  */
-export const CHECK_WARNING_CODES = ["anchor-unresolved", "ref-unresolved"] as const;
+export const CHECK_WARNING_CODES = [
+  "anchor-unresolved",
+  "ref-unresolved",
+  "resident-malformed",
+] as const;
 
 /** Widened so the partition below reads as a set membership test, not a tuple search. */
 const WARNING_CODES: ReadonlySet<string> = new Set(CHECK_WARNING_CODES);
 
-/** The twelve codes that fail a check — the exit-6 class. */
+/** The codes that fail a check — the exit-6 class. */
 export const CHECK_ERROR_CODES: readonly CheckCode[] = CHECK_CODES.filter(
   (code) => !WARNING_CODES.has(code),
 );
@@ -84,8 +98,9 @@ export const CHECK_SEVERITIES = ["error", "warning"] as const;
 export const CheckCodeSchema = openapi(z.enum(CHECK_CODES), {
   description:
     "Which §11 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned " +
-    "thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other twelve " +
-    "are errors, `anchor-unused` and `unterminated-fence` among them.",
+    "thread), `ref-unresolved` (a `[[ref]]` whose target does not exist yet) and " +
+    "`resident-malformed` (a `resident:` block that does not parse, which costs the thread its " +
+    "designation); the rest are errors, `anchor-unused` and `unterminated-fence` among them.",
   example: "ref-unresolved",
 });
 

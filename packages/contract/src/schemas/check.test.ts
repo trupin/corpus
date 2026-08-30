@@ -33,7 +33,7 @@ describe("the check code vocabulary", () => {
    * Pinned literally so a drifted transcription is a failing test rather than a
    * `400` nobody can explain.
    */
-  it("names the validator's fourteen codes, in its order", () => {
+  it("names the validator's fifteen codes, in its order", () => {
     expect([...CHECK_CODES]).toEqual([
       "frontmatter-unparseable",
       "frontmatter-invalid",
@@ -49,6 +49,7 @@ describe("the check code vocabulary", () => {
       "unterminated-fence",
       "anchor-unresolved",
       "ref-unresolved",
+      "resident-malformed",
     ]);
   });
 
@@ -56,14 +57,21 @@ describe("the check code vocabulary", () => {
     expect(new Set(CHECK_CODES).size).toBe(CHECK_CODES.length);
   });
 
-  /** SPEC.md §11 carves out exactly two non-failing states, and no others. */
-  it("treats exactly the two §11 states as warnings", () => {
-    expect([...CHECK_WARNING_CODES]).toEqual(["anchor-unresolved", "ref-unresolved"]);
+  /** SPEC.md §11 carves out the non-failing states, and no others. */
+  it("treats exactly the §11 states as warnings", () => {
+    expect([...CHECK_WARNING_CODES]).toEqual([
+      "anchor-unresolved",
+      "ref-unresolved",
+      // A designation is user-only state on a thread the user owns, and every
+      // non-warning code blocks the write — so an error here would make the
+      // broken thread permanently unwritable (CONTRACT-085).
+      "resident-malformed",
+    ]);
   });
 
-  it("partitions the vocabulary into twelve errors and two warnings", () => {
+  it("partitions the vocabulary into twelve errors and three warnings", () => {
     expect(CHECK_ERROR_CODES).toHaveLength(12);
-    expect(CHECK_WARNING_CODES).toHaveLength(2);
+    expect(CHECK_WARNING_CODES).toHaveLength(3);
     expect([...CHECK_ERROR_CODES, ...CHECK_WARNING_CODES].sort()).toEqual([...CHECK_CODES].sort());
   });
 

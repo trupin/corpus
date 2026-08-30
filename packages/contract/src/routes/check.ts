@@ -40,8 +40,11 @@ export const checkDocuments = createRoute({
     "submitted.\n\n" +
     "**Severity is fixed by §11, not by the caller.** Warnings are exactly `anchor-unresolved` " +
     "(a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome " +
-    "of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus " +
-    "grows). The other twelve codes are errors, `anchor-unused` among them: §11 requires every " +
+    "of editing), `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus " +
+    "grows) and `resident-malformed` (a `resident:` block that does not parse, which costs the " +
+    "thread its designation — a warning because a designation is user-only state on a thread the " +
+    "user owns, and an error would make the broken thread permanently unwritable). The other " +
+    "twelve codes are errors, `anchor-unused` among them: §11 requires every " +
     "anchor to belong to an existing thread, so a highlight pointing at no conversation is " +
     "structural drift. `unterminated-fence` is one too — a fenced code block the body never " +
     "closes reads as code to the end of the document, so a thread's later turns disappear into " +

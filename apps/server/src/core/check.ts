@@ -6,6 +6,7 @@ import type { FileFrontmatter, FrontmatterIssue } from "./frontmatter.js";
 import { isThreadFrontmatter, threadFrontmatter, validateFrontmatter } from "./frontmatter.js";
 import { idPrefixForDocType, isAnchorId } from "./ids.js";
 import { extractRefs } from "./refs.js";
+import { residentProblem } from "./resident.js";
 import { duplicateTurnTimestamps } from "./turns.js";
 
 /**
@@ -65,6 +66,7 @@ export const CHECK_CODES = {
   unterminatedFence: "unterminated-fence",
   anchorUnresolved: "anchor-unresolved",
   refUnresolved: "ref-unresolved",
+  residentMalformed: "resident-malformed",
 } as const;
 
 export type CheckCode = (typeof CHECK_CODES)[keyof typeof CHECK_CODES];
@@ -613,6 +615,24 @@ export const checkCorpus = (
   for (const document of loaded) {
     const thread = threadFrontmatter(document.parsed.data);
     if (thread === null) continue;
+
+    // An ill-shaped `resident:` block, on the thread §7 allows one on
+    // (CONTRACT-085). SERVER-132 made this visible through `corpus db doctor` —
+    // a health command somebody runs deliberately — and not through the check
+    // somebody runs on a document they are editing, because reporting it needed
+    // a code and the enum is closed. It has one now.
+    //
+    // **A warning, and the severity is the whole decision.** A designation is
+    // user-only state on a thread the user owns; every non-warning code blocks
+    // the write, so reporting this as an error would make the broken thread
+    // permanently unwritable — SERVER-123's regression verbatim, and the reason
+    // this was not simply filed under `frontmatter-invalid`. The fault is
+    // already in the bytes, and a save is refused for what a save can break.
+    const residentFault =
+      thread.parent === null ? residentProblem(document.parsed.data["resident"]) : null;
+    if (residentFault !== null) {
+      report.warn(CHECK_CODES.residentMalformed, thread.id, document.path, residentFault);
+    }
 
     const parent = thread.parent === null ? null : byId.get(thread.parent);
     if (thread.parent !== null && !existsInCorpus(thread.parent)) {

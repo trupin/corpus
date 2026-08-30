@@ -124,7 +124,16 @@ const LOCAL_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
  * safe default. `write.test.ts` pins both directions: the fence reaches the log,
  * and the parent text `threads/create.ts` produces does not.
  */
-const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterminatedFence]);
+const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
+  CHECK_CODES.unterminatedFence,
+  // An ill-shaped `resident:` block joins it for the same reason, and the
+  // reasoning above transfers whole (CONTRACT-085): the fault is already in the
+  // bytes, blocking on it would make the thread unwritable, and a designation is
+  // user-only state on a thread the user owns. Reported on the save that touches
+  // it, so a person editing the thread meets it where they are rather than only
+  // in a health command they would have to think to run.
+  CHECK_CODES.residentMalformed,
+]);
 
 /**
  * Every `frontmatter-invalid` raised **under one of §7's Claude Code roots**, on

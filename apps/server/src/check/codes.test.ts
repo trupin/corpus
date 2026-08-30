@@ -26,12 +26,12 @@ const document = (frontmatter: string, body = "Body.\n"): string =>
   `---\n${frontmatter}\n${STAMPS}\n---\n\n${body}`;
 
 describe("the validator's codes and the wire's", () => {
-  it("are the same fourteen, member for member, in declaration order", () => {
+  it("are the same fifteen, member for member, in declaration order", () => {
     expect(Object.values(CHECK_CODES)).toEqual([...WIRE_CODES]);
   });
 
-  it("are fourteen — a count neither side states, so a paired addition still shows", () => {
-    expect(Object.values(CHECK_CODES)).toHaveLength(14);
+  it("are fifteen — a count neither side states, so a paired addition still shows", () => {
+    expect(Object.values(CHECK_CODES)).toHaveLength(15);
   });
 
   it("carry no duplicate value on the server side", () => {
@@ -78,6 +78,24 @@ describe("the warning/error split", () => {
         "**user** · 2026-01-01T00:00:00Z\n\nHello.\n",
       ),
     ),
+    // A standalone thread whose `resident:` block does not parse: §11's third
+    // warning (CONTRACT-085). It must be *standalone* — §7 allows a designation
+    // nowhere else, so the same block on a parented thread has lost nothing and
+    // is deliberately not a finding.
+    toCheckDocument(
+      "data/threads/th_cccccc.md",
+      document(
+        [
+          "id: th_cccccc",
+          "type: thread",
+          "title: Designated badly",
+          "status: open",
+          "resident:",
+          "  name: 42",
+        ].join("\n"),
+        "**user** · 2026-01-01T00:00:00Z\n\nHello.\n",
+      ),
+    ),
     // A second document claiming the first one's id, and a thread naming a
     // parent nobody wrote: two of the twelve error codes.
     toCheckDocument("data/docs/dupe.md", document("id: doc_note01\ntype: note\ntitle: Dupe")),
@@ -89,7 +107,7 @@ describe("the warning/error split", () => {
 
   const report = checkCorpus(corpus, { resolveAnchor: resolveAnchorExact });
 
-  it("emits exactly the contract's two warning codes and nothing else as a warning", () => {
+  it("emits exactly the contract's warning codes and nothing else as a warning", () => {
     expect([...new Set(report.warnings.map((finding) => finding.code))].sort()).toEqual(
       [...CHECK_WARNING_CODES].sort(),
     );

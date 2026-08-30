@@ -54,7 +54,11 @@ describe("Warning", () => {
     for (const checkCode of CHECK_CODES) expect(responseCodes, checkCode).not.toContain(checkCode);
     const checkCodes: readonly string[] = CHECK_CODES;
     expect(checkCodes).not.toContain("validation_error");
-    expect(CHECK_WARNING_CODES).toEqual(["anchor-unresolved", "ref-unresolved"]);
+    expect(CHECK_WARNING_CODES).toEqual([
+      "anchor-unresolved",
+      "ref-unresolved",
+      "resident-malformed",
+    ]);
   });
 
   /**
