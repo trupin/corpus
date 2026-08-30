@@ -10,6 +10,7 @@ import { initCommand } from "../commands/init/index.js";
 import { jobTopic } from "../commands/job/index.js";
 import { queueTopic } from "../commands/queue/index.js";
 import { reflectCommand } from "../commands/reflect.js";
+import { treeCommand } from "../commands/tree.js";
 import { searchCommand } from "../commands/search.js";
 import { serverTopic } from "../commands/server/index.js";
 import { skillTopic } from "../commands/skill/index.js";
@@ -48,6 +49,7 @@ export const registry: Registry = validateRegistry({
     healthCommand,
     initCommand,
     reflectCommand,
+    treeCommand,
     searchCommand,
     upgradeCommand,
   ],

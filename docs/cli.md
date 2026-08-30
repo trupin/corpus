@@ -19,6 +19,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus init`](#corpus-init)
 - [`corpus reflect`](#corpus-reflect)
 - [`corpus search`](#corpus-search)
+- [`corpus tree`](#corpus-tree)
 - [`corpus upgrade`](#corpus-upgrade)
 - [`corpus board`](#corpus-board)
   - [`corpus board order`](#corpus-board-order)
@@ -427,6 +428,30 @@ One JSON value: `{"hits":[{"id":"doc_a1b2c3","title":"Mortgage options","heading
 
 ```
 corpus search "deadline" --json
+```
+
+## `corpus tree`
+
+The folder structure of `data/docs/`, with document counts.
+
+One bounded call that answers _where does this go?_ — every folder under `data/docs/`, indented by depth, with the number of documents filed directly in it and, where they differ, the number including its descendants in parentheses. It is **structure, not enumeration** (SPEC.md §7): no titles, no ids, no bodies, so it never stands in for a search. Threads inherit their parent document's folder and are counted where they are filed. A workspace with no folders prints nothing and exits 0 — an empty tree is an answer, not a failure.
+
+```
+corpus tree [flags]
+```
+
+**Examples**
+
+Every folder, indented, with its counts.
+
+```
+corpus tree
+```
+
+The wire shape unchanged, for a caller that wants the nesting.
+
+```
+corpus tree --json
 ```
 
 ## `corpus upgrade`

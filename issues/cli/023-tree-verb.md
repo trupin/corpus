@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -45,7 +45,47 @@ apps/cli scoped (VITEST_MAX_THREADS=4).
 Real server: seeded workspace → tree matches disk; empty workspace → sane empty output.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+
+Implemented on: **opus**.
+
+**Real server, real workspace**, port 8766. Two documents filed into
+`finance/2026` and `finance`, then:
+
+```
+$ corpus tree
+boards  3
+finance  1 (2)
+  finance/2026  1
+inbox  4
+templates  1
+views  3
+```
+
+The tree matches disk, the nesting is indented, and `finance 1 (2)` says the
+folder holds one document and its subtree holds two — which is the number a
+filing decision actually needs. `--json` returns the wire shape unchanged,
+nesting included.
+
+**Two decisions worth recording.**
+
+The line names the **path**, not the folder's name. `--folder` takes a path, and
+a name repeated at two depths would be ambiguous exactly where it mattered. The
+indent carries the shape for a person; the path carries it for anything else.
+
+The total is printed **only where it differs** from the folder's own count. A
+parent whose descendants hold documents it does not is the common case, and one
+number there would hide whichever it was not.
+
+**Structure, not enumeration** (SPEC.md §7), asserted rather than asserted-in-a-
+comment: a test renders a tree and checks that no line matches `doc_` or `th_`
+and that every line is a path and a count. This verb cannot stand in for a
+search, which is the property that lets it exist at all.
+
+**Unit**: `tree.test.ts` 6 passed, including the empty tree — a fresh workspace
+would not reach it through the server, since `corpus init` creates four folders,
+so it is covered where it can be. Whole `apps/cli` suite: **2,223 passed**, 110
+files. `docs/cli.md` regenerated and the hygiene inventory updated, which is what
+caught the new module.
 
 ## Completion Checklist (domain agent)
 - [ ] Tests written and passing
