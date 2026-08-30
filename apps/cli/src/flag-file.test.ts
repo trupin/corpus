@@ -150,10 +150,13 @@ describe("every way of getting it wrong is loud", () => {
     await refuses(["--flag-file", "titel=/t"], { "/t": "x" }, /names no flag --titel/);
     // The repair is on the error's `hint`, which is what a person and the
     // `--json` envelope both read; asserting only the message would let the
-    // suggestion rot unnoticed.
-    await expect(resolve(["--flag-file", "titel=/t"], { "/t": "x" })).rejects.toMatchObject({
-      hint: expect.stringContaining("--flag-file title="),
-    });
+    // suggestion rot unnoticed. Caught and narrowed rather than matched with an
+    // asymmetric matcher, which returns `any` and costs a lint warning.
+    const thrown = await resolve(["--flag-file", "titel=/t"], { "/t": "x" }).catch(
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(UsageError);
+    expect((thrown as UsageError).hint).toContain("--flag-file title=");
   });
 
   it("refuses a boolean and a number, which hold no text", async () => {
