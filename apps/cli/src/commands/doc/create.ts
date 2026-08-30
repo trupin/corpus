@@ -12,7 +12,7 @@ import {
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { parseBoardFlags, BOARD_KEY_FLAGS } from "./frontmatter.js";
-import { effectLines, otherWarnings } from "./render.js";
+import { effectLines, keyLine, otherWarnings } from "./render.js";
 
 /**
  * `corpus doc create` — the first half of the agent's stewardship surface
@@ -79,6 +79,18 @@ export async function runDocCreate(
   context.out.line(
     `created ${response.doc.frontmatter.id} — ${response.doc.path}${warningSuffix(otherWarnings(response.warnings))}`,
   );
+  // The key, on the line after the confirmation, exactly as every write that
+  // lands prints one (CLI-047). A create is a write, and its caller is the one
+  // party that unambiguously knows the bytes.
+  //
+  // The argument against was that printing a key invites holding one across an
+  // interval in which anything may have changed — the habit the key contract
+  // exists to break. It loses on the contract's own terms: a key the document
+  // has moved past is **refused**, so this can save a read when nothing
+  // intervened and can never cause a wrong write when something did. The
+  // refusal is the mechanism working, and its recovery is the read the caller
+  // would otherwise have made unconditionally.
+  context.out.line(keyLine(response.doc));
   for (const line of effectLines(response.warnings)) context.out.line(line);
 }
 
@@ -122,7 +134,7 @@ export const createCommand: WorkspaceCommandSpec = {
     "written carries `--folder views --evergreen true`, which is what the seed columns look like " +
     "and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit " +
     "rather than implied by `--type view`, because this verb defaults nothing per type. Prints " +
-    "the new id and path, and prints on its own line any second effect the write had — a stage " +
+    "the new id and path, then the **key** for the bytes it just wrote — so a create-then-edit turn needs no read in between — and prints on its own line any second effect the write had — a stage " +
     "that decided a status (§5's coupling), a `default-open` taken off another board. `--json` " +
     "emits the server's `{doc, warnings}` response unchanged.\n\n" +
     BODY_SOURCES_HELP,

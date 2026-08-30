@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -84,7 +84,53 @@ an example drifting from the real output, which is what happened.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+Implemented on: **opus**.
+
+### The question, answered before the code
+
+**Yes — `doc create` prints a key**, on the line after its confirmation, in the
+same shape every other write that lands prints one.
+
+The case against was real and is the one worth answering: printing a key invites
+a caller to hold it across an interval in which anything may have changed, which
+is the habit §7's key contract exists to break. It loses **on the contract's own
+terms**. A key the document has moved past is *refused*, so printing one here can
+save a read when nothing intervened and can never cause a wrong write when
+something did. The "intermittent failure" the argument fears is the mechanism
+working, and its recovery — read the document again — is the read the caller
+would otherwise have been making unconditionally, every time, for nothing.
+
+The creating process is also the one party that unambiguously knows the bytes,
+and a create-then-edit is the one sequence where no other writer can have
+intervened without the edit being refused anyway.
+
+### Post-Implementation Verification
+
+Real server, real workspace, port **8766**:
+
+```
+$ corpus doc create --type note --title "No read between" --from agent -m "first"
+created doc_t5n2zuem — data/docs/inbox/no-read-between.md
+key a73e157f24ffda1b…
+
+$ corpus doc edit doc_t5n2zuem --key a73e157f24ffda1b… --from agent -m "second, …"
+edited doc_t5n2zuem
+key 083ee12970429e7b6cfc5475807aa3b899e779001bce4f970c872cfe1391d6b8
+```
+
+A create, then an edit against the key the create printed, **with no read in
+between** — which is the whole of what this issue asked for — and a fresh key
+back for whatever comes next.
+
+**Pinned, because the defect this prevents is an example drifting from the real
+output.** Three assertions in `create.test.ts` now spell the full two-line output
+byte for byte, including the key, for a document, an `agent-def` and a thread.
+That is what AGENT-025's worked example got wrong: it printed a key because a
+reader expects one there, and nothing checked.
+
+`apps/cli`: 2,217 passed, 109 files. `docs/cli.md` regenerated — the verb's own
+description now says it prints the key, so the help and the behaviour cannot
+disagree.
 
 ## Completion Checklist (orchestrator)
 
