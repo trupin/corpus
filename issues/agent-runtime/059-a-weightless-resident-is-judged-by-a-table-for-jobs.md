@@ -141,7 +141,10 @@ information-poor by design; not a defect, and not this one.
       currently redirect to it (the payload launch and the roster launch)
 - [ ] The skill states what does govern a listener whose designation chose no
       weight, in one rule, with its reason — the durability of the choice, not a
-      preference about models
+      preference about models. **The rule is: launch at the strongest tier the
+      workspace's own table declares**, read from that table rather than named
+- [ ] The rule holds for a workspace that renamed or reordered its tiers, and for
+      one that declares a single level — the skill never names a model here
 - [ ] A listener launch logs the weight it went out at **and where it came from**,
       including the case where the designation chose none — §7's dispatch rule
       reaching the one dispatch it does not currently reach
@@ -162,20 +165,35 @@ information-poor by design; not a defect, and not this one.
 - Possibly `assets/workspace/claude/skills/converse/SKILL.md`, if the listener's
   own skill restates the weight rule
 
-### The open question this issue does not settle
+### The rule, settled
 
-Three answers are defensible and they produce different skills. **This is the
-user's call and is being put to them rather than assumed:**
+**User decision, 2026-09-01: a resident whose designation states no weight
+launches at the strongest tier the workspace declares.** Not a preference about
+models — it follows from the durability of the choice. §7 forbids changing a
+running resident's weight without discarding the conversation, so this is the
+most expensive-to-unwind call the orchestrator makes, and the skill's own
+tie-break already says *"in doubt between two tiers, take the stronger"*. The
+current behaviour is the one place that tie-break is inverted by default.
 
-1. **Strongest tier.** A conversation is open-ended by construction, the choice is
-   durable, and the tie-break already says take the stronger where it matters.
-   Cost: a standing conversation about nothing much runs on Opus indefinitely.
-2. **Ask, with a form, before launching.** Fits the "ask rather than substitute"
-   doctrine — but fights *"Launching a listener is the orchestrator's first work"*,
-   because a form means nobody is answering that lane until the person replies.
-3. **A listener-specific rule of its own**, judging the conversation rather than a
-   job. Most accurate, most to write, and it needs a vocabulary that does not
-   exist yet.
+**The strongest tier the workspace declares**, read from the same table
+`parseWeightLevels` reads — never a model name written into the skill. A
+workspace that renames or reorders its tiers must move this rule with it, which
+is exactly what SHARED-022's one-declaration decision is for.
+
+Cost, stated so it is a decision rather than a surprise: a standing conversation
+about nothing much runs at the top tier for as long as it lives. That is
+accepted. The person can state a lighter weight at designation — which is what
+`UI-185` makes possible at the surface where it was not — and a resident nobody
+weighted is one nobody has told us is cheap.
+
+Two alternatives were rejected. **Asking with a form before launching** fits the
+"ask rather than substitute" doctrine, but fights *"Launching a listener is the
+orchestrator's first work"* — a form means nobody answers that lane until the
+person replies, so a question about cost becomes a silence about their message.
+**A listener-specific judgment rule** would be the most accurate and needs a
+vocabulary for weighing a standing conversation that does not exist yet. It stays
+available: the rule written here is one sentence, and replacing it later costs
+that sentence.
 
 A fourth option — make the designation surfaces stop producing `null` — is
 recorded and **rejected**: SPEC §7 says in terms that stating no weight is

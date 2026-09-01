@@ -2183,8 +2183,8 @@ what makes this the skill's defect and not the agent's.
 **Nothing in the chain is broken, and that was checked first.** The tier table
 parses out of the shipped skill, the UI offers its rows when designating, `corpus
 thread designate --weight` exists, and a *stated* weight reaches the launch
-(AGENT-041, done). The person designated two general residents without choosing a
-weight, which SPEC §7 explicitly permits.
+(AGENT-041, done). Both designations carried `weight: null` — not because the
+person declined to state one, but because the surface they came from cannot ask.
 
 **The defect is what happens next.** For a designation that chose no weight the
 skill says *"you decide as you decide for a `null`"* and sends the orchestrator to
@@ -2244,8 +2244,12 @@ stochastic subject needs `k/N`, not a boolean), and nothing ever asserts prose.
 `INFRA-034` writes nine user stories against it, seven of them regressions for
 defects that reached a release and two of them §7 promises nothing has checked.
 
-**Neither issue settles what the default should be** once `null` is a real choice
-again, because three answers are defensible and they produce different skills —
-strongest tier, ask with a form, or a listener-specific rule of its own. That fork
-is with the user. A fourth option, making the designation surfaces refuse `null`,
-is recorded and rejected: §7 says in terms that stating no weight is permitted.
+**The default is settled** (user decision, 2026-09-01): a resident whose
+designation states no weight **launches at the strongest tier the workspace
+declares**, and the launch logs both the weight and that it was defaulted. Two
+alternatives were rejected — asking with a form fights *"launching a listener is
+the orchestrator's first work"*, since nobody answers that lane until the person
+replies, and a listener-specific judgment rule needs a vocabulary for weighing a
+standing conversation that does not exist yet. A fourth option, making the
+designation surfaces refuse `null`, is rejected outright: §7 says in terms that
+stating no weight is permitted and means the orchestrator decides.
