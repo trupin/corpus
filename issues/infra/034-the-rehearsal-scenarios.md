@@ -93,6 +93,13 @@ agent, so only this suite can check them.
 - [ ] A first full pass is run and its scorecard committed, so later passes have a
       baseline to diff — including any story that does **not** pass, recorded as
       the finding it is rather than fixed by weakening the assertion
+- [ ] `docs/RELEASING.md` gains the step: run the pass, read the scorecard, commit
+      it, **then** `npm run release:prepare`. Placed before the bump so a finding
+      is cheap to act on rather than something discovered after a tag exists
+- [ ] The step states the known cost of running only at release time: a defect
+      introduced early in a cycle is found late. That is the accepted trade at
+      ~25 minutes per release, and it is written down so it is a decision rather
+      than a surprise
 
 ## Technical Design
 

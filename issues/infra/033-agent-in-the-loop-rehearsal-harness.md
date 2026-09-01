@@ -96,7 +96,19 @@ less than nothing — a green board over an unobserved system.
 ## Acceptance Criteria
 
 - [ ] `rehearsals/` holds the harness, run by its own script — **not** vitest, and
-      not wired into `npm test` or the PR gate
+      never wired into `npm test`, the PR gate, or `CI / validate`
+- [ ] **It runs once per release, before the bump** (user decision, 2026-09-01, to
+      bound the cost), and **before every release rather than only those touching
+      `assets/workspace/`**. The subject is the *loop*, which spans the skills,
+      the CLI and the server together: `CLI-051` was a CLI defect that changed what
+      an agent does with somebody's words, and `AGENT-041`'s gap spanned the skill
+      and the mechanism it named. A gate scoped to one of the three would have
+      watched the wrong file
+- [ ] **It cannot run in GitHub Actions**, because the runner spawns agents. So it
+      is a local step in `docs/RELEASING.md` that nothing can enforce — which is
+      why the scorecard below is **committed**: an unenforceable gate needs a
+      durable artifact, or "did we run it?" stops being answerable and the gate is
+      skipped in silence
 - [ ] **Fixture**: a scenario declares a seed, and the harness builds a fresh
       workspace from it — `corpus init` into a temp dir, seeded documents and
       threads, a server on a free port, `--wait` short enough that a park is
@@ -118,8 +130,10 @@ less than nothing — a green board over an unobserved system.
 - [ ] **The three universal invariants** run on every scenario, whatever it is
       about: no event lost or double-worked, every commit authored by the server
       (nothing hand-edited), every thread file still parses
-- [ ] **Scorecard**: one file per pass, naming every scenario, its grade, and for
-      judgments the ratio — readable by a person and diffable between releases
+- [ ] **Scorecard**: one file per pass, naming every scenario, its grade, the
+      release it was run for, and for judgments the ratio — committed, readable by
+      a person, and diffable between releases so a judgment that drifts is visible
+      without rerunning anything
 - [ ] One story implemented end to end to prove the harness — *"I asked one
       question and got one answer"* (story 3), chosen because it needs nothing
       from `AGENT-059`
