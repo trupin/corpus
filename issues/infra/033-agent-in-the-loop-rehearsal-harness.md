@@ -82,11 +82,12 @@ less than nothing — a green board over an unobserved system.
    instrument the harness.** The suite drives observability rather than routing
    around its absence.
 3. **Two grades, and they are not the same test.** An **invariant** must hold in
-   every run (10/10) — no event lost, one listener per lane, every commit authored
-   by the server. A **judgment** is reported as a ratio and compared to a
-   threshold, because the subject is stochastic. `AGENT-059` would have read
-   `10/10 launched Sonnet`. A rule that produces the right outcome 6/10 times is a
-   broken rule that a boolean assertion would call green.
+   every run it gets — no event lost, one listener per lane, every commit authored
+   by the server — and its `N` is small because repetition is not what it is for.
+   A **judgment** is reported as `k/N` against a threshold, and its `N` is large
+   because the subject is stochastic and the ratio *is* the result. `AGENT-059`
+   would have read `10/10 launched Sonnet`. A rule that produces the right outcome
+   6/10 times is a broken rule that a boolean assertion would call green.
 4. **Never assert prose.** Not the agent's wording, not a log line's phrasing —
    only what changed on disk, in git, and in the queue. `AGENT-059`'s table reads
    perfectly well and is wrong about a subject it never names; the *outcome* is
