@@ -109,6 +109,40 @@ export interface TurnComments {
   readonly popover: ReactElement | null;
 }
 
+/**
+ * What a comment on a cross-turn selection is told, before the composer opens
+ * (UI-061).
+ *
+ * A comment anchors to **one** turn, by construction: a child thread has one
+ * parent and one anchor (SPEC.md §6). Selecting three turns and commenting is
+ * therefore a request the model cannot carry, and the choice is between refusing
+ * it and narrowing it.
+ *
+ * **It narrows, and says so.** Refusing would cost a re-selection to reach a
+ * comment the reader can perfectly well have, and the turn they opened the menu
+ * on is an explicit pointer rather than a guess. What was wrong before was never
+ * the narrowing — it was that the only place it showed was the citation above
+ * the composer, *after* they had decided what to write. This sentence arrives
+ * first, and the citation then shows exactly what it will quote.
+ */
+export const NARROWED_TO_ONE_TURN =
+  "A comment anchors to one turn — this one will quote only the part you selected in the turn you clicked.";
+
+/**
+ * Whether the selection reaches text outside the body it is being anchored in.
+ *
+ * Asked of the **other rendered bodies** rather than of the range's own
+ * boundaries: a triple-click inside one turn can leave a boundary container on
+ * an element above `.turn-markdown` without the selection covering anything
+ * else, and treating that as a cross-turn selection would put this sentence in
+ * front of the commonest way people select a paragraph.
+ */
+function reachesBeyond(card: Element, root: Element, range: Range): boolean {
+  return [...card.querySelectorAll(".turn-markdown")].some(
+    (other) => other !== root && range.intersectsNode(other),
+  );
+}
+
 /** The `.turn-markdown` roots of one turn of **this** card, in render order. */
 function markdownRoots(card: Element, turnTs: string): readonly Element[] {
   const turn = [...card.querySelectorAll(`[data-turn-ts="${escapeSelectorValue(turnTs)}"]`)].find(
@@ -175,6 +209,7 @@ export function useTurnComments({
       const range = selection.getRangeAt(0);
       const captured = captureTurnAnchor({ root, part, turnBody: turn.body, range });
       if (captured === null) return null;
+      const narrowed = reachesBeyond(card, root, range);
       // jsdom implements no layout; the popover still opens, at the top left of
       // the viewport, rather than not opening at all.
       const box =
@@ -187,6 +222,8 @@ export function useTurnComments({
         left: box?.left ?? 0,
       };
       return () => {
+        // Before the composer, never after it — see `NARROWED_TO_ONE_TURN`.
+        if (narrowed) onNotify({ tone: "info", message: NARROWED_TO_ONE_TURN });
         setDraft({
           turnTs: turn.ts,
           partIndex,
@@ -196,7 +233,7 @@ export function useTurnComments({
         });
       };
     },
-    [cardRef, turns],
+    [cardRef, onNotify, turns],
   );
 
   const onContextMenu = useSelectionContextMenu({ editor: null, captureComment, onNotify });

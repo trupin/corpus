@@ -400,17 +400,29 @@ const JOIN_THREAD: StubRow = {
   body: `## user · 2026-08-03T17:01:12Z\n${JOIN_BODY}\n`,
 };
 
+/** Two turns, so a drag can cross from one rendered body into the next. */
+const TWO_TURN_THREAD: StubRow = {
+  id: "th_two",
+  type: "thread",
+  title: "Two turns",
+  path: "data/docs/threads/th_two.md",
+  body:
+    "## user · 2026-08-03T17:01:12Z\nThe first turn asks about the rate.\n\n" +
+    "## agent · 2026-08-03T17:02:00Z\nThe second turn answers about the rate.\n",
+};
+
 async function openThreadById(
   page: Page,
   rows: readonly StubRow[],
   id: string,
-  turns = 1,
 ): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, rows);
   await page.goto("/");
   await page.locator(".board").waitFor();
   await page.locator(`.row[data-row-doc="${id}"]`).click();
-  await expect(page.locator(`.reader [data-thread="${id}"] > .turns > .turn`)).toHaveCount(turns);
+  await expect(page.locator(`.reader [data-thread="${id}"] > .turns > .turn`)).toHaveCount(
+    id === "th_two" ? 2 : 1,
+  );
   return corpus;
 }
 
@@ -452,5 +464,62 @@ test.describe("a selection beside a paragraph join", () => {
     expect(
       JOIN_THREAD.body?.indexOf(posted.selector.prefix + "hen" + posted.selector.suffix),
     ).not.toBe(-1);
+  });
+});
+
+test.describe("a selection that reaches past one turn", () => {
+  /**
+   * UI-061. A comment anchors to one turn by construction — a child thread has
+   * one parent and one anchor — so a drag across two of them has to be narrowed
+   * to the turn the menu was opened in. The narrowing is correct. What was wrong
+   * is that it happened in silence: the only place it showed was the citation
+   * above the composer, which the reader meets after deciding what to write.
+   *
+   * Measured here rather than reasoned about, because a jsdom fixture that omits
+   * the `.doc-body thread-conversation` wrapper the real reader puts around a
+   * conversation declines the right-click for a reason the app does not have.
+   */
+  test("offers the comment, says it will quote one turn, and quotes that one", async ({ page }) => {
+    const corpus = await openThreadById(page, [THREADS_VIEW, TWO_TURN_THREAD], "th_two");
+    const turns = '.reader [data-thread="th_two"] > .turns > .turn';
+
+    await page.evaluate((selector) => {
+      const bodies = [...document.querySelectorAll(`${selector} .turn-markdown`)];
+      const [first, second] = bodies;
+      if (first === undefined || second === undefined) throw new Error("two turns expected");
+      const range = document.createRange();
+      range.selectNodeContents(first);
+      range.setEnd(second, second.childNodes.length);
+      const selection = globalThis.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, turns);
+
+    // Right-click inside the **first** turn: the pointer is the choice of turn.
+    const point = await page.locator(`${turns} .turn-markdown p`).first().boundingBox();
+    await page.mouse.click((point?.x ?? 0) + 8, (point?.y ?? 0) + 4, { button: "right" });
+
+    const menu = page.getByRole("menu", { name: "Actions for the selection" });
+    await expect(menu.locator('[data-act="comment"]')).toBeVisible();
+    await menu.locator('[data-act="comment"]').click();
+
+    // The sentence arrives with the composer, not in the citation afterwards.
+    await expect(page.locator('.toast[data-tone="info"]')).toContainText(
+      "A comment anchors to one turn",
+    );
+
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await expect(composer.locator(".cm-quote")).toContainText(
+      "The first turn asks about the rate.",
+    );
+    await expect(composer.locator(".cm-quote")).not.toContainText("second turn");
+    await composer.getByLabel("Comment").fill("Only the first, then.");
+    await composer.locator("[data-comment-send]").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const posted = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      selector: { exact: string };
+    };
+    expect(posted.selector.exact).toBe("The first turn asks about the rate.");
   });
 });
