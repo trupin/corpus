@@ -2171,3 +2171,44 @@ housekeeping. `SERVER-150` is carried by the user's decision of 2026-08-26.
 unsigned §10 line.
 
 **After this release the tracker holds no P0 and no P1.**
+
+---
+
+## Phase 55 — A resident's weight when nobody chose one (2026-09-01, user report)
+
+Reported from live use: an operator asked their orchestrator why it had launched
+two listeners on Sonnet, and the answer was correct in every particular — which is
+what makes this the skill's defect and not the agent's.
+
+**Nothing in the chain is broken, and that was checked first.** The tier table
+parses out of the shipped skill, the UI offers its rows when designating, `corpus
+thread designate --weight` exists, and a *stated* weight reaches the launch
+(AGENT-041, done). The person designated two general residents without choosing a
+weight, which SPEC §7 explicitly permits.
+
+**The defect is what happens next.** For a designation that chose no weight the
+skill says *"you decide as you decide for a `null`"* and sends the orchestrator to
+the two-pass judgment written for dispatching a **job**. Neither pass describes a
+resident: the first asks what a bad result would do that revising the document
+afterwards would not undo, which a standing conversation has no answer to; the
+second is a table whose middle row reads *"Most comment work … bounded to one or
+two documents"*, and an open-ended conversation reads exactly like that sentence.
+So every weightless resident lands on Standard, and the tie-break never fires.
+
+**Why P0.** A wrong weight on a job costs one job. On a resident it costs every
+turn of the conversation, and §7 forbids changing it in place — *"an agent already
+running cannot change what it is without discarding the conversation it is
+holding"*. The choice is durable, made once, at the moment least is known about
+the conversation. It is also unlogged: §7's *"a dispatch says what weight it went
+out at, and where that weight came from"* does not reach the listener launch, so
+the operator found this by asking rather than by reading.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | — |
+
+**The issue does not settle what the default should be**, because three answers
+are defensible and they produce different skills — strongest tier, ask with a
+form, or a listener-specific rule of its own. That fork is with the user. A fourth
+option, making the designation surfaces refuse `null`, is recorded and rejected:
+§7 says in terms that stating no weight is permitted.
