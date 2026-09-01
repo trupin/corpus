@@ -2225,6 +2225,24 @@ correctly read `weight: null`. Nothing was lost there.
 | --- | --- | --- | --- | --- | --- |
 | UI-185 | Ask designates a resident and cannot state its weight | todo | P0 | fable | — |
 | AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | UI-185 |
+| INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | todo | P0 | fable | AGENT-059 |
+| INFRA-034 | The rehearsal scenarios: nine user stories, graded | todo | P0 | fable | INFRA-033 |
+
+**And the reason none of this was caught** (user directive, 2026-09-01: *"We have
+been struggling with issues such as these for a while now"*). The repo tests code
+to 97% and tests the agent's instructions not at all — `workspace-template.test.ts`
+carries 404 guards and every one checks **wording**, never whether the sentence is
+true of the machinery, and never what an agent following it does. So the detector
+of last resort is the operator noticing and asking, which is how AGENT-041,
+AGENT-059 and UI-185 were each found.
+
+`INFRA-033` builds the execution layer: a real model, the real installed skills, a
+real workspace, and assertions that read only what the corpus records. Four rules
+hold it up — the runner gets **zero** test knowledge, assertions read the corpus
+and never the transcript, invariants and judgments are graded differently (a
+stochastic subject needs `k/N`, not a boolean), and nothing ever asserts prose.
+`INFRA-034` writes nine user stories against it, seven of them regressions for
+defects that reached a release and two of them §7 promises nothing has checked.
 
 **Neither issue settles what the default should be** once `null` is a real choice
 again, because three answers are defensible and they produce different skills —
