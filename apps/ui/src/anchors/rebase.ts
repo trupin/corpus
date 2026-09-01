@@ -1,6 +1,6 @@
 import type { SelectionRange } from "../editor/selection";
 import type { MdRange } from "./offsetMap";
-import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
+import { mdRangeOfProjection, projectionRangeOfMd, sourceTraceOf } from "./sourceTrace";
 
 /**
  * One range, re-expressed in a second spelling of the same document.
@@ -111,8 +111,16 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * the true one", which is false at a ref edge (PR #21 re-review, MINOR 1).
  *
  * Neither direction is a *misplacement*: the range never lands on words the
- * anchor does not overlap. `rebase.test.ts` pins the widening and its stopping
- * point; the ref edge is not yet pinned and belongs with UI-060's parity work.
+ * anchor does not overlap. `rebase.test.ts` pins both — the widening with its
+ * stopping point, and the ref edge, which UI-060 promised and delivered.
+ *
+ * **One cause of the widening is gone** (UI-060): the two-space continuation
+ * indent under a list item. `mdast-util-to-hast` removes the spaces and tabs at
+ * every line break and the trace now reproduces that one transformation, so a
+ * paragraph that a respelling merged into the bullet above it maps character for
+ * character instead of quoting itself whole. Escaping still widens, and the test
+ * that names it still passes — the *commonest* cause was the indent, not the
+ * escape.
  *
  * @param from the spelling `range` is addressed in
  * @param to the spelling to re-address it in
@@ -123,11 +131,16 @@ export function rebaseRange(from: string, to: string, range: MdRange): MdRange |
   if (from === to) return range;
   const source = sourceTraceOf(from);
   const target = sourceTraceOf(to);
-  const plain = plainRangeOfMd(source.runs, range.start, range.end);
-  if (plain === null) return null;
-  const agreed = agreeingPlainRange(source.plain, target.plain, plain);
+  // The `sourced` axis, never `plain`: the two spellings are two renderings of
+  // one document, and the renderer's own joins are not part of what they say.
+  // A blank line moved between them changes where `mdast-util-to-hast` writes a
+  // `"\n"` — the exact respelling this function exists for — and comparing the
+  // rendered projections would report a divergence the documents do not have.
+  const projected = projectionRangeOfMd(source.runs, "sourced", range.start, range.end);
+  if (projected === null) return null;
+  const agreed = agreeingPlainRange(source.sourced, target.sourced, projected);
   if (agreed === null) return null;
-  const rebased = mdRangeOfPlain(target.runs, agreed.start, agreed.end);
+  const rebased = mdRangeOfProjection(target.runs, "sourced", agreed.start, agreed.end);
   return rebased === null ? null : { start: rebased.start, end: rebased.end };
 }
 

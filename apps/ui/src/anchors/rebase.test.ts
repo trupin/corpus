@@ -139,6 +139,27 @@ describe("rebasing a range between two spellings", () => {
   });
 
   /**
+   * **The narrowing case**, which the module comment has described since PR #21
+   * and nothing pinned until UI-060.
+   *
+   * A `[[ref]]` renders as the referenced document's *title*, so the trace emits
+   * no run for the token and it is in neither projection. A range whose leading
+   * edge sits on one therefore comes back without it — narrower than the anchor,
+   * starting at the first character the reader can actually see.
+   *
+   * Not a misplacement: the result is inside the anchor, on the same sentence,
+   * and every word of it was in the original. Worth an assertion because the
+   * direction is the opposite of the widening above, and a reader who knew only
+   * about widening would read this result as a bug.
+   */
+  it("drops a reference token from the leading edge of a rebased range", () => {
+    const body = "\nSee [[doc_a1b2c3]] carefully before deciding.\n";
+    const canonical = canonicalOf(body);
+    expect(canonical).not.toBe(body);
+    expect(travel(body, "[[doc_a1b2c3]] carefully")).toBe(" carefully");
+  });
+
+  /**
    * The licence and nothing weaker. Two documents that do not render the same
    * characters have no shared projection to travel through, and a placement
    * would be a guess about which sentence a comment is on.
@@ -222,18 +243,28 @@ describe("a document whose two spellings diverge in one place", () => {
   });
 
   /**
-   * The passage the printer's respelling swallowed is placed too, and takes the
-   * module's known widening: merging the paragraph into the bullet above it
-   * makes one run whose markdown and text differ (the continuation indent), and
-   * a partial hit inside an atomic run quotes the whole run. Wide, on the right
-   * sentence, and containing the words — the documented trade, not a
-   * misplacement, and still far better than the nothing it drew before.
+   * The passage the printer's respelling swallowed is placed too, and **exactly**
+   * — which is a change, and the right way round (UI-060).
+   *
+   * It used to come back widened to `Nested bullet two.\n  A trailing paragraph
+   * of the outer item.`: merging the paragraph into the bullet above it makes
+   * one run whose markdown and text differ by the two-space continuation
+   * indent, that difference made the run atomic, and a partial hit inside an
+   * atomic run quotes the whole run.
+   *
+   * The indent is no longer an unexplained difference. `mdast-util-to-hast`
+   * removes exactly the spaces and tabs at a line break (`trim-lines`), the
+   * trace reproduces that one transformation, and a run whose whole difference
+   * from its source is accounted for maps character for character. So the
+   * widening this case used to demonstrate does not happen here any more.
+   *
+   * It has not been abolished — an escape still makes a run atomic, which the
+   * escaping case above pins. What is gone is the *commonest* cause of it, the
+   * indent under a list item.
    */
-  it("widens a passage inside the run the respelling merged", () => {
+  it("places a passage inside the run the respelling merged, without widening it", () => {
     const quoted = travel(BODY, "trailing paragraph of the outer item", RESPELT);
-    expect(quoted).toContain("trailing paragraph of the outer item");
-    expect(quoted).toBe("Nested bullet two.\n  A trailing paragraph of the outer item.");
-    // And no further: the widening stops at the run it overlapped.
+    expect(quoted).toBe("trailing paragraph of the outer item");
     expect(quoted).not.toContain("Second outer bullet");
   });
 

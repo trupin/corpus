@@ -394,8 +394,16 @@ test.describe("copying through the right-click menu", () => {
     await turn.click({ button: "right" });
     const menu = page.getByRole("menu", { name: "Actions for the selection" });
     await menu.waitFor();
-    // No editor here: §10's "Copy always" is the whole menu.
-    await expect(menu.getByRole("menuitem")).toHaveCount(1);
+    // No editor here, so no Cut and no Paste — that is what "rendered, not
+    // editable" costs the menu. Comment is offered beside Copy because this
+    // selection now anchors: it spans a heading, a paragraph and a list, and
+    // until UI-060 the trace and the renderer disagreed about the whitespace
+    // between them, so `captureTurnAnchor` declined and the count here was 1.
+    expect(
+      await menu
+        .getByRole("menuitem")
+        .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"])),
+    ).toEqual(["comment", "copy"]);
     await menu.locator('[data-act="copy"]').click();
     await expect(menu).toHaveCount(0);
 
