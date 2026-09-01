@@ -351,8 +351,8 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | done | P2 | — |
 | UI-058 | A "note only" turn still shows "agent is working" (dogfood) | done | P1 | — |
 | UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | done | P1 | — |
-| UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
-| UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
+| UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | done | P1 | UI-051 |
+| UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | done | P2 | UI-051 |
 | CONTRACT-030 | Jobs query by origin: ask "is a job outstanding for this thread" on the wire | done | P1 | — |
 | SERVER-056 | Filter jobs by origin (originId is derived at response time, not a column) | done | P1 | CONTRACT-030 |
 | UI-069 | Outstanding-job lookup reads a 50-row window; deferred jobs fall out of it | done | P1 | CONTRACT-030, SERVER-056 |
@@ -2104,3 +2104,70 @@ skill told the agent it could carry somebody's words inside a batch. Testing the
 sentence showed the batch never resolved the files. The sentence was correct
 about what should be true, so the batch was fixed rather than the prose: a safe
 path and a fast path that differ is a choice an agent makes wrongly.
+
+---
+
+## Phase 54 — The comment lands on the words you chose (2026-08-31, v0.30.0 scope)
+
+Both issues came out of PR #20's review on 2026-08-04 and were deferred through
+eleven releases. `UI-060` was the last P1 in the tracker.
+
+**One projection, two opinions.** `sourceTrace.ts` claims to produce what a
+renderer draws, and `turnAnchors.ts` transfers an *occurrence index* across that
+claim — count a quote's earlier occurrences in the DOM, look that index up in the
+trace. Sound exactly while the two strings are the same string. They were not:
+`mdast-util-to-hast` writes a `"\n"` between sibling blocks, around a list or a
+blockquote, and beside every hard break, and a parallel walk of the mdast emits
+nothing there. So `plain` was the rendered text with its joins closed up — and
+closing a join up **manufactures an occurrence the reader never saw**.
+
+Measured on 25 fixtures against the real renderer: **nearly every multi-block
+body diverged.** Not the exotic ones — two paragraphs, every list, every
+blockquote, headings, fences, both hard breaks. §5's inline markers diverged too,
+which made every selection in a styled turn decline from v0.28.0 onward.
+
+**The fix is to stop having a second opinion.** The trace runs
+`mdast-util-to-hast` over the tree remark positioned — the same conversion
+`react-markdown` runs — and reads the inline changes out of the source, as it
+already did for `[[ref]]`. A text node with a position is addressable; one
+without is a separator, in `plain` and in neither direction of the map.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+
+`UI-060` and `UI-061` keep their existing Phase 12 rows, both now `done`;
+`scripts/check-issues.ts` allows one row per id, so they are named here in prose
+and counted there.
+
+**The invariant is now a test against the DOM.** `renderParity.test.tsx` renders
+37 fixtures through the real `MarkdownView`, hard breaks on and off, and asserts
+that what the trace says equals what the renderer draws. A remark upgrade or a
+new plugin turns it red without anyone predicting which construct broke.
+
+**It found a defect nobody had filed.** `CorpusImage` draws `🖼 a chart` while an
+attachment loads — visible words no character of the file spells — so every
+offset after an image moved for as long as the attachment took to arrive. Both
+its stand-ins are chrome now.
+
+**The trace grew a second axis, and that was a cost, not a feature.** Putting the
+renderer's whitespace into `plain` broke `rebaseRange`, whose job is to compare
+two spellings of one document: a blank line moved between them changes where the
+joins go. `plain` is for anything whose other end is the DOM, `sourced` for
+anything whose other end is another spelling of the file. One improvement fell
+out — the continuation indent under a list item no longer widens a passage to the
+bullet above it.
+
+**`UI-061`'s first reproduction was wrong, and the browser said so.** A jsdom
+fixture without the `.doc-body thread-conversation` wrapper the real reader puts
+around a conversation declined the right-click for a reason the app does not
+have. A change to `nativeMenu.ts` was written on that premise, refused to
+falsify, and was reverted. Reproduce against the running app first.
+
+**Left out**: the commit-window pair (`SERVER-101`, `SERVER-106`) — the same
+defect twice, and a good next release, but a second sentence about commits rather
+than this one about selections. `CONTRACT-066`, `INFRA-018` and `SHARED-003` are
+housekeeping. `SERVER-150` is carried by the user's decision of 2026-08-26.
+`UI-083` needs rewriting against SHARED-032 first. `UI-081` still waits on one
+unsigned §10 line.
+
+**After this release the tracker holds no P0 and no P1.**
