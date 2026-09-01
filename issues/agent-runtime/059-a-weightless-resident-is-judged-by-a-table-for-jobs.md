@@ -18,7 +18,9 @@ fable
 
 ## Dependencies
 
-- Depends on: — (the machinery this needs all shipped)
+- Depends on: `UI-185` — not for code, but for meaning: until Ask can state a
+  weight, `null` is a state the product manufactures rather than one a person
+  chose, and any rule written here is a rule about that manufactured state
 - Related: AGENT-041 (made a *stated* weight reach the launch — this is the
   unstated case), AGENT-039, SHARED-022 (the tier table is the one declaration),
   CONTRACT-067 / SERVER-129 / CLI-053 (the weight's wire, storage and CLI flag)
@@ -46,13 +48,26 @@ particular, which is what makes this a defect in the skill and not in the agent:
 > weight means I judge. I ran the second pass (difficulty) and landed on Sonnet
 > for open-ended conversations.
 
-**Nothing was broken along the way, and that was checked before writing this.**
-The weight table parses out of the shipped skill (`parseWeightLevels` returns all
-three levels), the UI offers those rows when designating, `corpus thread
-designate` takes `--weight`, and the contract, server and CLI all carry the field.
-A weight that *is* stated reaches the launch — that is AGENT-041, done. The
-person simply designated two general residents without choosing a weight, which
-the spec explicitly permits.
+**The chain from a stated weight to a launched listener is intact, and that was
+checked before writing this.** The weight table parses out of the shipped skill
+(`parseWeightLevels` returns all three levels), `corpus thread designate` takes
+`--weight`, the thread menu offers weight rows, and the contract, server and CLI
+all carry the field. A weight that *is* stated reaches the launch — AGENT-041,
+done.
+
+**But `null` here was not a choice, and that is `UI-185`.** Asked why the
+information had not reached the agent, I checked the surface these two
+designations actually came from: the global composer's Ask. Its `owner` control
+is a bare profile `<select>` and submits `{name}` with no weight — the one
+designation surface in the product that cannot state one, and the only one where
+a *standalone* thread (the only kind §7 lets designate) is created. Worse, the
+overlay's one weight control feeds the **message** weight, which §7 says never
+governs a resident's own turn.
+
+So the person did not decline to choose. Nobody asked them, and a weight they may
+well have picked went somewhere else. This issue is the second half of the
+defect: what the orchestrator should do with a `null` it will still sometimes
+receive legitimately, once `UI-185` makes the other case expressible.
 
 **The defect is what the skill does next.** For a listener whose designation chose
 no weight it says:
@@ -102,22 +117,22 @@ place a middle tier is taken by default.
 ## What is **not** wrong, recorded so nobody re-chases it
 
 - `parseWeightLevels` against the shipped skill returns
-  `[{light}, {standard}, {heavy}]` — the declaration is found and the composer
-  offers it.
-- The designation surfaces all accept a weight: `residentActions.ts` renders the
-  rows, `corpus thread designate --weight <key>` exists with its three readings.
-- `Resident.weight: null` is a legitimate value, not a dropped one
+  `[{light}, {standard}, {heavy}]` — the declaration is found.
+- `corpus thread designate --weight <key>` exists with its three readings, and
+  `residentActions.ts` renders weight rows on an existing thread.
+- `Resident.weight: null` is a legitimate value on the wire, not a dropped one
   (`agents.test.ts` pins it), and the roster correctly prints no `at <weight>`
   qualifier for it.
 
-**One adjacent inaccuracy, small and worth stating.** The agent said *"the idle
-command … carries no model information"*. That is true of what it **prints** —
-`runIdle` emits `${event.id} ${event.type}` per event — and false of what it
-**emits as JSON**, which is the whole event including its payload. The skill
-documents only the printed form. This did not cause the defect (the agent read the
-payload from `claim-all`, where the weight was equally `null`), so it is noted
-here rather than filed, and belongs in whatever change touches idle's
-documentation next.
+**`corpus queue idle` is not the hole, and that was checked.** The user asked
+whether the information should have arrived through `idle`. `runIdle` emits
+`{events, inProgress}` — the **whole** event including its payload — and prints
+`${event.id} ${event.type}` only in human mode; the skill documents the printed
+form alone. But nothing was lost there: `claim-all` follows immediately with full
+payloads, which is where the agent correctly read `weight: null`, and the agent
+must claim to take ownership regardless, so carrying payloads on `idle` would save
+no round trip. Worth a sentence in the skill so nobody believes `idle` is
+information-poor by design; not a defect, and not this one.
 
 ## Acceptance Criteria
 
@@ -165,7 +180,9 @@ user's call and is being put to them rather than assumed:**
 A fourth option — make the designation surfaces stop producing `null` — is
 recorded and **rejected**: SPEC §7 says in terms that stating no weight is
 permitted and means the orchestrator decides, so removing the state would need a
-signed rider and would take a choice away from the person.
+signed rider and would take a choice away from the person. `UI-185` is not that
+option: it makes the choice *expressible* at Ask, including an explicit
+"the launcher decides" row, and leaves `null` meaning what §7 says it means.
 
 ## Testing Strategy
 

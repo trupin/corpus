@@ -2203,12 +2203,31 @@ the conversation. It is also unlogged: §7's *"a dispatch says what weight it we
 out at, and where that weight came from"* does not reach the listener launch, so
 the operator found this by asking rather than by reading.
 
+**Following the user's own question — *"isn't that in itself a hole?"* — turned up
+the upstream half.** The two designations came from the global composer's Ask,
+whose `owner` control is a bare profile `<select>` that submits `{name}` and no
+weight. It is the only designation surface in the product that cannot state one,
+and §7 lets **only** a standalone thread designate — so it is the surface where
+residents are born. The contract, the server, the CLI and the thread menu all
+carry a weight; Ask does not. Worse, the overlay's one weight control feeds the
+**message** weight, which §7 says never governs a resident's own turn — so a
+weight the person did pick went to the one place it does not apply, silently,
+which is the shape §7's own sentence forbids.
+
+So `null` was not "the person left it to the launcher". Nobody asked them.
+
+**`corpus queue idle` is not the hole, and that was checked.** `runIdle` emits the
+whole event including its payload as JSON and prints `id type` only in human mode;
+`claim-all` follows immediately with full payloads, which is where the agent
+correctly read `weight: null`. Nothing was lost there.
+
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | — |
+| UI-185 | Ask designates a resident and cannot state its weight | todo | P0 | fable | — |
+| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | UI-185 |
 
-**The issue does not settle what the default should be**, because three answers
-are defensible and they produce different skills — strongest tier, ask with a
-form, or a listener-specific rule of its own. That fork is with the user. A fourth
-option, making the designation surfaces refuse `null`, is recorded and rejected:
-§7 says in terms that stating no weight is permitted.
+**Neither issue settles what the default should be** once `null` is a real choice
+again, because three answers are defensible and they produce different skills —
+strongest tier, ask with a form, or a listener-specific rule of its own. That fork
+is with the user. A fourth option, making the designation surfaces refuse `null`,
+is recorded and rejected: §7 says in terms that stating no weight is permitted.
