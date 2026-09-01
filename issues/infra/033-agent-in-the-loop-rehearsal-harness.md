@@ -144,7 +144,14 @@ less than nothing — a green board over an unobserved system.
 - **Machine load.** Runs are agents, not workers: cap concurrency low and stagger
   starts. The suite is minutes per run and is not a gate.
 - **Cost is real.** N is a knob per scenario. Start at 10 for judgments and 3 for
-  pure invariants.
+  pure invariants, which makes a full pass of `INFRA-034`'s nine stories
+  **34 runs** — one judgment at 10, eight invariants at 3 — or about 25 minutes
+  at four concurrent runs of two to three minutes each.
+- **N=3 proves little about intermittency, and that is a cost compromise rather
+  than a principle.** So a single invariant failure is investigated, never retried
+  away. The three *universal* invariants are the exception that costs nothing:
+  they run on every run of every scenario, so they accumulate all 34 samples,
+  while a story's own invariant sees only that story's N.
 - The runner needs the subagent-spawning tool, because launching listeners is the
   behaviour under test.
 
