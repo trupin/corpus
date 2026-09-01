@@ -1956,6 +1956,13 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(
         /judge that weight in two passes —\s+consequence first, difficulty second/,
       );
+      // AGENT-059: the passes' subject is a job. A listener launch never comes
+      // through them, and the preamble is where a reader must learn that.
+      expect(body).toMatch(
+        wrapped(
+          "The two passes weigh **a job you dispatch**. They never weigh **a listener you launch**",
+        ),
+      );
       expect(body).toMatch(
         /\*\*what a bad result would do that revising the document afterwards\s+would not undo\*\*/,
       );
@@ -2344,6 +2351,13 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/never a fixed default/);
       expect(body).toMatch(/there is no level you fall back\s+to/);
       expect(body).toMatch(/the only spelling of it/);
+      // AGENT-059: that absence rule is a job rule, and it says so. A
+      // weightless *designation* is the one absence the two passes never
+      // touch — its rule is stated where the launch is owned, in Routing.
+      expect(body).toMatch(/All of that is about a job/);
+      expect(body).toMatch(
+        wrapped("a listener launches at the strongest tier this table declares"),
+      );
     });
 
     it("does the work anyway when a stated weight cannot be met, and says so twice", () => {
@@ -5888,16 +5902,100 @@ describe("a listener launched at its designation's weight", () => {
     // The routing row says the same thing where a reader meets it first.
     const designation = routing.split("\n").find((line) => line.includes("`resident.designated`"));
     expect(designation ?? "").toMatch(/at the model that `resident`'s `weight` names/);
-    // `null` is the orchestrator's own judgment, not a hidden default — and it
-    // is logged, because a listener answers for weeks on that one choice.
-    expect(launch).toMatch(/A `null` weight is \*you decide\*/);
-    expect(launch).toMatch(/on a subject that is a whole conversation rather than\s+one turn/);
-    expect(launch).toMatch(/log the model you launched at on the designation's own event/);
+    // `null` is still the orchestrator's decision — settled by the rule the
+    // next guard pins, never judged through the job passes (AGENT-059).
+    expect(launch).toMatch(/A `null` weight is still \*you decide\*/);
     // And the example logs a model this workspace's table actually declares.
-    const logged = /launched a converse listener on \S+ — a general resident \(([^ ]+) —/.exec(
-      launch,
-    )?.[1];
+    const logged = /launched a converse listener on \S+ — a general resident \(([^—()]+) —/
+      .exec(launch)?.[1]
+      ?.trim();
     expect(declaredModels, `the launch example logs "${logged ?? "nothing"}"`).toContain(logged);
+  });
+
+  /**
+   * AGENT-059, reported from live use 2026-09-01. For a designation that chose
+   * no weight the skill said "you decide as you decide for a `null`" and sent
+   * the launch through the two-pass judgment written for dispatching a job.
+   * Neither pass describes a resident: the first pass answers no by default
+   * because a listener has no single output, and the second pass's middle row
+   * ("read a thread and its parent … bounded to one or two documents") swallows
+   * every open-ended conversation — so every weightless resident landed on the
+   * middle tier, and the "in doubt, take the stronger" tie-break never fired
+   * because nothing was in doubt. A wrong weight on a job costs one job; a
+   * wrong weight on a resident costs every turn of the conversation, and no
+   * running resident changes weight without discarding what it holds. So the
+   * unset case is a rule, not a judgment — user decision, 2026-09-01.
+   */
+  it("launches a weightless designation at the strongest declared tier, by rule", () => {
+    // The owner sentence — deleting it is what must turn this file red.
+    expect(launch).toMatch(
+      wrapped(
+        "**A designation that chose no weight launches at the strongest tier the table declares.**",
+      ),
+    );
+    // The scoping, stated at the owner: the two passes are for jobs.
+    expect(launch).toMatch(
+      wrapped(
+        "Delegation's two passes govern **dispatching a job**, and they do not govern **launching a listener**.",
+      ),
+    );
+    // The reason is durability, not a preference about models.
+    expect(launch).toMatch(/how durable the choice is, not a\s+preference about models/);
+    expect(launch).toMatch(/the most expensive choice you make to unwind/);
+    expect(launch).toMatch(wrapped("in doubt take the stronger, settles it outright"));
+    // Read off the table, never a remembered name — a rename, a reorder and a
+    // one-level table all keep working (SHARED-022's one declaration).
+    expect(launch).toMatch(wrapped("its last row, because the table is written lightest first"));
+    expect(launch).toMatch(/never off a model name\s+remembered from anywhere else/);
+    expect(launch).toMatch(/rename or reorder its tiers/);
+    expect(launch).toMatch(/declares a single level has a strongest level all the same/);
+    // The cost, named so it stays a decision rather than a surprise.
+    expect(launch).toMatch(/runs at the top tier for as long as it lives/);
+    expect(launch).toMatch(/stating a lighter weight when they designate\s+it/);
+    // The worked example practises the rule at the tier the shipped table
+    // declares last, in the argument and in the prompt — and the judgment
+    // vocabulary the old example taught is gone.
+    const strongest = readWeightLevels(body).at(-1)?.model ?? "";
+    expect(strongest, "the table declares no levels").not.toBe("");
+    const call = fencedBlocks(launch).find((fence) => fence.content.includes("Task("))?.content;
+    expect(call ?? "").toMatch(new RegExp(String.raw`running as ${strongest} — defaulted`));
+    expect(launch).not.toMatch(/judged, difficulty/);
+    expect(launch).not.toMatch(/you decide as you decide for a `null`/);
+  });
+
+  /**
+   * The other half of AGENT-059: §7's "a dispatch says what weight it went out
+   * at, and where that weight came from", reaching the one dispatch it did not.
+   * The two provenance words are what an observer reads off the job's log
+   * without asking the session — INFRA-034's stories 1 and 2 assert on them.
+   */
+  it("logs every listener launch with its weight and that weight's provenance", () => {
+    expect(launch).toMatch(
+      wrapped(
+        "**Either way, log the launch on the designation's own event: the weight it went out at, and where that weight came from.**",
+      ),
+    );
+    expect(launch).toMatch(/A key the designation stated is logged as `stated`/);
+    expect(launch).toMatch(/chose none is logged as `defaulted`, naming the tier/);
+    // Both shapes shown literally, the way the dispatched-line grammar shows its four.
+    expect(launch).toMatch(
+      /`\(Opus 5 — stated at designation: heavy\)` against\s+`\(Opus 5 — defaulted: no weight chosen, strongest declared tier\)`/,
+    );
+    // The worked example logs the defaulted form at the declared strongest tier.
+    const strongest = readWeightLevels(body).at(-1)?.model ?? "";
+    expect(launch).toMatch(
+      new RegExp(
+        String.raw`corpus job log \S+ "launched a converse listener on \S+ — a general resident \(${strongest} — defaulted: no weight chosen, strongest declared tier\)"`,
+      ),
+    );
+    // The stated form appears where the counterfactual walks the same launch.
+    expect(launch).toMatch(/logged as `stated`\s+instead of `defaulted`/);
+    // A roster launch logs the same line on the event that surfaced the lane,
+    // and only an event-less launch falls back to the prompt as the record.
+    expect(roster).toMatch(/the weight, and `stated`\s+or `defaulted`/);
+    expect(roster).toMatch(/the `lane\.waiting` you\s+claimed for it/);
+    expect(roster).toMatch(/there the prompt is the whole record/);
+    expect(roster).toMatch(/the weight and its provenance in\s+words/);
   });
 
   it("hands an unmeetable weight to the listener in words, as well as to the log", () => {
@@ -6058,10 +6156,17 @@ describe("a listener launched at its designation's weight", () => {
     expect(roster).toMatch(
       wrapped("find its row in the tier table, and launch at that row's model"),
     );
-    // An absent token is the choice nobody made, never a level.
+    // An absent token is the choice nobody made — launched by the same rule as
+    // a `null` payload, never judged through the job passes (AGENT-059).
     expect(roster).toMatch(
       wrapped("A row that prints nothing after the resident is a designation that chose no weight"),
     );
+    expect(roster).toMatch(
+      wrapped(
+        "at the strongest tier the table declares, under the rule *Launching a listener* above states",
+      ),
+    );
+    expect(roster).toMatch(/weigh a job you dispatch, never a listener/);
     // And the launch still carries no resident, which is the older half.
     expect(roster).toMatch(
       /\*\*A launch made from the roster carries no resident, and must not invent one\.\*\*/,
@@ -6146,12 +6251,13 @@ describe("a listener launched at its designation's weight", () => {
     // A runnable launch, showing the argument beside the /converse prompt.
     const calls = fencedBlocks(launch).filter((fence) => fence.content.includes("Task("));
     expect(calls.length, "the launch bullet shows no Task call").toBeGreaterThan(0);
-    expect(calls[0]?.content ?? "").toMatch(/model: "sonnet"/);
+    expect(calls[0]?.content ?? "").toMatch(/model: "opus"/);
     expect(calls[0]?.content ?? "").toMatch(/\/converse th_\w+/);
     // The example's argument and its prompt name the same tier, and the tier is
     // one this workspace's table declares — the AGENT-026 rule, applied here.
-    expect(calls[0]?.content ?? "").toMatch(/running as Sonnet/);
-    expect(declaredModels).toContain("Sonnet");
+    // Since AGENT-059 the weightless example launches at the table's strongest.
+    expect(calls[0]?.content ?? "").toMatch(/running as Opus 5/);
+    expect(declaredModels).toContain("Opus 5");
     // The roster launch names the same argument rather than acquiring its own.
     expect(roster).toMatch(
       /the same\s+`model` argument on the same Task call|`model` argument on the same Task call/,

@@ -522,19 +522,41 @@ switch.
   else tells it — and be exact about which line does which: the prompt is how the resident
   learns its name, and the argument is how the runtime is chosen. A model named in the prose
   alone launches a listener on whatever model this session inherited, silently, which is the
-  substitution a designation's weight exists to rule out. A `null` weight is *you decide*,
-  exactly as a message that states no weight
-  is: judge it the way Delegation says, on a subject that is a whole conversation rather than
-  one turn. Either way, log the model you launched at on the designation's own event. A
-  listener answers for weeks, and a choice nobody recorded is a choice nobody can review.
+  substitution a designation's weight exists to rule out.
+
+  **A designation that chose no weight launches at the strongest tier the table declares.**
+  A `null` weight is still *you decide*, and for a listener what you decide is settled by
+  this rule rather than weighed: Delegation's two passes govern **dispatching a job**, and
+  they do not govern **launching a listener**. The passes weigh one bounded piece of work
+  by what its output touches, and a listener has no output to weigh — only a conversation
+  that has not happened yet. What decides instead is how durable the choice is, not a
+  preference about models. No running resident becomes another model without discarding
+  the conversation it holds, so this is the most expensive choice you make to unwind, made
+  at the moment you know least — and the tie-break Delegation already gives you, in doubt
+  take the stronger, settles it outright. Read *strongest* off the tier table itself — its
+  last row, because the table is written lightest first — and never off a model name
+  remembered from anywhere else: a workspace may rename or reorder its tiers, and a table
+  that declares a single level has a strongest level all the same. The cost is accepted: a
+  conversation about nothing much runs at the top tier for as long as it lives, and a
+  person who knows a lane is cheap says so by stating a lighter weight when they designate
+  it.
+
+  **Either way, log the launch on the designation's own event: the weight it went out at,
+  and where that weight came from.** A key the designation stated is logged as `stated`. A
+  designation that chose none is logged as `defaulted`, naming the tier the rule above
+  picked — `(Opus 5 — stated at designation: heavy)` against
+  `(Opus 5 — defaulted: no weight chosen, strongest declared tier)`. Those are different
+  facts, and the two words keep them apart on the job's log, where an observer reads them
+  without asking you. A listener answers for weeks, and a choice nobody recorded is a
+  choice nobody can review.
 
   ```
   Task(
-    model: "sonnet",
+    model: "opus",
     description: "converse listener on th_4b8e2c",
     prompt: "/converse th_4b8e2c — you are this conversation's resident. Your designation,
              exactly as it came: {\"name\":null,\"docId\":null,\"weight\":null}. You are
-             running as Sonnet — judged, difficulty: an open-ended conversation, nothing stated."
+             running as Opus 5 — defaulted: no weight chosen, strongest declared tier."
   )
   ```
 
@@ -552,7 +574,7 @@ switch.
   corpus agents
   orchestrator · waiting for a listener
   th_4b8e2c "Q3 planning" · a general resident · waiting for a listener · 1 waiting
-  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Sonnet — judged, difficulty: an open-ended conversation, nothing stated)"
+  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Opus 5 — defaulted: no weight chosen, strongest declared tier)"
   corpus queue complete evt_3f8c1a
   ```
 
@@ -560,7 +582,8 @@ switch.
   else would: the payload's two fields, the roster's `researcher (doc_b7c1d5)`, and the log
   line saying so. Had it also chosen a weight, three more would: the payload would carry
   `"weight":"heavy"`, the roster row would read `a general resident at heavy`, and the launch
-  would go out at that row's model instead of at one you judged. The launch is the same
+  would go out at that row's model instead of at the table's strongest, logged as `stated`
+  instead of `defaulted`. The launch is the same
   launch, and the row it came down is the same row.
 
 - **Losing a listener.** `resident.released` is the other row above that is not a job. A
@@ -695,9 +718,15 @@ switch.
   take that word, find its row in the tier table, and launch at that row's model — the same
   `model` argument on the same Task call — exactly as
   you would from a payload. A row that prints nothing after the resident is a designation that
-  chose no weight, and you decide as you decide for a `null`. Name the model in the prompt here
-  too. A roster launch has no event of its own to log to, so the prompt is the whole record of
-  what you chose.
+  chose no weight, and it launches as a `null` payload does: at the strongest tier the table
+  declares, under the rule *Launching a listener* above states — Delegation's two passes
+  weigh a job you dispatch, never a listener. Name the model in the prompt here too. And a
+  roster launch logs the same line the launching bullet asks for — the weight, and `stated`
+  or `defaulted` — on the event that put this lane in front of you: the `lane.waiting` you
+  claimed for it, or the designation the carried release paired with. Only a launch the
+  pass holds no event for has no job to log to, and there the prompt is the whole record of
+  what you chose — which is why the prompt always carries the weight and its provenance in
+  words as well.
 
 - **A row that does not read `live` still does not mean nobody is there — and where the row
   cannot tell you, you launch anyway.** Presence is the parked request and nothing else, so a
@@ -839,7 +868,9 @@ corpus's contents back to you. The subagent reads what it decides it needs —
 `corpus doc show <id>` on one of those ids — through the same verbs you used to find them.
 
 **Pick the subagent's model by the task's weight, and judge that weight in two passes —
-consequence first, difficulty second.** The question that picks a model is never how hard
+consequence first, difficulty second.** The two passes weigh **a job you dispatch**. They
+never weigh **a listener you launch** — a weightless designation has its own rule, stated
+at *Launching a listener* in Routing. The question that picks a model is never how hard
 the work looks. It is **what a bad result would do that revising the document afterwards
 would not undo**.
 
@@ -928,6 +959,9 @@ rules this section binds you with.
 `weight` field is the two passes and never a fixed default: there is no level you fall back
 to, and a request that stated nothing is dispatched exactly as every request was before this
 table declared a key at all. Absence is the ordinary case, and it is the only spelling of it.
+All of that is about a job. A **designation** that stated no weight is the absence the two
+passes never touch: a listener launches at the strongest tier this table declares, for the
+reason *Launching a listener* states where it states the rule.
 
 That directive binds even where the first pass disagrees with it. Where a request states a
 weight lighter than the first pass calls for, do not override it: the two
