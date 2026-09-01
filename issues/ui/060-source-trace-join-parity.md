@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -86,19 +86,19 @@ mdast — two walks of the same tree is the drift this whole module exists to
 prevent, and it is the reason the bug was possible.
 
 ## Acceptance Criteria
-- [ ] The three rows of the table above agree between the two projections
-- [ ] `the\n\nnext hen` anchors a selection of `hen` to the real `hen`
+- [x] The three rows of the table above agree between the two projections
+- [x] `the\n\nnext hen` anchors a selection of `hen` to the real `hen`
       (offsets 10–13) — the assertion PR #20 had to weaken to `toBeNull()`
-- [ ] A typed newline in a user turn still resolves, with `hardBreaks` on and off
+- [x] A typed newline in a user turn still resolves, with `hardBreaks` on and off
       — this is the regression to fear; test it first
-- [ ] Markdown hard breaks (`  \n` and backslash-newline) resolve
-- [ ] List items, nested lists and blockquotes resolve
-- [ ] The disagreement guard stays as a backstop **in both directions** — capture
+- [x] Markdown hard breaks (`  \n` and backslash-newline) resolve
+- [x] List items, nested lists and blockquotes resolve
+- [x] The disagreement guard stays as a backstop **in both directions** — capture
       and paint — and a test proves each still fires if the projections are ever
       made to disagree again
-- [ ] `renderedRangeOfTurnAnchor` no longer paints a different occurrence than
+- [x] `renderedRangeOfTurnAnchor` no longer paints a different occurrence than
       the one the anchor resolved to (the `the\n\nnext hen and hen` case)
-- [ ] `turnAnchors.test.tsx`'s `the\n\nnext hen` test asserts the **anchor**
+- [x] `turnAnchors.test.tsx`'s `the\n\nnext hen` test asserts the **anchor**
       rather than `toBeNull()`, and its comment pointing here is removed
 
 _(Correction, 2026-08-04: an earlier draft of this file said that test had been
@@ -121,14 +121,162 @@ equals `sourceTraceOf(md).plain`. That single assertion is the invariant the
 module claims and currently does not hold.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+
+**Model: Opus 5 (1M context), 2026-08-31.**
+
+### What was built, and why not what this file guessed
+
+This file proposed deriving the trace's plain text "from the same hast the
+renderer builds". That is what shipped, with one correction the file could not
+have known: **the trace cannot run `MarkdownView`'s remark pipeline.**
+`remarkCorpusRefs` and `remarkCorpusStyling` both rebuild the nodes they touch,
+and a rebuilt node carries no `position` — a trace built from one loses every
+paragraph containing a reference or a styled phrase.
+
+The split that works: the whitespace is **structural**, so the trace runs
+`mdast-util-to-hast` over the tree remark positioned (the same conversion
+`react-markdown` runs) and reads the inline changes out of the source itself,
+which is what it already did for `[[ref]]`. A text node with a position is
+addressable; one without is a separator — in `plain`, in neither direction of the
+map. That distinction is the library's own: it patches what it derives and
+patches nothing it invents.
+
+### Measured before the change, against the real renderer
+
+A probe rendering 25 fixtures through `Turn` and comparing `renderedTextOf` with
+`sourceTraceOf().plain`. **Nearly every multi-block body diverged**, not only the
+exotic ones — two paragraphs, every list, every blockquote, headings, fences,
+thematic breaks, both hard breaks. §5's inline markers diverged too, which is a
+v0.28.0 regression this closes: `the ==rate== rose` drew `the rate rose` and
+traced `the ==rate== rose`, so every selection in a styled turn declined.
+
+A second probe compared hast text with DOM text over the same fixtures. They
+agreed everywhere except three places, and each is now handled or documented:
+tables (`hast-util-to-jsx-runtime` drops inter-element whitespace there, because
+`react-dom` warns about any of it), `[[ref]]` (the trace's own business), and raw
+HTML (left out, deliberately — see below).
+
+### The invariant, as a test
+
+`apps/ui/src/anchors/renderParity.test.tsx` renders **37 fixtures** through the
+real `MarkdownView`, with `hardBreaks` on and off, and asserts
+`sourceTraceOf(md).plain === renderedTextOf(rendered).text`. 76 assertions. That
+single line is what every construct-level claim rests on, and a remark upgrade or
+a new plugin turns it red without anyone predicting which construct broke.
+
+Two exceptions are asserted rather than omitted: raw HTML (matching it would mean
+drawing `<u>` and `</u>` as text, and those are §5's underline), and a styling
+marker split across another inline node. Both fall to the disagreement guard and
+decline, which is what they did before.
+
+### A defect the parity test found that nobody had filed
+
+`CorpusImage` draws `🖼 a chart` while an attachment loads and the file name when
+it will not. Those are **visible words in the DOM that no character of the file
+spells**, so every offset after an image moved for as long as the attachment took
+to arrive. Both stand-ins are now chrome in `renderedRange.ts`, next to the
+fence's copy button and the ref's resolved title. Found by asking the DOM instead
+of reasoning about it.
+
+### Real browser, real selection, real request
+
+`apps/ui/e2e/turn-comment.spec.ts`, Chromium:
+
+```
+✓ a selection beside a paragraph join › anchors to the word selected, not to the break beside it
+```
+
+The turn is `the⏎⏎next hen`. The rendered paragraphs are `["the", "next hen"]` —
+one `hen`. The Comment item is offered at all, which it was not before, and the
+posted selector is:
+
+```
+exact: "hen"           (asserted not to contain a newline)
+```
+
+framed so `prefix + exact + suffix` is present in the thread file byte for byte —
+§6's rung 1. Pre-fix this produced `he\n\n`; PR #20 turned that into a refusal;
+this is the correctness half.
+
+### Both guards, and the paint side that never had one
+
+`renderedRangeOfTurnAnchor` now runs the same disagreement check as the capture
+side. The measured failure it closes: a turn reading `the⏎⏎next hen and hen`,
+anchored on the **first** real `hen`, painted the **second** — a phantom
+occurrence inside `thenext` took index 0. Data untouched, thread opened
+correctly, wrong words highlighted. Anchors written before PR #20's capture guard
+exist in live workspaces.
+
+`turnAnchors.test.tsx` pins the paint at rendered offsets 9–12 and pins each
+guard still firing, using a raw-HTML block — the case that genuinely still
+disagrees.
+
+### What changed in `rebase.ts`, and what it cost
+
+Adding the renderer's whitespace to `plain` broke `rebaseRange`: two spellings of
+one document that differ by a blank line render with different joins, so four
+UI-099 cases came back `null`. The trace therefore carries **two axes** —
+`plain` for anything whose other end is the DOM, `sourced` for anything whose
+other end is another spelling of the same file. `rebase.ts` uses `sourced` and is
+back to its old behaviour, with one improvement:
+
+- the two-space **continuation indent** under a list item used to make a run
+  atomic, so a passage inside it came back widened to
+  `Nested bullet two.⏎  A trailing paragraph of the outer item.`; `trim-lines`
+  explains that difference now, so it comes back exactly. The escape case still
+  widens and its test still passes.
+- the **ref edge**, which the module comment has described since PR #21 and
+  nothing pinned, is now pinned.
+
+### A refusal that lost its last natural cause
+
+UI-104's largest category — a soft line break inside a code span, 51 of this
+repository's own documents — used to produce `REFUSAL_NOTICE["not-in-file"]`. The
+trace read the code span's markdown, newline and all; it now reads what the
+renderer draws, where a line ending in a code span is a space on both sides. So
+the selection maps, widened to the code span, and what goes on the wire is in the
+file byte for byte. `useAnchorLayer.test.tsx` asserts the new behaviour, the same
+shape UI-103's fix left behind two tests below it.
+
+### Gate
+
+- `renderParity.test.tsx` 76 passed · `sourceTrace.test.ts` 34 passed ·
+  `turnAnchors.test.tsx` 22 passed · `rebase.test.ts` 23 passed
+- Full unit suite, run alone: **662 files, 16,241 passed** in 337s
+- Full browser suite: **671 passed** in 7.7m
+- `npm run lint`, `format:check`, `typecheck` clean
+
+### Falsifications
+
+Each broke one fix on purpose and named how many of 248 anchor/thread/menu tests
+went red. **Nine for nine.**
+
+| broken | red |
+| --- | --- |
+| separators dropped | 52 |
+| table whitespace kept | 5 |
+| line whitespace not reproduced | 2 |
+| a fence's text not owned by its element | 1 |
+| styling delimiters not hidden | 5 |
+| paint-side guard removed | 1 |
+| image stand-ins not chrome | 2 |
+| rebase on the `plain` axis | 4 |
+| cross-turn narrowing not announced (UI-061) | 2 |
+
+In the browser: dropping separators turns the paragraph-join spec red; removing
+the announcement turns the cross-turn spec red.
+
+**One falsification corrected a comment rather than the code.** Deleting
+`ownsItsText` turned exactly one test red, not two: `mdast-util-to-hast` patches
+the text node inside a *code span*, so only a fenced block needs it. The docblock
+claimed both. It now says what was measured.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

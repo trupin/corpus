@@ -269,14 +269,21 @@ describe("a selection inside a turn", () => {
   });
 
   /**
-   * PR #20 review, MINOR. `mdast-util-to-hast` puts a `"\n"` text node between
-   * sibling blocks and beside every `<br>`; `sourceTrace`'s walk emits nothing
-   * for either. So the rendered text and the trace's `plain` carry different
-   * *whitespace*, and an occurrence that exists only in the concatenated `plain`
-   * used to shift the index — anchoring `hen` to `he\n\nn`, straddling the
-   * paragraph break. The exact case the reviewer measured.
+   * PR #20's measured case, now anchored rather than declined (UI-060).
+   *
+   * `mdast-util-to-hast` puts a `"\n"` text node between sibling blocks and
+   * beside every `<br>`, and the trace's walk used to emit nothing for either.
+   * So `plain` was the rendered text with its joins closed up, and closing them
+   * up manufactured a second `hen` straddling the paragraph break — which shifted
+   * the occurrence index and anchored the selection to `he\n\n`, the words either
+   * side of the break rather than the ones chosen.
+   *
+   * PR #20 made that safe by refusing. This is the correctness half: the trace
+   * walks the hast the renderer builds, so both projections draw one `hen`, the
+   * index transfers, and the anchor is the three characters selected — file
+   * offsets 10 to 13.
    */
-  it("declines rather than anchoring a selection to a block join", () => {
+  it("anchors a selection beside a block join to the words selected", () => {
     const turn = turnFixture({ body: "the\n\nnext hen" });
     const { container } = render(<Host turn={turn} />);
     const root = rootsOf(container)[0];
@@ -286,16 +293,36 @@ describe("a selection inside a turn", () => {
       turnBody: turn.body,
       range: selectNth(root as Element, "hen"),
     });
-    // Pre-fix this returned an anchor over `he\n\n` — the words either side of
-    // the paragraph break rather than the ones selected. The guarantee made here
-    // is *refusal*, not correctness: the two projections disagree about how many
-    // times `hen` appears (once as rendered, twice with the join closed up), and
-    // an occurrence index is not transferable across that disagreement.
-    //
-    // Anchoring this correctly is UI-060. It needs the source trace to reproduce
-    // `mdast-util-to-hast`'s join rules exactly, which is a bigger change than a
-    // review fix and would put the currently-working typed-newline case at risk.
-    expect(captured).toBeNull();
+    expect(captured?.range).toEqual({ start: 10, end: 13 });
+    expect(turn.body.slice(10, 13)).toBe("hen");
+    expect(captured?.selector.exact).toBe("hen");
+    // And it resolves in the thread file, which is the only thing that matters
+    // to the server.
+    expect(resolveExact(turn.body, captured?.selector as TextQuoteSelector)).toBe(10);
+  });
+
+  /**
+   * The capture-side backstop, which UI-060 kept rather than removed.
+   *
+   * With the projections reconciled it almost never fires, and "almost never" is
+   * why it stays: raw HTML is drawn as literal text and left out of the trace,
+   * so a phrase inside a block of it is counted twice on one side and once on
+   * the other. An occurrence index does not cross that, and the whole-turn 💬 is
+   * still there for the reader.
+   */
+  it("declines a selection whose quote the two projections count differently", () => {
+    const turn = turnFixture({ body: "<div>a claim</div>\n\nrepeating a claim here" });
+    const { container } = render(<Host turn={turn} />);
+    const root = rootsOf(container)[0];
+    expect(root?.textContent).toContain("<div>a claim</div>");
+    expect(
+      captureTurnAnchor({
+        root: root as Element,
+        part: { source: turn.body, base: 0 },
+        turnBody: turn.body,
+        range: selectNth(root as Element, "a claim", 1),
+      }),
+    ).toBeNull();
   });
 
   it("still anchors normally when the join manufactures no occurrence", () => {
@@ -374,6 +401,61 @@ describe("an anchored range back onto the rendering", () => {
         range: captured?.range ?? { start: 0, end: 0 },
       }),
     ).toEqual(captured?.rendered);
+  });
+
+  /**
+   * The measured paint-side failure (PR #20 re-review, closed by UI-060).
+   *
+   * The body draws two `hen`s. The trace used to draw three, because closing the
+   * paragraph join up welded `the` and `next` into a `thenext` containing one —
+   * and that phantom took index 0. An anchor over the **first** real `hen` was
+   * therefore painted over the **second**.
+   *
+   * The data was never wrong and the thread always opened correctly, so nothing
+   * failed loudly. The reader was simply shown the wrong words, and anchors
+   * written before the capture side was guarded still exist in live workspaces.
+   */
+  it("paints the occurrence the anchor names, across a block join", () => {
+    const turn = turnFixture({ body: "the\n\nnext hen and hen" });
+    const { container } = render(<Host turn={turn} />);
+    const root = rootsOf(container)[0];
+    const first = turn.body.indexOf("hen", turn.body.indexOf("next"));
+    const offsets = renderedRangeOfTurnAnchor({
+      root: root as Element,
+      part: { source: turn.body, base: 0 },
+      range: { start: first, end: first + 3 },
+    });
+    const rendered = root?.textContent ?? "";
+    expect(rendered).toBe("the\nnext hen and hen");
+    // The first of the two the reader can see, at rendered offset 9 — not the
+    // one at 17, which is what this used to return.
+    expect(offsets).toEqual({ start: 9, end: 12 });
+    expect(rendered.slice(offsets?.start, offsets?.end)).toBe("hen");
+  });
+
+  /**
+   * The backstop, in the direction that went without one until UI-060.
+   *
+   * Raw HTML is drawn as literal text and left out of the trace, so a quote that
+   * appears inside it is counted differently on the two sides. Painting is then
+   * a guess about which of two identical phrases the reader should see
+   * highlighted, and the answer is neither.
+   */
+  it("declines to paint when the two projections disagree about the quote", () => {
+    // An HTML *block*: the renderer draws all of it as literal text, the trace
+    // leaves all of it out, so `a claim` is drawn twice and traced once.
+    const turn = turnFixture({ body: "<div>a claim</div>\n\nrepeating a claim here" });
+    const { container } = render(<Host turn={turn} />);
+    const root = rootsOf(container)[0];
+    const at = turn.body.indexOf("a claim", 20);
+    expect(root?.textContent).toContain("<div>a claim</div>");
+    expect(
+      renderedRangeOfTurnAnchor({
+        root: root as Element,
+        part: { source: turn.body, base: 0 },
+        range: { start: at, end: at + "a claim".length },
+      }),
+    ).toBeNull();
   });
 });
 

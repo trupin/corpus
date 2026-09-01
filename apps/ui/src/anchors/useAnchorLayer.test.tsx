@@ -21,6 +21,7 @@ import {
   type ReaderTransport,
 } from "../testing/readerFixture.js";
 import { anchorState } from "./anchorDecorations.js";
+import type { SelectionRefusal } from "./selectorFromSelection.js";
 import { mdRangeToPm } from "./offsetMap.js";
 import { resetTraceCache, traceOfBody } from "./traceCache.js";
 import {
@@ -376,38 +377,71 @@ describe("commenting on a selection", () => {
   });
 
   /**
-   * The other refusal, and the one only this layer can produce (UI-068).
+   * UI-104's largest category — a soft line break inside an inline code span,
+   * which the printer flattens to a space (51 of this repository's own
+   * documents) — **now anchors instead of refusing** (UI-060).
    *
-   * `selectorFromSelection` decides it, but what makes it reachable is
-   * `quotableSource`: with no unsaved edits the quote is framed against the
-   * **file's own bytes**, not the editor's printing of them. On a document whose
-   * file spelling differs from the printer's — here `__sixty__`, which the
-   * editor shows as `**sixty**` — the framed quote is a string no file contains,
-   * so the layer refuses rather than opening a composer that would create a
-   * thread anchored to a document that does not exist.
+   * It used to be the realistic case for `REFUSAL_NOTICE["not-in-file"]`. The
+   * trace read the code span's markdown, newline and all, so the file's
+   * projection and the editor's disagreed across the span and no byte range of
+   * the file was the selection. The trace now reads what the renderer draws,
+   * where a line ending inside a code span is a space in both — so the two
+   * projections agree, and the selection maps.
    *
-   * Pinned here because this is the only place `REFUSAL_NOTICE["not-in-file"]`
-   * is read: `selectorFromSelection.test.ts` proves the *reason* is produced,
-   * and nothing else proves the layer turns it into that sentence.
+   * It maps **widened to the code span**, which is the module's documented
+   * behaviour for a run whose markdown and text differ character for character:
+   * exact or wider, on the right words, never elsewhere. The assertion that
+   * matters is the last one — what goes on the wire is in the file byte for
+   * byte, which is §6's rung 1.
+   *
+   * Same shape as the UI-103 case below, where a fix also turned a refusal into
+   * an ordinary selection. See "every refusal the layer can say" for what still
+   * covers the sentence itself.
    */
-  it("refuses, distinctly, when the file cannot spell the selection", () => {
-    // A soft line break inside an inline code span, which the printer flattens
-    // to a space (UI-104's largest category, 51 of the repo's own documents).
-    // The words on screen are real; the file spells them across two lines, so
-    // there is no byte range of the file that is the selection.
+  it("quotes the file for a selection inside a code span the printer reflows", async () => {
     const FILE = "Run `corpus init\n--port 8791` first.\n\nA second paragraph follows it here.\n";
     const app = mount([], [], readerTransport({}), FILE);
     const live = traceOfBody(editorBody(FILE));
     const QUOTE = "init --port";
     expect(live.markdown).toContain(QUOTE);
+    // The words on screen are still not in the file: that has not changed.
     expect(FILE).not.toContain(QUOTE);
     const start = live.markdown.indexOf(QUOTE);
     const pm = mdRangeToPm(live.trace, { start, end: start + QUOTE.length });
     selectQuote(app.layer(), pm[0]?.from ?? 0, pm.at(-1)?.to ?? 0);
 
-    expect(app.layer().draft).toBeNull();
-    expect(app.notices[0]).toEqual({ tone: "error", message: REFUSAL_NOTICE["not-in-file"] });
-    expect(app.notices[0]?.message).not.toBe(REFUSAL_NOTICE["no-quote"]);
+    expect(app.notices).toHaveLength(0);
+    expect(app.layer().draft).not.toBeNull();
+
+    act(() => {
+      app.layer().submitComment("Which port is that?", false, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const { selector } = app.wire.of("POST", "/api/threads")[0]?.body as {
+      selector: TextQuoteSelector;
+    };
+    expect(FILE).toContain(selector.prefix + selector.exact + selector.suffix);
+    // Widened to the whole code span, backticks included — and containing the
+    // words that were selected, in the file's own spelling of them.
+    expect(selector.exact).toBe("`corpus init\n--port 8791`");
+  });
+
+  /**
+   * The sentences themselves, now that no document reaches the second one.
+   *
+   * `REFUSAL_NOTICE["not-in-file"]` had one realistic cause in this layer and
+   * UI-060 removed it — the same thing UI-103 did to the case below. The reason
+   * is still produced, and `selectorFromSelection.test.ts` pins that; what is
+   * left to pin here is the layer's own step, that every reason has a distinct
+   * sentence and none of them is `undefined` on the way to a notice.
+   */
+  it("has a distinct sentence for every refusal it can say", () => {
+    const reasons: readonly SelectionRefusal[] = ["no-quote", "not-in-file"];
+    const sentences = reasons.map((reason) => REFUSAL_NOTICE[reason]);
+    expect(sentences.every((sentence) => sentence.length > 0)).toBe(true);
+    expect(new Set(sentences).size).toBe(reasons.length);
   });
 
   it("posts the shipped shape, with note-only as an explicit false", async () => {

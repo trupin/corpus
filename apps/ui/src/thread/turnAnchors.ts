@@ -5,7 +5,7 @@ import {
   renderedTextOf,
   trimToText,
 } from "../anchors/renderedRange";
-import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "../anchors/sourceTrace";
+import { mdRangeOfProjection, projectionRangeOfMd, sourceTraceOf } from "../anchors/sourceTrace";
 import {
   countOccurrences,
   nthIndexOf,
@@ -129,6 +129,27 @@ export function partContaining(
   return part === undefined ? undefined : { index, part };
 }
 
+/**
+ * Whether an occurrence index counted in one projection means the same thing in
+ * the other — the backstop both directions keep (UI-060).
+ *
+ * The two projections are meant to be the same string, and
+ * `renderParity.test.tsx` asserts that against the real renderer for every
+ * construct a turn is written in. Two known exceptions survive: raw HTML, which
+ * the renderer draws as literal text and the trace leaves out, and a §5 styling
+ * marker split across another inline node. Both make the trace's `plain` and the
+ * DOM's text disagree about how many times a quote appears, and an index is not
+ * transferable across that.
+ *
+ * So the rule is unchanged from PR #20 even though the reason it fires almost
+ * never is: **disagreement is a refusal.** Refusing costs a whole-turn 💬 in a
+ * rare case. Guessing costs a comment attached to words the reader did not
+ * choose, which is the failure this module exists to prevent.
+ */
+function transferable(counted: string, lookedUpIn: string, quote: string): boolean {
+  return countOccurrences(counted, quote) === countOccurrences(lookedUpIn, quote);
+}
+
 export interface TurnAnchorCapture {
   /** Offsets into the part's *rendered* text — what the pending highlight paints. */
   readonly rendered: SelectionRange;
@@ -165,27 +186,7 @@ export function captureTurnAnchor(input: CaptureTurnAnchorInput): TurnAnchorCapt
   const quote = rendered.text.slice(trimmed.start, trimmed.end);
   const trace = sourceTraceOf(input.part.source);
 
-  // The occurrence index is only transferable between the two projections while
-  // they agree about how many times the quote appears — and they do not always
-  // agree. `mdast-util-to-hast` writes a `"\n"` text node where two blocks join
-  // and beside a markdown hard break; the source trace emits nothing there,
-  // because no markdown was consumed. So `plain` is the rendered text with those
-  // joins closed up, and closing them up can *manufacture* an occurrence that
-  // the reader never saw: a turn reading `the\n\nnext hen` renders as
-  // `the⏎next hen` (one "hen") and traces as `thenext hen` (two — one straddling
-  // the join). Counting in the DOM and looking up in the trace then lands an
-  // occurrence early, and the anchor comes back as `he\n\n` for a selection of
-  // `hen` (PR #20 review). That is the confidently-wrong anchor this module
-  // exists to prevent, so disagreement is a refusal.
-  //
-  // Deliberately a guard rather than a reconciliation: making the trace
-  // reproduce the renderer's join rules exactly means re-implementing
-  // `mdast-util-to-hast`'s block wrapping, and getting that subtly wrong would
-  // break the case that works today — a newline the user typed carries the
-  // `"\n"` in *both* projections, so comments spanning two typed lines resolve.
-  // Refusing costs the user a whole-turn 💬 in a rare case; guessing costs them
-  // a comment attached to words they did not choose.
-  if (countOccurrences(rendered.text, quote) !== countOccurrences(trace.plain, quote)) return null;
+  if (!transferable(rendered.text, trace.plain, quote)) return null;
 
   const occurrence = countOccurrences(rendered.text.slice(0, trimmed.start), quote);
   const at = nthIndexOf(trace.plain, quote, occurrence);
@@ -193,7 +194,7 @@ export function captureTurnAnchor(input: CaptureTurnAnchorInput): TurnAnchorCapt
   // confidently-wrong anchor this module exists to avoid.
   if (at === -1) return null;
 
-  const md = mdRangeOfPlain(trace.runs, at, at + quote.length);
+  const md = mdRangeOfProjection(trace.runs, "plain", at, at + quote.length);
   if (md === null) return null;
   const range = { start: md.start + input.part.base, end: md.end + input.part.base };
   const selector = selectorAt(input.turnBody, range);
@@ -211,16 +212,26 @@ export interface RenderedRangeInput {
 /** Where an anchored range lands in the rendered turn — the other direction. */
 export function renderedRangeOfTurnAnchor(input: RenderedRangeInput): SelectionRange | null {
   const trace = sourceTraceOf(input.part.source);
-  const plain = plainRangeOfMd(
+  const plain = projectionRangeOfMd(
     trace.runs,
+    "plain",
     input.range.start - input.part.base,
     input.range.end - input.part.base,
   );
   if (plain === null) return null;
   const quote = trace.plain.slice(plain.start, plain.end);
   if (quote === "") return null;
-  const occurrence = countOccurrences(trace.plain.slice(0, plain.start), quote);
   const rendered = renderedTextOf(input.root);
+  // The same guard as the capture side, on the direction that went without one
+  // until UI-060. It is the *painting* half, so a disagreement here costs a
+  // highlight rather than an anchor — but the failure it prevented was measured:
+  // a turn reading `the⏎⏎next hen and hen`, anchored on the first real `hen`,
+  // used to paint the second, because a manufactured occurrence inside `thenext`
+  // took index 0. The data was never wrong and the thread still opened; the
+  // reader was simply shown the wrong words. Anchors written before the capture
+  // side was guarded exist in live workspaces, so this is not hypothetical.
+  if (!transferable(trace.plain, rendered.text, quote)) return null;
+  const occurrence = countOccurrences(trace.plain.slice(0, plain.start), quote);
   const at = nthIndexOf(rendered.text, quote, occurrence);
   if (at === -1) return null;
   return { start: at, end: at + quote.length };

@@ -1,3 +1,4 @@
+import { IMAGE_BROKEN_CLASS, IMAGE_PENDING_CLASS } from "@corpus/kit";
 import type { SelectionRange } from "../editor/selection";
 
 /**
@@ -10,15 +11,30 @@ import type { SelectionRange } from "../editor/selection";
  * the server resolved becomes a highlight.
  *
  * **Chrome is not content.** A rendered body carries elements nobody wrote: the
- * fence's copy button and its info-string label (`CodeFence`), and the resolved
- * *title* a `[[ref]]` renders as. None of them is in the file, so none of them
- * is in this text — including them would shift every offset after the first one
- * and make a quote describe words the document does not contain.
+ * fence's copy button and its info-string label (`CodeFence`), the resolved
+ * *title* a `[[ref]]` renders as, and the two stand-ins `CorpusImage` draws for
+ * a picture it cannot show yet — `🖼 a chart` while the attachment loads, the
+ * file name when it will not. None of them is in the file, so none of them is in
+ * this text — including them would shift every offset after the first one and
+ * make a quote describe words the document does not contain.
+ *
+ * The image stand-ins were found by `renderParity.test.tsx` (UI-060), which is
+ * the point of asking the DOM rather than reasoning about it: an image renders
+ * as an `alt` attribute in the hast and as *visible words* on screen for as long
+ * as the attachment takes to arrive, and every offset after it moved for that
+ * whole window.
  */
 
 /** Elements whose text belongs to the renderer rather than to the document. */
-const CHROME =
-  "button, [data-fence-label], [data-corpus-ref], [data-corpus-ref-broken], [aria-hidden='true']";
+const CHROME = [
+  "button",
+  "[data-fence-label]",
+  "[data-corpus-ref]",
+  "[data-corpus-ref-broken]",
+  `.${IMAGE_PENDING_CLASS}`,
+  `.${IMAGE_BROKEN_CLASS}`,
+  "[aria-hidden='true']",
+].join(", ");
 
 interface TextRun {
   readonly node: Text;

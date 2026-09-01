@@ -377,3 +377,149 @@ const ON_THE_VIEW: StubRow = {
   parent: "doc_v",
   body: "## user · 2026-08-07T09:00:00Z\nShould this be pinned?\n",
 };
+
+/**
+ * **UI-060 and UI-061 in a real browser**: the two ways a selection in a turn
+ * used to come back as something other than what was pointed at.
+ *
+ * Both are asserted here rather than in jsdom alone because both are about what
+ * the *renderer* draws. `sourceTrace.ts`'s parity is checked against
+ * `MarkdownView`'s own output in `renderParity.test.tsx`, and this is the same
+ * claim carried through a real Chromium selection, a real right-click, and the
+ * real request that leaves the page.
+ */
+
+/** One `hen` on screen. Two, before UI-060, once the paragraph join closed up. */
+const JOIN_BODY = "the\n\nnext hen";
+
+const JOIN_THREAD: StubRow = {
+  id: "th_join",
+  type: "thread",
+  title: "A paragraph join",
+  path: "data/docs/threads/th_join.md",
+  body: `## user · 2026-08-03T17:01:12Z\n${JOIN_BODY}\n`,
+};
+
+/** Two turns, so a drag can cross from one rendered body into the next. */
+const TWO_TURN_THREAD: StubRow = {
+  id: "th_two",
+  type: "thread",
+  title: "Two turns",
+  path: "data/docs/threads/th_two.md",
+  body:
+    "## user · 2026-08-03T17:01:12Z\nThe first turn asks about the rate.\n\n" +
+    "## agent · 2026-08-03T17:02:00Z\nThe second turn answers about the rate.\n",
+};
+
+async function openThreadById(
+  page: Page,
+  rows: readonly StubRow[],
+  id: string,
+): Promise<StubCorpus> {
+  const corpus = await stubCorpus(page, rows);
+  await page.goto("/");
+  await page.locator(".board").waitFor();
+  await page.locator(`.row[data-row-doc="${id}"]`).click();
+  await expect(page.locator(`.reader [data-thread="${id}"] > .turns > .turn`)).toHaveCount(
+    id === "th_two" ? 2 : 1,
+  );
+  return corpus;
+}
+
+test.describe("a selection beside a paragraph join", () => {
+  /**
+   * The measured case (PR #20's review, closed by UI-060). `the⏎⏎next hen`
+   * renders one `hen`; the trace used to close the join up and see two, so the
+   * occurrence index shifted and the anchor came back over `he⏎⏎` — the words
+   * either side of the break. PR #20 made that a refusal, so until now this
+   * selection offered no Comment item at all.
+   */
+  test("anchors to the word selected, not to the break beside it", async ({ page }) => {
+    const corpus = await openThreadById(page, [THREADS_VIEW, JOIN_THREAD], "th_join");
+    const prose = '.reader [data-thread="th_join"] .turn-markdown p';
+    // One `hen` in the rendered turn, whatever the trace used to think.
+    expect(await page.locator(prose).allInnerTexts()).toEqual(["the", "next hen"]);
+
+    await selectPhrase(page, `${prose}:nth-of-type(2)`, "hen");
+    await contextClickSelection(page);
+
+    // The item is offered at all, which it was not before UI-060.
+    const menu = page.getByRole("menu", { name: "Actions for the selection" });
+    await expect(menu.locator('[data-act="comment"]')).toBeVisible();
+    await menu.locator('[data-act="comment"]').click();
+
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await expect(composer.locator(".cm-quote")).toContainText("hen");
+    await composer.getByLabel("Comment").fill("Which hen?");
+    await composer.locator("[data-comment-send]").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const posted = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      selector: { exact: string; prefix: string; suffix: string };
+    };
+    // Three characters, and the file spells them where the reader saw them —
+    // never `he\n\n`, which is what this used to produce before it was refused.
+    expect(posted.selector.exact).toBe("hen");
+    expect(posted.selector.exact).not.toContain("\n");
+    expect(
+      JOIN_THREAD.body?.indexOf(posted.selector.prefix + "hen" + posted.selector.suffix),
+    ).not.toBe(-1);
+  });
+});
+
+test.describe("a selection that reaches past one turn", () => {
+  /**
+   * UI-061. A comment anchors to one turn by construction — a child thread has
+   * one parent and one anchor — so a drag across two of them has to be narrowed
+   * to the turn the menu was opened in. The narrowing is correct. What was wrong
+   * is that it happened in silence: the only place it showed was the citation
+   * above the composer, which the reader meets after deciding what to write.
+   *
+   * Measured here rather than reasoned about, because a jsdom fixture that omits
+   * the `.doc-body thread-conversation` wrapper the real reader puts around a
+   * conversation declines the right-click for a reason the app does not have.
+   */
+  test("offers the comment, says it will quote one turn, and quotes that one", async ({ page }) => {
+    const corpus = await openThreadById(page, [THREADS_VIEW, TWO_TURN_THREAD], "th_two");
+    const turns = '.reader [data-thread="th_two"] > .turns > .turn';
+
+    await page.evaluate((selector) => {
+      const bodies = [...document.querySelectorAll(`${selector} .turn-markdown`)];
+      const [first, second] = bodies;
+      if (first === undefined || second === undefined) throw new Error("two turns expected");
+      const range = document.createRange();
+      range.selectNodeContents(first);
+      range.setEnd(second, second.childNodes.length);
+      const selection = globalThis.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, turns);
+
+    // Right-click inside the **first** turn: the pointer is the choice of turn.
+    const point = await page.locator(`${turns} .turn-markdown p`).first().boundingBox();
+    await page.mouse.click((point?.x ?? 0) + 8, (point?.y ?? 0) + 4, { button: "right" });
+
+    const menu = page.getByRole("menu", { name: "Actions for the selection" });
+    await expect(menu.locator('[data-act="comment"]')).toBeVisible();
+    await menu.locator('[data-act="comment"]').click();
+
+    // The sentence arrives with the composer, not in the citation afterwards.
+    await expect(page.locator('.toast[data-tone="info"]')).toContainText(
+      "A comment anchors to one turn",
+    );
+
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await expect(composer.locator(".cm-quote")).toContainText(
+      "The first turn asks about the rate.",
+    );
+    await expect(composer.locator(".cm-quote")).not.toContainText("second turn");
+    await composer.getByLabel("Comment").fill("Only the first, then.");
+    await composer.locator("[data-comment-send]").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const posted = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      selector: { exact: string };
+    };
+    expect(posted.selector.exact).toBe("The first turn asks about the rate.");
+  });
+});
