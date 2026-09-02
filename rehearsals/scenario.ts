@@ -20,7 +20,12 @@ export interface CorpusResult {
   readonly stderr: string;
 }
 
-/** What a scenario's `seed` gets: the workspace, reachable only through the CLI. */
+export interface ComposerResult {
+  readonly status: number;
+  readonly json: unknown;
+}
+
+/** What a scenario's `seed` gets: the workspace, reachable only through the product. */
 export interface SeedContext {
   readonly workspaceRoot: string;
   /**
@@ -28,6 +33,20 @@ export interface SeedContext {
    * exit — a seed that expects a refusal asserts on `code` itself.
    */
   corpus(args: readonly string[]): Promise<CorpusResult>;
+  /**
+   * One authenticated JSON POST to the workspace's own server, acting as the
+   * person's composer (`x-corpus-author` defaults to `user`).
+   *
+   * This exists because two of a person's acts have **no CLI spelling, on
+   * purpose**: a message that states a `weight`, and a creation that carries a
+   * `resident` designation. SHARED-022's Q5 keeps the CLI's writing verbs free
+   * of the weight field — the CLI is how the *agent* writes, and the rider is
+   * about how a person asks — so for those acts the UI composer's request *is*
+   * the product path, and seeding it any other way would test a state the
+   * product cannot reach. It still goes through the server, the sole writer;
+   * nothing here touches a workspace file.
+   */
+  composer(path: string, body: unknown): Promise<ComposerResult>;
 }
 
 /** What seeding produced: the ids the scorer will need, by name. */

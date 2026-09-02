@@ -24,6 +24,21 @@ decide with that knowledge; never weaken an assertion to get to the tag. This st
 whose scorecard did not move is a release nobody rehearsed. `rehearsals/README.md` has the design
 and its four rules.
 
+The step is placed **before** the bump on purpose: a finding read here is cheap to act on, and a
+finding read after a tag exists is not. The pass runs the nine INFRA-034 stories — seven regression
+tests for defects that reached a release, two spec promises nothing else checks — each seeded through
+the product and graded on what the corpus records.
+
+**The accepted trade, written down so it is a decision rather than a surprise.** Running the suite
+only at release time means a defect introduced early in a cycle is found late — at the next release,
+not at the commit that caused it. That is deliberate, for one reason: the runner spawns real agents,
+so the suite cannot run in `CI / validate` or in a git hook, and a pass costs roughly 25 minutes of
+real agent time. A gate that expensive does not belong on every push. The cost of the trade is a
+longer gap between a regression landing and the scorecard showing it. The benefit is that the gate
+exists at all, on the one layer nothing else in the repository exercises — the skills, the CLI and
+the server together. Late is the price of having the check; the scorecard's `git diff` between
+releases is what keeps _late_ from becoming _never_.
+
 ## Cutting a release
 
 ```sh

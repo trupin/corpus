@@ -12,7 +12,7 @@
 
 import { spawn } from "node:child_process";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -198,7 +198,10 @@ async function observeRun(handle: RehearsalWorkspace, seedHead: string): Promise
   await waitForCleanTree(handle.workspaceRoot, OBSERVE_CLEAN_TREE_WAIT_MS);
   await stopServer(handle);
   const disk = await observeDisk(handle.workspaceRoot, seedHead);
-  return { docCheck: { code: docCheck.code, stdout: docCheck.stdout }, ...disk };
+  // The base directory is the driver's to read — `observeDisk` knows only the
+  // workspace. Sorted so run records diff cleanly.
+  const baseDirEntries = [...(await readdir(handle.baseDir))].sort();
+  return { docCheck: { code: docCheck.code, stdout: docCheck.stdout }, baseDirEntries, ...disk };
 }
 
 async function runOnce(scenario: Scenario, runIndex: number, outDir: string): Promise<RunRecord> {

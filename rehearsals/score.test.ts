@@ -17,6 +17,7 @@ const emptyQueue = (): Observation["queue"] => ({
 
 const cleanObservation = (): Observation => ({
   docCheck: { code: 0, stdout: "{}" },
+  baseDirEntries: [".corpus-run.json", "bin", "workspace"],
   commitsSinceSeed: [
     {
       hash: "a".repeat(40),

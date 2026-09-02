@@ -27,8 +27,9 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { z } from "zod";
 import type { QueueEventStatus } from "@corpus/contract";
-import type { CorpusResult, SeedContext, SeedSnapshot } from "./scenario.js";
+import type { ComposerResult, CorpusResult, SeedContext, SeedSnapshot } from "./scenario.js";
 import { readQueueState } from "./observe.js";
 
 const execFileAsync = promisify(execFile);
@@ -165,11 +166,75 @@ async function runCorpus(
   }
 }
 
-/** What a scenario's `seed` receives: the workspace, through the CLI only. */
+/**
+ * The composer's target, read from the workspace's own config — the same file
+ * the CLI resolves its port and bearer token from (`.corpus/config.json`).
+ */
+const ComposerConfigSchema = z.looseObject({
+  token: z.string().min(1),
+  port: z.number().int().optional(),
+  host: z.string().optional(),
+});
+
+export interface ComposerTarget {
+  readonly origin: string;
+  readonly token: string;
+}
+
+/**
+ * Where a composer request goes, and the credential it carries. Refuses the
+ * live server's port outright: a workspace config naming 8765 cannot belong to
+ * a workspace this harness created, whatever the marker says.
+ */
+export async function readComposerTarget(workspaceRoot: string): Promise<ComposerTarget> {
+  const raw = await readFile(join(workspaceRoot, ".corpus", "config.json"), "utf8");
+  const config = ComposerConfigSchema.parse(JSON.parse(raw));
+  const port = config.port ?? USER_SERVER_PORT;
+  if (port === USER_SERVER_PORT) {
+    throw new RehearsalSafetyError(
+      `refusing to address port ${String(port)} — that is the live server, not a rehearsal workspace`,
+    );
+  }
+  return { origin: `http://${config.host ?? "127.0.0.1"}:${String(port)}`, token: config.token };
+}
+
+/**
+ * The person's composer, as one HTTP request to the workspace's own server —
+ * `SeedContext.composer`'s documentation says why this surface exists at all.
+ * No `x-corpus-author` header, so the server's default — `user` — attributes
+ * it, exactly as the UI's composer is attributed.
+ */
+async function composerRequest(
+  handle: RehearsalWorkspace,
+  path: string,
+  body: unknown,
+): Promise<ComposerResult> {
+  await assertRehearsalWorkspace(handle);
+  const target = await readComposerTarget(handle.workspaceRoot);
+  const response = await fetch(`${target.origin}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${target.token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  let json: unknown = null;
+  try {
+    json = JSON.parse(text) as unknown;
+  } catch {
+    // A non-JSON answer stays observable through `status`; the body was not it.
+  }
+  return { status: response.status, json };
+}
+
+/** What a scenario's `seed` receives: the workspace, through the product only. */
 export function seedContext(handle: RehearsalWorkspace): SeedContext {
   return {
     workspaceRoot: handle.workspaceRoot,
     corpus: (args) => runCorpus(handle, args),
+    composer: (path, body) => composerRequest(handle, path, body),
   };
 }
 

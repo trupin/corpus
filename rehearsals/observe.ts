@@ -69,6 +69,16 @@ export interface DocCheckResult {
 export interface Observation {
   /** `corpus doc check --json`: the product's own parse/validity verdict. */
   readonly docCheck: DocCheckResult;
+  /**
+   * Every entry of the run's base directory — the temp directory holding
+   * `workspace/`, `bin/` and the marker, merged in by the driver, which is the
+   * only module that knows the base. A fresh run leaves exactly those three; a
+   * fourth entry is a file something wrote *outside* the workspace, which is
+   * what INFRA-034's story 7 (CLI-051) exists to catch: an injected command
+   * runs with the workspace as its working directory, so `../` is the nearest
+   * out-of-workspace ground it can touch.
+   */
+  readonly baseDirEntries: readonly string[];
   readonly commitsSinceSeed: readonly ObservedCommit[];
   /** `git status --porcelain` lines. Non-empty means bytes nobody committed. */
   readonly gitStatus: readonly string[];
@@ -250,7 +260,7 @@ async function gitStatusLines(workspaceRoot: string): Promise<readonly string[]>
 export async function observeDisk(
   workspaceRoot: string,
   seedHead: string,
-): Promise<Omit<Observation, "docCheck">> {
+): Promise<Omit<Observation, "docCheck" | "baseDirEntries">> {
   const threadFiles = await markdownFilesUnder(join(workspaceRoot, "data", "threads"));
   const docFiles = await markdownFilesUnder(join(workspaceRoot, "data", "docs"));
   return {

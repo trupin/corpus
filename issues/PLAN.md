@@ -2227,8 +2227,9 @@ correctly read `weight: null`. Nothing was lost there.
 | AGENT-059 | A resident designated with no weight is judged by a table written for jobs | done | P0 | fable | UI-185 |
 | CONTRACT-095 | An Ask that carries an attachment drops its designation entirely | done | P0 | opus | UI-185 |
 | INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | done | P0 | fable | AGENT-059 |
-| INFRA-034 | The rehearsal scenarios: nine user stories, graded | todo | P0 | fable | INFRA-033 |
+| INFRA-034 | The rehearsal scenarios: nine user stories, graded | done | P0 | fable | INFRA-033 |
 | CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
+| AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | todo | P1 | fable | INFRA-034 |
 
 **And the reason none of this was caught** (user directive, 2026-09-01: *"We have
 been struggling with issues such as these for a while now"*). The repo tests code
