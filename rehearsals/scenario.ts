@@ -87,6 +87,24 @@ export interface RunMeta {
   readonly durationMs: number;
   /** True when the wall-clock budget ended the run: recorded, never retried. */
   readonly overBudget: boolean;
+  /**
+   * True when the run ended with **work still outstanding** — pending or
+   * in-progress events on the queue (INFRA-036).
+   *
+   * A headless runner ends its own turn, and when it does mid-lane the listener
+   * never got to work it. The observer then reads an unanswered question and the
+   * scorer used to report a product breach for a run the harness cut short.
+   *
+   * It is kept apart from {@link overBudget} because they are different facts: a
+   * budget was exhausted, this one simply stopped. Both exclude a run from
+   * scoring, for the same reason — the product was not given its turn.
+   *
+   * **A run that ends with the queue drained is never cut short**, whatever
+   * ended it. That is the line that keeps this from becoming a blanket excuse:
+   * an agent that settles an event and posts nothing is still scored, and still
+   * fails (AGENT-064).
+   */
+  readonly cutShort: boolean;
   readonly endedBy: RunEnd;
   readonly runnerExitCode: number | null;
 }

@@ -2262,7 +2262,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | UI-187 | TipTap 2 carries a shipped advisory with no backport, so the editor moves to 3 | done | P0 | opus | — |
 | UI-188 | A browser spec pins an absolute date, so it fails on a calendar rather than on a defect | done | P1 | opus | — |
 | INFRA-035 | Nothing proves the listener judgment reads two lanes differently | todo | P1 | fable | AGENT-063 |
-| INFRA-036 | A run whose runner exited with work still pending is scored as a product breach | todo | P0 | fable | — |
+| INFRA-036 | A run whose runner exited with work still pending is scored as a product breach | done | P0 | fable | — |
 | AGENT-064 | An event is settled without the reply it was claimed to write | todo | P1 | fable | INFRA-036 |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |

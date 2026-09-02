@@ -80,6 +80,7 @@ function record(options: {
       endedAt: "2026-09-01T00:05:00Z",
       durationMs: 300_000,
       overBudget: false,
+      cutShort: false,
       endedBy: "quiescence",
       runnerExitCode: 0,
     },

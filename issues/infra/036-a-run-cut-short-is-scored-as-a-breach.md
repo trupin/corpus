@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -77,17 +77,17 @@ An implementation that excludes on `endedBy === "exit"` alone would swallow
 
 ## Acceptance Criteria
 
-- [ ] A run that ends with **pending or in-progress work outstanding** is
+- [x] A run that ends with **pending or in-progress work outstanding** is
       recorded as cut short and **excluded from scoring**, exactly as
       `over-budget` is
-- [ ] It is distinguishable from `over-budget` in the record and on the
+- [x] It is distinguishable from `over-budget` in the record and on the
       scorecard: an exhausted budget and an exited runner are different facts
-- [ ] A run that ends with the queue **drained** is scored in full, whatever its
+- [x] A run that ends with the queue **drained** is scored in full, whatever its
       `endedBy` — so `AGENT-064`'s failure still fails
-- [ ] A scenario whose runs were all cut short does not grade `pass`. It grades
+- [x] A scenario whose runs were all cut short does not grade `pass`. It grades
       as the inconclusive thing it is, the way `pass-short` already says "not
       every run scored"
-- [ ] The scorecard says how many runs were excluded and why, per scenario, so a
+- [x] The scorecard says how many runs were excluded and why, per scenario, so a
       reader can tell a quiet pass from an unobserved one
 
 ## Technical Design
@@ -121,7 +121,21 @@ against this one.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Fixed 2026-09-02 (orchestrator, Opus 5).** `RunMeta.cutShort` is measured at
+the **queue**, not from `endedBy`: on runner exit the wait loop reads the queue
+and sets it when pending or in-progress work remains. The scorer excludes such a
+run exactly as it excludes an over-budget one, and `pass-short` already says
+"not every run scored".
+
+**Falsified in both directions**, which is what makes it a distinction rather
+than an excuse:
+- Removing the exclusion turns *"does not score a run that ended with work still
+  on the queue"* red — the noise comes back.
+- Broadening it to `endedBy === "exit"` turns *"still scores a run that ended by
+  exit on a drained queue"* red — `AGENT-064`'s real failure would have gone
+  green.
+
+`vitest run rehearsals`: 55 passed.
 
 **Pre-fix observation, 2026-09-02 (orchestrator, Opus 5).** Full pass: stories 1,
 2, 4 and 6 failed, with `ended pending` + `found 0` on runs whose `endedBy` was
@@ -132,12 +146,12 @@ ended.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix
