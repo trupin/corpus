@@ -101,11 +101,23 @@ agent, so only this suite can check them.
       ~25 minutes per release, and it is written down so it is a decision rather
       than a surprise
 
-**On the scorecard criterion, as at 2026-09-02:** the first full pass ran and is recorded
-in the E2E log below, story 5's `fail` included rather than argued away — it became
-`AGENT-060`. Two pr-reviewer findings then changed both the skills and the scorer, so the
-committed `rehearsals/scorecard.md` must be regenerated against the tree v0.31.0 actually
-ships. That pass is the release step, not this issue's.
+**The v0.31.0 pass, as committed:** seven of nine pass, two fail, and both
+failures are findings filed rather than assertions weakened.
+
+- **Story 5 passes 3/3.** It failed on the first pass and produced `AGENT-060`;
+  the fix — plus the pr-reviewer's correction from a subject-keyed name to an
+  event-keyed one — is proven here at the outcome level rather than by argument.
+- **Story 2 reads 10/10 Opus 5 · defaulted.** Before `AGENT-059` it would have
+  read 10/10 Sonnet.
+- **Story 1 is now discriminating.** It seeds a non-strongest weight, so the
+  turn's recorded model tells "honoured" apart from "defaulted to strongest".
+- **Story 4 fails 1 of 3** — a correction turn after a wrong model stamp. Filed
+  as `AGENT-061`. Lane separation itself held.
+- **Story 8 fails 2 of 3** — §7's deviation names what was asked and that it
+  could not be met, never what ran instead. Filed as `AGENT-062`. **It graded
+  green on the first pass**, because the scorer checked two thirds of the rule;
+  the pr-reviewer caught that on PR #71 and the strengthened assertion found the
+  gap on the next run.
 
 ## Technical Design
 
