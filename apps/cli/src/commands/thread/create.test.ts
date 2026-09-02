@@ -8,6 +8,7 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
+import { withDeclaredModels } from "../../testing/vocabulary.js";
 import { createCommand, runThreadCreate } from "./create.js";
 
 const THREAD = {
@@ -313,20 +314,38 @@ describe("corpus thread create", () => {
    * this flag existed it too rendered blank.
    */
   describe("--model, the first turn's stated model (SPEC.md §10)", () => {
-    it("sends a stated model alongside the first turn", async () => {
-      const stub = await startStubServer(jsonResponder(201, WHOLE_DOC));
+    it("sends a stated model alongside the first turn, once the tier table has vouched for it", async () => {
+      const stub = await startStubServer(withDeclaredModels(jsonResponder(201, WHOLE_DOC)));
       const harness = stubContext(stub, {
         actor: "agent",
-        flags: { parent: "doc_a1b2c3", message: "I split this into two notes.", model: "opus-4-1" },
+        flags: { parent: "doc_a1b2c3", message: "I split this into two notes.", model: "Opus 5" },
       });
 
       await runThreadCreate(harness.context);
 
-      expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      // The vocabulary is read before the create is sent (AGENT-061).
+      expect(stub.requests.map((request) => request.method)).toEqual(["GET", "GET", "POST"]);
+      expect(bodyOf(stub.requests[2]?.body)).toEqual({
         body: "I split this into two notes.",
         parent: "doc_a1b2c3",
-        model: "opus-4-1",
+        model: "Opus 5",
       });
+    });
+
+    it("refuses a model the tier table does not declare, and creates nothing", async () => {
+      const stub = await startStubServer(withDeclaredModels(jsonResponder(201, WHOLE_DOC)));
+      const harness = stubContext(stub, {
+        actor: "agent",
+        flags: { parent: "doc_a1b2c3", message: "notes", model: "claude-opus-4-5" },
+      });
+
+      const error: unknown = await runThreadCreate(harness.context).catch(
+        (cause: unknown) => cause,
+      );
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(String(error)).toContain("not a model this workspace declares");
+      expect(stub.requests.every((request) => request.method === "GET")).toBe(true);
     });
 
     it("sends no model field at all when the flag is absent", async () => {

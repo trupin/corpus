@@ -80,6 +80,7 @@ function record(options: {
       endedAt: "2026-09-01T00:05:00Z",
       durationMs: 300_000,
       overBudget: false,
+      cutShort: false,
       endedBy: "quiescence",
       runnerExitCode: 0,
     },
@@ -134,7 +135,7 @@ describe("jobLogLines and launchProvenanceLogged", () => {
         JSON.stringify({
           ts: "t2",
           source: "cli",
-          line: "launched a listener (Opus 5 — defaulted: no weight chosen)",
+          line: "launched a listener (Opus 5 — judged: no weight chosen, a lookup lane)",
         }),
         "not json at all",
       ],
@@ -153,9 +154,9 @@ describe("jobLogLines and launchProvenanceLogged", () => {
   });
 
   it("reads the launch provenance word across the named events", () => {
-    expect(launchProvenanceLogged(rec, ["evt_a"], "defaulted")).toBe(true);
+    expect(launchProvenanceLogged(rec, ["evt_a"], "judged")).toBe(true);
     expect(launchProvenanceLogged(rec, ["evt_a"], "stated")).toBe(true);
-    expect(launchProvenanceLogged(rec, ["evt_missing"], "defaulted")).toBe(false);
+    expect(launchProvenanceLogged(rec, ["evt_missing"], "judged")).toBe(false);
   });
 });
 

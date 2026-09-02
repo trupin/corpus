@@ -101,23 +101,33 @@ agent, so only this suite can check them.
       ~25 minutes per release, and it is written down so it is a decision rather
       than a surprise
 
-**The v0.31.0 pass, as committed:** seven of nine pass, two fail, and both
-failures are findings filed rather than assertions weakened.
+**The v0.32.0 pass, as committed.** Six stories pass or pass-short, one is
+inconclusive, one fails on a harness artifact, and **no story shows a product
+breach**:
 
-- **Story 5 passes 3/3.** It failed on the first pass and produced `AGENT-060`;
-  the fix — plus the pr-reviewer's correction from a subject-keyed name to an
-  event-keyed one — is proven here at the outcome level rather than by argument.
-- **Story 2 reads 10/10 Opus 5 · defaulted.** Before `AGENT-059` it would have
-  read 10/10 Sonnet.
-- **Story 1 is now discriminating.** It seeds a non-strongest weight, so the
-  turn's recorded model tells "honoured" apart from "defaulted to strongest".
-- **Story 4 fails 1 of 3** — a correction turn after a wrong model stamp. Filed
-  as `AGENT-061`. Lane separation itself held.
-- **Story 8 fails 2 of 3** — §7's deviation names what was asked and that it
-  could not be met, never what ran instead. Filed as `AGENT-062`. **It graded
-  green on the first pass**, because the scorer checked two thirds of the rule;
-  the pr-reviewer caught that on PR #71 and the strengthened assertion found the
-  gap on the next run.
+| Story | Grade | Reading |
+| --- | --- | --- |
+| 1 stated weight | pass 3/3 | was fail on the pre-`INFRA-036` scorer |
+| 2 weightless designation | **over-budget** 6/6 | every scored run good; the threshold asks for 10 of 10 and attrition delivered 6 |
+| 3 one question, one answer | pass 3/3 | |
+| 4 two lanes | **fail** 0/3 scored | all three runs cut short; the grade comes from `INFRA-037`'s seeding artifact, so nothing about the product was measured |
+| 5 restart recovery | pass-short 2/3 | |
+| 6 mid-turn | pass-short 2/3 | |
+| 7 hostile transcript | pass 3/3 | |
+| 8 unmeetable weight | **pass 3/3** | was fail 2/3 — `AGENT-062` proven at the outcome level |
+| 9 retiered table | pass 3/3 | |
+
+**What the pass proved.** `AGENT-062`: all three runs now name what ran instead
+(*"so it ran at standard"*, *"ran at Standard/Sonnet instead"*). `AGENT-063`: a
+lane titled *"First vegetables"* judged **Haiku** where v0.31.0's fixed default
+sent it to Opus 5.
+
+**What it found, all filed rather than absorbed.** `INFRA-036` — the harness
+scored runs it cut short. `INFRA-037` — a seed write commits after the boundary
+and the run is blamed. `AGENT-064` — one run settled an event and posted no
+reply, on a drained queue, which is a real defect that was sitting inside
+`INFRA-036`'s noise. `INFRA-035` — nothing yet proves the judgment reads two
+lanes differently.
 
 ## Technical Design
 

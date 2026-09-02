@@ -175,11 +175,18 @@ export function bodyFlags(what: string): readonly FlagSpec[] {
  *     which model is driving it, and a plausible default is exactly what §10's
  *     "nothing rather than a guess" forbids. So there is no default, no
  *     environment fallback and no inference — omitted means *no field at all*.
- *   - **It is a display string, not a validated set.** §7 keeps model names in
- *     the orchestrator skill, and CONTRACT-043 kept an enum off the wire so a
- *     workspace can change its tiers without touching the contract. Validating
- *     against a list here would freeze exactly what that took pains to leave
- *     editable, so nothing below inspects the value's content.
+ *   - **The value must be a name the workspace itself declares.** This is
+ *     AGENT-061's reversal of CLI-033's "no validation" stance, and it reverses
+ *     only half of it. There is still no list *here* and no enum in the
+ *     contract — the vocabulary is the Model column of the workspace's own
+ *     tier table, read at call time, so a workspace that edits its tiers still
+ *     changes nothing in any package. What changed is trusting the caller's
+ *     composition: an agent stamped a real-sounding model no runtime was
+ *     running (`claude-opus-4-5`), and §10 calls that the worst outcome — a
+ *     plausible attribution nobody can check. The check itself lives in
+ *     `commands/thread/declared-models.ts`, beside the two verbs that run it;
+ *     this module still inspects nothing, because a shape check here would be
+ *     a second, weaker account of the same rule.
  */
 export const MODEL_FLAG: FlagSpec = {
   name: "model",
@@ -192,8 +199,12 @@ export const MODEL_FLAG: FlagSpec = {
     "what should run: it selects nothing, and it is not a weight (which is stated before the " +
     "work and honoured rather than weighed again — the two are separate on purpose). Where one " +
     "request ran in stages at different weights, name the model of the **deciding** stage, the " +
-    "one that drew the conclusion or wrote the words. Any display string is accepted: the model " +
-    "names live in the orchestrator skill, so nothing here validates against a list of them. " +
+    "one that drew the conclusion or wrote the words. The value must be a name the workspace " +
+    "itself declares — the **Model** column of the tier table in the orchestrate skill's " +
+    "Delegation section, spelled exactly as the table spells it (emphasis aside). Any other " +
+    "spelling is a usage error (exit 2) that lists the declared names, with nothing sent: a name " +
+    "outside the table can only have come from belief, and a plausible attribution nobody can " +
+    "check is worth less than a blank (SPEC.md §10). " +
     "**Only an agent turn names a model** — with `--from user` (the default) this flag is a " +
     "usage error (exit 2) and nothing is sent, because a person's turn names no model. " +
     "**Omitted, no model is recorded at all** — not an empty one: a turn with no record shows " +
@@ -232,9 +243,10 @@ export function resolveTurnModel(
   if (model.trim() === "") {
     throw new UsageError("--model was given without a model name.", {
       hint:
-        "Name the model that wrote the turn — `--model claude-opus-4-1` — or leave the flag out " +
-        "entirely: a turn with no model recorded shows nothing, which is what an unknown should " +
-        "show. A blank is not that, and nothing was sent to the server.",
+        "Name the model that wrote the turn — a name from the tier table's Model column, such as " +
+        '`--model "Opus 5"` — or leave the flag out entirely: a turn with no model recorded ' +
+        "shows nothing, which is what an unknown should show. A blank is not that, and nothing " +
+        "was sent to the server.",
     });
   }
 

@@ -10,6 +10,7 @@ import {
   resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { requireDeclaredModel } from "./declared-models.js";
 
 /**
  * `corpus thread reply <id> --from agent` — the literal command SPEC.md §7's
@@ -56,6 +57,11 @@ export async function runThreadReply(
   // error whatever the body turns out to be, and a heredoc consumed on the way
   // to a refusal is a heredoc the caller has to type again.
   const model = resolveTurnModel(context);
+  // Also before the body is read: the value must be one the workspace's own
+  // tier table declares (AGENT-061 — `declared-models.ts` has the whole story).
+  // Skipped entirely when no model was stated, so an unstamped turn costs no
+  // extra request.
+  if (model !== undefined) await requireDeclaredModel(context, model);
   // The contract's `body` is `min(1)`: an empty reply is a usage error here
   // rather than a request the server was always going to reject.
   const body = await requireBody(context, "reply body", dependencies);
@@ -111,16 +117,17 @@ export const replyCommand: WorkspaceCommandSpec = {
     "line, and a turn heading inside a fence, an inline code span or a block quote, all go " +
     "through untouched.\n\n" +
     "**`--model` states what wrote the turn**, and only an agent's turn may carry one (SPEC.md " +
-    "§10). It is a record of what ran, not a request for anything to run, and it is recorded " +
-    "verbatim; omit it and the turn carries no model at all, which reads as nothing rather than " +
-    "as a guess.\n\n" +
+    "§10). It is a record of what ran, not a request for anything to run, and the value must be " +
+    "one of the model names the workspace's own tier table declares — any other spelling is a " +
+    "usage error (exit 2) that lists the declared names, with nothing sent (AGENT-061). Omit it " +
+    "and the turn carries no model at all, which reads as nothing rather than as a guess.\n\n" +
     BODY_SOURCES_HELP,
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [...bodyFlags("The turn body"), MODEL_FLAG, JOB_FLAG],
   examples: [
     {
       command:
-        "corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI filed the note under finance/.\nCORPUS_EOF",
+        "corpus thread reply th_a1b2c3 --from agent --model \"Opus 5\" <<'CORPUS_EOF'\nI filed the note under finance/.\nCORPUS_EOF",
       description:
         "The agent's form: a heredoc reply, authored by the agent, stating the model that wrote " +
         "it (SPEC.md §7, §10).",

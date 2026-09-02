@@ -58,6 +58,7 @@ const record = (overrides: Partial<RunRecord> = {}): RunRecord => ({
     endedAt: "2026-09-01T00:05:00Z",
     durationMs: 300_000,
     overBudget: false,
+    cutShort: false,
     endedBy: "quiescence",
     runnerExitCode: 0,
   },
@@ -329,6 +330,40 @@ describe("scoreScenario — the two grades are different tests", () => {
         [result],
       ),
     ).toContain("Not every run scored");
+  });
+
+  /**
+   * INFRA-036, and the line that keeps it honest. A headless runner ends its own
+   * turn; when it does with work still on the queue, the listener never worked
+   * the lane and the observer reads an unanswered question. Scoring that as a
+   * product breach is the harness blaming the product for stopping it.
+   *
+   * The **queue** decides, never `endedBy`. A run that reached a drained queue
+   * is scored however it ended — which is what keeps AGENT-064 failing: an agent
+   * that settles an event and posts nothing did have its turn.
+   */
+  it("does not score a run that ended with work still on the queue", () => {
+    const scenario = scenarioWith("invariant", 1, () => ({
+      kind: "invariant",
+      findings: ["would-have-breached"],
+    }));
+    const cutShort = record({
+      meta: { ...record().meta, cutShort: true, endedBy: "exit" },
+    });
+    const result = scoreScenario(scenario, [cutShort]);
+    expect(result.outcomes[0]?.score).toBeNull();
+    expect(result.grade).not.toBe("fail");
+  });
+
+  it("still scores a run that ended by exit on a drained queue, so a real breach fails", () => {
+    const scenario = scenarioWith("invariant", 1, () => ({
+      kind: "invariant",
+      findings: ["settled the event and posted nothing"],
+    }));
+    const drained = record({
+      meta: { ...record().meta, cutShort: false, endedBy: "exit" },
+    });
+    expect(scoreScenario(scenario, [drained]).grade).toBe("fail");
   });
 
   it("a universal breach fails even a judgment scenario", () => {

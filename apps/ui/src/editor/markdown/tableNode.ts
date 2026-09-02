@@ -1,4 +1,4 @@
-import Table from "@tiptap/extension-table";
+import { Table } from "@tiptap/extension-table";
 
 /**
  * GFM's table, plus the one thing ProseMirror's table model has no room for:

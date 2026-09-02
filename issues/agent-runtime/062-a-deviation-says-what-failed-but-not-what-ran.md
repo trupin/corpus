@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -63,16 +63,16 @@ two thirds of it.
 
 ## Acceptance Criteria
 
-- [ ] A dispatch whose stated weight could not be honoured logs **what ran
+- [x] A dispatch whose stated weight could not be honoured logs **what ran
       instead**, naming a level the workspace's own table declares — never a
       model name written into the skill (SHARED-022)
-- [ ] The reply the request receives carries the same third statement, which §7
+- [x] The reply the request receives carries the same third statement, which §7
       requires separately from the log and which outlives it — §7 makes the job
       log runtime state reaped with its event
-- [ ] The other two statements are unchanged: what was asked, and that it could
+- [x] The other two statements are unchanged: what was asked, and that it could
       not be met
-- [ ] Guarded in `scripts/workspace-template.test.ts`
-- [ ] `INFRA-034` story 8 passes 3/3, which is what will prove it
+- [x] Guarded in `scripts/workspace-template.test.ts`
+- [ ] `INFRA-034` story 8 passes 3/3, which is what will prove it — **deferred to the pre-tag rehearsal pass**, and the only criterion not met at merge
 
 ## Technical Design
 
@@ -106,14 +106,68 @@ story 8, runs 1 and 2 breached, run 3 clean. Scorecard row and the two findings
 are in `rehearsals/scorecard.md` as committed for v0.31.0. Raw records:
 `rehearsals/out/2026-09-02T04-29-55.690Z/08-unmeetable-weight.run-{1,2}.json`.
 
+**Implementation, 2026-09-02, agent-runtime-dev on Fable 5** (matches the
+recommendation).
+
+**Root cause read off the raw records, not guessed:** all six runs across both
+passes copy the skill's fourth-shape exemplar *verbatim* — every breached log
+line ends `…not honoured: this workspace declares no such level, so the tier is
+judged, difficulty: <read>`, which is the exemplar's exact tail. The one clean
+run (pass 2, run 3) wrote `judged, difficulty: standard — …` by its own
+initiative. The exemplar ended at the provenance and named no level, so the
+agents did too. Fix: the exemplar now reads `…so it ran at standard, judged,
+difficulty` and the rule beside it says the line is not written until it holds
+a level, named by the table's **Key** cell (SHARED-022: table-relative, no
+model name doing the level's work). The Delegation paragraph gains the matching
+rule for both halves: the third statement names a declared level, in the log
+and in the reply alike, and the reply example's `Standard` is called out as
+one.
+
+**Grammar separation (AGENT-059/063):** nothing in Routing's launch grammar
+(`stated` / `judged` + the read) was touched — the additions live only in
+Delegation's cannot-be-honoured paragraph and in Progress and job logs' fourth
+dispatch shape, both inside the job-dispatch grammar's own vocabulary
+(`stated by the request … not honoured`). The existing AGENT-063 guards
+(negative pins on the launch grammar) still pass.
+
+**Guard:** `scripts/workspace-template.test.ts` — the
+`logs a fourth dispatch shape when a stated weight went unmet` test now pins
+the new exemplar literal, the subject sentence, the Key-cell rule, and pins the
+old exemplar tail (`so the tier is judged, difficulty`) as **absent**, since it
+is the exact string the breached runs reproduced. The
+`does the work anyway…says so twice` test pins the Delegation half, both-places
+clause included.
+
+**Falsification, both subject sentences:** deleting the Progress subject
+sentence turned exactly `logs a fourth dispatch shape when a stated weight went
+unmet` red (1 failed | 512 passed); deleting the Delegation subject sentence
+turned exactly `does the work anyway when a stated weight cannot be met, and
+says so twice` red (1 failed | 512 passed). Both restored;
+`npx vitest run scripts/workspace-template.test.ts` green at 513/513.
+
+**Fresh-workspace drill:** `corpus init` run from source (tsx) into an empty
+scratch directory — 26 template files installed, no server started, port 8765
+untouched. The installed `.claude/skills/orchestrate/SKILL.md` is byte-identical
+to the template (`diff` clean), carries `ran at standard` at both the exemplar
+and the subject sentence, carries the Delegation sentence once, and contains
+zero occurrences of the old exemplar tail.
+
+**Lint:** `npm run lint` exit 0.
+
+**Story 8 at 3/3** is the closing proof and needs a rehearsal pass, which is the
+orchestrator's to run — the scorer reads declared keys from the served table and
+the new exemplar's `standard` is one, so the shape the agents copy now carries
+the token the scorer looks for.
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified (story 8 at 3/3 pends the next rehearsal
+      pass, which only the orchestrator runs)
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

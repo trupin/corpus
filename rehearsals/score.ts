@@ -114,10 +114,17 @@ export function universalFindings(record: RunRecord): readonly string[] {
 export interface RunOutcome {
   readonly runIndex: number;
   readonly overBudget: boolean;
+  /** The run ended with work outstanding, so it was never the product's turn (INFRA-036). */
+  readonly cutShort: boolean;
   readonly endedBy: RunRecord["meta"]["endedBy"];
   readonly durationMs: number;
   readonly universalFindings: readonly string[];
-  /** Absent on an over-budget run: the scenario was not given its full chance. */
+  /**
+   * Absent on a run that was not given its full chance — an exhausted budget,
+   * or a runner that stopped with work still on the queue. Present on every run
+   * that reached a drained queue, however it ended, so an agent that settles an
+   * event and posts nothing is still scored and still fails.
+   */
   readonly score: ScenarioRunScore | null;
 }
 
@@ -153,10 +160,11 @@ export function scoreScenario(scenario: Scenario, records: readonly RunRecord[])
   const outcomes: RunOutcome[] = records.map((record) => ({
     runIndex: record.runIndex,
     overBudget: record.meta.overBudget,
+    cutShort: record.meta.cutShort,
     endedBy: record.meta.endedBy,
     durationMs: record.meta.durationMs,
     universalFindings: universalFindings(record),
-    score: record.meta.overBudget ? null : scenario.score(record),
+    score: record.meta.overBudget || record.meta.cutShort ? null : scenario.score(record),
   }));
 
   const universalBreached = outcomes.some((outcome) => outcome.universalFindings.length > 0);
@@ -201,7 +209,7 @@ export function scoreScenario(scenario: Scenario, records: readonly RunRecord[])
   // message, presents as `over-budget` every time, so a scenario grading plain
   // `pass` on its other runs hides exactly the defect the story exists for.
   // `pass-short` says both things: nothing breached, and not everything ran.
-  const someExcluded = outcomes.some((outcome) => outcome.overBudget);
+  const someExcluded = outcomes.some((outcome) => outcome.overBudget || outcome.cutShort);
   const grade: ScenarioGrade =
     universalBreached || breached
       ? "fail"
@@ -285,13 +293,15 @@ export function renderScorecard(info: PassInfo, results: readonly ScenarioResult
       const seconds = `${String(Math.round(outcome.durationMs / 1000))}s`;
       const status = outcome.overBudget
         ? "over-budget"
-        : outcome.score?.kind === "invariant"
-          ? outcome.score.findings.length === 0
-            ? "clean"
-            : "breached"
-          : outcome.score?.kind === "judgment"
-            ? outcome.score.label
-            : "unscored";
+        : outcome.cutShort
+          ? "cut short — the runner stopped with work still on the queue"
+          : outcome.score?.kind === "invariant"
+            ? outcome.score.findings.length === 0
+              ? "clean"
+              : "breached"
+            : outcome.score?.kind === "judgment"
+              ? outcome.score.label
+              : "unscored";
       lines.push(
         `- Run ${String(outcome.runIndex + 1)}: ${status} (${seconds}, ended by ${outcome.endedBy})`,
       );

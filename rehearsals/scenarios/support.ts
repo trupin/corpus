@@ -163,14 +163,16 @@ export function jobLogLines(record: RunRecord, eventId: string): readonly JobLog
 
 /**
  * Whether any of the named events' logs carries a launch whose provenance is
- * this word — `stated` or `defaulted`, AGENT-059's two. The skill logs a
- * launch on the event that put the lane in front of it (the designation, or
- * the `lane.waiting` it claimed), so a scorer asks across that set.
+ * this word — `stated` or `judged`, AGENT-063's two (AGENT-059 wrote the
+ * grammar; AGENT-063 replaced its `defaulted` when the fixed default became a
+ * judgment). The skill logs a launch on the event that put the lane in front
+ * of it (the designation, or the `lane.waiting` it claimed), so a scorer asks
+ * across that set.
  */
 export function launchProvenanceLogged(
   record: RunRecord,
   eventIds: readonly string[],
-  word: "stated" | "defaulted",
+  word: "stated" | "judged",
 ): boolean {
   return eventIds.some((eventId) =>
     jobLogLines(record, eventId).some((entry) => entry.line.includes(word)),

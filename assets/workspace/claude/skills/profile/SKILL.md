@@ -304,7 +304,7 @@ actually type. Twelve lines.
 Then the reply, which is where the person finds out any of this happened:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Written — `@bookkeeper`, at `.claude/agents/bookkeeper.md`.
 
 It sources every figure it writes back to the document that figure came from, gives you both sides when two documents disagree instead of picking one, and declines to advise. Answers come back as a short table with a sentence under it.

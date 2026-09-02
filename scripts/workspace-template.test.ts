@@ -957,26 +957,58 @@ describe("skills", () => {
 
     it("states the rule, the deciding stage, and the absence, in the comment skill", () => {
       const body = documentAt("claude/skills/comment/SKILL.md").body;
-      expect(body).toMatch(/Every reply you post carries `--model <name>`/);
+      expect(body).toMatch(/Every reply you post\s+carries `--model <name>`/);
+      // AGENT-061: the vocabulary is the workspace's, never the agent's. An
+      // agent once stamped a version string composed from its own self-image
+      // (`claude-opus-4-5`, which no runtime here was), so the value is a
+      // quotation of the tier table's Model column, handed at dispatch — and
+      // the CLI refuses every other spelling before anything posts.
+      expect(body).toMatch(/in the workspace's own words/);
+      expect(body).toMatch(wrapped("The name is never yours to compose"));
+      expect(body).toMatch(wrapped("the **Model** cells of the tier table"));
+      expect(body).toMatch(wrapped("never a version string remembered from training"));
+      expect(body).toMatch(wrapped("Your dispatch named the word you were launched at: copy it"));
+      expect(body).toMatch(wrapped("refused at exit `2`, declared names listed, nothing posted"));
+      // The refusal loses no reply: nothing was sent, so the answer survives
+      // the way §6 requires an answer to survive every refusal.
+      expect(body).toMatch(
+        wrapped("the reply is not lost; re-run it corrected or without the flag"),
+      );
       // What ran, never what was asked for — and why the distinction is
       // load-bearing rather than pedantic: it is what makes "honoured, not
       // weighed again" checkable at all.
-      expect(body).toMatch(/what actually ran, never what was asked for/i);
-      expect(body).toMatch(/a directive, honoured rather than weighed again/);
-      expect(body).toMatch(/the turn is the lasting evidence that it\s+was/);
+      expect(body).toMatch(/what\s+actually ran, never what was asked for/i);
+      expect(body).toMatch(/a directive, honoured rather\s+than weighed again/);
+      expect(body).toMatch(/the turn is the lasting\s+evidence that it was/);
       // The deciding stage, singular, and never the first stage's.
-      expect(body).toMatch(/Where the work ran in stages, name the deciding stage/);
-      expect(body).toMatch(/one model,\s+never a list, and never the first stage's/);
+      expect(body).toMatch(/name the deciding stage/);
+      expect(body).toMatch(/one model, never a list, and never the first\s+stage's/);
       expect(body).toMatch(/gathering stages belong in the job log/);
       // An unknown states nothing. A guess is the failure this whole chain
       // exists to avoid, so the instruction is an omission with one spelling.
-      expect(body).toMatch(/When you do not know what ran, leave the flag out entirely/);
-      expect(body).toMatch(/a plausible attribution\s+nobody can check is worth less than a blank/);
+      expect(body).toMatch(/When no row describes what ran, leave the flag out entirely/);
+      expect(body).toMatch(/a plausible attribution nobody can check is worth less than a\s+blank/);
       expect(body).toMatch(/`--model ""` is a usage error \(exit `2`\)/);
       expect(body).not.toMatch(/best guess/i);
       // A person's turn names no model, and the refusal precedes the body.
-      expect(body).toMatch(/refused at exit `2` before the body is read/);
-      expect(body).toMatch(/never state a model on a person's behalf/);
+      expect(body).toMatch(/refused at exit\s+`2` before the body is read/);
+    });
+
+    it("owns the stamp-repair prohibition, in the comment skill alone (AGENT-061)", () => {
+      // The incident's second half: the agent posted a *correction turn* to fix
+      // the stamp, breaking one question, one answer. §6 has revision for wrong
+      // text; the model record is frontmatter, and no turn ever repairs it.
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(body).toMatch(/\*\*A stamp is never repaired by another turn\.\*\*/);
+      expect(body).toMatch(/A wrong stamp noticed late goes in the job log — the turn stays\./);
+      // The rule reaches orchestrate and converse through their existing
+      // pointers at the comment grammar, not through a second account.
+      const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(orchestrate).toMatch(/The comment skill states the grammar/);
+      expect(orchestrate).not.toMatch(/never repaired by another turn/);
+      expect(documentAt("claude/skills/converse/SKILL.md").body).not.toMatch(
+        /never repaired by another turn/,
+      );
     });
 
     it("carries the same rule into dispatch, in the orchestrate skill", () => {
@@ -987,12 +1019,102 @@ describe("skills", () => {
       expect(body).toMatch(/the turn names the \*\*deciding\*\*\s+stage/);
       expect(body).toMatch(/one model and never a list/);
       expect(body).toMatch(/the flag is left out\s+and the turn shows nothing rather than a guess/);
-      // The dispatch is what puts the name in the subagent's hand, so it is
-      // listed among the things a prompt must carry.
+      // The dispatch is what puts the word in the subagent's hand, so it is
+      // listed among the things a prompt must carry — and since AGENT-061 the
+      // handed word *is* the stamp: a Model cell of the level table, with the
+      // CLI refusing every other spelling.
       expect(body).toMatch(/the model you are launching it at/);
+      expect(body).toMatch(/the subagent has the word in hand and\s+quotes it back/);
+      expect(body).toMatch(/a \*\*Model\*\* cell of\s+the level table above and nothing else/);
+      expect(body).toMatch(/refuses every other spelling before\s+anything is posted/);
+      // The worked dispatch hands the word as the value, not as trivia.
+      expect(body).toMatch(/that word is the --model value on every turn you post/);
+      // A turn the orchestrator posts itself: no dispatch handed a word, so it
+      // maps its own runtime to a row or states nothing.
+      expect(body).toMatch(/A turn you post yourself had no dispatch to\s+hand you a word/);
+      // The table's own paragraph names the column as the stamp vocabulary.
+      expect(body).toMatch(/the whole vocabulary a\s+turn's `--model` may record/);
       // And the job log is where the split that the turn omits is written down.
       expect(body).toMatch(/\*\*This log is the per-stage account\.\*\*/);
       expect(body).toMatch(/the turn itself names only the\s+deciding stage/);
+    });
+
+    /**
+     * AGENT-061's sweep: every `--model` value a shipped skill shows is a
+     * **Model** cell of the template's own tier table, so editing the table and
+     * the examples is one act and a composed version string cannot ship again.
+     * Values are read from both shapes a skill writes — the shell flag on a
+     * turn-writing line and the argv pair inside a `corpus batch` array — and a
+     * `<placeholder>` in prose stands for the vocabulary rather than in it.
+     */
+    const statedModels = (body: string): string[] => {
+      const values: string[] = [];
+      for (const command of turnCommands(body)) {
+        const flag = /--model (?:"([^"\n]*)"|(\S+))/.exec(command);
+        if (flag !== null) values.push(flag[1] ?? flag[2] ?? "");
+      }
+      for (const pair of body.matchAll(/"--model","([^"\n]*)"/g)) values.push(pair[1] ?? "");
+      // A `<placeholder>` — or a value dragging inline-code backticks, which
+      // is prose quoting the flag rather than an example stating a stamp —
+      // stands for the vocabulary rather than in it.
+      return values.filter((value) => !/[<>`]/.test(value));
+    };
+
+    describe("the stamp vocabulary is the tier table's (AGENT-061)", () => {
+      const declaredModels = readWeightLevels(
+        documentAt("claude/skills/orchestrate/SKILL.md").body,
+      ).map((level) => level.model);
+
+      it("reads a declaration to check against, and examples to check", () => {
+        // Anti-vacuity: no declared table, or no stated value anywhere, and
+        // the sweep below would pass over nothing.
+        expect(declaredModels).toEqual(["Haiku", "Sonnet", "Opus 5"]);
+        expect(installedSkillTexts.flatMap(({ body }) => statedModels(body))).toContain("Sonnet");
+      });
+
+      it.each(installedSkillTexts)("$label states only declared model names", ({ label, body }) => {
+        for (const value of statedModels(body)) {
+          expect(
+            declaredModels,
+            `${label}: --model ${value} is not a Model cell of the tier table`,
+          ).toContain(value);
+        }
+      });
+
+      it("would catch the incident's stamp, in either shape", () => {
+        // The falsification, kept as a test: the exact value INFRA-034 story 4
+        // caught an agent composing is extracted, so the sweep above would
+        // have refused it — and would refuse it again.
+        expect(
+          statedModels('corpus thread reply th_1 --from agent --model claude-opus-4-5 -m "hi"\n'),
+        ).toEqual(["claude-opus-4-5"]);
+        expect(statedModels('[["thread","reply","th_1","--model","claude-opus-4-5"]]')).toEqual([
+          "claude-opus-4-5",
+        ]);
+        expect(statedModels('corpus thread reply th_1 --from agent --model "Opus 5"\n')).toEqual([
+          "Opus 5",
+        ]);
+        // And the placeholder a prose mention uses stays out of the sweep.
+        expect(
+          statedModels("`corpus thread reply <id> --from agent --model <name>` saying what"),
+        ).toEqual([]);
+      });
+
+      it.each(installedSkillTexts)(
+        "$label never again shows a version-string stamp",
+        ({ label, body }) => {
+          // The permanent negative pin, in the same spirit as REMOVED_VERBS:
+          // the incident's shape — `--model claude-<anything>` — does not come
+          // back as an example, in shell or argv form, whatever the sweep
+          // above thinks of the table that day.
+          expect(body, `${label}: shell-form version-string stamp`).not.toMatch(
+            /--model\s+"?claude-/,
+          );
+          expect(body, `${label}: argv-form version-string stamp`).not.toMatch(
+            /"--model","claude-/,
+          );
+        },
+      );
     });
   });
 
@@ -2472,13 +2594,11 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/never a fixed default/);
       expect(body).toMatch(/there is no level you fall back\s+to/);
       expect(body).toMatch(/the only spelling of it/);
-      // AGENT-059: that absence rule is a job rule, and it says so. A
+      // AGENT-059/063: that absence rule is a job rule, and it says so. A
       // weightless *designation* is the one absence the two passes never
-      // touch — its rule is stated where the launch is owned, in Routing.
+      // touch — its judgment is stated where the launch is owned, in Routing.
       expect(body).toMatch(/All of that is about a job/);
-      expect(body).toMatch(
-        wrapped("a listener launches at the strongest tier this table declares"),
-      );
+      expect(body).toMatch(wrapped("a listener is judged on the conversation it will hold"));
     });
 
     it("does the work anyway when a stated weight cannot be met, and says so twice", () => {
@@ -2495,6 +2615,25 @@ describe("orchestrate skill body", () => {
         /\*\*in the job's log while it runs\*\* and \*\*in the reply the request receives\*\*/,
       );
       expect(body).toMatch(/what was asked for, that it could not be met, and what ran\s+instead/);
+      // AGENT-062: the third statement is the one the rehearsal suite caught
+      // being dropped (story 8, 2 of 3 runs) — the ask and the refusal were
+      // recorded, and nothing named what ran. It must be asked for by name, as
+      // a level the workspace's own table declares (SHARED-022), and in both
+      // places §7 requires it — the reaped log and the durable reply.
+      expect(body).toMatch(
+        wrapped(
+          "The third statement names the level the work actually ran at, as a level this workspace's table declares — in the log and in the reply alike.",
+        ),
+      );
+      expect(body).toMatch(wrapped("the third exists only if you write it"));
+      expect(body).toMatch(
+        wrapped("the level is the word a reader can hold against the table above"),
+      );
+      // The reply example names its substitute as a declared level, not only a
+      // model — and the text says that is what the naming is.
+      expect(body).toMatch(
+        wrapped("the substitute named there as **Standard**, a level the table declares"),
+      );
       // Why the reply is not optional: the log does not survive the event.
       expect(body).toMatch(/The log is reaped with its event, so the reply is the durable half/);
       expect(body).toMatch(/claiming work it did not do/);
@@ -2512,10 +2651,29 @@ describe("orchestrate skill body", () => {
 
     it("logs a fourth dispatch shape when a stated weight went unmet", () => {
       expect(body).toMatch(/Four shapes, one grammar/);
+      // AGENT-062: the exemplar carries the level that ran (`ran at standard`),
+      // because story 8 showed the agents copy this line's shape verbatim — an
+      // exemplar ending at the provenance produced logs naming no level in 2
+      // runs of 3.
       expect(body).toContain(
-        "(Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so the tier is judged, difficulty)",
+        "(Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so it ran at standard, judged, difficulty)",
       );
       expect(body).toMatch(/names the ask, that it went unmet, and what ran instead/);
+      // The third statement, asked for by name: a level from the table's own
+      // Key cell, which neither the model name nor the provenance stands in
+      // for. This is the guard's subject sentence.
+      expect(body).toMatch(
+        wrapped(
+          "`ran at standard` is the third of those, and the line is not written until it holds a level.",
+        ),
+      );
+      expect(body).toMatch(
+        wrapped("by the **Key** cell of the tier-table row your judgment picked"),
+      );
+      expect(body).toMatch(wrapped("says where the substitute came from and never what it was"));
+      // The old exemplar shape — ask and refusal, provenance, no level — must
+      // not come back: it is the exact line the breached runs reproduced.
+      expect(body).not.toContain("so the tier is judged, difficulty");
       // The line is checkable rather than self-reported: the server wrote the
       // ask onto the same log before any dispatch line existed.
       expect(body).toContain("`weight stated by the request: <key>`");
@@ -5661,10 +5819,12 @@ describe("converse skill body", () => {
    */
   it("marks the two things in its worked example that are not text to reuse", () => {
     expect(body).toMatch(
-      /is what ran in this example; on your turn the name is what is running as you/,
+      /is what\s+ran in this example; on your turn the name is the tier-table word your launch handed you/,
     );
     expect(body).toMatch(
-      /copying the string out of an example is the one way to make the field say\s+something false/,
+      wrapped(
+        "copying the string out of an example is the one way to make the field say something false",
+      ),
     );
     expect(body).toMatch(/\*\*a create prints its id and its path, not a\s+key\*\*/);
     expect(body).toMatch(/`corpus doc show <id>` first and present what it printed/);
@@ -6023,8 +6183,8 @@ describe("a listener launched at its designation's weight", () => {
     // The routing row says the same thing where a reader meets it first.
     const designation = routing.split("\n").find((line) => line.includes("`resident.designated`"));
     expect(designation ?? "").toMatch(/at the model that `resident`'s `weight` names/);
-    // `null` is still the orchestrator's decision — settled by the rule the
-    // next guard pins, never judged through the job passes (AGENT-059).
+    // `null` is still the orchestrator's decision — the conversation judgment
+    // the next guard pins, never the job passes (AGENT-059/063).
     expect(launch).toMatch(/A `null` weight is still \*you decide\*/);
     // And the example logs a model this workspace's table actually declares.
     const logged = /launched a converse listener on \S+ — a general resident \(([^—()]+) —/
@@ -6034,61 +6194,115 @@ describe("a listener launched at its designation's weight", () => {
   });
 
   /**
-   * AGENT-059, reported from live use 2026-09-01. For a designation that chose
-   * no weight the skill said "you decide as you decide for a `null`" and sent
-   * the launch through the two-pass judgment written for dispatching a job.
-   * Neither pass describes a resident: the first pass answers no by default
-   * because a listener has no single output, and the second pass's middle row
-   * ("read a thread and its parent … bounded to one or two documents") swallows
-   * every open-ended conversation — so every weightless resident landed on the
-   * middle tier, and the "in doubt, take the stronger" tie-break never fired
-   * because nothing was in doubt. A wrong weight on a job costs one job; a
-   * wrong weight on a resident costs every turn of the conversation, and no
-   * running resident changes weight without discarding what it holds. So the
-   * unset case is a rule, not a judgment — user decision, 2026-09-01.
+   * AGENT-063, user directive 2026-09-02: *"default to: orchestrator picks
+   * based on the task. If I set which tier to use, then use that one."* This
+   * reverses AGENT-059's fixed strongest-tier default and restores §7's signed
+   * clause — absence of a choice is a judgment, never a fixed default. What
+   * must not come back with the revert is AGENT-059's own defect: the two-pass
+   * job table has no purchase on a conversation (the first pass answers no by
+   * default, the middle row swallows every open-ended lane), so sending a
+   * weightless designation through it was landing, not judging. The skill now
+   * carries a judgment written for a conversation — what the person opened the
+   * lane for, and what a poor turn would cost them there — read off what
+   * exists at launch, with a stated lean to the stronger end where nothing at
+   * hand answers.
    */
-  it("launches a weightless designation at the strongest declared tier, by rule", () => {
-    // The owner sentence — deleting it is what must turn this file red.
-    expect(launch).toMatch(
-      wrapped(
-        "**A designation that chose no weight launches at the strongest tier the table declares.**",
+  /**
+   * AGENT-062's lesson, applied to this phase's own diff (pr-reviewer, PR #72).
+   * Every worked exemplar of a judged launch was the same line — one tier, the
+   * strongest, with one read clause. An exemplar is not an illustration of a
+   * rule; for most runs it **is** the rule, so a single-tier exemplar set
+   * re-imposes strongest-by-default wearing the word `judged`, and scenario 02
+   * cannot fail it because the tier is deliberately unasserted there.
+   *
+   * So the skill must demonstrate the judgment landing at **both** ends. This
+   * counts distinct tiers across the judged exemplars rather than pinning
+   * particular words, because which two tiers a workspace declares is its own
+   * business — what may not happen is that they all agree.
+   */
+  it("demonstrates a judged launch at more than one tier", () => {
+    const tiers = new Set(
+      [...launch.matchAll(/\(([^()—]+)—\s*judged:/g)].map((match) =>
+        (match[1] ?? "").trim().toLowerCase(),
       ),
     );
+    // Anti-vacuity: the sweep is reading real exemplars, not an empty match set.
+    expect(tiers.size).toBeGreaterThanOrEqual(2);
+    expect(launch).toMatch(/a run of launches that all\s+land on one end/);
+  });
+
+  it("judges a weightless designation on the conversation, at launch", () => {
+    // The owner sentence — deleting it is what must turn this file red.
+    expect(launch).toMatch(
+      wrapped("**A designation that chose no weight is judged on the conversation, at launch.**"),
+    );
+    expect(launch).toMatch(/absence of a choice is a judgment, never a fixed\s+default/);
     // The scoping, stated at the owner: the two passes are for jobs.
     expect(launch).toMatch(
       wrapped(
         "Delegation's two passes govern **dispatching a job**, and they do not govern **launching a listener**.",
       ),
     );
-    // The reason is durability, not a preference about models.
-    expect(launch).toMatch(/how durable the choice is, not a\s+preference about models/);
-    expect(launch).toMatch(/the most expensive choice you make to unwind/);
-    expect(launch).toMatch(wrapped("in doubt take the stronger, settles it outright"));
-    // Read off the table, never a remembered name — a rename, a reorder and a
-    // one-level table all keep working (SHARED-022's one declaration).
-    expect(launch).toMatch(wrapped("its last row, because the table is written lightest first"));
-    expect(launch).toMatch(/never off a model name\s+remembered from anywhere else/);
-    expect(launch).toMatch(/rename or reorder its tiers/);
-    expect(launch).toMatch(/declares a single level has a strongest level all the same/);
-    // The cost, named so it stays a decision rather than a surprise.
-    expect(launch).toMatch(/runs at the top tier for as long as it lives/);
-    expect(launch).toMatch(/stating a lighter weight when they designate\s+it/);
-    // The worked example practises the rule at the tier the shipped table
-    // declares last, in the argument and in the prompt — and the judgment
-    // vocabulary the old example taught is gone.
-    const strongest = readWeightLevels(body).at(-1)?.model ?? "";
-    expect(strongest, "the table declares no levels").not.toBe("");
+    // The judgment's question, in the skill's own terms.
+    expect(launch).toMatch(
+      wrapped(
+        "**what did the person open this lane for, and what would a poor turn cost them there?**",
+      ),
+    );
+    // What there is to read at launch — and the honesty about how little it is.
+    expect(launch).toMatch(/the thread's title/);
+    expect(launch).toMatch(/its opening message where one was posted/);
+    expect(launch).toMatch(/the designated profile's own document/);
+    expect(launch).toMatch(/a title and one message is a forecast, not a record/);
+    // The two ends of the range, still the table's own declaration — never a
+    // model name remembered from anywhere else (SHARED-022's one declaration).
+    expect(launch).toMatch(/quick factual lookups/);
+    expect(launch).toMatch(/belongs at the lighter end/);
+    expect(launch).toMatch(/the conversation is the deliverable/);
+    expect(launch).toMatch(/never from a model name remembered from anywhere else/);
+    // The stated lean where nothing at hand answers, and its reason: the cost
+    // of the two mistakes is not symmetric.
+    expect(launch).toMatch(/lean stronger\s+rather than lighter/);
+    expect(launch).toMatch(/answers below its conversation until a person notices/);
+    // Judged once, at launch — never re-judged per message (§7's weight rider).
+    expect(launch).toMatch(/never\s+re-judge a running lane per message/);
+    // The worked example practises the judgment: the prompt names a tier the
+    // table declares, as a judgment — and the vocabularies of both old rules
+    // (the job passes, and AGENT-059's fixed default) stay gone.
     const call = fencedBlocks(launch).find((fence) => fence.content.includes("Task("))?.content;
-    expect(call ?? "").toMatch(new RegExp(String.raw`running as ${strongest} — defaulted`));
+    const judgedAs = / — judged: no weight chosen/.exec(call ?? "");
+    expect(judgedAs, "the example prompt does not log a judged launch").not.toBeNull();
+    const promptModel = /running as ([^—]+) — judged/.exec(call ?? "")?.[1]?.trim();
+    expect(declaredModels, `the example launches at "${promptModel ?? "nothing"}"`).toContain(
+      promptModel,
+    );
     expect(launch).not.toMatch(/judged, difficulty/);
     expect(launch).not.toMatch(/you decide as you decide for a `null`/);
   });
 
   /**
-   * The other half of AGENT-059: §7's "a dispatch says what weight it went out
-   * at, and where that weight came from", reaching the one dispatch it did not.
-   * The two provenance words are what an observer reads off the job's log
+   * The negative pins AGENT-063 asked for by name: the revert must not be able
+   * to undo itself silently. AGENT-059's fixed default was written in exactly
+   * these words, and a rewrite that brings any of them back is the default
+   * returning — whatever the surrounding prose says about judging.
+   */
+  it("does not launch a weightless designation at a fixed strongest tier", () => {
+    expect(body).not.toMatch(/launches at the strongest tier the table declares/);
+    expect(body).not.toMatch(/the strongest tier this table declares/);
+    expect(body).not.toMatch(/its last row, because the table is written lightest first/);
+    expect(body).not.toMatch(/strongest declared tier/);
+    // The provenance word of the fixed default. `judged` is what a launch
+    // logs now, because a judgment is what happened.
+    expect(body).not.toMatch(/\bdefaulted\b/);
+  });
+
+  /**
+   * The surviving half of AGENT-059: §7's "a dispatch says what weight it went
+   * out at, and where that weight came from", reaching the one dispatch it did
+   * not. The two provenance words are what an observer reads off the job's log
    * without asking the session — INFRA-034's stories 1 and 2 assert on them.
+   * AGENT-063 changed the weightless word from `defaulted` (a fixed rule) to
+   * `judged` (a judgment, naming what it picked and the read that picked it).
    */
   it("logs every listener launch with its weight and that weight's provenance", () => {
     expect(launch).toMatch(
@@ -6097,23 +6311,23 @@ describe("a listener launched at its designation's weight", () => {
       ),
     );
     expect(launch).toMatch(/A key the designation stated is logged as `stated`/);
-    expect(launch).toMatch(/chose none is logged as `defaulted`, naming the tier/);
+    expect(launch).toMatch(/chose none is logged as `judged`, naming the tier the judgment picked/);
     // Both shapes shown literally, the way the dispatched-line grammar shows its four.
     expect(launch).toMatch(
-      /`\(Opus 5 — stated at designation: heavy\)` against\s+`\(Opus 5 — defaulted: no weight chosen, strongest declared tier\)`/,
+      /`\(Opus 5 — stated at designation: heavy\)` against\s+`\(Opus 5 — judged: no weight chosen, the lane is for working out a plan\)`/,
     );
-    // The worked example logs the defaulted form at the declared strongest tier.
-    const strongest = readWeightLevels(body).at(-1)?.model ?? "";
-    expect(launch).toMatch(
-      new RegExp(
-        String.raw`corpus job log \S+ "launched a converse listener on \S+ — a general resident \(${strongest} — defaulted: no weight chosen, strongest declared tier\)"`,
-      ),
-    );
+    // The worked example logs the judged form at a tier the table declares,
+    // with the read that picked it after the colon.
+    const logged =
+      /corpus job log \S+ "launched a converse listener on \S+ — a general resident \(([^—()]+) — judged: no weight chosen, [^"()]+\)"/
+        .exec(launch)?.[1]
+        ?.trim();
+    expect(declaredModels, `the worked example logs "${logged ?? "nothing"}"`).toContain(logged);
     // The stated form appears where the counterfactual walks the same launch.
-    expect(launch).toMatch(/logged as `stated`\s+instead of `defaulted`/);
+    expect(launch).toMatch(/logged as `stated`\s+instead of `judged`/);
     // A roster launch logs the same line on the event that surfaced the lane,
     // and only an event-less launch falls back to the prompt as the record.
-    expect(roster).toMatch(/the weight, and `stated`\s+or `defaulted`/);
+    expect(roster).toMatch(/the weight, and `stated`\s+or `judged`/);
     expect(roster).toMatch(/the `lane\.waiting` you\s+claimed for it/);
     expect(roster).toMatch(/there the prompt is the whole record/);
     expect(roster).toMatch(/the weight and its provenance in\s+words/);
@@ -6277,15 +6491,13 @@ describe("a listener launched at its designation's weight", () => {
     expect(roster).toMatch(
       wrapped("find its row in the tier table, and launch at that row's model"),
     );
-    // An absent token is the choice nobody made — launched by the same rule as
-    // a `null` payload, never judged through the job passes (AGENT-059).
+    // An absent token is the choice nobody made — judged like a `null`
+    // payload, on the conversation, never through the job passes (AGENT-063).
     expect(roster).toMatch(
       wrapped("A row that prints nothing after the resident is a designation that chose no weight"),
     );
     expect(roster).toMatch(
-      wrapped(
-        "at the strongest tier the table declares, under the rule *Launching a listener* above states",
-      ),
+      wrapped("judged on the conversation, under the judgment *Launching a listener* above states"),
     );
     expect(roster).toMatch(/weigh a job you dispatch, never a listener/);
     // And the launch still carries no resident, which is the older half.
@@ -6376,7 +6588,7 @@ describe("a listener launched at its designation's weight", () => {
     expect(calls[0]?.content ?? "").toMatch(/\/converse th_\w+/);
     // The example's argument and its prompt name the same tier, and the tier is
     // one this workspace's table declares — the AGENT-026 rule, applied here.
-    // Since AGENT-059 the weightless example launches at the table's strongest.
+    // Since AGENT-063 the weightless example's tier is the judgment's pick.
     expect(calls[0]?.content ?? "").toMatch(/running as Opus 5/);
     expect(declaredModels).toContain("Opus 5");
     // The roster launch names the same argument rather than acquiring its own.

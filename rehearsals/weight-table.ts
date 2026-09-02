@@ -91,9 +91,10 @@ export function readWeightTable(markdown: string): readonly WeightTableRow[] {
 }
 
 /**
- * The tier a weightless designation launches at (AGENT-059): the table's last
- * row, because the table is written lightest first. `null` for a table that
- * declares nothing.
+ * The strongest declared level — the table's last row, because the table is
+ * written lightest first. No launch rule reads this any more (AGENT-063 made
+ * the weightless launch a judgment); it remains for scorers and fixtures that
+ * reason about the table's ends. `null` for a table that declares nothing.
  */
 export function strongestRow(rows: readonly WeightTableRow[]): WeightTableRow | null {
   return rows.length === 0 ? null : (rows[rows.length - 1] ?? null);
@@ -102,10 +103,12 @@ export function strongestRow(rows: readonly WeightTableRow[]): WeightTableRow | 
 /** The row a stated key resolves to, or `null` — the unhonourable case. */
 /**
  * A row that is deliberately **not** the strongest, for a story that must tell
- * "honoured" apart from "defaulted to strongest" (pr-reviewer, PR #71). Seeding
- * the strongest key makes the two coincide, and then the turn's recorded model
- * proves nothing — only the log's provenance word does. Returns `null` where the
- * table declares a single level, which is a workspace this story cannot test.
+ * "honoured" apart from "the launcher's own judgment picked it" (pr-reviewer,
+ * PR #71; AGENT-063). The weightless judgment leans to the stronger end, so
+ * seeding the strongest key often makes the two coincide, and then the turn's
+ * recorded model proves little — only the log's provenance word does. Returns
+ * `null` where the table declares a single level, which is a workspace this
+ * story cannot test.
  */
 export function nonStrongestRow(rows: readonly WeightTableRow[]): WeightTableRow | null {
   if (rows.length < 2) return null;

@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-23T00:00:00Z
+updated: 2026-09-02T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -140,7 +140,7 @@ argv on stdin — each entry exactly the words you would have given `corpus`, wi
 corpus batch --from agent <<'CORPUS_EOF'
 [["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
  ["job","log","evt_7c1d9a","edited doc_a1b2c3 — rate assumption 6.1% to 6.4%"],
- ["thread","reply","th_4b8e2c","--model","claude-opus-4-1","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+ ["thread","reply","th_4b8e2c","--model","Opus 5","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
 CORPUS_EOF
 ```
 
@@ -526,31 +526,47 @@ switch.
   alone launches a listener on whatever model this session inherited, silently, which is the
   substitution a designation's weight exists to rule out.
 
-  **A designation that chose no weight launches at the strongest tier the table declares.**
-  A `null` weight is still *you decide*, and for a listener what you decide is settled by
-  this rule rather than weighed: Delegation's two passes govern **dispatching a job**, and
-  they do not govern **launching a listener**. The passes weigh one bounded piece of work
-  by what its output touches, and a listener has no output to weigh — only a conversation
-  that has not happened yet. What decides instead is how durable the choice is, not a
-  preference about models. No running resident becomes another model without discarding
-  the conversation it holds, so this is the most expensive choice you make to unwind, made
-  at the moment you know least — and the tie-break Delegation already gives you, in doubt
-  take the stronger, settles it outright. Read *strongest* off the tier table itself — its
-  last row, because the table is written lightest first — and never off a model name
-  remembered from anywhere else: a workspace may rename or reorder its tiers, and a table
-  that declares a single level has a strongest level all the same. The cost is accepted: a
-  conversation about nothing much runs at the top tier for as long as it lives, and a
-  person who knows a lane is cheap says so by stating a lighter weight when they designate
-  it.
+  **A designation that chose no weight is judged on the conversation, at launch.**
+  A `null` weight is still *you decide* — absence of a choice is a judgment, never a fixed
+  default — but Delegation's two passes govern **dispatching a job**, and they do not govern
+  **launching a listener**. The passes weigh one bounded piece of work by what its output
+  touches, and a listener has no output to weigh — only a conversation that has not
+  happened yet. So weigh the conversation itself: **what did the person open this lane for,
+  and what would a poor turn cost them there?** Read what exists at the moment of launch —
+  the thread's title, its opening message where one was posted (`corpus thread show` on the
+  payload's `threadId`), and the designated profile's own document where the designation
+  names one — and place the lane between the two ends of the tier table, read from the
+  table itself and never from a model name remembered from anywhere else:
+
+  - A lane opened to **fetch and relay** — quick factual lookups, status checks, bounded
+    requests the person reads and moves on from — belongs at the lighter end. A poor turn
+    there costs one exchange, and the next message corrects it.
+  - A lane opened to **work something out** — a decision being weighed, wording that will
+    leave the corpus, a project's thinking held across weeks — belongs at the stronger end.
+    There the conversation is the deliverable, and a poor turn steers the person rather
+    than merely delaying them.
+
+  Be honest about how little you hold: a title and one message is a forecast, not a record,
+  and the judgment is yours to make on that forecast. **Where what you read genuinely
+  answers neither way — an empty thread, a title that names no purpose — lean stronger
+  rather than lighter.** That is the tie-break Delegation already gives you, and it earns
+  more here: an over-weighted lane costs tokens while it is quiet, but an under-weighted
+  one answers below its conversation until a person notices and re-designates, and the
+  person who notices is the one those turns were spent on. Judge once, at launch, and never
+  re-judge a running lane per message: a resident's weight is set at designation, and a
+  change arrives as a re-designation, handled below. A person who knows what a lane is for
+  says so by stating a weight when they designate it, and that choice is honoured, never
+  judged at all.
 
   **Either way, log the launch on the designation's own event: the weight it went out at,
   and where that weight came from.** A key the designation stated is logged as `stated`. A
-  designation that chose none is logged as `defaulted`, naming the tier the rule above
-  picked — `(Opus 5 — stated at designation: heavy)` against
-  `(Opus 5 — defaulted: no weight chosen, strongest declared tier)`. Those are different
-  facts, and the two words keep them apart on the job's log, where an observer reads them
-  without asking you. A listener answers for weeks, and a choice nobody recorded is a
-  choice nobody can review.
+  designation that chose none is logged as `judged`, naming the tier the judgment picked
+  and the read that picked it — `(Opus 5 — stated at designation: heavy)` against
+  `(Opus 5 — judged: no weight chosen, the lane is for working out a plan)`, or
+  `(Haiku — judged: no weight chosen, the lane is for quick factual lookups)` where the read
+  went the other way. Those are different facts, and the two words keep them apart on the
+  job's log, where an observer reads them without asking you. A listener answers for weeks,
+  and a choice nobody recorded is a choice nobody can review.
 
   ```
   Task(
@@ -558,7 +574,7 @@ switch.
     description: "converse listener on th_4b8e2c",
     prompt: "/converse th_4b8e2c — you are this conversation's resident. Your designation,
              exactly as it came: {\"name\":null,\"docId\":null,\"weight\":null}. You are
-             running as Opus 5 — defaulted: no weight chosen, strongest declared tier."
+             running as Opus 5 — judged: no weight chosen, the lane is for working out a plan."
   )
   ```
 
@@ -576,16 +592,30 @@ switch.
   corpus agents
   orchestrator · waiting for a listener
   th_4b8e2c "Q3 planning" · a general resident · waiting for a listener · 1 waiting
-  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Opus 5 — defaulted: no weight chosen, strongest declared tier)"
+  corpus job log evt_3f8c1a "launched a converse listener on th_4b8e2c — a general resident (Opus 5 — judged: no weight chosen, the lane is for working out a plan)"
   corpus queue complete evt_3f8c1a
   ```
 
+  The judgment there read the one thing that existed — a thread titled "Q3 planning" is a
+  lane for working something out — and the log line says so in the same breath as the tier.
+
+  **The same pass on a different lane lands at the other end, and the shape is identical.**
+  A thread titled "Where did the invoice numbers come from?" is a lane for fetching and
+  relaying, so the read goes the other way and the tier goes with it:
+
+  ```bash
+  corpus job log evt_7d21b9 "launched a converse listener on th_1c9f04 — a general resident (Haiku — judged: no weight chosen, the lane is for quick factual lookups)"
+  ```
+
+  Both lines are the same act. **Neither tier is the one a judged launch reaches for by
+  habit** — the tier is whatever that lane's read gave you, and a run of launches that all
+  land on one end is a sign the read is not being made rather than a sign the lanes agreed.
   Had that designation named `researcher`, three things would read differently and nothing
   else would: the payload's two fields, the roster's `researcher (doc_b7c1d5)`, and the log
   line saying so. Had it also chosen a weight, three more would: the payload would carry
   `"weight":"heavy"`, the roster row would read `a general resident at heavy`, and the launch
-  would go out at that row's model instead of at the table's strongest, logged as `stated`
-  instead of `defaulted`. The launch is the same
+  would go out at that row's model instead of at the one your judgment picked, logged as `stated`
+  instead of `judged`. The launch is the same
   launch, and the row it came down is the same row.
 
 - **Losing a listener.** `resident.released` is the other row above that is not a job. A
@@ -720,11 +750,11 @@ switch.
   take that word, find its row in the tier table, and launch at that row's model — the same
   `model` argument on the same Task call — exactly as
   you would from a payload. A row that prints nothing after the resident is a designation that
-  chose no weight, and it launches as a `null` payload does: at the strongest tier the table
-  declares, under the rule *Launching a listener* above states — Delegation's two passes
+  chose no weight, and it launches as a `null` payload does: judged on the conversation,
+  under the judgment *Launching a listener* above states — Delegation's two passes
   weigh a job you dispatch, never a listener. Name the model in the prompt here too. And a
   roster launch logs the same line the launching bullet asks for — the weight, and `stated`
-  or `defaulted` — on the event that put this lane in front of you: the `lane.waiting` you
+  or `judged` — on the event that put this lane in front of you: the `lane.waiting` you
   claimed for it, or the designation the carried release paired with. Only a launch the
   pass holds no event for has no job to log to, and there the prompt is the whole record of
   what you chose — which is why the prompt always carries the weight and its provenance in
@@ -843,7 +873,7 @@ Task(
   model: "sonnet",
   description: "comment-skill subagent for evt_7c1d9a",
   prompt: "Apply the comment skill to th_4b8e2c (evt_7c1d9a, comment.created). You are
-           running as Sonnet — name what actually ran with --model on every turn you post.
+           running as Sonnet — that word is the --model value on every turn you post.
            …the payload's ids, the anchors as retrieved, the binding rules below…"
 )
 ```
@@ -871,7 +901,7 @@ corpus's contents back to you. The subagent reads what it decides it needs —
 
 **Pick the subagent's model by the task's weight, and judge that weight in two passes —
 consequence first, difficulty second.** The two passes weigh **a job you dispatch**. They
-never weigh **a listener you launch** — a weightless designation has its own rule, stated
+never weigh **a listener you launch** — a weightless designation has its own judgment, stated
 at *Launching a listener* in Routing. The question that picks a model is never how hard
 the work looks. It is **what a bad result would do that revising the document afterwards
 would not undo**.
@@ -928,8 +958,10 @@ way, whatever the column padding — and each row below the divider is one level
   arrives as, and rewording a **Weight** leaves it untouched, so a choice made yesterday
   still resolves today. Keep it one lowercase word.
 - **Model** is what you launch the subagent at — the value the launch call's `model`
-  argument carries, as the paragraphs above spell it — and **What falls here** is guidance
-  for you. Neither reaches a composer.
+  argument carries, as the paragraphs above spell it — and it is the whole vocabulary a
+  turn's `--model` may record: the turn-writing verbs refuse a spelling this column does not
+  hold, so what a turn attributes and what this table launches cannot drift apart. **What
+  falls here** is guidance for you. Neither reaches a composer.
 
 Nothing outside this table declares a level. A reader that cannot find those header cells,
 or a row whose **Weight** or **Key** cell is empty, finds **no levels** — and a composer that
@@ -961,9 +993,9 @@ rules this section binds you with.
 `weight` field is the two passes and never a fixed default: there is no level you fall back
 to, and a request that stated nothing is dispatched exactly as every request was before this
 table declared a key at all. Absence is the ordinary case, and it is the only spelling of it.
-All of that is about a job. A **designation** that stated no weight is the absence the two
-passes never touch: a listener launches at the strongest tier this table declares, for the
-reason *Launching a listener* states where it states the rule.
+All of that is about a job. A **designation** that stated no weight is also you deciding,
+and the two passes are never how: a listener is judged on the conversation it will hold, by
+the judgment *Launching a listener* states where it owns the launch.
 
 That directive binds even where the first pass disagrees with it. Where a request states a
 weight lighter than the first pass calls for, do not override it: the two
@@ -988,11 +1020,20 @@ None of the three is a reason to drop the work or to fail the event. Dispatch at
 two passes judge best, and state the
 deviation **in the job's log while it runs** and **in the reply the request receives** — both
 naming the same three things: what was asked for, that it could not be met, and what ran
-instead. The log is reaped with its event, so the reply is the durable half: the dispatch
-prompt carries the deviation in words, and the subagent states it in the reply it posts, as
-plainly as "you asked for the lightest tier, this workspace no longer declares it, so I ran
-this at Standard". Silence there would be this workspace claiming work it did not do.
-Progress and job logs below gives the dispatch line for this case.
+instead. **The third statement names the level the work actually ran at, as a level this
+workspace's table declares — in the log and in the reply alike.** It is the statement that
+gets dropped, because the first two are already in hand when the refusal happens — the ask
+is in the payload and the refusal just occurred — while the third exists only if you write
+it, and a deviation without it states what was refused and never what was done. The model
+name alone does not carry it either: levels are what a request chooses from, so the level is
+the word a reader can hold against the table above.
+The log is reaped with its event, so the reply is the durable half: the dispatch prompt
+carries the deviation in words, and the subagent states it in the reply it posts, as
+plainly as "you asked for the lightest tier,
+this workspace no longer declares it, so I ran this at Standard" — the substitute named
+there as **Standard**, a level the table declares. Silence there would be this workspace
+claiming work it did not do. Progress and job logs below gives the dispatch line for this
+case.
 
 **Your own judgment survives as speech, never as substitution.** Where the work proves to
 need more than was asked for, do it at the stated weight and say so in the reply — name what
@@ -1068,15 +1109,21 @@ rules have into it: state them there, in full. They are:
   states the grammar.
 - **Every turn it posts names the model that wrote it** — `--model <name>` on
   `corpus thread reply` and on `corpus thread create`, naming what actually ran. That is why
-  the dispatch states the model you launched it at: the subagent has the name in hand and
-  states the one it is running as, and where the two differ the one that ran goes on the turn
-  and the difference goes in this event's job log. It is a **record of what ran, never a
+  the dispatch states the model you launched it at: the subagent has the word in hand and
+  quotes it back, and where its runtime says a different row ran, the row that ran goes on
+  the turn and the difference goes in this event's job log. The value is a **Model** cell of
+  the level table above and nothing else — the CLI refuses every other spelling before
+  anything is posted, so a stamp composed from a subagent's self-image, however plausible
+  its shape, never lands. It is a **record of what ran, never a
   request for what should run** — a weight the request stated is a directive you honour rather
   than weigh again, and this turn is the evidence that you did, which it cannot be if it merely
   repeats what was asked for. Where the work ran in stages, the turn names the **deciding**
   stage — the one that drew the conclusion or wrote the words — one model and never a list;
   the gathering stages stay in the job log. Where nothing knows what ran, the flag is left out
-  and the turn shows nothing rather than a guess. The comment skill states the grammar, and it
+  and the turn shows nothing rather than a guess. A turn you post yourself had no dispatch to
+  hand you a word: take the row whose **Model** cell names what your own runtime tells you
+  that you are, and where no row does, leave the flag out — that turn honestly shows nothing.
+  The comment skill states the grammar, and it
   governs every turn you post yourself exactly as it governs a subagent's.
 - Anything a reply hands over for reuse elsewhere — a prepared prompt, a command line, a
   config snippet — sits alone in a fenced block whose info string labels it (`prompt`,
@@ -1444,7 +1491,7 @@ their cursor while they are mid-sentence. Prefer to leave the document alone and
 and where the work is a claimed event, coming back has a name: **defer it**, in this order.
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
 ready and lands on its own once you're done in there.
 CORPUS_EOF
@@ -1959,7 +2006,7 @@ The digest's first turn is written in this order:
 4. **What you ask** — the decisions you could not take yourself. Nothing here is rhetorical.
 
 ```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
 since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z
 
 Eleven documents changed, nine of them in `finance/` while you reworked the mortgage
@@ -1981,7 +2028,7 @@ is a real result, and a reflection that stayed silent is indistinguishable from 
 that never ran. One line, naming the window, is the whole thread.
 
 ```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
 since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z — nothing changed, nothing to report.
 CORPUS_EOF
 ```
@@ -2059,9 +2106,16 @@ argument (or piped stdin). Log at these moments, and only these:
   `corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — judged, difficulty: one document, prescribed change)"`,
   `corpus job log evt_4f8a2b "dispatched to a comment-skill subagent (Opus 5 — judged, consequence: the revised paragraph goes to the lender tomorrow)"`,
   `corpus job log evt_9c3b1d "dispatched to a comment-skill subagent (Haiku — stated by the request)"`,
-  `corpus job log evt_2e4f8b "dispatched to a comment-skill subagent (Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so the tier is judged, difficulty)"`.
+  `corpus job log evt_2e4f8b "dispatched to a comment-skill subagent (Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so it ran at standard, judged, difficulty)"`.
   The fourth names the ask, that it went unmet, and what ran instead — the three things the
-  reply carries too, because the log is reaped and the reply is not. It is also the one shape
+  reply carries too, because the log is reaped and the reply is not. **`ran at standard` is
+  the third of those, and the line is not written until it holds a level.** Name the level
+  the substitute went out at by the **Key** cell of the tier-table row your judgment picked —
+  a word the table declares, which is what a reader can check, since the levels are what the
+  request chose from. The model name opening the line does not stand in for it, and neither
+  does the provenance after it: a line that ends at `judged, difficulty` says where the
+  substitute came from and never what it was, which drops exactly the statement the person
+  cannot reconstruct. It is also the one shape
   a reader can check rather than take on trust: the server has already written
   `weight stated by the request: <key>` onto this same log, before any line of yours, so what
   was asked and what you dispatched sit side by side and a claim of honouring is verifiable.
@@ -2316,7 +2370,7 @@ this document uses it.' --new '6.4% as of 2026-07-28 — see [[th_4b8e2c]]. Thir
 offers currently cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
 patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%

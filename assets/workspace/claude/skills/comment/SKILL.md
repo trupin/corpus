@@ -383,7 +383,7 @@ Nothing refuses the write and it would land. It is a courtesy, and the response 
 that document alone rather than write beside somebody mid-sentence:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
 ready and lands on its own once you're done in there.
 CORPUS_EOF
@@ -417,7 +417,7 @@ one.
 One command, always:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 6.4% is more representative than 6.1% for a 30-year fixed today. Updated the
 assumption and the projection note in [[doc_a1b2c3]].
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
@@ -426,29 +426,30 @@ CORPUS_EOF
 
 Rules:
 
-- **Say which model wrote the turn.** Every reply you post carries `--model <name>`, and the
-  board shows it beside the turn — it is the record that outlives the job's log, which is
-  reaped with its event, so *which model wrote this?* stays answerable from the conversation
-  itself. Name **what actually ran, never what was asked for**: a weight stated in a request is
-  a directive, honoured rather than weighed again, and the turn is the lasting evidence that it
-  was — a turn that echoed the request back instead of reporting the run would leave nobody
-  able to check. So the name is the model **you** are running as, as your own runtime reports
-  it; where that differs from what the dispatch asked for, the model that ran is the one that
-  goes on the turn and the difference goes in the job log.
-- **Where the work ran in stages, name the deciding stage.** A lighter model or a script may
-  gather the material while you judge it and write the words. The turn names the stage that
-  **decided** — the one that drew the conclusion or wrote the reply — which is you: one model,
-  never a list, and never the first stage's. The gathering stages belong in the job log, which
-  is where the per-stage account lives for as long as the event does.
-- **When you do not know what ran, leave the flag out entirely.** A turn with no model recorded
-  shows nothing, and nothing is the honest answer to an unknown — a plausible attribution
-  nobody can check is worth less than a blank. `--model ""` is a usage error (exit `2`), so an
-  absence has exactly one spelling and a guess has none. The flag is for your own turns alone:
-  with any `--from` other than `agent` it is refused at exit `2` before the body is read, so
-  never state a model on a person's behalf.
-- **Never post a reply by editing the thread file.** The thread's format, its turn timestamps
-  and the events a turn triggers are the server's, and a hand-written turn is a corrupted
-  conversation.
+- **Say which model wrote the turn, in the workspace's own words.** Every reply you post
+  carries `--model <name>`, shown beside the turn — the job's log is reaped with its event,
+  and this stamp survives to answer *which model wrote this?*. The name is never
+  yours to compose: the CLI accepts only the **Model** cells of the tier table in this
+  workspace's agent guidance — `--model "Sonnet"`, never a version string remembered from
+  training. Your dispatch named the word you were launched at: copy it, and name **what
+  actually ran, never what was asked for** — a stated weight is a directive, honoured rather
+  than weighed again, and the turn is the lasting evidence that it was. Where your runtime
+  says a different row ran, that row's word goes on the turn and the difference goes in the
+  job log. Any other spelling is refused at exit `2`, declared names listed, nothing
+  posted — the reply is not lost; re-run it corrected or without the flag.
+- **Where the work ran in stages, name the deciding stage** — the stage that concluded, or
+  wrote the reply, which is you: one model, never a list, and never the first stage's. The
+  gathering stages belong in the job log.
+- **When no row describes what ran, leave the flag out entirely.** A turn with no model
+  recorded shows nothing — a plausible attribution nobody can check is worth less than a
+  blank. `--model ""` is a usage error (exit `2`), so an absence has one spelling. The flag
+  is for your own turns alone: with any `--from` other than `agent` it is refused at exit
+  `2` before the body is read.
+- **A stamp is never repaired by another turn.** The record is frontmatter the server keeps,
+  not text to amend: a reply posted only to fix one puts a second agent turn where one
+  answer was asked. A wrong stamp noticed late goes in the job log — the turn stays.
+- **Never post a reply by editing the thread file.** The format, the timestamps and the
+  events a turn triggers are the server's — a hand-written turn is a corrupted conversation.
 - **Always reply**, even when the outcome is "nothing to do" — a person is watching a pending
   indicator, and a silent event reads as a hang. "I checked; that figure is still current, so
   I changed nothing" is a complete reply.
@@ -492,13 +493,13 @@ Rules:
 **The reply is the last of a run, so send the run as one invocation.** The write, the job-log
 line recording it and the reply are all settled before any of them goes: you wrote the reply
 out of what you had already read, not out of what the write prints. So they are one batch
-rather than three, and the person waits about a second less for the same work.
+rather than three — about a second saved for the waiting person.
 
 ```bash
 corpus batch --from agent <<'CORPUS_EOF'
 [["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
  ["job","log","evt_7c1d9a","edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"],
- ["thread","reply","th_4b8e2c","--model","claude-sonnet-4-5","-m","6.4% is more representative for a 30-year fixed today. Updated the assumption in [[doc_a1b2c3]].\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+ ["thread","reply","th_4b8e2c","--model","Sonnet","-m","6.4% is more representative for a 30-year fixed today. Updated the assumption in [[doc_a1b2c3]].\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
 CORPUS_EOF
 ```
 

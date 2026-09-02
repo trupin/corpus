@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -89,21 +89,21 @@ one that is permanent. The user's two instructions are one design.
 
 ## Acceptance Criteria
 
-- [ ] The fixed strongest-tier rule is gone from the skill — both the payload
+- [x] The fixed strongest-tier rule is gone from the skill — both the payload
       launch and the roster launch
-- [ ] A designation stating no weight is **judged**, on the conversation, and the
+- [x] A designation stating no weight is **judged**, on the conversation, and the
       skill says what to weigh. Whatever it is, it must not be the two-pass job
       table applied unchanged, because that table lands every conversation on its
       middle row
-- [ ] A designation that **does** state a weight is honoured and never weighed
+- [x] A designation that **does** state a weight is honoured and never weighed
       again — `AGENT-041`, untouched
-- [ ] The launch still logs the weight **and where it came from**. The
+- [x] The launch still logs the weight **and where it came from**. The
       provenance word changes from `defaulted` to one that says a judgment was
       made and names what it picked — §7's dispatch rule still applies
-- [ ] `scripts/workspace-template.test.ts` guards the new rule, and its negative
+- [x] `scripts/workspace-template.test.ts` guards the new rule, and its negative
       pins reject the strongest-tier wording so the revert cannot silently undo
       itself
-- [ ] `assets/workspace/` only; the dev harness's `.claude/` is untouched
+- [x] `assets/workspace/` only; the dev harness's `.claude/` is untouched
 
 ## Technical Design
 
@@ -137,13 +137,92 @@ after this lands, the judgment is not judging and that is a finding.
 
 _Filled by the implementing agent; state the model._
 
+**Implementation and verification, 2026-09-02 (agent-runtime-dev, Fable 5):**
+
+- **The judgment, written and owned.** The payload-launch bullet of
+  `orchestrate/SKILL.md` now opens *"A designation that chose no weight is
+  judged on the conversation, at launch."* The question it weighs: **what did
+  the person open this lane for, and what would a poor turn cost them there** —
+  read off what exists at launch (the thread's title, its opening message where
+  one was posted via `corpus thread show`, the designated profile's own
+  document), placing the lane between the tier table's two ends: a lane opened
+  to **fetch and relay** at the lighter end (a poor turn costs one exchange), a
+  lane opened to **work something out** at the stronger end (the conversation
+  is the deliverable). The lean, stated as the issue invited: where what you
+  read genuinely answers neither way, **lean stronger rather than lighter** —
+  the existing tie-break, with its reason (an over-weighted quiet lane costs
+  tokens; an under-weighted one answers below its conversation until a person
+  notices and re-designates). Judged once, at launch; a change is a
+  re-designation, which the release case already handles. The roster launch
+  and both Delegation spots now point at the judgment; the two-pass job
+  scoping (AGENT-059's surviving half) is untouched.
+- **Provenance.** The weightless word is **`judged`** — `stated` where a key
+  was carried, `judged` where the launcher judged, naming the tier and the
+  read that picked it: `(Opus 5 — stated at designation: heavy)` against
+  `(Opus 5 — judged: no weight chosen, the lane is for working out a plan)`.
+  `defaulted` is dead vocabulary, negatively pinned.
+- **Stated weight untouched.** AGENT-041's chain (Key-cell lookup, `model`
+  argument, honour-never-reweigh, unmeetable-weight) passes its pre-existing
+  guards with no edit to those sentences.
+- **Scenario 02 rewritten.** It no longer pins a tier: pass = a launch log on
+  the designation's own event (or its `lane.waiting`) contains `judged` naming
+  a declared model, the reply's recorded model matches a declared row, the
+  log's tier equals the tier that ran, and the question's event is
+  `processed`. Which tier is deliberately unasserted; every run's label still
+  names tier · provenance so the scorecard shows the distribution — 10/10 on
+  one tier stays visible as the "landing, not judging" symptom. A regression
+  to the fixed rule surfaces as a `defaulted` label, not as a mute
+  "unrecorded". Scenarios 01/04/05/06 and `support.ts`'s
+  `launchProvenanceLogged` follow the word change (`stated`/`judged`) — they
+  read the same grammar and would have gone red at the next rehearsal
+  otherwise (a deliberate, minimal scope extension, reported).
+- **Guards.** `workspace-template.test.ts`: *"judges a weightless designation
+  on the conversation, at launch"* (owner sentence, the question, the three
+  reads, the two ends, the lean, never re-judge, the worked example launching
+  at a declared tier as `judged`) and *"does not launch a weightless
+  designation at a fixed strongest tier"* (negative pins:
+  `launches at the strongest tier the table declares`,
+  `the strongest tier this table declares`, `its last row, because the table
+  is written lightest first`, `strongest declared tier`, `\bdefaulted\b`).
+  Provenance guard updated to the `judged` grammar. Suite: **513/513**; with
+  rehearsal units **566/566**
+  (`VITEST_MAX_THREADS=4 vitest run scripts/workspace-template.test.ts rehearsals`).
+- **Falsification.** (1) Swapped the owner sentence back to AGENT-059's fixed
+  rule: 2 tests red — the judgment guard and the negative-pin test (511/513).
+  (2) Restored, then changed one `judged` back to `defaulted` in the log
+  grammar: 2 tests red — the negative-pin test and the provenance guard
+  (511/513). Restored; 566/566 green.
+- **Fresh-workspace drill.** `corpus init` (tsx, from source) into a scratch
+  dir installed 26 template files; the installed
+  `.claude/skills/orchestrate/SKILL.md` is byte-identical to the template
+  (diff clean), carries the owner sentence and all three `judged: no weight
+  chosen` occurrences, and has **zero** hits for
+  `defaulted`/`strongest tier the table declares`/`strongest declared tier`.
+  The rehearsal table reader resolves the installed table:
+  `[light/Haiku, standard/Sonnet, heavy/Opus 5]`.
+- **Live queue drill (scratch server, port 8767 — never 8765).**
+  `corpus thread create --title "First vegetables" --requests-agent true -m …`
+  → `claim-all` returned `resident.designated` with
+  `{"name":null,"docId":null,"weight":null,…}` and a `lane.waiting`; the
+  roster printed `a general resident` with no qualifier. Logged the judged
+  launch as the skill now directs —
+  `… a general resident (Haiku — judged: no weight chosen, the lane is for
+  quick factual lookups)` — completed the event, and read the line back off
+  `.corpus/jobs/evt_xmkbqqfgxxh5.jsonl`: exactly what scenario 02's scorer
+  parses (contains `judged`, names a declared model, carries the read). Server
+  stopped, port freed.
+- **Issue bookkeeping.** AGENT-059's unsigned §7 rider section deleted
+  (withdrawn, not signed) with a reversal note at the top of its Summary.
+- **Lint/format/types.** `npm run lint` exit 0; Prettier clean on all touched
+  files; `tsc --noEmit` clean for `scripts/` and `rehearsals/`.
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

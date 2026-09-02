@@ -14,7 +14,7 @@
  * - each question's event settles `processed`;
  * - each thread carries exactly one agent reply and only its own user turn —
  *   an answer in the wrong thread shows up as a count on both sides;
- * - each lane's launch is recorded exactly once (AGENT-059's `defaulted` on
+ * - each lane's launch is recorded exactly once (AGENT-063's `judged` on
  *   the lane's own designation/notice log) — a duplicated listener is a
  *   duplicated launch record;
  * - no thread beyond the two seeded ones exists.
@@ -101,11 +101,11 @@ function score(record: RunRecord): ScenarioRunScore {
     ];
     const launchLines = launchEventIds
       .flatMap((eventId) => jobLogLines(record, eventId))
-      .filter((entry) => entry.line.includes("defaulted"));
+      .filter((entry) => entry.line.includes("judged"));
     if (launchLines.length !== 1) {
       findings.push(
         `expected exactly one recorded launch for ${threadId}, found ${String(launchLines.length)} ` +
-          "`defaulted` lines on its designation/notice logs",
+          "`judged` lines on its designation/notice logs",
       );
     }
   }

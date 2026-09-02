@@ -20,7 +20,7 @@
  * question, the ordinary way a listener is launched with work already waiting.
  *
  * Asserts (invariant, on what the corpus records):
- * - exactly one launch recorded for the lane (`defaulted`, AGENT-059) — a
+ * - exactly one launch recorded for the lane (`judged`, AGENT-063) — a
  *   second listener launched mid-turn is a second launch line;
  * - exactly one agent reply, and only the seeded user turn;
  * - the question's event settled `processed`.
@@ -72,11 +72,11 @@ function score(record: RunRecord): ScenarioRunScore {
   ];
   const launchLines = launchEventIds
     .flatMap((eventId) => jobLogLines(record, eventId))
-    .filter((entry) => entry.line.includes("defaulted"));
+    .filter((entry) => entry.line.includes("judged"));
   if (launchLines.length !== 1) {
     findings.push(
       `expected exactly one recorded launch for ${threadId}, found ${String(launchLines.length)} ` +
-        "`defaulted` launch lines — a second one is a listener started onto a lane mid-turn",
+        "`judged` launch lines — a second one is a listener started onto a lane mid-turn",
     );
   }
 

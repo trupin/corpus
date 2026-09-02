@@ -139,7 +139,7 @@ function spawnRunner(handle: RehearsalWorkspace): RunnerHandle {
   };
 }
 
-type WaitResult = Pick<RunMeta, "overBudget" | "endedBy">;
+type WaitResult = Pick<RunMeta, "overBudget" | "cutShort" | "endedBy">;
 
 /**
  * A run ends on the first of: the queue going quiet (nothing pending, nothing
@@ -160,10 +160,18 @@ async function waitForRunEnd(
     exited = true;
   });
   for (;;) {
-    if (exited) return { overBudget: false, endedBy: "exit" };
+    if (exited) {
+      // INFRA-036: whether the run is scorable is decided by the **queue**, not
+      // by what ended it. A runner that stopped with work outstanding never gave
+      // the product its turn; one that stopped on a drained queue did.
+      const atExit = await readQueueState(handle.workspaceRoot);
+      const outstanding =
+        atExit.byStatus.pending.length + atExit.byStatus["in-progress"].length > 0;
+      return { overBudget: false, cutShort: outstanding, endedBy: "exit" };
+    }
     if (Date.now() >= deadline) {
       await runner.kill();
-      return { overBudget: true, endedBy: "budget" };
+      return { overBudget: true, cutShort: false, endedBy: "budget" };
     }
     const queue = await readQueueState(handle.workspaceRoot);
     const pending = queue.byStatus.pending.length;
@@ -177,7 +185,7 @@ async function waitForRunEnd(
       quietSince = quietSince ?? Date.now();
       if (Date.now() - quietSince >= QUIESCENCE_HOLD_MS) {
         await runner.kill();
-        return { overBudget: false, endedBy: "quiescence" };
+        return { overBudget: false, cutShort: false, endedBy: "quiescence" };
       }
     } else {
       quietSince = null;
@@ -226,6 +234,7 @@ async function runOnce(scenario: Scenario, runIndex: number, outDir: string): Pr
         endedAt: endedAt.toISOString(),
         durationMs: endedAt.getTime() - startedAt.getTime(),
         overBudget: ended.overBudget,
+        cutShort: ended.cutShort,
         endedBy: ended.endedBy,
         runnerExitCode: await Promise.race([runner.exited, Promise.resolve(null)]),
       },

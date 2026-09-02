@@ -6,7 +6,8 @@ import {
   type LaneRow,
   type WeightLevel,
 } from "@corpus/kit";
-import { DESIGNATE_LABEL } from "../thread/residentActions";
+import { DESIGNATE_LABEL, LAUNCHER_DECIDES_LABEL } from "../thread/residentActions";
+import type { LaunchReading } from "./useLaunchRecord";
 import { NOTICES_TAB_LABEL } from "./noticesModel";
 
 /**
@@ -192,6 +193,149 @@ export function laneWeightLabel(row: LaneRow, levels: readonly WeightLevel[]): s
   if (row.kind === "orchestrator" || row.kind === "unknown") return "";
   return row.weight === null ? LAUNCH_WEIGHT_CLAUSE : weightLabel(levels, row.weight);
 }
+
+/**
+ * Whether this lane has a designation whose weight can be shown and changed.
+ *
+ * The orchestrator's lane belongs to no conversation and was designated by
+ * nobody, and an `unknown` row is a designated lane the roster reports with no
+ * resident on it. Neither has a designation to read a level off or to write one
+ * back to, so both get silence rather than a control that would act on nothing.
+ */
+export function laneHasDesignation(row: LaneRow): boolean {
+  return row.kind !== "orchestrator" && row.kind !== "unknown";
+}
+
+/* -------------------------------------------------------------------------- */
+/* What the launch went out at                                                */
+/* -------------------------------------------------------------------------- */
+
+/** The lead for a level the **designation** named — a level somebody asked for. */
+export const WEIGHT_STATED_LEAD = "Stated at designation";
+
+/**
+ * …and what a designation that named none says, which is a different fact.
+ *
+ * The two are kept apart deliberately: `LAUNCH_WEIGHT_CLAUSE`'s *"weight set at
+ * launch"* is true of both readings of a row at a glance and says only that
+ * somebody downstream decided. This says **who** decided, and the record below
+ * says what they decided.
+ */
+export const WEIGHT_LAUNCHER_SENTENCE = `No level was stated, so ${LAUNCHER_DECIDES_LABEL}.`;
+
+/** The lead for the clause the launch itself logged (AGENT-059). */
+export const LAUNCH_RECORDED_LEAD = "The launch recorded";
+
+/**
+ * Said where a designation stated no level and the queue holds no launch record
+ * for it — the case the screenshot that prompted UI-186 was showing.
+ *
+ * §7 makes a job's log **runtime state, reaped with its event**, so a lane
+ * designated three days ago legitimately has nothing left to read. §10's
+ * standing rule decides what to say then: *"an unknown that says so is worth
+ * more than a plausible attribution nobody can check."* So the sentence names
+ * the absence, names its cause, and states in terms that nothing was substituted
+ * — a person reading it must not be left wondering whether the tab simply did
+ * not look.
+ *
+ * It is said **only** where the designation stated nothing. Where a level was
+ * stated, that level is the answer and this sentence would be noise.
+ */
+export const LAUNCH_UNRECORDED_NOTE =
+  "No launch record for this designation is on the queue — a job's log is runtime state, " +
+  "reaped with its event — so what it went out at is unknown here. Nothing is guessed in its place.";
+
+/** …and while the two reads behind that answer are still in flight (UI-098's rule). */
+export const LAUNCH_READING_NOTE = "Reading what the launch went out at…";
+
+/** …and the lead for a read that failed, which is a failure and says so. */
+export const LAUNCH_FAILED_LEAD = "The launch record could not be read";
+
+/**
+ * **What level this lane's resident works at, and where that level came from** —
+ * the pane's sentence, where there is room for one (SPEC.md §7's *"a dispatch
+ * says what weight it went out at, and where that weight came from"*).
+ *
+ * Two clauses, composed rather than enumerated:
+ *
+ *   1. **What the designation said** — a stated level, or that it stated none.
+ *      Read from the roster alone, so it is on the screen in the first paint.
+ *   2. **What the launch recorded** — AGENT-059's clause, verbatim, or the
+ *      admission that there is none. It arrives on two later round trips.
+ *
+ * The second clause is appended to a *stated* level only when a record exists.
+ * A stated level that could not be met is launched at something else and the
+ * deviation logged on the same event (§7), so the record is worth showing there;
+ * its **absence** is not worth a sentence, because the stated level already
+ * answers the question this line is asked.
+ *
+ * The list beside this pane still shows `laneWeightLabel` in a box that cannot
+ * grow (`.lane-weight`, UI-131). This is where the whole answer lives, which is
+ * why it is a sentence and not a second box.
+ */
+export function residentWeightNote(
+  row: LaneRow,
+  levels: readonly WeightLevel[],
+  reading: LaunchReading,
+): string {
+  if (!laneHasDesignation(row)) return "";
+  const { weight } = row;
+  const stated = weight !== null;
+  const lead =
+    weight === null
+      ? WEIGHT_LAUNCHER_SENTENCE
+      : `${WEIGHT_STATED_LEAD}: ${weightLabel(levels, weight)}.`;
+  if (reading.failure !== null) return `${lead} ${LAUNCH_FAILED_LEAD}: ${reading.failure}`;
+  if (reading.record === undefined) return `${lead} ${LAUNCH_READING_NOTE}`;
+  if (reading.record !== null) {
+    return `${lead} ${LAUNCH_RECORDED_LEAD}: ${reading.record.clause}.`;
+  }
+  return stated ? lead : `${lead} ${LAUNCH_UNRECORDED_NOTE}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Changing it                                                                */
+/* -------------------------------------------------------------------------- */
+
+/** The control's own name, for the keyboard and for a screen reader. */
+export const WEIGHT_CONTROL_ARIA = "The level this lane's resident runs at";
+
+/** …and the act, named as the act it performs rather than as "save". */
+export const WEIGHT_CHANGE_LABEL = "Re-designate at this level";
+
+/**
+ * **What changing costs, said before it is taken** (SPEC.md §7, rider
+ * SHARED-076, drafted and unsigned as at 2026-09-02).
+ *
+ * The rider weakens the 2026-08-19 clause that a running agent cannot change
+ * what it is *"without discarding the conversation it is holding"*, and the
+ * thing it keeps is the reason that clause existed: swapping a resident is not
+ * free. So this names the real price and then names, in the same breath, the
+ * thing that is **not** lost — because a person who is told only the price will
+ * read it as the conversation.
+ */
+export const WEIGHT_CHANGE_COST =
+  "Changing this releases the running listener and launches a new one at the new level. What that " +
+  "costs is the released listener's working context — never the conversation, which is a document " +
+  "the new listener reads.";
+
+/**
+ * Said instead of the control on a lane whose profile has gone (SPEC.md §7).
+ *
+ * A re-designation names the profile, and this one no longer resolves — the
+ * server answers `404` for it (`residentFor`, `apps/server/src/threads/resident.ts`).
+ * An offer that could only fail is worse than no offer, so the tab says what
+ * would have to happen first and points at the surface that does it.
+ */
+export const WEIGHT_CHANGE_NEEDS_PROFILE = `This resident's profile is gone, and a re-designation names the profile — so the level cannot be changed here until it resolves again. The conversation's own menu still offers “${DESIGNATE_LABEL}”.`;
+
+/** …and what a landed change says on the board. */
+export function weightChangedNotice(label: string): string {
+  return `Re-designated at ${label} — the previous listener is released, and a new one launches on this conversation.`;
+}
+
+/** …and the lead for one that did not land, which keeps the server's own words. */
+export const WEIGHT_CHANGE_FAILED_LEAD = "The weight could not be changed";
 
 /**
  * The one line about **who** this lane's resident is and **whether they are

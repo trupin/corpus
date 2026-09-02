@@ -19,7 +19,7 @@
  *
  * Asserts (invariant, on what the corpus records):
  * - exactly one `resident.designated` for the thread, settled `processed`;
- * - the launch record carries `stated`, and never `defaulted`;
+ * - the launch record carries `stated`, and never `judged`;
  * - the question got exactly one agent reply, and that turn's recorded model
  *   (SPEC.md §10) is the stated row's model — read from the seed's own table.
  */
@@ -44,11 +44,12 @@ const QUESTION =
 
 async function seed(ctx: SeedContext) {
   const table = await readServedWeightTable(ctx);
-  // Deliberately not the strongest row. A weightless designation now defaults to
-  // the strongest (AGENT-059), so seeding that key would make "honoured" and
-  // "defaulted" produce the same model and the turn's own record — the durable
-  // one — would prove nothing. A weaker stated key makes the model discriminating
-  // as well as the log's provenance word (pr-reviewer, PR #71).
+  // Deliberately not the strongest row. A weightless designation is judged
+  // (AGENT-063), and the judgment's stated lean is to the stronger end, so a
+  // strongest stated key would often coincide with what a judgment picks and
+  // the turn's own record — the durable one — would prove little. A weaker
+  // stated key keeps the model discriminating as well as the log's provenance
+  // word (pr-reviewer, PR #71).
   const stated = nonStrongestRow(table.rows);
   if (stated === null) {
     throw new Error(
@@ -102,10 +103,10 @@ function score(record: RunRecord): ScenarioRunScore {
     if (settled !== null) findings.push(settled);
   }
 
-  // The launch record (AGENT-059): logged on the designation's own event, or
-  // on the lane.waiting the pass claimed for the lane — with `stated` as the
-  // provenance, because the designation chose. A `defaulted` anywhere on those
-  // logs is a launch that discarded the person's choice.
+  // The launch record (AGENT-059/063): logged on the designation's own event,
+  // or on the lane.waiting the pass claimed for the lane — with `stated` as
+  // the provenance, because the designation chose. A `judged` anywhere on
+  // those logs is a launch that discarded the person's choice.
   const launchEventIds = [
     ...designated.map((event) => event.id),
     ...eventsOfType(record, "lane.waiting", threadId).map((event) => event.id),
@@ -114,8 +115,8 @@ function score(record: RunRecord): ScenarioRunScore {
   if (!lines.some((entry) => entry.line.includes("stated"))) {
     findings.push(`no launch record on ${launchEventIds.join(", ")} says the weight was stated`);
   }
-  if (lines.some((entry) => entry.line.includes("defaulted"))) {
-    findings.push("a launch record says `defaulted` on a lane whose designation stated a weight");
+  if (lines.some((entry) => entry.line.includes("judged"))) {
+    findings.push("a launch record says `judged` on a lane whose designation stated a weight");
   }
 
   const commentSettled = expectProcessed(record, commentEventId, "the question's event");

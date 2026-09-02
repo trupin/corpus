@@ -1,19 +1,36 @@
 /** @vitest-environment jsdom */
-import type { AgentLane, ThreadScope } from "@corpus/contract";
+import type { AgentLane, Job, ThreadScope } from "@corpus/contract";
 import { MISSING_PROFILE_MARK, MISSING_PROFILE_NOTE, type LaneResidentKind } from "@corpus/kit";
 import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoardNavigationProvider, useRegisterBoardNavigation } from "../board/openInColumn";
-import { SKILL_QUERY_SEARCH, skillDoc, skillRow } from "../testing/weightFixture";
+import { ToastProvider } from "../shell/Toasts";
+import { LAUNCHER_DECIDES_LABEL } from "../thread/residentActions";
+import {
+  NO_LEVELS as NO_LEVELS_BODY,
+  SKILL_QUERY_SEARCH,
+  skillDoc,
+  skillRow,
+} from "../testing/weightFixture";
 import { Residents } from "./Residents";
 import {
+  LAUNCH_FAILED_LEAD,
+  LAUNCH_READING_NOTE,
+  LAUNCH_RECORDED_LEAD,
+  LAUNCH_UNRECORDED_NOTE,
   NO_DESIGNATIONS_NOTE,
   ORCHESTRATOR_SCOPE_NOTE,
   SCOPE_BOUND_NOTE,
   SCOPE_RELEASED_NOTE,
   SCOPE_VIA_MARKS,
+  WEIGHT_CHANGE_COST,
+  WEIGHT_CHANGE_LABEL,
+  WEIGHT_CHANGE_NEEDS_PROFILE,
+  WEIGHT_CONTROL_ARIA,
+  WEIGHT_LAUNCHER_SENTENCE,
+  WEIGHT_STATED_LEAD,
 } from "./residentsModel";
 import type { ReactElement, ReactNode } from "react";
 
@@ -89,6 +106,38 @@ const LANES: Readonly<Record<LaneResidentKind, AgentLane>> = {
   },
 };
 
+/**
+ * A general resident whose designation stated **no** level — the row the
+ * screenshot behind UI-186 was showing, and the only one whose weight the tab
+ * cannot answer from the roster alone.
+ *
+ * `LANES` has no such row: its two general-ish lanes state `standard` and its
+ * `null`-weight lane is `profile-gone`, which the control refuses for its own
+ * reason. So the case that matters most gets a fixture of its own.
+ */
+const LAUNCHER_CHOSE: AgentLane = {
+  lane: "th_open",
+  resident: { name: null, docId: null, weight: null, designationId: null },
+  live: true,
+  since: NOW,
+  pending: 0,
+  working: false,
+  summary: null,
+  origin: { id: "th_open", title: "An open question" },
+};
+
+/** The roster for the launcher-chose case: the unconditional row, and that lane. */
+const OPEN_ROSTER: readonly AgentLane[] = [LANES.orchestrator, LAUNCHER_CHOSE];
+
+/**
+ * The line AGENT-059 makes a launch log, copied from the orchestrate skill's own
+ * worked example. A fixture, never this suite's vocabulary — see
+ * `launchRecord.test.ts`.
+ */
+const JUDGED_LAUNCH =
+  "launched a converse listener on th_open — a general resident " +
+  "(Haiku — judged: no weight chosen, the lane is for quick factual lookups)";
+
 const CLAIMS_SCOPE: ThreadScope = {
   thread: "th_claims",
   members: [
@@ -105,6 +154,22 @@ const CLAIMS_SCOPE: ThreadScope = {
   truncated: false,
 };
 
+/**
+ * A designation event the queue still holds, and what its log recorded —
+ * AGENT-059's launch record as the tab reads it (UI-186).
+ *
+ * Seeded rather than derived: the launch is written by an orchestrator this
+ * suite does not run, and the four states the tab has to tell apart are exactly
+ * "there is a record", "the event is here and its log is empty", "the event is
+ * gone" and "the read has not answered". Only a seed can produce all four.
+ */
+interface StubLaunch {
+  readonly lane: string;
+  readonly eventId: string;
+  /** The lines its log holds. Omitted is an empty log — a reaped one reads so. */
+  readonly lines?: readonly string[];
+}
+
 interface Workspace {
   readonly lanes?: readonly AgentLane[];
   readonly scope?: ThreadScope;
@@ -117,6 +182,13 @@ interface Workspace {
    * `weightLabel` prints the bare key.
    */
   readonly holdSkill?: boolean;
+  /** A workspace whose orchestrate skill declares no tier table (SHARED-022). */
+  readonly noLevels?: boolean;
+  readonly launches?: readonly StubLaunch[];
+  /** Never answers `GET /api/jobs`, so the launch read stays in flight. */
+  readonly holdJobs?: boolean;
+  /** Answers `GET /api/jobs` with a `500` — a read that failed, not an absence. */
+  readonly jobsFail?: boolean;
 }
 
 function json(body: unknown, status = 200): Promise<Response> {
@@ -128,23 +200,102 @@ function json(body: unknown, status = 200): Promise<Response> {
   );
 }
 
-/**
- * Stubbed at the transport, like `Console.test.tsx`'s: what matters here is
- * *which requests the tab issues* — one roster read, and a scope read only for
- * the lane a person selected — and a mocked hook could not show that.
- */
-function transport(workspace: Workspace = {}): {
+/** One `GET /api/jobs` row for a seeded designation event. */
+function designationRow(launch: StubLaunch): Job {
+  return {
+    eventId: launch.eventId,
+    type: "resident.designated",
+    status: "processed",
+    // §7's carve-out: a designation is announced on the **orchestrator's** lane
+    // whoever is designated, and its origin is the conversation.
+    lane: "orchestrator",
+    enqueued: NOW,
+    started: NOW,
+    updated: NOW,
+    lastLine: launch.lines?.at(-1) ?? null,
+    originId: launch.lane,
+    originTitle: launch.lane,
+    blockedOn: null,
+    blockedOnTitle: null,
+  } satisfies Job;
+}
+
+interface Wire {
   readonly fetch: typeof globalThis.fetch;
   readonly calls: readonly string[];
-} {
+  /** Every write the tab made, in order: its path and the body it sent. */
+  readonly writes: readonly { readonly path: string; readonly body: unknown }[];
+}
+
+/**
+ * Stubbed at the transport, like `Console.test.tsx`'s: what matters here is
+ * *which requests the tab issues* — one roster read, a scope read and a launch
+ * read only for the lane a person selected — and a mocked hook could not show
+ * that.
+ */
+function transport(workspace: Workspace = {}): Wire {
   const calls: string[] = [];
+  const writes: { path: string; body: unknown }[] = [];
+  /*
+   * The roster is **mutable**, so a designation this suite makes is a
+   * designation the next read reports. A stub that echoed the seed regardless
+   * would let a green run stand for a write that never landed — the trap UI-162
+   * records, one route over.
+   */
+  const lanes: AgentLane[] = [...(workspace.lanes ?? Object.values(LANES))];
   const fetchImpl = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
     const url = new URL(request.url);
     calls.push(url.pathname + url.search);
+    const method = request.method.toUpperCase();
 
     if (url.pathname === "/api/agents") {
-      return json({ agents: workspace.lanes ?? Object.values(LANES) });
+      return json({ agents: lanes });
+    }
+    const designate = /^\/api\/threads\/([^/]+)\/resident$/.exec(url.pathname);
+    if (designate !== null && method === "POST") {
+      const id = designate[1] ?? "";
+      // Read off the `Request`, never off `init.body`: the client sends through
+      // `openapi-fetch`, which builds its own request, so a stub reading the
+      // init it was handed observes `{}` for every write ever made.
+      return request.text().then((raw) => {
+        const body: unknown = raw === "" ? {} : JSON.parse(raw);
+        writes.push({ path: url.pathname, body });
+        const sent = body as { name?: unknown; weight?: unknown };
+        const index = lanes.findIndex((lane) => lane.lane === id);
+        const standing = lanes[index];
+        if (standing !== undefined && standing.resident !== null) {
+          lanes[index] = {
+            ...standing,
+            resident: {
+              ...standing.resident,
+              // Recorded verbatim, as the server records it: an absent key is
+              // `null`, which is what "the launcher decides" is on the wire.
+              weight: typeof sent.weight === "string" ? sent.weight : null,
+            },
+          };
+        }
+        return json({ thread: { id }, warnings: [] });
+      });
+    }
+    if (url.pathname === "/api/jobs") {
+      if (workspace.holdJobs === true) return new Promise<Response>(() => undefined);
+      if (workspace.jobsFail === true) {
+        return json({ code: "internal", message: "the queue is unreadable" }, 500);
+      }
+      const origin = url.searchParams.get("originId");
+      const rows = (workspace.launches ?? [])
+        .filter((launch) => origin === null || launch.lane === origin)
+        .map(designationRow);
+      return json({ jobs: rows, total: rows.length, truncated: false });
+    }
+    const jobLog = /^\/api\/jobs\/([^/]+)\/log$/.exec(url.pathname);
+    if (jobLog !== null) {
+      const eventId = jobLog[1] ?? "";
+      const launch = (workspace.launches ?? []).find((row) => row.eventId === eventId);
+      const lines = (launch?.lines ?? []).map((line) => ({ ts: NOW, line }));
+      const cursor = Number(url.searchParams.get("cursor") ?? "0");
+      return json({ lines: lines.slice(cursor > 0 ? cursor : 0), nextCursor: lines.length });
     }
     if (url.pathname.endsWith("/scope")) {
       if (workspace.released === true) {
@@ -157,16 +308,15 @@ function transport(workspace: Workspace = {}): {
       return json({ items: [skillRow()], page: { total: 1, limit: 200, offset: 0 } });
     }
     if (url.pathname === "/api/docs/doc_orchestrate") {
-      return workspace.holdSkill === true
-        ? new Promise<Response>(() => undefined)
-        : json(skillDoc());
+      if (workspace.holdSkill === true) return new Promise<Response>(() => undefined);
+      return json(workspace.noLevels === true ? skillDoc(NO_LEVELS_BODY) : skillDoc());
     }
     if (url.pathname === "/api/docs") {
       return json({ items: [], page: { total: 0, limit: 50, offset: 0 } });
     }
     return json({});
   };
-  return { fetch: fetchImpl, calls };
+  return { fetch: fetchImpl, calls, writes };
 }
 
 let harness: CorpusTestHarness | undefined;
@@ -180,8 +330,12 @@ function Board({
 }): ReactElement {
   return (
     <BoardNavigationProvider>
-      {children}
-      <Register onOpen={onOpen} />
+      {/* The weight control narrates what it did; outside a provider that
+          narration is a silent no-op, which would make it unassertable. */}
+      <ToastProvider>
+        {children}
+        <Register onOpen={onOpen} />
+      </ToastProvider>
     </BoardNavigationProvider>
   );
 }
@@ -200,7 +354,7 @@ function Register({ onOpen }: { onOpen: (id: string) => void }): null {
 function renderResidents(
   workspace: Workspace = {},
   onOpen: (id: string) => void = () => undefined,
-): { readonly calls: readonly string[] } {
+): Wire {
   const wire = transport(workspace);
   harness = createCorpusTestHarness({ fetch: wire.fetch });
   render(
@@ -209,7 +363,7 @@ function renderResidents(
     </Board>,
     { wrapper: harness.Wrapper },
   );
-  return { calls: wire.calls };
+  return wire;
 }
 
 const laneRow = (lane: string): HTMLElement => {
@@ -479,5 +633,344 @@ describe("the roster's absence", () => {
 
     expect(document.querySelectorAll("[data-lane]")).toHaveLength(0);
     expect(screen.getAllByRole("status")[0]?.textContent).toBe("reading the roster…");
+  });
+});
+
+/**
+ * UI-186's first half: **what this lane's resident works at, and where that
+ * level came from** (SPEC.md §7's *"a dispatch says what weight it went out at,
+ * and where that weight came from"*).
+ *
+ * The four cases are the four the issue names, and they are asserted through the
+ * tab rather than over the model alone, because three of them are decided by
+ * *which requests have answered* — a distinction no pure function sees.
+ */
+describe("what the launch went out at", () => {
+  const selectOpen = async (): Promise<void> => {
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(2);
+    });
+    await userEvent.click(laneRow("th_open"));
+  };
+
+  const weightNote = (lane: string): string =>
+    document.querySelector(`[data-lane-weight-note="${lane}"]`)?.textContent ?? "";
+
+  it("says a stated level was stated, in the workspace's own words", async () => {
+    renderResidents();
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(5);
+    });
+    await userEvent.click(laneRow("th_claims"));
+
+    await waitFor(() => {
+      expect(weightNote("th_claims")).toContain(`${WEIGHT_STATED_LEAD}: Heavy or judgment-laden.`);
+    });
+    // A level somebody asked for is not the same fact as one the launcher
+    // picked, so the launcher's sentence is not said here.
+    expect(weightNote("th_claims")).not.toContain(WEIGHT_LAUNCHER_SENTENCE);
+  });
+
+  it("shows what the launcher chose, read off the launch's own record", async () => {
+    renderResidents({
+      lanes: OPEN_ROSTER,
+      launches: [{ lane: "th_open", eventId: "evt_d", lines: [JUDGED_LAUNCH] }],
+    });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_RECORDED_LEAD);
+    });
+    // The clause **verbatim**: the tab labels what the launch recorded and
+    // re-derives nothing from it.
+    expect(weightNote("th_open")).toContain(
+      "Haiku — judged: no weight chosen, the lane is for quick factual lookups",
+    );
+    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
+    expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);
+  });
+
+  /*
+   * §7 reaps a job's log with its event, so a lapsed three-day-old lane
+   * legitimately has nothing left. §10's standing rule decides what to show:
+   * the absence, said plainly, and never a level nobody wrote down.
+   */
+  it("says the record is gone rather than naming a level nobody recorded", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
+    });
+    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
+  });
+
+  it("says the same where the event is still held and its log is empty", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [{ lane: "th_open", eventId: "evt_d" }] });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
+    });
+  });
+
+  /*
+   * UI-098's rule at this grain, and it is the one that matters most here: a
+   * read that has not answered must never be reported as an absence, because
+   * this absence is a claim about what an agent ran as.
+   */
+  it("withholds while the read is in flight rather than reporting an absence", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, holdJobs: true });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_READING_NOTE);
+    });
+    expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);
+  });
+
+  it("reports a failed read as a failure, keeping the server's own message", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, jobsFail: true });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_FAILED_LEAD);
+    });
+    expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);
+  });
+
+  it("says nothing at all on the orchestrator's lane, which has no designation", async () => {
+    const wire = renderResidents();
+    await waitFor(() => {
+      expect(screen.getByText(ORCHESTRATOR_SCOPE_NOTE)).toBeTruthy();
+    });
+    expect(document.querySelector("[data-lane-weight-panel]")).toBeNull();
+    // …and nothing was asked about a lane there is nothing to ask about.
+    expect(wire.calls.filter((call) => call.startsWith("/api/jobs"))).toEqual([]);
+  });
+
+  it("says nothing on a designated lane the roster reports with no resident", async () => {
+    renderResidents();
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(5);
+    });
+    await userEvent.click(laneRow("th_quiet"));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-scope="th_quiet"]')).not.toBeNull();
+    });
+    expect(document.querySelector("[data-lane-weight-panel]")).toBeNull();
+  });
+
+  it("reads the launch for the selected lane and for no other", async () => {
+    const wire = renderResidents({
+      lanes: OPEN_ROSTER,
+      launches: [{ lane: "th_open", eventId: "evt_d", lines: [JUDGED_LAUNCH] }],
+    });
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(2);
+    });
+    // Nothing on mount: §7 forbids the sweep, and one launch read per row is
+    // what that would look like here (UI-075's fan-out, one tab over).
+    expect(wire.calls.filter((call) => call.startsWith("/api/jobs"))).toEqual([]);
+
+    await userEvent.click(laneRow("th_open"));
+    await waitFor(() => {
+      expect(wire.calls.filter((call) => call.startsWith("/api/jobs/"))).toHaveLength(1);
+    });
+    expect(wire.calls.filter((call) => call.startsWith("/api/jobs?"))).toEqual([
+      "/api/jobs?originId=th_open",
+    ]);
+  });
+});
+
+/**
+ * UI-186's second half, and the user's own words for it (2026-09-02): *"maybe we
+ * make it possible to change a resident's model from the residents tab. That
+ * would make the mistake less of a problem."*
+ *
+ * Every assertion below is about **the write on the wire**, because that is the
+ * acceptance criterion: the change must be the re-designation the server already
+ * performs, and not a second mechanism.
+ */
+describe("changing a resident's weight", () => {
+  const pick = async (label: string): Promise<void> => {
+    await userEvent.selectOptions(screen.getByLabelText(WEIGHT_CONTROL_ARIA), label);
+  };
+  const apply = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: WEIGHT_CHANGE_LABEL }));
+  };
+  const openLane = async (lane: string, count: number): Promise<void> => {
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(count);
+    });
+    await userEvent.click(laneRow(lane));
+    await waitFor(() => {
+      expect(document.querySelector(`[data-lane-weight-panel="${lane}"]`)).not.toBeNull();
+    });
+  };
+
+  it("re-designates the general resident at the level chosen", async () => {
+    const wire = renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await openLane("th_open", 2);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+    });
+
+    await pick("Heavy or judgment-laden");
+    await apply();
+
+    await waitFor(() => {
+      expect(wire.writes).toHaveLength(1);
+    });
+    // The mechanism that already exists: a designation on the thread, carrying
+    // the new weight. No profile, because this resident has none.
+    expect(wire.writes[0]).toEqual({
+      path: "/api/threads/th_open/resident",
+      body: { weight: "heavy" },
+    });
+  });
+
+  it("keeps the profile it is re-designating, so only the level moves", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Small and mechanical" })).toBeTruthy();
+    });
+
+    await pick("Small and mechanical");
+    await apply();
+
+    await waitFor(() => {
+      expect(wire.writes).toHaveLength(1);
+    });
+    expect(wire.writes[0]?.body).toEqual({ name: "claims-review", weight: "light" });
+  });
+
+  /*
+   * "The launcher decides" is a real outcome the contract reports back
+   * (`Resident.weight` null), and the way back once a level has been picked. It
+   * travels as the **absence** of the key, which is the only spelling of it the
+   * route accepts (CONTRACT-067).
+   */
+  it("clears a stated level back to the launcher's choice, as an absent key", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: LAUNCHER_DECIDES_LABEL })).toBeTruthy();
+    });
+
+    await pick(LAUNCHER_DECIDES_LABEL);
+    await apply();
+
+    await waitFor(() => {
+      expect(wire.writes).toHaveLength(1);
+    });
+    expect(wire.writes[0]?.body).toEqual({ name: "claims-review" });
+  });
+
+  it("offers the act and refuses to perform it until the level differs", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+    });
+
+    // Seeded from the level in force, so pressing would write the state that
+    // already holds — offered and dimmed rather than removed.
+    const button = screen.getByRole("button", { name: WEIGHT_CHANGE_LABEL });
+    expect(button).toHaveProperty("disabled", true);
+    await userEvent.click(button);
+    expect(wire.writes).toEqual([]);
+  });
+
+  /*
+   * SHARED-076: the act says what it costs **before it is taken**. The price
+   * appears with the act — when a level different from the one in force is
+   * chosen — and not at rest, which is a measured budget decision the component
+   * records: a permanently rendered cost paragraph left the lane's scope list
+   * 12px in a 210px drawer.
+   */
+  it("says what changing costs, once there is a change to make", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await openLane("th_open", 2);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Standard" })).toBeTruthy();
+    });
+    // Nothing to change yet, so no price is quoted — and no act is offered
+    // either, so nothing can be taken uninformed.
+    expect(document.querySelector('[data-lane-weight-cost="th_open"]')).toBeNull();
+    expect(screen.getByRole("button", { name: WEIGHT_CHANGE_LABEL })).toHaveProperty(
+      "disabled",
+      true,
+    );
+
+    await pick("Standard");
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-weight-cost="th_open"]')?.textContent).toBe(
+        WEIGHT_CHANGE_COST,
+      );
+    });
+    // It is on the screen while the act is still available and not yet taken.
+    expect(screen.getByRole("button", { name: WEIGHT_CHANGE_LABEL })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    // The conversation is not what is lost, and the sentence says so — the half
+    // SHARED-076 corrects §7 on.
+    expect(WEIGHT_CHANGE_COST).toContain("never the conversation");
+  });
+
+  it("offers no control where the workspace declares no levels", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [], noLevels: true });
+    await openLane("th_open", 2);
+
+    // The sentence still stands: what the launch went out at is a fact whatever
+    // the guidance declares. Only the change control depends on the table.
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-weight-note="th_open"]')).not.toBeNull();
+    });
+    expect(screen.queryByLabelText(WEIGHT_CONTROL_ARIA)).toBeNull();
+    expect(screen.queryByRole("button", { name: WEIGHT_CHANGE_LABEL })).toBeNull();
+  });
+
+  /*
+   * A re-designation names the profile, and a gone one earns a `404`
+   * (`residentFor`). An offer that could only fail is worse than none, so the
+   * tab says what would have to happen first.
+   */
+  it("offers no control on a lane whose profile has gone, and says why", async () => {
+    renderResidents();
+    await openLane("th_gone", 5);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-weight-blocked="th_gone"]')?.textContent).toBe(
+        WEIGHT_CHANGE_NEEDS_PROFILE,
+      );
+    });
+    expect(screen.queryByRole("button", { name: WEIGHT_CHANGE_LABEL })).toBeNull();
+  });
+
+  it("narrates the change, and the roster reports the level that landed", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await openLane("th_open", 2);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+    });
+
+    await pick("Heavy or judgment-laden");
+    await apply();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Re-designated at Heavy or judgment-laden/)).toBeTruthy();
+    });
+    // The write landed and the read that follows it reports it: the tab now
+    // says the level was stated, where a moment ago it said the launcher chose.
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-weight-note="th_open"]')?.textContent).toContain(
+        `${WEIGHT_STATED_LEAD}: Heavy or judgment-laden.`,
+      );
+    });
   });
 });

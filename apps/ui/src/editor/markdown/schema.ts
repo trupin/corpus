@@ -65,10 +65,17 @@ export const IMAGE_OPTIONS = { inline: true, allowBase64: true } as const;
  * The extension list, in one call so the schema cannot be built twice from two
  * different configurations.
  *
- * `history` stays on: undo is the user's only defence against an editor that is
- * always saving, and SPEC.md §10's "no edit mode" makes ⌘Z the whole safety
- * story. Autosave never dispatches a transaction (see `useAutosave`), so a save
- * landing mid-sequence cannot truncate the stack.
+ * `undoRedo` (StarterKit v2's `history`) stays on: undo is the user's only
+ * defence against an editor that is always saving, and SPEC.md §10's "no edit
+ * mode" makes ⌘Z the whole safety story. Autosave never dispatches a
+ * transaction (see `useAutosave`), so a save landing mid-sequence cannot
+ * truncate the stack.
+ *
+ * **Four of StarterKit v3's own extensions are switched off** (UI-187). v3
+ * folded them into the kit that v2 shipped without, and each one would change a
+ * document or a gesture that SPEC.md §5 and §6 already settle — see the `false`
+ * beside each for the reason. A security upgrade is not the place to adopt
+ * them, and adopting one later is a decision with its own issue.
  */
 export function corpusExtensions(): Extensions {
   return [
@@ -77,7 +84,25 @@ export function corpusExtensions(): Extensions {
       // The prototype's `.doc-body` styling keys off plain element selectors,
       // so no extension contributes classes of its own.
       codeBlock: { exitOnTripleEnter: true, exitOnArrowDown: true },
-      // `Link` is configured separately below; StarterKit v2 ships none.
+      // `Link` is configured below with `openOnClick: false` and a hardened
+      // `rel`. StarterKit v3 ships its own, whose defaults are the opposite;
+      // registering both leaves one `link` mark and no way to say which config
+      // built it.
+      link: false,
+      // §5 spells underline `<u>x</u>` and round-trips it as `UnderlineMark`.
+      // StarterKit v3's `underline` claims the same mark name, and the winner
+      // of that collision decides whether the file survives a save.
+      underline: false,
+      // `TrailingNode` appends an empty paragraph to every document whose last
+      // node is not one. Measured on this schema it appends one to *every*
+      // document, so the model the editor holds stops matching the file on
+      // disk — invisible while the serializer drops it, and a live discrepancy
+      // for anchors, ⌘A and the caret.
+      trailingNode: false,
+      // v2 had no list keymap: Backspace and Delete at a list boundary do what
+      // ProseMirror's base keymap does. The v3 default rewrites those gestures,
+      // which is a §6 change and not a security fix.
+      listKeymap: false,
     }),
     Link.configure({
       // A document body is prose, not a browser: following a link is the
