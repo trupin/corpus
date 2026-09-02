@@ -177,9 +177,11 @@ Four things about the grammar, each a refusal when you get it wrong:
   on the way in: you have to escape the value into JSON, and the array itself is usually
   arriving on a heredoc, which a value containing that heredoc's terminator ends early. An
   entry carries somebody's words the same way any other command does — `"--flag-file",
-  "title=/tmp/corpus-title.txt"` — so the JSON holds a path you chose and nothing you did not.
-  Where the array is long, write it to a file too and redirect it: `corpus batch < /tmp/batch.json`
-  reads the same array with no heredoc anywhere.
+  "title=/tmp/corpus-title-th_9f21c4.txt"` — so the JSON holds a path you chose and nothing
+  you did not. Where the array is long, write it to a file too and redirect it:
+  `corpus batch < /tmp/corpus-batch-evt_5a2b7c.json` reads the same array with no heredoc
+  anywhere — and the file is named for its event, under the same naming rule every file you
+  write for a command follows.
 - **The array itself arrives on a heredoc or a pipe**, which are the two transports read. A
   socket is never one: `spawn`, `exec` and a harness handing a child its input all give one,
   and the array is then refused at exit `2` before a byte of it is read. Anything driving this
@@ -1232,7 +1234,7 @@ Write it to a file with your file-writing tool — which is not a shell and expa
 and name the file:
 
 ```bash
-corpus doc edit doc_a1b2c3 --flag-file title=/tmp/title.txt --from agent
+corpus doc edit doc_a1b2c3 --flag-file title=/tmp/corpus-title-doc_a1b2c3.txt --from agent
 ```
 
 `--flag-file <flag>=<path>` works for any flag on any command that takes text, and takes the
@@ -1240,6 +1242,21 @@ file's bytes as the value. `--file <path>` does the same for a body. Between the
 character list to keep in your head and nothing to weigh: `$`, a backtick, a backslash, a `!`,
 an apostrophe and a quote all reach the server as themselves, because nothing between your tool
 and the CLI is reading them.
+
+**Name the file for the work it serves, never a name another job could pick.** You are not
+alone in `/tmp`: this loop dispatches non-overlapping events concurrently, so while you are
+between your write and your read, another subagent may be at the same step — and two
+invocations that both chose one fixed name, the flag's word and nothing more, overwrite each
+other there, so the command carries the other job's value, exit `0`, committed, wrong. The name
+that cannot collide is `corpus`, the flag, then the id of what the value is about —
+`/tmp/corpus-title-doc_a1b2c3.txt` for that document's title, the thread id for a thread's, the
+name being created where nothing has an id yet. Concurrent work never shares a subject, because
+overlapping events run serially — so a file named for its subject has exactly one writer. The
+rule covers every file a command reads back: a flag's value, a body for `--file`, a batch array
+for a redirect. And when the command has run, leave the file where it is. `/tmp` is the
+system's to clear, a refused invocation's retry reads the same file again, and a leftover named
+for its subject is a record of what was sent — where a delete step, mislearned by one position,
+destroys the value before the command gets it.
 
 **The test is where the text came from, not what is in it.** Words you wrote yourself, out of
 ordinary vocabulary, have nothing in them for anything to act on, and `--title "Quarterly

@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -109,17 +109,73 @@ skill bodies.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent. Reproduce the collision first — two concurrent
-flag-file writes to one path — before changing the guidance._
+_Implementing agent: agent-runtime-dev, run on **Fable 5** (`claude-fable-5`),
+2026-09-01._
+
+**Reproduction (pre-fix mechanism, deterministic).** The live occurrence is the
+rehearsal quote above. The race replays deterministically as the interleaving
+the job log describes — write, concurrent write, read:
+
+```
+$ printf 'Reply for thread th_AAAA: grind finer.' > /tmp/corpus-reply.md      # job A writes
+$ printf 'Reply for thread th_BBBB: … 18400.'   > /tmp/corpus-reply.md        # job B writes
+$ cat /tmp/corpus-reply.md                                                    # job A reads
+Reply for thread th_BBBB: the invoice total is 18400.
+```
+
+Job A's read returns job B's body, no error anywhere — the shape story 5's
+agent caught by luck. With subject-named paths (`/tmp/corpus-reply-th_AAAA.md`,
+`/tmp/corpus-reply-th_BBBB.md`) the same interleaving returns each job its own
+bytes, because the paths differ by construction.
+
+**Fix.** Every shipped fixed temp path now carries the flag word plus the id or
+name of its subject: 18 `/tmp/` sites across `orchestrate`, `comment` (body +
+`worked-examples.md` + `skill-genesis.md`), and `profile`. The naming rule and
+the leave-the-file decision are stated once, in `orchestrate`'s flag-file
+section (the rule's single carrier); the other skills' examples follow it
+without restating it. `/tmp/batch.json` (a batch array a command reads back —
+same defect class) became `/tmp/corpus-batch-evt_5a2b7c.json`.
+
+**Guard.** `scripts/workspace-template.test.ts` sweeps every template file:
+each `/tmp/` token must match
+`^/tmp/corpus-[a-z]+-[A-Za-z0-9][A-Za-z0-9_-]*\.[a-z]+$` (anti-vacuity: ≥12
+sites across ≥4 files; 18/5 today). A companion test pins that the regex
+rejects `/tmp/corpus-title.txt`, `/tmp/corpus-description.txt`,
+`/tmp/corpus-reply.md`, `/tmp/title.txt`, `/tmp/batch.json` — the falsification
+made permanent. A prose pin holds the owner paragraph in place.
+
+**Falsification.** Reverted `comment/SKILL.md`'s retitle example to
+`--flag-file title=/tmp/corpus-title.txt`; the sweep went red naming the file
+and the path (`claude/skills/comment/SKILL.md: a fixed temp name is one every
+parallel subagent shares: expected '/tmp/corpus-title.txt' to match …`).
+Restored; suite green.
+
+**Fresh-workspace drill.** `corpus init` from source (tsx) into an empty
+scratch dir: exit 0, 26 template files installed. Installed
+`orchestrate/comment/profile SKILL.md`, `skill-genesis.md` and
+`worked-examples.md` are `diff`-identical to the edited templates. Installed
+tree: 18 `/tmp/` sites, 0 nonconforming.
+
+**Checks.** `VITEST_MAX_THREADS=4 vitest run scripts/workspace-template.test.ts`
+→ 511/511, exit 0 (verified without rtk masking). `npm run lint` → exit 0.
+Prettier clean on all touched files.
+
+**Deliberately not done here.** Acceptance criterion 1's "real two-event
+dispatch" with a live agent, and criterion 4 (story 5 passing 3/3), belong to
+the next INFRA-034 full pass — the rehearsal suite is the end-to-end check the
+issue itself designates. The mechanism-level race and its removal are shown
+above.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Reproduction logged
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Reproduction logged
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified (1 and 4: mechanism verified here, live
+      two-event dispatch rides the next INFRA-034 full pass, as the issue's
+      Testing Strategy states)
 
 ## Completion Checklist (orchestrator)
 

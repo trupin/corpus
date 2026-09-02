@@ -1489,7 +1489,7 @@ describe("skills", () => {
       // them did not.
       expect(flat).toMatch(/never goes on a command line at all/i);
       expect(orchestrate).toMatch(
-        /corpus doc edit doc_a1b2c3 --flag-file title=\/tmp\/title\.txt --from agent/,
+        /corpus doc edit doc_a1b2c3 --flag-file title=\/tmp\/corpus-title-doc_a1b2c3\.txt --from agent/,
       );
       // The agent must be told to write the file with something that is not a
       // shell, or it builds the file with a heredoc and has moved the defect
@@ -1517,6 +1517,94 @@ describe("skills", () => {
       );
       expect(flat).toMatch(/nothing ran, so nothing was written and nothing was lost/i);
       expect(flat).toMatch(/a failure you can see turns into one you cannot/i);
+    });
+
+    /**
+     * AGENT-060. The skills used to hand every agent the same fixed names —
+     * `/tmp/corpus-title.txt`, `/tmp/corpus-description.txt` — and §7 dispatches
+     * a claimed batch's non-overlapping events **in parallel**, one subagent per
+     * event, each following the same instruction. Observed, not theorised:
+     * INFRA-034 story 5, first full pass against v0.31.0, a listener's own job
+     * log records that the reply body at `/tmp/corpus-reply.md` differed at read
+     * time from what it wrote — another subagent's write landed between — and a
+     * person's thread got a wrong body plus a correction turn. The agent
+     * noticing was luck; the silent version posts another conversation's words
+     * and never knows.
+     *
+     * So a shipped `/tmp` path must carry a per-invocation suffix: `corpus-`,
+     * the purpose word (the flag, or `batch`), a hyphen, then the id or name of
+     * the thing the value is about — a subject no concurrent job shares, because
+     * the loop serializes overlapping events. The regex pins the *shape* (a
+     * suffix must exist); which suffix is unique is the prose's to teach, and
+     * the prose pin below holds the teaching in place.
+     */
+    const UNIQUE_TMP_PATH = /^\/tmp\/corpus-[a-z]+-[A-Za-z0-9][A-Za-z0-9_-]*\.[a-z]+$/;
+    const tmpPathsOf = (text: string): string[] => text.match(/\/tmp\/[^\s`"'()[\]]+/g) ?? [];
+
+    it("gives every shipped /tmp path a per-invocation suffix, in every template file", () => {
+      const paths = templateFiles.flatMap((relPath) =>
+        tmpPathsOf(readTemplateFile(relPath)).map((tmpPath) => ({ relPath, tmpPath })),
+      );
+      // Anti-vacuity: the sweep is checking real sites, across more than one
+      // skill — 20 at the time of writing.
+      expect(paths.length).toBeGreaterThanOrEqual(12);
+      expect(new Set(paths.map(({ relPath }) => relPath)).size).toBeGreaterThanOrEqual(4);
+      for (const { relPath, tmpPath } of paths) {
+        expect(
+          tmpPath,
+          `${relPath}: a fixed temp name is one every parallel subagent shares`,
+        ).toMatch(UNIQUE_TMP_PATH);
+      }
+    });
+
+    it("rejects the shapes that shipped the collision, so the pin cannot be loosened silently", () => {
+      // The falsification, made permanent: each of these is a name the skills
+      // actually taught (or an agent following them produced), and each is one
+      // fixed name for every concurrent invocation.
+      for (const fixed of [
+        "/tmp/corpus-title.txt",
+        "/tmp/corpus-description.txt",
+        "/tmp/corpus-reply.md",
+        "/tmp/title.txt",
+        "/tmp/batch.json",
+        "/tmp/corpus-title-.txt",
+      ]) {
+        expect(fixed, "a colliding shape passes the unique-path pin").not.toMatch(UNIQUE_TMP_PATH);
+      }
+      // And the shapes the skills teach now pass, so the pin is checking the
+      // construction rather than banning /tmp outright.
+      for (const unique of [
+        "/tmp/corpus-title-th_9f21c4.txt",
+        "/tmp/corpus-title-doc_a1b2c3.txt",
+        "/tmp/corpus-extra-bookkeeper.txt",
+        "/tmp/corpus-description-weekly-review.txt",
+        "/tmp/corpus-batch-evt_5a2b7c.json",
+      ]) {
+        expect(unique).toMatch(UNIQUE_TMP_PATH);
+      }
+    });
+
+    it("states the naming rule and the leave-the-file decision where the construction lives", () => {
+      const flat = orchestrate.replace(/\s+/g, " ");
+      expect(flat).toMatch(
+        /\*\*Name the file for the work it serves, never a name another job could pick\.\*\*/,
+      );
+      // The reason is parallel dispatch, named as such — without it the suffix
+      // reads as ceremony and gets dropped from the next copied example.
+      expect(flat).toMatch(/You are not alone in `\/tmp`/);
+      expect(flat).toMatch(/carries the other job's value, exit `0`, committed, wrong/);
+      expect(flat).toMatch(/a file named for its subject has exactly one writer/);
+      // The rule reaches every file a command reads back, not only --flag-file:
+      // the observed collision was a reply body, and the batch redirect is the
+      // same read-back one transport over.
+      expect(flat).toMatch(/a flag's value, a body for `--file`, a batch array for a redirect/);
+      // The cleanup decision, stated rather than implied: the file stays. A
+      // delete step is one more instruction whose off-by-one destroys the value
+      // before the command reads it, a refused invocation's retry needs the
+      // file, and /tmp is the system's to clear.
+      expect(flat).toMatch(/leave the file where it is/);
+      expect(flat).toMatch(/`\/tmp` is the system's to clear/);
+      expect(flat).toMatch(/a refused invocation's retry reads the same file again/);
     });
 
     /**
@@ -6336,7 +6424,7 @@ describe("profile skill body", () => {
       String.raw`\`/tmp/${path}\`[^\n]*(?::|pair, because that is\nwhat \`--extra\` takes:)\n\n\`\`\`\n([\s\S]*?)\n\`\`\``,
       "m",
     ).exec(body)?.[1];
-  const exampleTitle = fileValue("corpus-title.txt");
+  const exampleTitle = fileValue("corpus-title-bookkeeper.txt");
   const exampleName = examplePath?.slice(".claude/agents/".length);
 
   it("carries its sections, each of them substantial", () => {
@@ -6691,7 +6779,10 @@ describe("profile skill body", () => {
     // Every value the skill passes is shown as a file the agent writes first —
     // an example that names a path it never says how to produce is not runnable,
     // and an agent following it would reach for a shell to make the file.
-    expect(fileValue("corpus-title.txt"), "title is passed but never written").toBeDefined();
+    expect(
+      fileValue("corpus-title-bookkeeper.txt"),
+      "title is passed but never written",
+    ).toBeDefined();
     expect(body).toMatch(/```\ndescription=Reach for this when /);
     // The example carries the character the rule exists for; otherwise the
     // pattern that gets copied is the one that has never been exercised.

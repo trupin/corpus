@@ -51,7 +51,7 @@ So the turn names the **deciding** stage and the job log carries both. Five comm
 invocations.
 
 Their question becomes the thread's title, so it is their words: write
-`/tmp/corpus-title.txt` (`Why does my espresso taste sour?`) with your
+`/tmp/corpus-title-th_9f21c4.txt` (`Why does my espresso taste sour?`) with your
 file-writing tool first.
 
 ```bash
@@ -63,7 +63,7 @@ Sour and fast means under-extraction: grind finer before changing dose.
 Bitter and slow means the opposite.
 CORPUS_EOF
 created doc_7e3a91 — data/docs/kitchen/espresso-extraction-troubleshooting.md
-corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title.txt --from agent
+corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title-th_9f21c4.txt --from agent
 corpus batch --from agent <<'CORPUS_EOF'
 [["job","log","evt_5a2b7c","gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"],
  ["thread","reply","th_9f21c4","--model","claude-opus-4-1","-m","Sour usually means under-extraction — the shot ran too fast. Grind one step\nfiner and keep everything else fixed.\n\n`@researcher` isn't defined in this workspace, so I answered this directly. The\nfull troubleshooting sequence is durable enough to keep, so I wrote it down in\n[[doc_7e3a91]] and titled this thread.\n↳ created [[doc_7e3a91]] in kitchen/ and titled this thread"]]

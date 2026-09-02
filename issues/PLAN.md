@@ -2229,7 +2229,7 @@ correctly read `weight: null`. Nothing was lost there.
 | INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | done | P0 | fable | AGENT-059 |
 | INFRA-034 | The rehearsal scenarios: nine user stories, graded | done | P0 | fable | INFRA-033 |
 | CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
-| AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | todo | P1 | fable | INFRA-034 |
+| AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
 **And the reason none of this was caught** (user directive, 2026-09-01: *"We have
 been struggling with issues such as these for a while now"*). The repo tests code
