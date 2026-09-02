@@ -24,8 +24,10 @@
 export {
   answeringRow,
   composerAddress,
+  designationWeightSentence,
   residentWeightSentence,
   weightLabel,
+  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
   ADDRESSED_TO,

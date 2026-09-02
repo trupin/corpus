@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -105,22 +105,27 @@ being designated at all: its input is `{weight, recipient, live}`, and the
 
 ## Acceptance Criteria
 
-- [ ] Ask's designation can state a weight, from the same declared vocabulary
+- [x] Ask's designation can state a weight, from the same declared vocabulary
       every other surface reads (`useWeightLevels`) — never a hardcoded list
-- [ ] The set includes an explicit **"the launcher decides"** member, worded as
+- [x] The set includes an explicit **"the launcher decides"** member, worded as
       `residentActions.ts` already words it, so choosing it is a decision rather
-      than an unpressed state
-- [ ] A workspace whose guidance declares no levels offers no weight rows here
+      than an unpressed state (the constant itself is shared:
+      `LAUNCHER_DECIDES_LABEL`)
+- [x] A workspace whose guidance declares no levels offers no weight rows here
       either, exactly as the thread menu behaves
-- [ ] The designation weight and the **message** weight are visibly two different
+- [x] The designation weight and the **message** weight are visibly two different
       things in the overlay, and the message control no longer reads as though it
       governs the resident being designated
-- [ ] Picking a resident and a message weight together does not silently apply the
+- [x] Picking a resident and a message weight together does not silently apply the
       message weight to the designation, and does not silently discard it either
-      — whichever is chosen, the overlay says which
-- [ ] Capture is unchanged: its thread has a parent, and §7 lets only a standalone
-      thread designate (SHARED-073)
-- [ ] `{name}` with no weight remains expressible, because omitting the field is
+      — whichever is chosen, the overlay says which (the message weight is
+      **applied, to the message**: the address rows carry
+      `designationWeightSentence` and the line's title switches to
+      `ADDRESS_DESIGNATING_TITLE`)
+- [x] Capture is unchanged: its thread has a parent, and §7 lets only a standalone
+      thread designate (SHARED-073) — pinned by a test that picks an owner and a
+      level and captures anyway
+- [x] `{name}` with no weight remains expressible, because omitting the field is
       what the contract's three states are built on
 
 ## Technical Design
@@ -164,13 +169,80 @@ overlay never sets that field. The user's two live designations arrived as
 `{"name":null,"docId":null,"weight":null}`, which is exactly what this path
 produces. A running-app confirmation belongs in this log before the fix lands.
 
+**Pre-fix reproduction in the running app, 2026-09-01 (ui-dev, Fable 5).**
+The pre-fix `ComposeOverlay.tsx`/`useCompose.ts` (from `git show HEAD:`, swapped
+in by file copy — no git state command) were driven in a real Chromium through
+the real Vite bundle (`stubCorpus` transport, `CORPUS_UI_PORT=5273`), with a
+workspace declaring three levels and one profile. Gestures: open the composer
+(`c`), pick **heavy** on the one weight control the overlay offers (the address
+popover's rows), pick owner **researcher**, Ask. Observed on the wire:
+
+```
+designation weight control present: false
+POST /api/threads body: {"parent":null,"selector":null,"body":"Probe: a weighed,
+owned ask.","requestsAgent":true,"weight":"heavy","resident":{"name":"researcher"}}
+```
+
+The picked weight landed on the **message** field — which §7 says never governs
+the resident's own turn — and the designation was born with none. Exactly the
+diagnosis.
+
+**Post-fix, same probe, same browser, 2026-09-01 (ui-dev, Fable 5).** The owner
+group now carries its own weight select (options: `the launcher decides`, then
+the three declared labels, launcher-first, value empty). Picking **heavy** on
+the address rows and **standard** on the owner control, then Ask:
+
+```
+designation weight control present: true
+POST /api/threads body: {"parent":null,"selector":null,"body":"Probe: a weighed,
+owned ask.","requestsAgent":true,"weight":"heavy",
+"resident":{"name":"researcher","weight":"standard"}}
+```
+
+Two weights, two fields, neither leaking into the other. The address popover's
+weight section shows the boundary sentence
+(`a weight set here rides this message and governs only what … hands off — the
+owner control states the level … works at`, asserted in
+`apps/ui/e2e/ask-designation-weight.spec.ts`), and the address line's title
+switches to `ADDRESS_DESIGNATING_TITLE` while a designation is under way.
+
+**Falsification, 2026-09-01.** Deleted the `weight` spread from
+`designationRequest`'s returned object. Red: 5 unit tests
+(`ComposeOverlay.test.tsx` — general-at-level, profile-at-level, the
+two-weights-apart wire assertion, and two `designationRequest` table rows) and
+both wire tests of `ask-designation-weight.spec.ts` in the real browser
+(observed `resident: {name:"researcher"}` with the weight gone). Restored; all
+green again (103 unit tests across compose + residentActions, 3/3 e2e).
+
+**Suites, 2026-09-01.** `vitest run` green on `packages/kit/src/address` (47),
+`packages/kit/src/index.test.ts` (16), `apps/ui/src/compose` (60),
+`apps/ui/src/thread` (461). Playwright green on `ask-designation-weight` (3),
+`weight.spec.ts` (11), `foot-geometry` + `compose-keyboard` (28), and the four
+global-composer `address-geometry` tests. `npm run typecheck` exit 0. ESLint
+clean on every touched file (`npm run lint`'s one repo error is in
+`rehearsals/fixture.ts`, another lane's uncommitted work, untouched here).
+
+**Escalation found while implementing (not fixed here, wrong domain):** the
+multipart create path drops the whole designation — `CreateThreadUpload` /
+`uploadCreateThread` (`packages/contract/src/client/upload.ts`) carry no
+`resident`, though `MultipartResidentSchema` (CONTRACT-088) accepts the part —
+so an Ask **with attachments** designates by default server-side and silently
+discards an explicit owner pick, weight included. Needs a contract-dev issue
+plus kit/ui plumbing. Also fixed in passing: `resident` was missing from the
+overlay submit's `useCallback` deps, so an owner picked *after* the text was
+typed sent the previous render's designation — regression test added
+("sends the owner picked after the text was typed").
+
+Model: **Fable 5** (as recommended).
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes (touched files clean; the repo's one standing error is
+      another lane's `rehearsals/fixture.ts`)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

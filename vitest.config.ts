@@ -16,6 +16,10 @@ export default defineConfig({
       // Repo tooling lives outside the workspaces (CLAUDE.md → Repository
       // Structure) but is still tested by `npm test`.
       "scripts/**/*.test.ts",
+      // The rehearsal *harness* is ordinary code with ordinary unit tests.
+      // The rehearsal *pass* (`npm run rehearse`) spawns agents and is
+      // deliberately not vitest and not in any gate (INFRA-033).
+      "rehearsals/**/*.test.ts",
     ],
     exclude: ["**/node_modules/**", "**/dist/**"],
     passWithNoTests: true,

@@ -8,9 +8,11 @@ import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
 import {
+  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
   composerAddress,
+  designationWeightSentence,
   residentWeightSentence,
   NOBODY_ASKED,
 } from "./addressModel.js";
@@ -62,6 +64,8 @@ interface HostProps {
   readonly levels?: readonly { label: string; key: string }[];
   readonly live?: boolean;
   readonly computed?: string;
+  /** The resident this send would designate (UI-185) — the global composer's case. */
+  readonly designating?: string;
   readonly onWire?: (request: { weight?: string; recipient?: string }) => void;
 }
 
@@ -75,6 +79,7 @@ function Host({
   levels = LEVELS,
   live = true,
   computed = "orchestrator",
+  designating,
   onWire,
 }: HostProps) {
   const [chosen, setChosen] = useState<string | undefined>(undefined);
@@ -99,7 +104,7 @@ function Host({
     request: level === undefined ? {} : { weight: level },
     choose: setLevel,
   };
-  const address = composerAddress({ weight, recipient, live });
+  const address = composerAddress({ weight, recipient, live, designating });
   onWire?.(address.request);
   return <ComposerAddress address={address} surface="probe" />;
 }
@@ -288,6 +293,34 @@ describe("the resident rule (SPEC.md §7 and §10, rider signed 2026-08-19)", ()
     // Back on the orchestrator, the choice is still standing and travels again.
     expect(wire).toHaveBeenLastCalledWith({ weight: "standard" });
     expect(weightKeys()).toEqual(["light", "standard", "heavy"]);
+  });
+});
+
+/**
+ * A send that also designates a resident (UI-185): the rows stay — the choice
+ * is the message's, which §7 gives a real job — and the section says out loud
+ * what they do not govern.
+ */
+describe("a designating send", () => {
+  it("keeps the level rows and adds the boundary sentence under them", () => {
+    render(<Host lanes={[ORCHESTRATOR]} designating="its own agent" />);
+    fireEvent.click(line());
+    expect(weightKeys()).toEqual(["light", "standard", "heavy"]);
+    const boundary = document.querySelector("[data-designation-boundary]");
+    expect(boundary?.textContent).toBe(designationWeightSentence("its own agent"));
+  });
+
+  it("explains itself on the line's title, not with the ordinary sentence", () => {
+    render(<Host lanes={[ORCHESTRATOR]} designating="researcher" />);
+    const title = line().getAttribute("title") ?? "";
+    expect(title).toContain(ADDRESS_DESIGNATING_TITLE);
+    expect(title).not.toContain(ADDRESS_OPEN_TITLE);
+  });
+
+  it("says nothing extra when the send designates nobody", () => {
+    render(<Host lanes={[ORCHESTRATOR]} />);
+    fireEvent.click(line());
+    expect(document.querySelector("[data-designation-boundary]")).toBeNull();
   });
 });
 

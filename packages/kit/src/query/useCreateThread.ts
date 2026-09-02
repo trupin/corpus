@@ -76,6 +76,13 @@ export function useCreateThread(
         // SPEC.md §7's recipient rides the multipart branch too: a summons that
         // survived only the JSON path would be dropped by attaching a file.
         ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
+        // …and so does the designation beside it, which is a **different**
+        // field: a recipient routes one message, a resident owns the
+        // conversation and everything that grows out of it. This is the one
+        // field on this body where `null` is a value rather than another
+        // absence, so only `undefined` may be dropped — an Ask that designated
+        // nobody must keep saying so through the encoding (CONTRACT-095).
+        ...(input.resident === undefined ? {} : { resident: input.resident }),
         files,
       });
     },

@@ -52,7 +52,8 @@ anybody has to *find* is covered.
 
 **Creating one, in full.** The description is prose a person and another agent both read, and
 it comes out of what somebody kept telling you — so it goes in by path, never quoted straight
-into the flag. Write `/tmp/corpus-description.txt` with your file-writing tool:
+into the flag. Write `/tmp/corpus-description-evt_5a2b7c.txt` — named for the skill it
+creates — with your file-writing tool:
 
 ```
 Run the weekly review over the corpus — what changed, what drifted, what's owed.
@@ -63,7 +64,7 @@ a heredoc terminator only closes the heredoc on a line of its own with nothing i
 so an indented copy of this block ends up with the rest of the file inside the body.
 
 ```bash
-corpus skill create weekly-review --flag-file description=/tmp/corpus-description.txt --from agent <<'CORPUS_EOF'
+corpus skill create weekly-review --flag-file description=/tmp/corpus-description-evt_5a2b7c.txt --from agent <<'CORPUS_EOF'
 # Weekly review
 
 Survey what changed this week, update what drifted, and reply with the findings.

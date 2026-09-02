@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -136,23 +136,23 @@ information-poor by design; not a defect, and not this one.
 
 ## Acceptance Criteria
 
-- [ ] The skill states that the two-pass judgment governs **dispatching a job**
+- [x] The skill states that the two-pass judgment governs **dispatching a job**
       and does not govern **launching a listener**, in the two places that
       currently redirect to it (the payload launch and the roster launch)
-- [ ] The skill states what does govern a listener whose designation chose no
+- [x] The skill states what does govern a listener whose designation chose no
       weight, in one rule, with its reason — the durability of the choice, not a
       preference about models. **The rule is: launch at the strongest tier the
       workspace's own table declares**, read from that table rather than named
-- [ ] The rule holds for a workspace that renamed or reordered its tiers, and for
+- [x] The rule holds for a workspace that renamed or reordered its tiers, and for
       one that declares a single level — the skill never names a model here
-- [ ] A listener launch logs the weight it went out at **and where it came from**,
+- [x] A listener launch logs the weight it went out at **and where it came from**,
       including the case where the designation chose none — §7's dispatch rule
       reaching the one dispatch it does not currently reach
-- [ ] A designation that *does* state a weight is untouched: it is honoured, never
+- [x] A designation that *does* state a weight is untouched: it is honoured, never
       weighed again, exactly as AGENT-041 left it
-- [ ] `scripts/workspace-template.test.ts` guards the new rule the way it guards
+- [x] `scripts/workspace-template.test.ts` guards the new rule the way it guards
       the others, so a later edit cannot quietly delete it
-- [ ] The change is in `assets/workspace/` only — the product's agent runtime —
+- [x] The change is in `assets/workspace/` only — the product's agent runtime —
       and the dev harness's own `.claude/` is untouched
 
 ## Technical Design
@@ -202,6 +202,50 @@ signed rider and would take a choice away from the person. `UI-185` is not that
 option: it makes the choice *expressible* at Ask, including an explicit
 "the launcher decides" row, and leaves `null` meaning what §7 says it means.
 
+## Open: the §7 rider is drafted and unsigned
+
+**Raised by the pr-reviewer on PR #71, and it is right.** SPEC.md §7 says, in the
+rider signed 2026-08-06:
+
+> Stating no weight means the orchestrator decides, exactly as it decides today —
+> absence of a choice is the judgment above, never a fixed default.
+
+This issue installs exactly a fixed default. Either that clause binds listener
+launches, in which case the shipped skill contradicts the spec, or it is scoped
+to jobs, in which case the listener rule — which model answers your conversation
+when you chose nothing, the most durable model choice the product makes — is
+behaviour the source of truth does not describe. `INFRA-034` story 2 now asserts
+the rule on every release, so the suite polices behaviour §7 reads against.
+
+**The user decided the behaviour on 2026-09-01 and has not signed spec text.**
+`SPEC.md` is therefore untouched, and v0.31.0 ships the code with this recorded
+rather than holding the release for a paragraph. The drafted rider, for
+signature:
+
+> **That clause governs a job the orchestrator dispatches, and not a listener it
+> launches.** A resident's weight is set when it is designated, and a designation
+> that states none launches at **the strongest level the workspace's own guidance
+> declares**. This is a fixed default, deliberately, and the reason is durability
+> rather than a preference about models: an agent already running cannot change
+> what it is without discarding the conversation it is holding, so a resident's
+> weight is the most expensive choice the orchestrator makes to unwind, and it is
+> made at the moment least is known about the conversation. The consequence test
+> above asks what a bad result would do that revising the document afterwards
+> would not undo — a standing conversation has no single document to revise, so
+> the test does not reach it, and the tie-break it carries, in doubt between two
+> levels take the stronger, is what settles it instead. **Strongest is read from
+> the guidance, never named here**: a workspace that renames or reorders its
+> levels moves this rule with it, and a workspace declaring one level has a
+> strongest level all the same. The cost is accepted and stated: a conversation
+> about nothing much runs at the top level for as long as it lives, and a person
+> who knows a lane is cheap says so by stating a lighter weight when they
+> designate it.
+
+**The risk of leaving it unsigned, stated plainly:** a future agent reading §7
+alone finds *"never a fixed default"* and reverts this rule with the source of
+truth behind it — which is the AGENT-059 defect returning, and every wording
+guard in `workspace-template.test.ts` would be satisfied by the rewrite.
+
 ## Testing Strategy
 
 The subject is prose, so the tests are the template guards plus a read-back: the
@@ -220,13 +264,62 @@ run, quoted in the Summary — two `resident.designated` payloads with
 two listeners launched on Sonnet, and no console line anywhere recording that a
 weight had not been chosen.
 
+**Implementation and verification, 2026-09-01 (agent-runtime-dev, Fable 5):**
+
+- **The rule, written and guarded.** The owner sentence — *"A designation that
+  chose no weight launches at the strongest tier the table declares."* — lives
+  in the payload-launch bullet of `orchestrate/SKILL.md`, with the reason
+  (durability, not model preference), the table-relative reading (*its last row,
+  because the table is written lightest first* — never a model name), the
+  rename/reorder/one-level cases, and the accepted cost. The roster launch and
+  both Delegation spots (the two-pass preamble, and the "Stating no weight"
+  paragraph) now scope the two passes to **dispatching a job** and point at the
+  launch rule. The redirect sentences (*"judge it the way Delegation says"*,
+  *"you decide as you decide for a `null`"*) are gone — grep over the installed
+  workspace returns zero hits.
+- **Provenance.** Every listener launch logs, on the designation's own event,
+  the weight it went out at and one of two words: `stated` (a key the
+  designation carried) or `defaulted` (none chosen — names the tier the rule
+  picked). Both literal shapes are in the skill. A roster launch logs the same
+  line on the `lane.waiting` (or carried designation) event in hand; only an
+  event-less launch falls back to the prompt as the record, and the prompt
+  always carries weight plus provenance in words. This is what INFRA-034's
+  stories 1 and 2 will read off `.corpus/jobs/<event-id>.jsonl`.
+- **Stated weight untouched.** The `stated` chain (AGENT-041) is unmodified:
+  *"Find the row whose Key cell holds it, and launch the listener at that
+  row's model"*, the `model` argument mechanism, honour-never-reweigh, and the
+  unmeetable-weight rule all still pass their pre-existing guards unchanged.
+- **Guards.** `scripts/workspace-template.test.ts` gained *"launches a
+  weightless designation at the strongest declared tier, by rule"* and *"logs
+  every listener launch with its weight and that weight's provenance"*, plus
+  scoping pins in the Delegation tests. Suite: **508/508 pass**
+  (`VITEST_MAX_THREADS=4 vitest run scripts/workspace-template.test.ts`).
+- **Falsification.** Deleted the owner sentence from the skill: exactly one
+  test went red — *"launches a weightless designation at the strongest declared
+  tier, by rule"*, failing on the deleted sentence's regex (507/508). Restored;
+  508/508 green again.
+- **Fresh-workspace drill.** `corpus init` (run from source, tsx) into a
+  scratch dir installed 26 template files; the installed
+  `.claude/skills/orchestrate/SKILL.md` is byte-identical to the edited
+  template (diff clean), carries the owner sentence and all three `defaulted`
+  occurrences, and has zero hits for the old redirect. `readWeightLevels`
+  against the installed file returns the three levels with last row
+  `{key: "heavy", model: "Opus 5"}` — the strongest-tier reading resolves off a
+  real install.
+- **Converse skill checked, deliberately unchanged.** Its weight rule already
+  defers: *"Where the designation carries no weight, the launcher chose one and
+  said which"* — true under the new rule, and it never restates how the
+  launcher decides.
+- **Lint.** ESLint and Prettier clean on both touched files (5 pre-existing
+  warnings on this branch belong to in-flight UI-185 files, untouched here).
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

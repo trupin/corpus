@@ -31,3 +31,8 @@ apps/ui/src/editor/markdown/fixtures/
 # the markup would insert whitespace text nodes between the tags and change what
 # the parser sees, so the test would stop describing the real paste.
 apps/ui/src/editor/fixtures/
+# Generated per rehearsal pass by `npm run rehearse` (INFRA-033); committed as
+# the pass's durable artifact. Prettier rewrapping it would make every pass a
+# formatting diff on top of the real one.
+rehearsals/scorecard.md
+rehearsals/out/

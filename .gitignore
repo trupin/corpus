@@ -32,5 +32,9 @@ apps/ui/playwright-report/
 # Agent worktrees (created by the dev harness, never repo content)
 .claude/worktrees/
 
+# Raw rehearsal run records (INFRA-033): evidence for investigating a finding,
+# never repo content. The scorecard beside them IS committed.
+rehearsals/out/
+
 # npm pack artifacts at the repo root (PR #11 review finding 32)
 /*.tgz

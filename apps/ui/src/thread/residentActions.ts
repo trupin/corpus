@@ -196,6 +196,14 @@ export const REDESIGNATE_GENERAL_LABEL = "Re-designate the general resident";
 export const WEIGHT_LABEL_LEAD = "Weight —";
 
 /**
+ * The choice that means **no level**, in the two words every designating
+ * surface uses for it — this menu's row, and the global composer's owner
+ * weight control (UI-185), which shares the constant rather than rewording the
+ * same outcome.
+ */
+export const LAUNCHER_DECIDES_LABEL = "the launcher decides";
+
+/**
  * The row that means **no level**, and the one standing until somebody presses
  * another.
  *
@@ -206,7 +214,7 @@ export const WEIGHT_LABEL_LEAD = "Weight —";
  * level was pressed — and then every designation the app made would be
  * opinionated, which is the thing this row exists to prevent.
  */
-export const LAUNCHER_WEIGHT_LABEL = `${WEIGHT_LABEL_LEAD} the launcher decides`;
+export const LAUNCHER_WEIGHT_LABEL = `${WEIGHT_LABEL_LEAD} ${LAUNCHER_DECIDES_LABEL}`;
 
 /** Its second line, in the contract's own terms for a null `Resident.weight`. */
 export const LAUNCHER_WEIGHT_META = "no level is stated, and the launcher says what it chose";

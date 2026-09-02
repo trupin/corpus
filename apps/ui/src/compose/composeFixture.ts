@@ -157,7 +157,19 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
       return json(unknownRecipientBody(lane), 422);
     }
     if (url.pathname === "/api/docs") {
-      const items = options.rows ?? [];
+      /*
+       * Filtered by `type` as the server filters, because two of the composer's
+       * reads share this path and differ only there: the `@` directory asks for
+       * `agent-def` and the weight-level scan for `skill`. Unfiltered, a suite
+       * seeding the orchestrate skill (UI-185) watched it surface in the owner
+       * picker as a designatable profile called `orchestrate` — an offer the
+       * real server never makes, exactly the kind of stub lie the tag fixture
+       * was caught telling (2026-08-23).
+       */
+      const type = url.searchParams.get("type");
+      const items = (options.rows ?? []).filter(
+        (row) => type === null || (row as { type?: string }).type === type,
+      );
       return json({ items, page: { total: items.length, limit: 50, offset: 0 } });
     }
     if (url.pathname.startsWith("/api/docs/")) {

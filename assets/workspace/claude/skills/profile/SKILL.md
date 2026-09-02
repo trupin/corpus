@@ -133,7 +133,7 @@ is the orchestrate skill's to state, and it is stated there alone.** Here it bin
 them every time, the ones that look safe included — you cannot see afterwards what came out wrong,
 and the document is what a person reads.
 
-Write `/tmp/corpus-title.txt` with your file-writing tool:
+Write `/tmp/corpus-title-bookkeeper-1432.txt` with your file-writing tool. Nothing here has an id yet, so the name is the profile **and** something only this invocation knows — the moment you are writing will do. The profile's name alone is not enough: a second workspace on this machine can be creating the same profile, and then two agents pick one path and the command reads back the other's words.
 
 ```
 Bookkeeper
@@ -143,7 +143,7 @@ Bookkeeper
 the document lands in `.claude/agents/`, at a filename slugged from the title.
 
 ```bash
-corpus doc create --type agent-def --flag-file title=/tmp/corpus-title.txt --from agent <<'CORPUS_EOF'
+corpus doc create --type agent-def --flag-file title=/tmp/corpus-title-bookkeeper-1432.txt --from agent <<'CORPUS_EOF'
 The body — the persona, written to the rules above.
 CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
@@ -166,7 +166,8 @@ it in from the title so the profile loads at all, and a title is a label rather 
 *Bookkeeper* tells whoever is choosing an agent nothing about when to choose this one. Replace
 it:
 
-Write `/tmp/corpus-description.txt`, which holds the whole `key=value` pair, because that is
+Write `/tmp/corpus-extra-bookkeeper-1432.txt` — the flag, the profile and this invocation — which holds
+the whole `key=value` pair, because that is
 what `--extra` takes:
 
 ```
@@ -174,7 +175,7 @@ description=Reach for this when a question is about money in the corpus — a ba
 ```
 
 ```bash
-corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-description.txt --from agent
+corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-extra-bookkeeper-1432.txt --from agent
 ```
 
 The value runs to the end of the file, so a description with a line break in it needs nothing
@@ -262,13 +263,13 @@ general agent, so it should not wander). The fourth, what a good answer looks li
 and is guessable rather than askable. Guess it, and say that you guessed.
 
 Both values are theirs, so both go in by path. Write the two files with your file-writing
-tool — `/tmp/corpus-title.txt`:
+tool — `/tmp/corpus-title-bookkeeper-1432.txt`:
 
 ```
 Bookkeeper
 ```
 
-and `/tmp/corpus-description.txt`, which holds the whole `extra` pair:
+and `/tmp/corpus-extra-bookkeeper-1432.txt`, which holds the whole `extra` pair:
 
 ```
 description=Reach for this when a question is about money in the corpus — a balance, an invoice, a figure somebody can't place. It says which document every number came from and doesn't advise.
@@ -279,7 +280,7 @@ Then:
 ```bash
 corpus doc list --type agent-def
 no documents match.
-corpus doc create --type agent-def --flag-file title=/tmp/corpus-title.txt --from agent <<'CORPUS_EOF'
+corpus doc create --type agent-def --flag-file title=/tmp/corpus-title-bookkeeper-1432.txt --from agent <<'CORPUS_EOF'
 You keep this workspace's money documents in one shape.
 
 - Every figure you write carries its source: the id of the document it came from, and that document's date. A figure you cannot source does not go in the answer — say it is unsourced instead.
@@ -289,7 +290,7 @@ You keep this workspace's money documents in one shape.
 A good answer from you is a short table of figures with their sources and one sentence under it. Where that is not enough room, say what is missing rather than padding it out.
 CORPUS_EOF
 created doc_b7c1d5 — .claude/agents/bookkeeper.md
-corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-description.txt --from agent
+corpus doc edit doc_b7c1d5 --flag-file extra=/tmp/corpus-extra-bookkeeper-1432.txt --from agent
 edited doc_b7c1d5
 key 4f2a9c7e1b8d0356a4e9c2f7b1d84a06e35c9f2b7a08d146e2c95b3f7a1d0e84
 ```

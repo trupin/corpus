@@ -7,6 +7,38 @@ One version number describes the whole tool — the root `package.json`'s `versi
 workspace manifest. That is the **version singularity** (INFRA-008), and `npm run version:check`
 enforces it in pre-push, in CI, and in the release workflow, where it is also the tag guard.
 
+## The rehearsal pass — before the bump
+
+Once per release, before `release:prepare`, run the agent-in-the-loop rehearsal suite
+(INFRA-033):
+
+```sh
+npm run build                          # the harness rehearses this tree's own CLI build
+npm run rehearse -- --release v<x.y.z> # spawns real agents; local only, minutes per run
+git add rehearsals/scorecard.md        # the pass's durable artifact — commit it
+```
+
+Read the scorecard before going on. A scenario that did not pass is a **finding** — file it and
+decide with that knowledge; never weaken an assertion to get to the tag. This step cannot run in CI
+(the runner spawns agents), so the committed scorecard is the only proof the gate ran: a release
+whose scorecard did not move is a release nobody rehearsed. `rehearsals/README.md` has the design
+and its four rules.
+
+The step is placed **before** the bump on purpose: a finding read here is cheap to act on, and a
+finding read after a tag exists is not. The pass runs the nine INFRA-034 stories — seven regression
+tests for defects that reached a release, two spec promises nothing else checks — each seeded through
+the product and graded on what the corpus records.
+
+**The accepted trade, written down so it is a decision rather than a surprise.** Running the suite
+only at release time means a defect introduced early in a cycle is found late — at the next release,
+not at the commit that caused it. That is deliberate, for one reason: the runner spawns real agents,
+so the suite cannot run in `CI / validate` or in a git hook, and a pass costs roughly 25 minutes of
+real agent time. A gate that expensive does not belong on every push. The cost of the trade is a
+longer gap between a regression landing and the scorecard showing it. The benefit is that the gate
+exists at all, on the one layer nothing else in the repository exercises — the skills, the CLI and
+the server together. Late is the price of having the check; the scorecard's `git diff` between
+releases is what keeps _late_ from becoming _never_.
+
 ## Cutting a release
 
 ```sh

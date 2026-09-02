@@ -91,6 +91,18 @@ export type AddressWeight =
        * declare *and* nobody chose.
        */
       readonly options: readonly WeightLevel[];
+      /**
+       * Present where this send also **designates a resident**
+       * ({@link ComposerAddressInput.designating}, UI-185): the name the levels
+       * above do *not* govern. The control stays live — the choice still rides
+       * the message, where §7 gives it a real job (it governs what the resident
+       * hands off) and where the same surface's Capture reads it — but the
+       * section says so out loud ({@link designationWeightSentence}), because a
+       * person reaching here for the resident's level would otherwise have
+       * their choice applied to the one thing §7 says it never governs, in
+       * silence.
+       */
+      readonly designating?: string;
     }
   /** A resident answers: no level is offered, and the resident's is named. */
   | { readonly kind: "resident"; readonly name: string; readonly weight: ResidentWeight };
@@ -132,6 +144,22 @@ export interface ComposerAddressInput {
   readonly recipient: ComposerRecipient;
   /** Presentation only — see `composerReach.ts` for the one derivation. */
   readonly live: boolean;
+  /**
+   * The resident this send will **designate**, named as the surface names it
+   * ("its own agent", or a profile name), or omitted by every composer whose
+   * send designates nobody — which is all of them except the global composer's
+   * Ask (UI-185; SPEC.md §7's rider A).
+   *
+   * What it changes is the **statement**, never the wire: the levels stay
+   * offered and the choice still travels as the message's weight (this
+   * surface's Capture shares the control, and §10 has Capture carry a weight
+   * exactly as Ask does), but the weight section says the levels govern only
+   * what the resident hands off and that the resident's own level is chosen on
+   * the owner control. Without it a person picking a weight for the resident
+   * being designated has the choice applied to the one thing §7 says it never
+   * governs — silently, which is the shape the rider of 2026-08-19 forbids.
+   */
+  readonly designating?: string | undefined;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -172,9 +200,37 @@ export function residentWeightSentence(name: string, weight: ResidentWeight): st
   }
 }
 
+/**
+ * What the weight section says, under its rows, while this send also
+ * designates a resident (UI-185).
+ *
+ * The same two halves {@link residentWeightSentence} gives an existing
+ * resident's lane, in the same order, for the same rider — first what a level
+ * here does govern (§7's boundary: the hand-offs), then where the resident's
+ * own level actually lives. The difference is only tense and consequence: here
+ * the control is live and the choice travels, because the message's weight has
+ * a real job and Capture reads the same control, so the sentence qualifies the
+ * rows rather than replacing them.
+ */
+export function designationWeightSentence(name: string): string {
+  return (
+    `a weight set here rides this message and governs only what ${name} hands off — ` +
+    `the owner control states the level ${name} works at`
+  );
+}
+
 /** The title on the line while it opens to something. */
 export const ADDRESS_OPEN_TITLE =
   "Who answers this message, and how much thought the work gets. Open to change either.";
+
+/**
+ * …and while the send will also designate a resident, where "the work" would
+ * read as the resident's: the weight here is the message's, and the resident's
+ * own level has its own control.
+ */
+export const ADDRESS_DESIGNATING_TITLE =
+  "Who answers this message, and the weight this message carries — the resident being " +
+  "designated takes its own level from the owner control, not from here. Open to change either.";
 
 /** …and on the floor, where the popover offers the recipient alone. */
 export const ADDRESS_FLOOR_TITLE =
@@ -209,6 +265,7 @@ function addressWeight(
   live: boolean,
   answering: LaneRow | undefined,
   weight: ComposerWeight | undefined,
+  designating: string | undefined,
 ): AddressWeight {
   if (!live || answering === undefined) return { kind: "unweighed" };
   if (answering.lane !== ORCHESTRATOR_LANE) {
@@ -219,7 +276,15 @@ function addressWeight(
     };
   }
   if (weight === undefined || weight.levels.length === 0) return { kind: "unweighed" };
-  return { kind: "choice", weight, options: weightOptions(weight) };
+  return {
+    kind: "choice",
+    weight,
+    options: weightOptions(weight),
+    // A summons wins: with an existing resident's lane picked the branch above
+    // already spoke, so this only ever qualifies the orchestrator-answering
+    // rows of a send that is *creating* a designation.
+    ...(designating === undefined ? {} : { designating }),
+  };
 }
 
 /** The line's weight clause: what will run, or nothing when nothing is stated. */
@@ -285,9 +350,10 @@ export function composerAddress({
   weight,
   recipient,
   live,
+  designating,
 }: ComposerAddressInput): ComposerAddress {
   const answering = answeringRow(recipient);
-  const addressed = addressWeight(live, answering, weight);
+  const addressed = addressWeight(live, answering, weight, designating);
   const rows = recipient.rows ?? [];
   const weightRequest = addressed.kind === "choice" ? addressed.weight.request : {};
   return {

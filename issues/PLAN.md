@@ -2223,10 +2223,15 @@ correctly read `weight: null`. Nothing was lost there.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| UI-185 | Ask designates a resident and cannot state its weight | todo | P0 | fable | — |
-| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | UI-185 |
-| INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | todo | P0 | fable | AGENT-059 |
-| INFRA-034 | The rehearsal scenarios: nine user stories, graded | todo | P0 | fable | INFRA-033 |
+| UI-185 | Ask designates a resident and cannot state its weight | done | P0 | fable | — |
+| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | done | P0 | fable | UI-185 |
+| CONTRACT-095 | An Ask that carries an attachment drops its designation entirely | done | P0 | opus | UI-185 |
+| INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | done | P0 | fable | AGENT-059 |
+| INFRA-034 | The rehearsal scenarios: nine user stories, graded | done | P0 | fable | INFRA-033 |
+| CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
+| AGENT-061 | A turn states the model the agent guessed, so §10's record can be wrong | todo | P1 | fable | — |
+| AGENT-062 | A deviation says what was asked and that it failed, never what ran instead | todo | P1 | fable | — |
+| AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
 **And the reason none of this was caught** (user directive, 2026-09-01: *"We have
 been struggling with issues such as these for a while now"*). The repo tests code

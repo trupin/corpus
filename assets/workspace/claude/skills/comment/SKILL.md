@@ -198,14 +198,14 @@ first exchange, give it a real one** — a thread is a document, so the title is
 A title made out of the conversation carries their words, so write it to a file and name the
 file rather than quoting it into the command:
 
-Write `/tmp/corpus-title.txt` with your file-writing tool:
+Write `/tmp/corpus-title-evt_5a2b7c.txt`, named for the **event**, with your file-writing tool:
 
 ```
 Kitchen rebuild — cabinet quote, $18,400
 ```
 
 ```bash
-corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title.txt --from agent
+corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title-evt_5a2b7c.txt --from agent
 ```
 
 That is an obligation, not an option: an untitled conversation is unfindable on the board a

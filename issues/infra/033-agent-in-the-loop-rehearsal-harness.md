@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -95,49 +95,58 @@ less than nothing — a green board over an unobserved system.
 
 ## Acceptance Criteria
 
-- [ ] `rehearsals/` holds the harness, run by its own script — **not** vitest, and
-      never wired into `npm test`, the PR gate, or `CI / validate`
-- [ ] **It runs once per release, before the bump** (user decision, 2026-09-01, to
+- [x] `rehearsals/` holds the harness, run by its own script — **not** vitest, and
+      never wired into `npm test`, the PR gate, or `CI / validate` (`npm run
+      rehearse`; only the harness's own ordinary unit tests run under vitest, per
+      Testing Strategy below)
+- [x] **It runs once per release, before the bump** (user decision, 2026-09-01, to
       bound the cost), and **before every release rather than only those touching
       `assets/workspace/`**. The subject is the *loop*, which spans the skills,
       the CLI and the server together: `CLI-051` was a CLI defect that changed what
       an agent does with somebody's words, and `AGENT-041`'s gap spanned the skill
       and the mechanism it named. A gate scoped to one of the three would have
       watched the wrong file
-- [ ] **It cannot run in GitHub Actions**, because the runner spawns agents. So it
+- [x] **It cannot run in GitHub Actions**, because the runner spawns agents. So it
       is a local step in `docs/RELEASING.md` that nothing can enforce — which is
       why the scorecard below is **committed**: an unenforceable gate needs a
       durable artifact, or "did we run it?" stops being answerable and the gate is
       skipped in silence
-- [ ] **Fixture**: a scenario declares a seed, and the harness builds a fresh
+- [x] **Fixture**: a scenario declares a seed, and the harness builds a fresh
       workspace from it — `corpus init` into a temp dir, seeded documents and
-      threads, a server on a free port, `--wait` short enough that a park is
-      seconds
-- [ ] Every run starts from a **clean** workspace; no run can observe another's
+      threads, a server on a free port. **Except the `--wait` clause**: the
+      product has no workspace or environment knob for `corpus queue idle`'s
+      default window, and the two available workarounds each break a rule (an
+      operational hint in the prompt breaks rule 1, a CLI shim rehearses a loop
+      nobody ships). Filed as **CLI-075** per rule 2's consequence; scenario
+      budgets absorb the 480 s worst case until it lands
+- [x] Every run starts from a **clean** workspace; no run can observe another's
       state
-- [ ] **Runner**: spawns one subagent per run whose prompt carries the workspace
+- [x] **Runner**: spawns one subagent per run whose prompt carries the workspace
       path and the instruction to follow its own orchestrate skill, and **nothing
       else** — a test asserts the prompt contains no scenario name and no
-      expectation
-- [ ] The run ends on a budget (a turn count or a wall clock), and a run that
-      exceeds it is recorded as `over-budget` rather than failed — an exhausted
-      budget is a finding, not an error
-- [ ] **Observer**: reads only the workspace — git log and authors, thread
+      expectation (`rehearsals/run.test.ts`, against the literal string)
+- [x] The run ends on a budget (a wall clock — `claude` 2.1.252 exposes no turn
+      cap in print mode), and a run that exceeds it is recorded as `over-budget`
+      rather than failed — an exhausted budget is a finding, not an error
+- [x] **Observer**: reads only the workspace — git log and authors, thread
       frontmatter, each turn's `model`, job logs, queue state, and file bytes. It
       makes no assertion; it produces a record
-- [ ] **Scorer**: invariants fail the scenario on a single breach; judgments are
+- [x] **Scorer**: invariants fail the scenario on a single breach; judgments are
       reported as `k/N` against a declared threshold
-- [ ] **The three universal invariants** run on every scenario, whatever it is
+- [x] **The three universal invariants** run on every scenario, whatever it is
       about: no event lost or double-worked, every commit authored by the server
       (nothing hand-edited), every thread file still parses
-- [ ] **Scorecard**: one file per pass, naming every scenario, its grade, the
+- [x] **Scorecard**: one file per pass, naming every scenario, its grade, the
       release it was run for, and for judgments the ratio — committed, readable by
       a person, and diffable between releases so a judgment that drifts is visible
-      without rerunning anything
-- [ ] One story implemented end to end to prove the harness — *"I asked one
+      without rerunning anything (`rehearsals/scorecard.md`, rewritten per pass)
+- [x] One story implemented end to end to prove the harness — *"I asked one
       question and got one answer"* (story 3), chosen because it needs nothing
-      from `AGENT-059`
-- [ ] The harness refuses to run against a workspace it did not create, and never
+      from `AGENT-059`. Note the seed had to be a thread **on a document**: a
+      standalone ask now designates a resident (measured: it enqueues
+      `resident.designated` and `lane.waiting` beside the `comment.created`),
+      which is exactly the AGENT-059 path this story was chosen to avoid
+- [x] The harness refuses to run against a workspace it did not create, and never
       touches port 8765
 
 ## Technical Design
@@ -181,15 +190,104 @@ The harness's own end-to-end proof is story 3 passing 3/3.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+Implemented on: **fable** (claude-fable-5). Runner binary: `claude` 2.1.252 at
+`/Users/theophanerupin/.local/bin/claude`. Runner model constant: `sonnet`.
+
+### The proving pass — story 3, 3/3
+
+Command (the exact step `docs/RELEASING.md` now names):
+
+```
+npm run build
+npm run rehearse -- 03-one-question-one-answer
+```
+
+Exit code **0**. The scorecard, in full, as committed at
+`rehearsals/scorecard.md`:
+
+```
+# Rehearsal scorecard
+
+<!-- Generated by `npm run rehearse` (INFRA-033). Do not edit by hand. -->
+
+- Release: unreleased (tree v0.30.0)
+- Date: 2026-09-02T00:32:15.982Z
+- Tree: v0.30.0 at b5b46442
+- Runner model: sonnet
+
+| Scenario | Grade | Result | Detail |
+| --- | --- | --- | --- |
+| 03-one-question-one-answer | invariant | **pass** | 3/3 runs scored |
+
+## 03-one-question-one-answer
+
+> I asked one question and got one answer.
+
+- Regression for: — (spec promise)
+- Declared runs: 3
+- Run 1: clean (190s, ended by exit)
+- Run 2: clean (95s, ended by quiescence)
+- Run 3: clean (180s, ended by exit)
+```
+
+Per-run evidence, read out of the raw run records
+(`rehearsals/out/2026-09-02T00-28-39.026Z/`, gitignored): every run shows the
+seeded thread with exactly two turns — the user question and one `agent` reply
+whose recorded model is `claude-sonnet-5` (runs 1–2) / `sonnet` (run 3) — the
+seeded `comment.created` in `processed/`, `corpus doc check` exit 0, a clean
+work tree, and no universal finding. Each run built a fresh `corpus init`
+workspace on its own port (never 8765), spawned headless `claude` with the
+two-fact prompt, and tore everything down; a post-pass sweep found no stray
+runner, server, or temp workspace.
+
+### What did not pass first, in run order — all findings, none retried away
+
+1. **Pass 1 (before the boundary fixes) graded `fail`, 3/3 runs**, each with the
+   same universal finding: a post-seed commit authored
+   `user <user@corpus.local>`, subject `editing session: 2 documents by user`.
+   Diagnosis from the run records: the server closes a party's commit window
+   **lazily** — the agent's first write amends the seed's `user` commit into its
+   "editing session" relabel, so the very commit recorded as the seed boundary
+   reappears after it under a new hash. A 35 s post-seed settle wait did not
+   help (measured — the relabel arrives mid-run, not on a timer). Fix: the
+   snapshot records the boundary commit's **tree** hash, and the scorer excuses
+   exactly one shape — a `user` commit whose tree equals the boundary's tree.
+   The amend changes no content, so a real hand edit still changes the tree and
+   is still flagged. In the proving pass all three excusals matched the real
+   relabel byte for byte (tree `26d1b4da…`/`ec0765a9…`/`5562d97d…` per run).
+2. **Story 3's original seed was wrong about the product.** A standalone thread
+   with `--requests-agent true` enqueues `resident.designated` and
+   `lane.waiting` beside the `comment.created` — a standalone ask designates a
+   resident, which is the AGENT-059 path this story was chosen to avoid. The
+   seed became a note plus a thread on it, which enqueues exactly one
+   `comment.created` on the orchestrator's lane (verified against the pending
+   directory before any runner was spawned).
+3. **The fixture criterion's `--wait` clause is unimplementable today** — no
+   workspace or environment override exists for the idle window's 480 s
+   default, and both workarounds break a rule the suite is built on. Filed as
+   **CLI-075** (with a PLAN.md row) rather than instrumented around. One
+   observed run did sit a full park (551 s, ended by quiescence) before the
+   budget; the shipped budget (15 min) absorbs it.
+
+Also recorded, not asserted (rule 4): run 3's reply named its model `sonnet`
+where runs 1–2 wrote `claude-sonnet-5` — §10 records what the writer states,
+and the spelling drifts. Noted for a future scenario; no issue filed.
+
+### Harness unit checks
+
+`VITEST_MAX_THREADS=4 npx vitest run rehearsals` — 32 tests, 4 files, all
+passing, including the rule-1 test that asserts the runner prompt's literal
+string carries the workspace path, the follow-your-skill instruction, and no
+test vocabulary. `npx tsc --noEmit -p rehearsals/tsconfig.json` clean.
+`npm run lint` clean repo-wide. `prettier --check rehearsals` clean.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -1048,6 +1048,13 @@ export type DesignatedResident = Omit<Resident, "designationId">;
 export type LaneOrigin = z.infer<typeof LaneOriginSchema>;
 export type AgentLane = z.infer<typeof AgentLaneSchema>;
 export type AgentRoster = z.infer<typeof AgentRosterSchema>;
+/**
+ * The designation a thread creation carries, on **either** wire form: the JSON
+ * body's `resident` and the multipart body's one JSON-encoded `resident` part
+ * are the same value, so the hand-written multipart client states its field with
+ * this type rather than re-describing the shape (CONTRACT-095).
+ */
+export type CreateThreadResident = z.infer<typeof CreateThreadResidentSchema>;
 export type DesignateResidentRequest = z.infer<typeof DesignateResidentRequestSchema>;
 export type ResidentDesignatedPayload = z.infer<typeof ResidentDesignatedPayloadSchema>;
 export type ResidentReleaseReason = z.infer<typeof ResidentReleaseReasonSchema>;
