@@ -15,7 +15,7 @@ import { designationJob, readLaunchRecord } from "./launchRecord";
 
 const DEFAULTED =
   "launched a converse listener on th_4b8e2c — a general resident " +
-  "(Opus 5 — defaulted: no weight chosen, strongest declared tier)";
+  "(Haiku — judged: no weight chosen, the lane is for quick factual lookups)";
 
 const STATED =
   "launched a converse listener on th_4b8e2c — a general resident " +
@@ -44,10 +44,33 @@ function job(over: Partial<Job> = {}): Job {
 }
 
 describe("reading a launch record", () => {
-  it("reports the clause a defaulted launch logged, verbatim, with its provenance", () => {
-    expect(readLaunchRecord(log(DEFAULTED))).toEqual({
-      provenance: "defaulted",
+  /**
+   * The bug this file did not catch (pr-reviewer, PR #72). AGENT-059 shipped
+   * `defaulted` in v0.31.0; AGENT-063 replaced it with `judged` a release later
+   * and pinned the old word out of the skill. This module and every fixture in
+   * it still read `defaulted`, so a lane launched by the shipped skill would
+   * have found a record, failed to parse it, and reported *"No launch record
+   * … is on the queue"* — false, on the mainline path of the feature the
+   * release is named for.
+   *
+   * So: the shipped word is the primary fixture above, and the retired one is
+   * still read, because a workspace installed from v0.31.0 has those lines on
+   * its queue and they describe a real launch.
+   */
+  it("still reads the retired word a v0.31.0 workspace logged, as the judged case", () => {
+    const record = readLaunchRecord(
+      log("(Opus 5 — defaulted: no weight chosen, strongest declared tier)"),
+    );
+    expect(record).toEqual({
+      provenance: "judged",
       clause: "Opus 5 — defaulted: no weight chosen, strongest declared tier",
+    });
+  });
+
+  it("reports the clause a judged launch logged, verbatim, with its provenance", () => {
+    expect(readLaunchRecord(log(DEFAULTED))).toEqual({
+      provenance: "judged",
+      clause: "Haiku — judged: no weight chosen, the lane is for quick factual lookups",
     });
   });
 
@@ -66,9 +89,9 @@ describe("reading a launch record", () => {
   it("takes the last clause in the log, not the first", () => {
     const lines = log(
       STATED,
-      "could not meet heavy; launching anyway (Sonnet 4 — defaulted: level unavailable)",
+      "could not meet heavy; launching anyway (Sonnet 4 — judged: level unavailable)",
     );
-    expect(readLaunchRecord(lines)?.clause).toBe("Sonnet 4 — defaulted: level unavailable");
+    expect(readLaunchRecord(lines)?.clause).toBe("Sonnet 4 — judged: level unavailable");
   });
 
   it("reads each parenthesised clause on its own, so a line carrying two yields the later", () => {
@@ -93,7 +116,7 @@ describe("reading a launch record", () => {
   });
 
   it("does not read a provenance word that is not inside a clause", () => {
-    expect(readLaunchRecord(log("the weight defaulted, apparently"))).toBeNull();
+    expect(readLaunchRecord(log("the weight was judged, apparently"))).toBeNull();
   });
 });
 

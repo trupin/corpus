@@ -136,7 +136,7 @@ const OPEN_ROSTER: readonly AgentLane[] = [LANES.orchestrator, LAUNCHER_CHOSE];
  */
 const DEFAULTED_LAUNCH =
   "launched a converse listener on th_open — a general resident " +
-  "(Opus 5 — defaulted: no weight chosen, strongest declared tier)";
+  "(Haiku — judged: no weight chosen, the lane is for quick factual lookups)";
 
 const CLAIMS_SCOPE: ThreadScope = {
   thread: "th_claims",
@@ -684,7 +684,7 @@ describe("what the launch went out at", () => {
     // The clause **verbatim**: the tab labels what the launch recorded and
     // re-derives nothing from it.
     expect(weightNote("th_open")).toContain(
-      "Opus 5 — defaulted: no weight chosen, strongest declared tier",
+      "Haiku — judged: no weight chosen, the lane is for quick factual lookups",
     );
     expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
     expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);

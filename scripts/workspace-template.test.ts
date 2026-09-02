@@ -6207,6 +6207,30 @@ describe("a listener launched at its designation's weight", () => {
    * exists at launch, with a stated lean to the stronger end where nothing at
    * hand answers.
    */
+  /**
+   * AGENT-062's lesson, applied to this phase's own diff (pr-reviewer, PR #72).
+   * Every worked exemplar of a judged launch was the same line — one tier, the
+   * strongest, with one read clause. An exemplar is not an illustration of a
+   * rule; for most runs it **is** the rule, so a single-tier exemplar set
+   * re-imposes strongest-by-default wearing the word `judged`, and scenario 02
+   * cannot fail it because the tier is deliberately unasserted there.
+   *
+   * So the skill must demonstrate the judgment landing at **both** ends. This
+   * counts distinct tiers across the judged exemplars rather than pinning
+   * particular words, because which two tiers a workspace declares is its own
+   * business — what may not happen is that they all agree.
+   */
+  it("demonstrates a judged launch at more than one tier", () => {
+    const tiers = new Set(
+      [...launch.matchAll(/\(([^()—]+)—\s*judged:/g)].map((match) =>
+        (match[1] ?? "").trim().toLowerCase(),
+      ),
+    );
+    // Anti-vacuity: the sweep is reading real exemplars, not an empty match set.
+    expect(tiers.size).toBeGreaterThanOrEqual(2);
+    expect(launch).toMatch(/a run of launches that all\s+land on one end/);
+  });
+
   it("judges a weightless designation on the conversation, at launch", () => {
     // The owner sentence — deleting it is what must turn this file red.
     expect(launch).toMatch(

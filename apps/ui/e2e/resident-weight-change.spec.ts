@@ -4,7 +4,8 @@ import { stubCorpus, type StubCorpus, type StubJob, type StubRow } from "./stubC
 /**
  * UI-186 in a real browser: **the Residents tab says what a lane's listener
  * launched at, and changes it** (SPEC.md §7's resident riders — the one signed
- * 2026-08-19 as amended by `SHARED-076` — and §10's console).
+ * 2026-08-19, which `SHARED-076`'s drafted-but-unsigned rider corrects — and
+ * §10's console).
  *
  * The unit suite renders the tab against a fake transport. What a browser adds
  * is the path a person actually takes — open the drawer, press the tab, pick the
@@ -62,7 +63,7 @@ const SKILL: StubRow = {
  */
 const LAUNCH_LINE =
   "launched a converse listener on th_solo — a general resident " +
-  "(Opus 5 — defaulted: no weight chosen, strongest declared tier)";
+  "(Haiku — judged: no weight chosen, the lane is for quick factual lookups)";
 
 /**
  * The designation's own queue event, as `GET /api/jobs?originId=th_solo`
@@ -127,7 +128,7 @@ test.describe("the Residents tab's weight", () => {
     await expect(page.locator(NOTE)).toContainText("No level was stated, so the launcher decides.");
     // …and the second shows what they decided, verbatim from the launch record.
     await expect(page.locator(NOTE)).toContainText(
-      "The launch recorded: Opus 5 — defaulted: no weight chosen, strongest declared tier.",
+      "The launch recorded: Haiku — judged: no weight chosen, the lane is for quick factual lookups.",
     );
   });
 

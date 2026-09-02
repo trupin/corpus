@@ -17,7 +17,7 @@ import type { LaunchReading } from "./useLaunchRecord";
 /**
  * **What this lane's resident works at, and the place to change it** — the
  * Residents tab's weight section (SPEC.md §7's rider signed 2026-08-19 as
- * amended by SHARED-076, 2026-09-02; UI-186, asked for by the user on
+ * as SHARED-076's rider would amend it — **drafted, not signed** — ; UI-186, asked for by the user on
  * 2026-09-02: *"maybe we make it possible to change a resident's model from the
  * residents tab. That would make the mistake less of a problem."*).
  *

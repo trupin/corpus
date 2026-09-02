@@ -305,7 +305,7 @@ export const WEIGHT_CHANGE_LABEL = "Re-designate at this level";
 
 /**
  * **What changing costs, said before it is taken** (SPEC.md §7, rider
- * SHARED-076 signed 2026-09-02).
+ * SHARED-076, drafted and unsigned as at 2026-09-02).
  *
  * The rider weakens the 2026-08-19 clause that a running agent cannot change
  * what it is *"without discarding the conversation it is holding"*, and the

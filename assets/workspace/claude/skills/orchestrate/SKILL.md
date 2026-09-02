@@ -562,10 +562,11 @@ switch.
   and where that weight came from.** A key the designation stated is logged as `stated`. A
   designation that chose none is logged as `judged`, naming the tier the judgment picked
   and the read that picked it — `(Opus 5 — stated at designation: heavy)` against
-  `(Opus 5 — judged: no weight chosen, the lane is for working out a plan)`. Those are different
-  facts, and the two words keep them apart on the job's log, where an observer reads them
-  without asking you. A listener answers for weeks, and a choice nobody recorded is a
-  choice nobody can review.
+  `(Opus 5 — judged: no weight chosen, the lane is for working out a plan)`, or
+  `(Haiku — judged: no weight chosen, the lane is for quick factual lookups)` where the read
+  went the other way. Those are different facts, and the two words keep them apart on the
+  job's log, where an observer reads them without asking you. A listener answers for weeks,
+  and a choice nobody recorded is a choice nobody can review.
 
   ```
   Task(
@@ -597,6 +598,18 @@ switch.
 
   The judgment there read the one thing that existed — a thread titled "Q3 planning" is a
   lane for working something out — and the log line says so in the same breath as the tier.
+
+  **The same pass on a different lane lands at the other end, and the shape is identical.**
+  A thread titled "Where did the invoice numbers come from?" is a lane for fetching and
+  relaying, so the read goes the other way and the tier goes with it:
+
+  ```bash
+  corpus job log evt_7d21b9 "launched a converse listener on th_1c9f04 — a general resident (Haiku — judged: no weight chosen, the lane is for quick factual lookups)"
+  ```
+
+  Both lines are the same act. **Neither tier is the one a judged launch reaches for by
+  habit** — the tier is whatever that lane's read gave you, and a run of launches that all
+  land on one end is a sign the read is not being made rather than a sign the lanes agreed.
   Had that designation named `researcher`, three things would read differently and nothing
   else would: the payload's two fields, the roster's `researcher (doc_b7c1d5)`, and the log
   line saying so. Had it also chosen a weight, three more would: the payload would carry

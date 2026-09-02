@@ -25,9 +25,17 @@ import type { Job, JobLogLine } from "@corpus/contract";
  *
  * The launch line is the agent's own prose, and the only thing this module knows
  * about it is the **shape AGENT-059 declares**: a parenthesised clause carrying
- * one of two provenance words, `stated at designation` or `defaulted` —
- * `(Opus 5 — stated at designation: heavy)` against `(Opus 5 — defaulted: no
- * weight chosen, strongest declared tier)`.
+ * one of two provenance words, `stated at designation` or `judged` —
+ * `(Opus 5 — stated at designation: heavy)` against `(Haiku — judged: no weight
+ * chosen, the lane is for quick factual lookups)`.
+ *
+ * **`defaulted` is read too, and only for reading.** AGENT-059 shipped that word
+ * in v0.31.0 and AGENT-063 replaced it with `judged` one release later, after
+ * the user reversed the fixed default. A workspace installed from v0.31.0 still
+ * has `defaulted` lines on its queue, and refusing to parse them would report a
+ * record that is plainly there as absent. The skill no longer teaches the word —
+ * `scripts/workspace-template.test.ts` pins it out — so nothing new writes it,
+ * and this reads it as the judged case it was.
  *
  * So this finds the clause and hands it back **verbatim**, with the provenance
  * word it matched on. It does not split the model out of it, does not map it to
@@ -47,14 +55,22 @@ import type { Job, JobLogLine } from "@corpus/contract";
  * this is one tab's reading of one log, colocated with it.
  */
 
-/** Which of AGENT-059's two words the launch logged. */
-export type LaunchProvenance = "stated" | "defaulted";
+/**
+ * Which of the launch grammar's two words was logged.
+ *
+ * `judged` is AGENT-063's word. `defaulted` was AGENT-059's for the same half of
+ * the distinction and is still on queues written by v0.31.0, so it parses to
+ * `judged` rather than to a third state: what the reader needs to know is
+ * whether the person named the level or the launcher picked it, and both words
+ * say the launcher picked it.
+ */
+export type LaunchProvenance = "stated" | "judged";
 
 export interface LaunchRecord {
   /**
-   * `stated` where the designation named the level, `defaulted` where it named
-   * none and the launcher picked — AGENT-059's two words, kept apart because
-   * *"those are different facts"*.
+   * `stated` where the designation named the level, `judged` where it named
+   * none and the launcher picked — kept apart because *"those are different
+   * facts"*.
    */
   readonly provenance: LaunchProvenance;
   /**
@@ -74,7 +90,7 @@ export const DESIGNATION_EVENT_TYPE = "resident.designated";
  * `[^()]*` on both sides, so a clause is bounded by its own parentheses and a
  * line carrying two of them yields two candidates rather than one run-on match.
  */
-const LAUNCH_CLAUSE = /\(([^()]*\b(stated at designation|defaulted)\b[^()]*)\)/g;
+const LAUNCH_CLAUSE = /\(([^()]*\b(stated at designation|judged|defaulted)\b[^()]*)\)/g;
 
 /**
  * The designation's own job, or `null` when this lane has none the queue still
@@ -111,7 +127,8 @@ export function readLaunchRecord(lines: readonly JobLogLine[]): LaunchRecord | n
       const word = match[2];
       if (clause === undefined || word === undefined) continue;
       found = {
-        provenance: word === "defaulted" ? "defaulted" : "stated",
+        // `judged` and the retired `defaulted` both mean the launcher picked.
+        provenance: word === "stated at designation" ? "stated" : "judged",
         clause: clause.trim(),
       };
     }
