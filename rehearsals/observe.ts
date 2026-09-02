@@ -21,8 +21,14 @@ const execFileAsync = promisify(execFile);
 
 export interface ObservedCommit {
   readonly hash: string;
-  /** The commit's tree hash — how the scorer recognises the seed window's relabel. */
+  /** The commit's tree hash — half of how the scorer recognises the seed window's relabel. */
   readonly tree: string;
+  /**
+   * The commit's first parent, the other half. Tree alone admits an empty
+   * `user` commit and a hand revert to the seed tree; tree **and** parent
+   * together are what an amend of the boundary is, and nothing else.
+   */
+  readonly parents: readonly string[];
   readonly authorName: string;
   readonly authorEmail: string;
   /** Recorded for the human reading a run record. Never asserted (rule 4). */
@@ -233,16 +239,23 @@ async function gitCommitsSince(
 ): Promise<readonly ObservedCommit[]> {
   const { stdout } = await execFileAsync(
     "git",
-    ["log", "--format=%H%x1f%T%x1f%an%x1f%ae%x1f%s", `${seedHead}..HEAD`],
+    ["log", "--format=%H%x1f%T%x1f%P%x1f%an%x1f%ae%x1f%s", `${seedHead}..HEAD`],
     { cwd: workspaceRoot, maxBuffer: 16 * 1024 * 1024 },
   );
   return stdout
     .split("\n")
     .filter((line) => line !== "")
     .map((line) => {
-      const [hash = "", tree = "", authorName = "", authorEmail = "", subject = ""] =
-        line.split("\u001f");
-      return { hash, tree, authorName, authorEmail, subject };
+      const [
+        hash = "",
+        tree = "",
+        parentList = "",
+        authorName = "",
+        authorEmail = "",
+        subject = "",
+      ] = line.split("\u001f");
+      const parents = parentList.split(" ").filter((parent) => parent !== "");
+      return { hash, tree, parents, authorName, authorEmail, subject };
     });
 }
 

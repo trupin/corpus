@@ -1489,7 +1489,7 @@ describe("skills", () => {
       // them did not.
       expect(flat).toMatch(/never goes on a command line at all/i);
       expect(orchestrate).toMatch(
-        /corpus doc edit doc_a1b2c3 --flag-file title=\/tmp\/corpus-title-doc_a1b2c3\.txt --from agent/,
+        /corpus doc edit doc_a1b2c3 --flag-file title=\/tmp\/corpus-title-evt_5a2b7c\.txt --from agent/,
       );
       // The agent must be told to write the file with something that is not a
       // shell, or it builds the file with a heredoc and has moved the defect
@@ -1531,12 +1531,21 @@ describe("skills", () => {
      * noticing was luck; the silent version posts another conversation's words
      * and never knows.
      *
-     * So a shipped `/tmp` path must carry a per-invocation suffix: `corpus-`,
-     * the purpose word (the flag, or `batch`), a hyphen, then the id or name of
-     * the thing the value is about — a subject no concurrent job shares, because
-     * the loop serializes overlapping events. The regex pins the *shape* (a
-     * suffix must exist); which suffix is unique is the prose's to teach, and
-     * the prose pin below holds the teaching in place.
+     * The first fix named the file for its **subject**, and that was not enough
+     * (pr-reviewer, PR #71). §7's serialization is the orchestrator's discipline
+     * over its own claimed batch; it does not reach across lanes. A summoned
+     * resident replies *in the host thread* while that thread's lane keeps
+     * working — "the one place a scope boundary is crossed on purpose" — so two
+     * agents legitimately hold one thread id at once, and a name built from it
+     * collides exactly as the flag word did. A profile name collides across two
+     * workspaces on one machine.
+     *
+     * So a shipped `/tmp` path must carry an **id no other job can choose**:
+     * the event id where the agent holds one, and the subject plus something
+     * only this invocation knows where it does not. The regex pins the *shape*
+     * (a suffix must exist); which suffixes are actually unique is the prose's
+     * to teach, and the prose pins below hold that teaching in place — including
+     * the negative pin that a bare thread id is no longer taught.
      */
     const UNIQUE_TMP_PATH = /^\/tmp\/corpus-[a-z]+-[A-Za-z0-9][A-Za-z0-9_-]*\.[a-z]+$/;
     const tmpPathsOf = (text: string): string[] => text.match(/\/tmp\/[^\s`"'()[\]]+/g) ?? [];
@@ -1574,26 +1583,50 @@ describe("skills", () => {
       // And the shapes the skills teach now pass, so the pin is checking the
       // construction rather than banning /tmp outright.
       for (const unique of [
-        "/tmp/corpus-title-th_9f21c4.txt",
-        "/tmp/corpus-title-doc_a1b2c3.txt",
-        "/tmp/corpus-extra-bookkeeper.txt",
-        "/tmp/corpus-description-weekly-review.txt",
+        "/tmp/corpus-title-evt_5a2b7c.txt",
+        "/tmp/corpus-description-evt_5a2b7c.txt",
+        "/tmp/corpus-extra-bookkeeper-1432.txt",
         "/tmp/corpus-batch-evt_5a2b7c.json",
       ]) {
         expect(unique).toMatch(UNIQUE_TMP_PATH);
       }
     });
 
+    /**
+     * The reviewer's finding made permanent: a bare thread id is not a unique
+     * name, because the summons path puts two agents in one thread at once. The
+     * shape regex cannot tell `-th_9f21c4` from `-evt_5a2b7c`, so this pins the
+     * *teaching* instead — no shipped example may hand an agent a name whose
+     * only distinguishing part is a thread id.
+     */
+    it("no longer teaches a bare thread id as a unique temp name", () => {
+      for (const relPath of templateFiles) {
+        for (const tmpPath of tmpPathsOf(readTemplateFile(relPath))) {
+          expect(
+            tmpPath,
+            `${relPath}: a summoned resident replies in the host thread, so a thread id has two writers`,
+          ).not.toMatch(/^\/tmp\/corpus-[a-z]+-th_[A-Za-z0-9]+\.[a-z]+$/);
+        }
+      }
+    });
+
     it("states the naming rule and the leave-the-file decision where the construction lives", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
       expect(flat).toMatch(
-        /\*\*Name the file for the work it serves, never a name another job could pick\.\*\*/,
+        /\*\*Name the file for the job that writes it, never for the flag and never for the subject\s+alone\.\*\*/,
       );
+      // The event id is the load-bearing part of the rule: it is the one name
+      // minted outside every agent, so two jobs cannot choose it by accident.
+      expect(flat).toMatch(/Name it for the event you are working/);
+      expect(flat).toMatch(/minted by the server and is unique across every workspace/);
+      // And the reason a thread id is not enough, which is what the first fix
+      // got wrong — without it the next author reaches for the subject again.
+      expect(flat).toMatch(/Do not name it for the subject alone/);
+      expect(flat).toMatch(/a summoned resident replies \*in the host thread\*/);
       // The reason is parallel dispatch, named as such — without it the suffix
       // reads as ceremony and gets dropped from the next copied example.
       expect(flat).toMatch(/You are not alone in `\/tmp`/);
       expect(flat).toMatch(/carries the other job's value, exit `0`, committed, wrong/);
-      expect(flat).toMatch(/a file named for its subject has exactly one writer/);
       // The rule reaches every file a command reads back, not only --flag-file:
       // the observed collision was a reply body, and the batch redirect is the
       // same read-back one transport over.
@@ -6424,7 +6457,7 @@ describe("profile skill body", () => {
       String.raw`\`/tmp/${path}\`[^\n]*(?::|pair, because that is\nwhat \`--extra\` takes:)\n\n\`\`\`\n([\s\S]*?)\n\`\`\``,
       "m",
     ).exec(body)?.[1];
-  const exampleTitle = fileValue("corpus-title-bookkeeper.txt");
+  const exampleTitle = fileValue("corpus-title-bookkeeper-1432.txt");
   const exampleName = examplePath?.slice(".claude/agents/".length);
 
   it("carries its sections, each of them substantial", () => {
@@ -6780,7 +6813,7 @@ describe("profile skill body", () => {
     // an example that names a path it never says how to produce is not runnable,
     // and an agent following it would reach for a shell to make the file.
     expect(
-      fileValue("corpus-title-bookkeeper.txt"),
+      fileValue("corpus-title-bookkeeper-1432.txt"),
       "title is passed but never written",
     ).toBeDefined();
     expect(body).toMatch(/```\ndescription=Reach for this when /);

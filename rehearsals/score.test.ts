@@ -22,6 +22,7 @@ const cleanObservation = (): Observation => ({
     {
       hash: "a".repeat(40),
       tree: "t".repeat(40),
+      parents: ["p".repeat(40)],
       authorName: "agent",
       authorEmail: "agent@corpus.local",
       subject: "x",
@@ -41,6 +42,7 @@ const record = (overrides: Partial<RunRecord> = {}): RunRecord => ({
   seedSnapshot: {
     head: "h",
     headTree: "seedtree".padEnd(40, "0"),
+    headParent: "seedparent".padEnd(40, "0"),
     queue: {
       pending: [],
       "in-progress": [],
@@ -74,6 +76,7 @@ describe("universalFindings", () => {
         {
           hash: "b".repeat(40),
           tree: "u".repeat(40),
+          parents: ["p".repeat(40)],
           authorName: "user",
           authorEmail: "user@corpus.local",
           subject: "hand edit",
@@ -93,6 +96,7 @@ describe("universalFindings", () => {
         {
           hash: "c".repeat(40),
           tree: base.seedSnapshot.headTree,
+          parents: [base.seedSnapshot.headParent],
           authorName: "user",
           authorEmail: "user@corpus.local",
           subject: "editing session: 2 documents by user",
@@ -102,6 +106,58 @@ describe("universalFindings", () => {
     expect(universalFindings({ ...base, observation })).toEqual([]);
   });
 
+  /**
+   * The two shapes the tree-only excusal let through (pr-reviewer, PR #71).
+   * Both carry the boundary's tree and neither is the amend, so both must be
+   * flagged — the second one especially, because it destroys the agent's work
+   * and would otherwise leave every row green.
+   */
+  it("flags an empty user commit that merely carries the boundary's tree", () => {
+    const base = record();
+    const observation = {
+      ...cleanObservation(),
+      commitsSinceSeed: [
+        {
+          hash: "e".repeat(40),
+          tree: base.seedSnapshot.headTree,
+          // Sits on the boundary itself, not on the boundary's parent — so it
+          // is a commit added after the seed, not an amend of it.
+          parents: [base.seedSnapshot.head],
+          authorName: "user",
+          authorEmail: "user@corpus.local",
+          subject: "editing session: 0 documents by user",
+        },
+      ],
+    };
+    expect(universalFindings({ ...base, observation })).toHaveLength(1);
+  });
+
+  it("flags a hand revert that restores the seed tree after the agent worked", () => {
+    const base = record();
+    const observation = {
+      ...cleanObservation(),
+      commitsSinceSeed: [
+        {
+          hash: "f".repeat(40),
+          tree: "agentwork".padEnd(40, "2"),
+          parents: [base.seedSnapshot.head],
+          authorName: "agent",
+          authorEmail: "agent@corpus.local",
+          subject: "reply by agent",
+        },
+        {
+          hash: "9".repeat(40),
+          tree: base.seedSnapshot.headTree,
+          parents: ["f".repeat(40)],
+          authorName: "user",
+          authorEmail: "user@corpus.local",
+          subject: "editing session: 1 document by user",
+        },
+      ],
+    };
+    expect(universalFindings({ ...base, observation })).toHaveLength(1);
+  });
+
   it("still flags a user commit whose tree moved — a real hand edit", () => {
     const observation = {
       ...cleanObservation(),
@@ -109,6 +165,7 @@ describe("universalFindings", () => {
         {
           hash: "d".repeat(40),
           tree: "moved".padEnd(40, "1"),
+          parents: ["p".repeat(40)],
           authorName: "user",
           authorEmail: "user@corpus.local",
           subject: "editing session: 1 document by user",

@@ -352,6 +352,9 @@ export async function snapshotSeed(handle: RehearsalWorkspace): Promise<SeedSnap
   };
   const head = await rev("HEAD");
   const headTree = await rev("HEAD^{tree}");
+  // A root commit has no parent; the empty string is the honest reading, and
+  // the scorer's predicate then never matches, which fails closed.
+  const headParent = await rev("HEAD^").catch(() => "");
   const queue = await readQueueState(handle.workspaceRoot);
   const idsOf = (status: QueueEventStatus): readonly string[] =>
     queue.byStatus[status].map((event) => event.id);
@@ -360,6 +363,7 @@ export async function snapshotSeed(handle: RehearsalWorkspace): Promise<SeedSnap
   return {
     head,
     headTree,
+    headParent,
     queue: {
       pending: idsOf("pending"),
       "in-progress": idsOf("in-progress"),

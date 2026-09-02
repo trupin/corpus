@@ -66,6 +66,15 @@ export interface SeedSnapshot {
    * makes this tree the exact fingerprint the scorer uses to recognise it.
    */
   readonly headTree: string;
+  /**
+   * The boundary commit's own parent. The tree alone is not enough to
+   * recognise the relabel (pr-reviewer, PR #71): an empty `user` commit, or a
+   * hand revert that restores the seed tree *after* agent work, both carry the
+   * boundary tree while meaning something entirely different. The amend is the
+   * one commit that has the boundary's tree **and** the boundary's parent,
+   * because that is what an amend is.
+   */
+  readonly headParent: string;
   /** Event ids per queue status directory at seed time. */
   readonly queue: Readonly<Record<QueueEventStatus, readonly string[]>>;
 }

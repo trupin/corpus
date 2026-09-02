@@ -16,6 +16,13 @@ import type { RunRecord, Scenario, ScenarioRunScore } from "./scenario.js";
 export const AGENT_AUTHOR = { name: "agent", email: "agent@corpus.local" } as const;
 
 /**
+ * The identity the server commits a person's own writes under. Checked as well
+ * as the name, because the excusal below is a hole in a universal invariant and
+ * a hole should be exactly the shape of the thing it lets through.
+ */
+export const USER_AUTHOR_EMAIL = "user@corpus.local";
+
+/**
  * The three checks every run gets. A breach is reported even on an over-budget
  * run: a hand-edit or a lost event is real evidence however the run ended, and
  * none of these can be caused by the harness stopping a parked agent.
@@ -62,13 +69,26 @@ export function universalFindings(record: RunRecord): readonly string[] {
   //    server closes a commit window lazily, so the run's first agent write
   //    *amends* the seed's `user` commit into its "editing session" relabel —
   //    same content, new hash, on the run's side of the boundary (measured
-  //    2026-09-01, three runs out of three). The amend changes no content, so
-  //    a `user` commit whose tree equals the boundary's tree is the seed
-  //    itself. A real hand edit changes the tree and is still flagged.
+  //    2026-09-01, three runs out of three).
+  //
+  //    Recognising it by tree alone was too wide (pr-reviewer, PR #71): an
+  //    empty `user` commit made directly with git carries the boundary tree,
+  //    and so does a hand revert that restores the seed tree *after* agent
+  //    work — which silently destroys that work while the invariant stays
+  //    green. An amend is the unique commit carrying the boundary's tree
+  //    **and** the boundary's parent, so both are required. A hand edit
+  //    changes the tree; a revert keeps the tree but sits on a later parent;
+  //    an empty commit likewise. All three are flagged.
+  const excusesTheSeedRelabel = (commit: (typeof observation.commitsSinceSeed)[number]): boolean =>
+    commit.authorName === "user" &&
+    commit.authorEmail === USER_AUTHOR_EMAIL &&
+    commit.tree === seedSnapshot.headTree &&
+    commit.parents.length === 1 &&
+    commit.parents[0] === seedSnapshot.headParent &&
+    seedSnapshot.headParent !== "";
   for (const commit of observation.commitsSinceSeed) {
     if (commit.authorName !== AGENT_AUTHOR.name || commit.authorEmail !== AGENT_AUTHOR.email) {
-      const isSeedRelabel = commit.authorName === "user" && commit.tree === seedSnapshot.headTree;
-      if (isSeedRelabel) continue;
+      if (excusesTheSeedRelabel(commit)) continue;
       findings.push(
         `commit ${commit.hash.slice(0, 10)} is authored "${commit.authorName} <${commit.authorEmail}>", not the agent acting through the server`,
       );

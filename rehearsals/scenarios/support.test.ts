@@ -71,6 +71,7 @@ function record(options: {
     seedSnapshot: {
       head: "h",
       headTree: "t",
+      headParent: "seedparent".padEnd(40, "0"),
       queue: emptySeedQueue(),
     },
     observation,
