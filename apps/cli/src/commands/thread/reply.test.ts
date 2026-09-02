@@ -11,6 +11,7 @@ import {
   stubContext,
 } from "../../testing/stub-server.js";
 import { pipe, unreadable } from "../../testing/stdin.js";
+import { withDeclaredModels } from "../../testing/vocabulary.js";
 import { replyCommand, runThreadReply } from "./reply.js";
 
 const ARGS = { id: "th_a1b2c3" };
@@ -212,21 +213,42 @@ describe("corpus thread reply", () => {
    * This is the door the value enters through (Architecture Decision 2).
    */
   describe("--model, the turn's stated model (SPEC.md §10)", () => {
-    it("sends a stated model with the turn", async () => {
-      const stub = await startStubServer(jsonResponder(201, APPENDED));
+    it("sends a stated model with the turn, once the tier table has vouched for it", async () => {
+      const stub = await startStubServer(withDeclaredModels(jsonResponder(201, APPENDED)));
       const harness = stubContext(stub, {
         args: ARGS,
         actor: "agent",
-        flags: { message: "filed it", model: "claude-opus-4-1" },
+        flags: { message: "filed it", model: "Opus 5" },
       });
 
       await runThreadReply(harness.context);
 
-      expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      // The vocabulary is read before the turn is sent (AGENT-061).
+      expect(stub.requests.map((request) => request.method)).toEqual(["GET", "GET", "POST"]);
+      const post = stub.requests[2];
+      expect(bodyOf(post?.body)).toEqual({
         body: "filed it",
-        model: "claude-opus-4-1",
+        model: "Opus 5",
       });
-      expect(stub.requests[0]?.headers["x-corpus-author"]).toBe("agent");
+      expect(post?.headers["x-corpus-author"]).toBe("agent");
+    });
+
+    it("refuses a model the tier table does not declare, and posts nothing", async () => {
+      const stub = await startStubServer(withDeclaredModels(jsonResponder(201, APPENDED)));
+      const harness = stubContext(stub, {
+        args: ARGS,
+        actor: "agent",
+        // The incident's literal stamp: a real-sounding name no runtime in the
+        // workspace was running (AGENT-061, INFRA-034 story 4).
+        flags: { message: "filed it", model: "claude-opus-4-5" },
+      });
+
+      const error: unknown = await runThreadReply(harness.context).catch((cause: unknown) => cause);
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(String(error)).toContain("not a model this workspace declares");
+      // The lookup ran; no turn was posted, so nothing needs correcting later.
+      expect(stub.requests.every((request) => request.method === "GET")).toBe(true);
     });
 
     it("sends no model field at all when the flag is absent", async () => {
@@ -305,8 +327,11 @@ describe("corpus thread reply", () => {
       // Absent stays absent.
       expect(text).toContain("no model is recorded at all");
       expect(text).toContain("nothing rather than a guess");
-      // No enum, ever.
-      expect(text).toContain("nothing here validates against a list");
+      // The vocabulary is the workspace's own declaration, never a list in any
+      // package — and never the caller's belief (AGENT-061).
+      expect(text).toContain("Model** column of the tier table");
+      expect(text).toContain("can only have come from belief");
+      expect(text).not.toContain("nothing here validates against a list");
     });
   });
 });

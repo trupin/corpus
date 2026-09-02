@@ -43,7 +43,7 @@ you needed nothing from them — **suggest resolving** and leave the control wit
 same act, never a resolve with no readable turn attached:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 6.4% it is — applied to the projection in [[doc_a1b2c3]] and to the two figures
 downstream of it. That settles the rate question, so I'm closing this thread.
 Reply here if it turns out not to be settled.

@@ -266,9 +266,11 @@ describe("resolveTurnModel", () => {
   });
 
   it("passes a stated model through verbatim, validating nothing about the name", () => {
-    // A display string, not an enum (SPEC.md §7, CONTRACT-043): the names live in
-    // the orchestrator skill, so a workspace may state one this CLI has never
-    // heard of, spaced and cased however it writes it.
+    // Still a display string, never an enum in any package (SPEC.md §7,
+    // CONTRACT-043). Whether the *workspace* declares the name is the next
+    // step's question — `commands/thread/declared-models.ts` (AGENT-061), which
+    // reads the tier table at call time — so this resolver keeps every byte,
+    // spacing included, for that comparison to see unchanged.
     expect(resolve("claude-opus-4-1")).toBe("claude-opus-4-1");
     expect(resolve("Some Model 9 (preview)")).toBe("Some Model 9 (preview)");
     expect(resolve("  claude-opus-4-1  ")).toBe("  claude-opus-4-1  ");

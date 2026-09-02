@@ -34,7 +34,7 @@ this document uses it.
 corpus batch --from agent <<'CORPUS_EOF'
 [["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02, and every projection in\nthis document uses it.","--new","6.4% as of 2026-07-28. Thirty-year fixed offers currently\ncluster between 6.1% and 6.6%, and every projection in this document uses 6.4%."],
  ["job","log","evt_7c1d9a","edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"],
- ["thread","reply","th_4b8e2c","--model","claude-sonnet-4-5","-m","Not any more — 6.4% is the representative 30-year fixed rate today. Updated the\nassumption and the projection note in [[doc_a1b2c3]]. The anchored sentence is\nthe one that changed.\n↳ updated the rate assumption in [[doc_a1b2c3]] from 6.1% to 6.4%"]]
+ ["thread","reply","th_4b8e2c","--model","Sonnet","-m","Not any more — 6.4% is the representative 30-year fixed rate today. Updated the\nassumption and the projection note in [[doc_a1b2c3]]. The anchored sentence is\nthe one that changed.\n↳ updated the rate assumption in [[doc_a1b2c3]] from 6.1% to 6.4%"]]
 CORPUS_EOF
 patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 key 305eb7108492c96bfdf5dd3e337b4101362de6c23eeb0c3df50df830135957e8
@@ -67,8 +67,8 @@ CORPUS_EOF
 created doc_7e3a91 — data/docs/kitchen/espresso-extraction-troubleshooting.md
 corpus doc edit th_9f21c4 --flag-file title=/tmp/corpus-title-evt_5a2b7c.txt --from agent
 corpus batch --from agent <<'CORPUS_EOF'
-[["job","log","evt_5a2b7c","gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"],
- ["thread","reply","th_9f21c4","--model","claude-opus-4-1","-m","Sour usually means under-extraction — the shot ran too fast. Grind one step\nfiner and keep everything else fixed.\n\n`@researcher` isn't defined in this workspace, so I answered this directly. The\nfull troubleshooting sequence is durable enough to keep, so I wrote it down in\n[[doc_7e3a91]] and titled this thread.\n↳ created [[doc_7e3a91]] in kitchen/ and titled this thread"]]
+[["job","log","evt_5a2b7c","gathered on Haiku, concluded and wrote the reply on Opus 5"],
+ ["thread","reply","th_9f21c4","--model","Opus 5","-m","Sour usually means under-extraction — the shot ran too fast. Grind one step\nfiner and keep everything else fixed.\n\n`@researcher` isn't defined in this workspace, so I answered this directly. The\nfull troubleshooting sequence is durable enough to keep, so I wrote it down in\n[[doc_7e3a91]] and titled this thread.\n↳ created [[doc_7e3a91]] in kitchen/ and titled this thread"]]
 CORPUS_EOF
 ```
 
@@ -101,7 +101,7 @@ corpus batch --from agent <<'CORPUS_EOF'
 [["doc","move","doc_5c8b2f","--folder","finance"],
  ["doc","edit","doc_5c8b2f","--add-tag","insurance","--add-tag","review"],
  ["job","log","evt_2e4f8b","filed [[doc_5c8b2f]] into finance/"],
- ["thread","reply","th_1a7d33","--model","claude-sonnet-4-5","-m","Filed this as [[doc_5c8b2f]] — \"Quarterly insurance review\", now in `finance/`,\ntagged insurance and review. I added the structure and left one open question in\nit: I don't know which quarter the policy renews in.\n↳ retitled, expanded and filed [[doc_5c8b2f]] into finance/, tagged insurance and review"]]
+ ["thread","reply","th_1a7d33","--model","Sonnet","-m","Filed this as [[doc_5c8b2f]] — \"Quarterly insurance review\", now in `finance/`,\ntagged insurance and review. I added the structure and left one open question in\nit: I don't know which quarter the policy renews in.\n↳ retitled, expanded and filed [[doc_5c8b2f]] into finance/, tagged insurance and review"]]
 CORPUS_EOF
 ```
 
@@ -122,6 +122,6 @@ corpus batch --from agent <<'CORPUS_EOF'
 [["doc","move","doc_2f7b91","--folder","finance"],
  ["doc","edit","doc_2f7b91","--add-tag","insurance","--add-tag","review"],
  ["job","log","evt_9b4c02","form answered — filed [[doc_2f7b91]] into finance/, tagged insurance and review"],
- ["thread","reply","th_6c0a18","--model","claude-sonnet-4-5","-m","Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage\nnotes, tagged insurance and review. You left the renewal quarter blank, so it\nstays the open question already written into the document. That closes the\nfiling I paused on. Nothing else is outstanding here.\n↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review"]]
+ ["thread","reply","th_6c0a18","--model","Sonnet","-m","Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage\nnotes, tagged insurance and review. You left the renewal quarter blank, so it\nstays the open question already written into the document. That closes the\nfiling I paused on. Nothing else is outstanding here.\n↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review"]]
 CORPUS_EOF
 ```

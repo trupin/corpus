@@ -12,6 +12,7 @@ import {
   resolveJob,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { requireDeclaredModel } from "./declared-models.js";
 
 /**
  * `corpus thread create` — the agent's half of SPEC.md §6's "a comment on a
@@ -81,8 +82,11 @@ export async function runThreadCreate(
   );
   // Resolved before the body is read: a `--model` this actor may not state is a
   // usage error whatever the first turn says, and a heredoc consumed on the way
-  // to a refusal is a heredoc the caller has to type again.
+  // to a refusal is a heredoc the caller has to type again. The value must also
+  // be one the workspace's tier table declares (AGENT-061 — `declared-models.ts`
+  // has the whole story); the lookup runs only when a model was stated.
   const model = resolveTurnModel(context);
+  if (model !== undefined) await requireDeclaredModel(context, model);
 
   // Two flag combinations carry no request at all, so they are usage errors
   // rather than a round trip: context with nothing to disambiguate has nowhere
@@ -190,8 +194,10 @@ export const createCommand: WorkspaceCommandSpec = {
     "`{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
     "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +
     "(SPEC.md §10) — the same flag `corpus thread reply` takes, since both write a turn. It " +
-    "records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, " +
-    "which reads as nothing rather than as a guess.\n\n" +
+    "records what ran; it asks for nothing to run. The value must be a model name the " +
+    "workspace's own tier table declares; any other spelling is a usage error (exit 2) that " +
+    "lists the declared names, with nothing sent (AGENT-061). Omit it and the turn carries no " +
+    "model at all, which reads as nothing rather than as a guess.\n\n" +
     BODY_SOURCES_HELP,
   args: [],
   flags: [
@@ -259,7 +265,7 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        "corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'CORPUS_EOF'\nI split this into two notes; the second needs a title.\nCORPUS_EOF",
+        "corpus thread create --parent doc_a1b2c3 --from agent --model \"Opus 5\" <<'CORPUS_EOF'\nI split this into two notes; the second needs a title.\nCORPUS_EOF",
       description:
         "A whole-document thread from the agent, body as a heredoc, committed with `agent` as the " +
         "git author and recording the model that wrote the first turn (SPEC.md §10).",

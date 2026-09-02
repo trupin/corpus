@@ -957,26 +957,58 @@ describe("skills", () => {
 
     it("states the rule, the deciding stage, and the absence, in the comment skill", () => {
       const body = documentAt("claude/skills/comment/SKILL.md").body;
-      expect(body).toMatch(/Every reply you post carries `--model <name>`/);
+      expect(body).toMatch(/Every reply you post\s+carries `--model <name>`/);
+      // AGENT-061: the vocabulary is the workspace's, never the agent's. An
+      // agent once stamped a version string composed from its own self-image
+      // (`claude-opus-4-5`, which no runtime here was), so the value is a
+      // quotation of the tier table's Model column, handed at dispatch — and
+      // the CLI refuses every other spelling before anything posts.
+      expect(body).toMatch(/in the workspace's own words/);
+      expect(body).toMatch(wrapped("The name is never yours to compose"));
+      expect(body).toMatch(wrapped("the **Model** cells of the tier table"));
+      expect(body).toMatch(wrapped("never a version string remembered from training"));
+      expect(body).toMatch(wrapped("Your dispatch named the word you were launched at: copy it"));
+      expect(body).toMatch(wrapped("refused at exit `2`, declared names listed, nothing posted"));
+      // The refusal loses no reply: nothing was sent, so the answer survives
+      // the way §6 requires an answer to survive every refusal.
+      expect(body).toMatch(
+        wrapped("the reply is not lost; re-run it corrected or without the flag"),
+      );
       // What ran, never what was asked for — and why the distinction is
       // load-bearing rather than pedantic: it is what makes "honoured, not
       // weighed again" checkable at all.
-      expect(body).toMatch(/what actually ran, never what was asked for/i);
-      expect(body).toMatch(/a directive, honoured rather than weighed again/);
-      expect(body).toMatch(/the turn is the lasting evidence that it\s+was/);
+      expect(body).toMatch(/what\s+actually ran, never what was asked for/i);
+      expect(body).toMatch(/a directive, honoured rather\s+than weighed again/);
+      expect(body).toMatch(/the turn is the lasting\s+evidence that it was/);
       // The deciding stage, singular, and never the first stage's.
-      expect(body).toMatch(/Where the work ran in stages, name the deciding stage/);
-      expect(body).toMatch(/one model,\s+never a list, and never the first stage's/);
+      expect(body).toMatch(/name the deciding stage/);
+      expect(body).toMatch(/one model, never a list, and never the first\s+stage's/);
       expect(body).toMatch(/gathering stages belong in the job log/);
       // An unknown states nothing. A guess is the failure this whole chain
       // exists to avoid, so the instruction is an omission with one spelling.
-      expect(body).toMatch(/When you do not know what ran, leave the flag out entirely/);
-      expect(body).toMatch(/a plausible attribution\s+nobody can check is worth less than a blank/);
+      expect(body).toMatch(/When no row describes what ran, leave the flag out entirely/);
+      expect(body).toMatch(/a plausible attribution nobody can check is worth less than a\s+blank/);
       expect(body).toMatch(/`--model ""` is a usage error \(exit `2`\)/);
       expect(body).not.toMatch(/best guess/i);
       // A person's turn names no model, and the refusal precedes the body.
-      expect(body).toMatch(/refused at exit `2` before the body is read/);
-      expect(body).toMatch(/never state a model on a person's behalf/);
+      expect(body).toMatch(/refused at exit\s+`2` before the body is read/);
+    });
+
+    it("owns the stamp-repair prohibition, in the comment skill alone (AGENT-061)", () => {
+      // The incident's second half: the agent posted a *correction turn* to fix
+      // the stamp, breaking one question, one answer. §6 has revision for wrong
+      // text; the model record is frontmatter, and no turn ever repairs it.
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(body).toMatch(/\*\*A stamp is never repaired by another turn\.\*\*/);
+      expect(body).toMatch(/A wrong stamp noticed late goes in the job log — the turn stays\./);
+      // The rule reaches orchestrate and converse through their existing
+      // pointers at the comment grammar, not through a second account.
+      const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(orchestrate).toMatch(/The comment skill states the grammar/);
+      expect(orchestrate).not.toMatch(/never repaired by another turn/);
+      expect(documentAt("claude/skills/converse/SKILL.md").body).not.toMatch(
+        /never repaired by another turn/,
+      );
     });
 
     it("carries the same rule into dispatch, in the orchestrate skill", () => {
@@ -987,12 +1019,102 @@ describe("skills", () => {
       expect(body).toMatch(/the turn names the \*\*deciding\*\*\s+stage/);
       expect(body).toMatch(/one model and never a list/);
       expect(body).toMatch(/the flag is left out\s+and the turn shows nothing rather than a guess/);
-      // The dispatch is what puts the name in the subagent's hand, so it is
-      // listed among the things a prompt must carry.
+      // The dispatch is what puts the word in the subagent's hand, so it is
+      // listed among the things a prompt must carry — and since AGENT-061 the
+      // handed word *is* the stamp: a Model cell of the level table, with the
+      // CLI refusing every other spelling.
       expect(body).toMatch(/the model you are launching it at/);
+      expect(body).toMatch(/the subagent has the word in hand and\s+quotes it back/);
+      expect(body).toMatch(/a \*\*Model\*\* cell of\s+the level table above and nothing else/);
+      expect(body).toMatch(/refuses every other spelling before\s+anything is posted/);
+      // The worked dispatch hands the word as the value, not as trivia.
+      expect(body).toMatch(/that word is the --model value on every turn you post/);
+      // A turn the orchestrator posts itself: no dispatch handed a word, so it
+      // maps its own runtime to a row or states nothing.
+      expect(body).toMatch(/A turn you post yourself had no dispatch to\s+hand you a word/);
+      // The table's own paragraph names the column as the stamp vocabulary.
+      expect(body).toMatch(/the whole vocabulary a\s+turn's `--model` may record/);
       // And the job log is where the split that the turn omits is written down.
       expect(body).toMatch(/\*\*This log is the per-stage account\.\*\*/);
       expect(body).toMatch(/the turn itself names only the\s+deciding stage/);
+    });
+
+    /**
+     * AGENT-061's sweep: every `--model` value a shipped skill shows is a
+     * **Model** cell of the template's own tier table, so editing the table and
+     * the examples is one act and a composed version string cannot ship again.
+     * Values are read from both shapes a skill writes — the shell flag on a
+     * turn-writing line and the argv pair inside a `corpus batch` array — and a
+     * `<placeholder>` in prose stands for the vocabulary rather than in it.
+     */
+    const statedModels = (body: string): string[] => {
+      const values: string[] = [];
+      for (const command of turnCommands(body)) {
+        const flag = /--model (?:"([^"\n]*)"|(\S+))/.exec(command);
+        if (flag !== null) values.push(flag[1] ?? flag[2] ?? "");
+      }
+      for (const pair of body.matchAll(/"--model","([^"\n]*)"/g)) values.push(pair[1] ?? "");
+      // A `<placeholder>` — or a value dragging inline-code backticks, which
+      // is prose quoting the flag rather than an example stating a stamp —
+      // stands for the vocabulary rather than in it.
+      return values.filter((value) => !/[<>`]/.test(value));
+    };
+
+    describe("the stamp vocabulary is the tier table's (AGENT-061)", () => {
+      const declaredModels = readWeightLevels(
+        documentAt("claude/skills/orchestrate/SKILL.md").body,
+      ).map((level) => level.model);
+
+      it("reads a declaration to check against, and examples to check", () => {
+        // Anti-vacuity: no declared table, or no stated value anywhere, and
+        // the sweep below would pass over nothing.
+        expect(declaredModels).toEqual(["Haiku", "Sonnet", "Opus 5"]);
+        expect(installedSkillTexts.flatMap(({ body }) => statedModels(body))).toContain("Sonnet");
+      });
+
+      it.each(installedSkillTexts)("$label states only declared model names", ({ label, body }) => {
+        for (const value of statedModels(body)) {
+          expect(
+            declaredModels,
+            `${label}: --model ${value} is not a Model cell of the tier table`,
+          ).toContain(value);
+        }
+      });
+
+      it("would catch the incident's stamp, in either shape", () => {
+        // The falsification, kept as a test: the exact value INFRA-034 story 4
+        // caught an agent composing is extracted, so the sweep above would
+        // have refused it — and would refuse it again.
+        expect(
+          statedModels('corpus thread reply th_1 --from agent --model claude-opus-4-5 -m "hi"\n'),
+        ).toEqual(["claude-opus-4-5"]);
+        expect(statedModels('[["thread","reply","th_1","--model","claude-opus-4-5"]]')).toEqual([
+          "claude-opus-4-5",
+        ]);
+        expect(statedModels('corpus thread reply th_1 --from agent --model "Opus 5"\n')).toEqual([
+          "Opus 5",
+        ]);
+        // And the placeholder a prose mention uses stays out of the sweep.
+        expect(
+          statedModels("`corpus thread reply <id> --from agent --model <name>` saying what"),
+        ).toEqual([]);
+      });
+
+      it.each(installedSkillTexts)(
+        "$label never again shows a version-string stamp",
+        ({ label, body }) => {
+          // The permanent negative pin, in the same spirit as REMOVED_VERBS:
+          // the incident's shape — `--model claude-<anything>` — does not come
+          // back as an example, in shell or argv form, whatever the sweep
+          // above thinks of the table that day.
+          expect(body, `${label}: shell-form version-string stamp`).not.toMatch(
+            /--model\s+"?claude-/,
+          );
+          expect(body, `${label}: argv-form version-string stamp`).not.toMatch(
+            /"--model","claude-/,
+          );
+        },
+      );
     });
   });
 
@@ -5697,10 +5819,12 @@ describe("converse skill body", () => {
    */
   it("marks the two things in its worked example that are not text to reuse", () => {
     expect(body).toMatch(
-      /is what ran in this example; on your turn the name is what is running as you/,
+      /is what\s+ran in this example; on your turn the name is the tier-table word your launch handed you/,
     );
     expect(body).toMatch(
-      /copying the string out of an example is the one way to make the field say\s+something false/,
+      wrapped(
+        "copying the string out of an example is the one way to make the field say something false",
+      ),
     );
     expect(body).toMatch(/\*\*a create prints its id and its path, not a\s+key\*\*/);
     expect(body).toMatch(/`corpus doc show <id>` first and present what it printed/);

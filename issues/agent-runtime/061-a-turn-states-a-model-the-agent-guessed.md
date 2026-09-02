@@ -127,13 +127,68 @@ dispatching Opus 5):** story 4 run 2, thread `th_iuacwomt`, two agent turns wher
 the invariant allows one. Job log line quoted in the Summary above. Raw run
 record: `rehearsals/out/2026-09-02T04-29-55.690Z/04-two-lanes-no-crossing.run-2.json`.
 
+**Implementation, 2026-09-02 — agent-runtime-dev running on Fable 5
+(`claude-fable-5`), per the issue's Model recommendation.**
+
+**Mechanism chosen: the third option.** The CLI refuses a `--model` the
+workspace's tier table does not declare, and the taught stamp becomes the
+table's **Model** cell — the word the dispatch already hands the subagent
+("You are running as Sonnet"), so stating one is quotation rather than
+composition. Prose-only lost because it is the instruction that already failed
+(`orchestrate` already said "name what actually ran" and the agent composed
+`claude-opus-4-5` anyway). Authoritative derivation lost because the CLI is a
+subprocess: no environment contract names the driving model, and the "deciding
+stage" of a staged run is a judgment only the caller can make — `MODEL_FLAG`'s
+own docblock had already established "a process cannot know which model is
+driving it".
+
+**Post-fix E2E, 2026-09-02, real workspace + real server** (`corpus init` into
+a scratch dir, server on `:8891` — never 8765; transcript retained at the
+scratch dir's `agent061-e2e.log`):
+
+1. `thread reply --from agent --model claude-opus-4-5` (the incident's literal)
+   → exit `2`, refusal names the value and lists `Haiku, Sonnet, Opus 5`,
+   thread still has 1 turn — nothing posted, nothing to correct later.
+2. `thread reply --from agent --model "Opus 5"` → exit `0`; the thread file's
+   frontmatter shows `turnModels: {2026-09-02T15:08:43Z: Opus 5}`, written by
+   the server.
+3. `thread reply --from agent` with no flag → exit `0`, no `turnModels` entry
+   for that turn — §10's nothing, observed on disk.
+4. `thread create --from agent --model claude-opus-4-5` → same exit-`2`
+   refusal on the second turn-writing verb.
+5. **Reachable-nothing:** archived the orchestrate skill (`corpus doc archive
+   doc_skillorchestrate --from agent`) → every `--model` refused with
+   "this workspace declares no model names … drop --model"; unarchived, the
+   declared word landed again via the heredoc form the skills teach.
+
+**Falsification (both halves, red then restored green):**
+
+- Disabled the `requireDeclaredModel` call in `reply.ts` → 2 tests red in
+  `apps/cli/src/commands/thread/reply.test.ts` ("refuses a model the tier
+  table does not declare, and posts nothing" and the vouched-send test).
+- Reintroduced `--model claude-sonnet-4-5` into `profile/SKILL.md` → 2 tests
+  red in `scripts/workspace-template.test.ts` ("states only declared model
+  names" and "never again shows a version-string stamp").
+
+**Suites:** `apps/cli` 111 files / 2236 tests green (`VITEST_MAX_THREADS=4`),
+`scripts/workspace-template.test.ts` 538 green, `packages/kit` weight tests 64
+green, `npm run typecheck -w apps/cli` exit 0, `npm run lint` exit 0,
+`docs/cli.md` regenerated (`npm run docs:cli -w apps/cli`). Comment skill body
+at 6,997 words — under AGENT-047's 7,000 cap by displacement, per that test's
+own doctrine.
+
+**Left to the next rehearsal pass:** the criterion "INFRA-034 story 4 passes
+3/3" drives real Claude sessions and is the release rehearsal's to run; the
+mechanism it would exercise is verified above at the CLI and template level.
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified (story-4 3/3 rerun left to the release
+      rehearsal, as logged above)
 
 ## Completion Checklist (orchestrator)
 

@@ -829,7 +829,7 @@ When your row is gone from the roster, or your park was refused:
    never reopens anything.
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
 CORPUS_EOF
 ```
@@ -901,7 +901,7 @@ agreed in [[th_4b8e2c]].
 CORPUS_EOF
 created doc_5c8b2f — data/docs/inbox/q3-rate-assumptions.md
 corpus job log evt_7c1d9a "created [[doc_5c8b2f]] — the 6.4% assumption, filed from this conversation"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Written down as [[doc_5c8b2f]] so the rest of the plan can point at it: 6.4%,
 with the range it came from and the date it was taken.
 ↳ created [[doc_5c8b2f]] with the 6.4% rate assumption
@@ -914,10 +914,10 @@ unset CORPUS_JOB
 the write would have been refused at exit `5` and the document would belong to no
 conversation. The reply names what changed and closes with its trace line.
 
-Two things in that block are examples of a shape and not text to reuse. **`claude-sonnet-4-5`
-is what ran in this example; on your turn the name is what is running as you.** It is a record
-of the run, so copying the string out of an example is the one way to make the field say
-something false while looking exactly right. And **a create prints its id and its path, not a
+Two things in that block are examples of a shape and not text to reuse. **`Sonnet` is what
+ran in this example; on your turn the name is the tier-table word your launch handed you.**
+It is a record of the run, so copying the string out of an example is the one way to make the
+field say something false while looking exactly right. And **a create prints its id and its path, not a
 key** — only a read and a write that lands hand one over — so if you go on to rewrite the
 document you just made, `corpus doc show <id>` first and present what it printed.
 
@@ -944,7 +944,7 @@ orchestrator · waiting for a listener
 corpus queue claim-all --thread th_4b8e2c
 {"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
 corpus thread show th_4b8e2c
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
 CORPUS_EOF
 ```

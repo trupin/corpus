@@ -140,7 +140,7 @@ argv on stdin — each entry exactly the words you would have given `corpus`, wi
 corpus batch --from agent <<'CORPUS_EOF'
 [["doc","patch","doc_a1b2c3","--old","6.1% as of 2026-05-02","--new","6.4% as of 2026-07-28"],
  ["job","log","evt_7c1d9a","edited doc_a1b2c3 — rate assumption 6.1% to 6.4%"],
- ["thread","reply","th_4b8e2c","--model","claude-opus-4-1","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
+ ["thread","reply","th_4b8e2c","--model","Opus 5","-m","Updated the assumption to 6.4%.\n↳ updated the rate assumption in [[doc_a1b2c3]]"]]
 CORPUS_EOF
 ```
 
@@ -860,7 +860,7 @@ Task(
   model: "sonnet",
   description: "comment-skill subagent for evt_7c1d9a",
   prompt: "Apply the comment skill to th_4b8e2c (evt_7c1d9a, comment.created). You are
-           running as Sonnet — name what actually ran with --model on every turn you post.
+           running as Sonnet — that word is the --model value on every turn you post.
            …the payload's ids, the anchors as retrieved, the binding rules below…"
 )
 ```
@@ -945,8 +945,10 @@ way, whatever the column padding — and each row below the divider is one level
   arrives as, and rewording a **Weight** leaves it untouched, so a choice made yesterday
   still resolves today. Keep it one lowercase word.
 - **Model** is what you launch the subagent at — the value the launch call's `model`
-  argument carries, as the paragraphs above spell it — and **What falls here** is guidance
-  for you. Neither reaches a composer.
+  argument carries, as the paragraphs above spell it — and it is the whole vocabulary a
+  turn's `--model` may record: the turn-writing verbs refuse a spelling this column does not
+  hold, so what a turn attributes and what this table launches cannot drift apart. **What
+  falls here** is guidance for you. Neither reaches a composer.
 
 Nothing outside this table declares a level. A reader that cannot find those header cells,
 or a row whose **Weight** or **Key** cell is empty, finds **no levels** — and a composer that
@@ -1094,15 +1096,21 @@ rules have into it: state them there, in full. They are:
   states the grammar.
 - **Every turn it posts names the model that wrote it** — `--model <name>` on
   `corpus thread reply` and on `corpus thread create`, naming what actually ran. That is why
-  the dispatch states the model you launched it at: the subagent has the name in hand and
-  states the one it is running as, and where the two differ the one that ran goes on the turn
-  and the difference goes in this event's job log. It is a **record of what ran, never a
+  the dispatch states the model you launched it at: the subagent has the word in hand and
+  quotes it back, and where its runtime says a different row ran, the row that ran goes on
+  the turn and the difference goes in this event's job log. The value is a **Model** cell of
+  the level table above and nothing else — the CLI refuses every other spelling before
+  anything is posted, so a stamp composed from a subagent's self-image, however plausible
+  its shape, never lands. It is a **record of what ran, never a
   request for what should run** — a weight the request stated is a directive you honour rather
   than weigh again, and this turn is the evidence that you did, which it cannot be if it merely
   repeats what was asked for. Where the work ran in stages, the turn names the **deciding**
   stage — the one that drew the conclusion or wrote the words — one model and never a list;
   the gathering stages stay in the job log. Where nothing knows what ran, the flag is left out
-  and the turn shows nothing rather than a guess. The comment skill states the grammar, and it
+  and the turn shows nothing rather than a guess. A turn you post yourself had no dispatch to
+  hand you a word: take the row whose **Model** cell names what your own runtime tells you
+  that you are, and where no row does, leave the flag out — that turn honestly shows nothing.
+  The comment skill states the grammar, and it
   governs every turn you post yourself exactly as it governs a subagent's.
 - Anything a reply hands over for reuse elsewhere — a prepared prompt, a command line, a
   config snippet — sits alone in a fenced block whose info string labels it (`prompt`,
@@ -1470,7 +1478,7 @@ their cursor while they are mid-sentence. Prefer to leave the document alone and
 and where the work is a claimed event, coming back has a name: **defer it**, in this order.
 
 ```bash
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 You're editing [[doc_a1b2c3]] right now, so I've left it alone. The change is
 ready and lands on its own once you're done in there.
 CORPUS_EOF
@@ -1985,7 +1993,7 @@ The digest's first turn is written in this order:
 4. **What you ask** — the decisions you could not take yourself. Nothing here is rhetorical.
 
 ```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
 since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z
 
 Eleven documents changed, nine of them in `finance/` while you reworked the mortgage
@@ -2007,7 +2015,7 @@ is a real result, and a reflection that stayed silent is indistinguishable from 
 that never ran. One line, naming the window, is the whole thread.
 
 ```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model claude-opus-4-1 --job evt_3d8f04 <<'CORPUS_EOF'
+corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
 since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z — nothing changed, nothing to report.
 CORPUS_EOF
 ```
@@ -2349,7 +2357,7 @@ this document uses it.' --new '6.4% as of 2026-07-28 — see [[th_4b8e2c]]. Thir
 offers currently cluster between 6.1% and 6.6%, and every projection in this document uses 6.4%.'
 patched doc_a1b2c3 — 1 occurrence replaced — 1 anchor remapped
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"
-corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'CORPUS_EOF'
+corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
