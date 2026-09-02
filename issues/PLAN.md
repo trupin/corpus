@@ -2258,6 +2258,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | todo | P0 | fable | — |
 | AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | todo | P0 | fable | — |
 | UI-186 | The Residents tab never says what it launched at, and cannot change it | todo | P0 | opus | AGENT-059 |
+| SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
