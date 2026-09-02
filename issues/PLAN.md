@@ -2231,6 +2231,34 @@ correctly read `weight: null`. Nothing was lost there.
 | CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
 | AGENT-061 | A turn states the model the agent guessed, so §10's record can be wrong | todo | P1 | fable | — |
 | AGENT-062 | A deviation says what was asked and that it failed, never what ran instead | todo | P1 | fable | — |
+
+## Phase 56 — The orchestrator picks, and you can change your mind (2026-09-02, user directive)
+
+*"I would like you to default to: orchestrator picks based on the task. If I set which tier to use,
+then use that one. Also, maybe we make it possible to change a resident's model from the residents
+tab. That would make the mistake less of a problem."*
+
+This reverses `AGENT-059`, shipped in v0.31.0. The two halves are one design: a judged pick is safe
+**because** it is correctable, and correcting it is nearly free **because** the conversation is a
+document the next listener reads. `AGENT-059` argued for a fixed strongest tier from durability, and
+the durability claim turns out to be a §7 sentence that is not true of the built system — the server
+has released and replaced a resident on re-designation all along.
+
+**The unsigned §7 rider from v0.31.0 is withdrawn.** It existed to legalise the fixed default. With
+the default gone, §7's *"never a fixed default"* stands exactly as signed. A different rider is
+needed instead, and it *weakens* a constraint: `SHARED-076`.
+
+**What must not come back with the revert.** `AGENT-059` was filed for a real defect. It was never
+"Sonnet is wrong" — it was that the orchestrator was not judging at all, because the two-pass table
+is written for jobs and its middle row describes every open-ended conversation. Reverting without
+giving the orchestrator something to weigh a *conversation* by restores that exactly.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | todo | P0 | fable | — |
+| AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | todo | P0 | fable | — |
+| UI-186 | The Residents tab never says what it launched at, and cannot change it | todo | P0 | opus | AGENT-059 |
+
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
 **And the reason none of this was caught** (user directive, 2026-09-01: *"We have
