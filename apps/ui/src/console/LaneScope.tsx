@@ -1,7 +1,10 @@
 import { LaneDot, useThreadScope, type LaneRow, type WeightLevel } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { useOpenInColumn } from "../board/openInColumn";
+import { LaneWeight } from "./LaneWeight";
+import { useLaunchRecord } from "./useLaunchRecord";
 import {
+  laneHasDesignation,
   laneStatement,
   laneWeightLabel,
   ORCHESTRATOR_SCOPE_NOTE,
@@ -41,6 +44,15 @@ import {
  * server says it cut the page, this says so — a capped list presented as
  * complete is the failure that flag exists to prevent.
  *
+ * ## …and what the lane's resident works at, which is changed here
+ *
+ * Between the header and the list sits {@link LaneWeight} (UI-186): the level
+ * the designation stated or the record of what the launcher chose, and the
+ * control that re-designates at another level. It is in this pane and not in the
+ * list beside it because the answer is a **sentence** — the launch record is the
+ * agent's own clause and arrives two round trips late — and the list's weight
+ * box is a fixed reservation that must not grow (`console.css`, UI-131).
+ *
  * ## Every member opens
  *
  * A row opens the document or thread as a loose path at the board's left
@@ -64,6 +76,12 @@ export function LaneScope({ row, levels }: LaneScopeProps): ReactElement {
    */
   const lane = row === null || row.kind === "orchestrator" ? null : row.lane;
   const scope = useThreadScope(lane);
+  /*
+   * What this lane's listener launched at (UI-186). Read for the selected lane
+   * and for no other, exactly as the scope above is: a roster of a dozen lanes
+   * must not be a request per row, and only one lane is being looked at.
+   */
+  const reading = useLaunchRecord(row !== null && laneHasDesignation(row) ? row.lane : null);
 
   if (row === null) {
     return (
@@ -100,6 +118,10 @@ export function LaneScope({ row, levels }: LaneScopeProps): ReactElement {
           <span className="scope-count">{scopeCountLabel(members.length, scope.truncated)}</span>
         )}
       </div>
+
+      {/* Keyed on the lane, so a half-made choice never travels to another
+          conversation: the control seeds itself from the level in force. */}
+      <LaneWeight key={row.lane} row={row} levels={levels} reading={reading} />
 
       {row.kind === "orchestrator" ? (
         <p className="lane-note" data-lane-note="orchestrator">

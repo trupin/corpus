@@ -1034,3 +1034,85 @@
   font-family: var(--mono);
   font-size: 11px;
 }
+
+/*
+ * ── The weight section of the Residents tab (UI-186) ──
+ *
+ * What this lane's resident works at, where that level came from, and the
+ * control that changes it (SPEC.md §7's rider signed 2026-08-19 as amended by
+ * SHARED-076). It sits between the lane's header and its scope list, because it
+ * is a fact about the *designation* rather than about what the designation owns.
+ *
+ * **It is a sentence and not a box, deliberately.** `.lane-weight` above is a
+ * fixed 24ch reservation (see UI-131's note), and the whole point of that
+ * reservation is that a late-arriving value moves nothing. The launch record
+ * this section shows arrives on two later round trips and is a clause of the
+ * agent's own prose — unbounded, and longer than any level label — so it could
+ * never have gone in that box. Widening the box for it would have re-cut the
+ * lane's name and its statement on every lane in the roster, for a value only
+ * one lane at a time has.
+ *
+ * So the whole answer lives here, in a wrapping paragraph with the drawer's own
+ * `.lane-note` register, and the reserved box beside the name keeps saying
+ * exactly what it said before.
+ */
+.lane-weight-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+/*
+ * The paragraphs supply their own spacing through the panel's gap, so the
+ * shared `.lane-note` padding would double it — and the drawer is 210px by
+ * default, so this panel is written to a budget rather than to the pane's
+ * ordinary register.
+ */
+.lane-weight-panel .lane-note {
+  padding: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.lane-weight-control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The console's own register — `.job-detail-head`'s controls, one pane over. */
+.lane-weight-control select,
+.lane-weight-control button {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 9px;
+  flex: none;
+}
+
+.lane-weight-control select:hover,
+.lane-weight-control button:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* A press that would change nothing is offered and dimmed rather than removed:
+   a control that vanishes reads as a bug, and one that is disabled with its
+   cost still on the screen reads as an answer (`JobDetail`'s `↗ open`). */
+.lane-weight-control button:disabled {
+  opacity: 0.45;
+}
+
+/* The price of changing, standing beside the control rather than behind a
+   confirmation — SHARED-076: the act "says what it costs before it is taken". */
+.lane-weight-cost {
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.55;
+}
