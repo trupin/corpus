@@ -2261,6 +2261,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
 | UI-187 | TipTap 2 carries a shipped advisory with no backport, so the editor moves to 3 | done | P0 | opus | — |
 | UI-188 | A browser spec pins an absolute date, so it fails on a calendar rather than on a defect | done | P1 | opus | — |
+| INFRA-035 | Nothing proves the listener judgment reads two lanes differently | todo | P1 | fable | AGENT-063 |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
