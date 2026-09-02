@@ -1,19 +1,29 @@
 /**
  * Story 2 — *"I designated one and chose no weight."* (INFRA-034 table)
  *
- * Regression for: **AGENT-059** — a weightless designation used to fall through
- * to the job table's judgment, and every listener launched at whatever the two
- * passes made of a conversation that had not happened yet. The user hit it as
- * ten-out-of-ten Sonnet listeners. The rule now is: a `null` weight launches at
- * the **strongest tier the workspace's table declares** — its last row, because
- * the table is written lightest first — logged `defaulted` on the designation's
- * own event.
+ * Regression for: **AGENT-063** — a weightless designation is **judged on the
+ * conversation** at launch, never defaulted. Two rules preceded this one, and
+ * both are what the scorer must catch coming back. AGENT-059's report: the
+ * launch fell through to the job table's two passes, which have no purchase on
+ * a conversation, so every listener landed on the middle tier — landing, not
+ * judging. AGENT-059's fix: a fixed strongest-tier default, which v0.31.0
+ * shipped and the user reversed the next day (*"orchestrator picks based on
+ * the task"*). What §7 promises now, and what every run must show:
  *
- * This is the suite's one **judgment**: the subject is an agent following
- * prose, so the result is the full distribution of what launched, printed
- * `k/N`. Before AGENT-059 this scorecard would have read `10/10 Sonnet`.
- * The threshold is N itself: the rule admits no exception, so any run that
- * launches elsewhere is a miss the distribution must show.
+ * - the launch **logged a weight**, naming a tier the workspace's own table
+ *   declares — never a level of the agent's invention;
+ * - the log says the weight was **`judged`** — a judgment named as such, not
+ *   `stated` (nobody stated one) and not `defaulted` (there is no default);
+ * - the reply's recorded model matches the tier the log named — the log tells
+ *   the truth about what ran;
+ * - the question's event settled `processed`.
+ *
+ * **Which tier the judgment picks is deliberately not asserted.** A judged
+ * pick is allowed to vary, and pinning one tier would re-impose a default
+ * through the test. The distribution is the signal instead: every run's label
+ * names the tier that ran, so the scorecard shows where the judgment lands —
+ * and a scorecard reading 10/10 on one tier is the "landing, not judging"
+ * symptom AGENT-063 exists to end, visible rather than asserted away.
  *
  * Seed: one standalone Ask through the CLI — `corpus thread create` with a
  * question and `--requests-agent true` — which designates a general resident
@@ -25,7 +35,7 @@
  */
 
 import type { RunRecord, Scenario, ScenarioRunScore, SeedContext } from "../scenario.js";
-import { recordedModelMatches, strongestRow } from "../weight-table.js";
+import { modelFamilyOf, recordedModelMatches } from "../weight-table.js";
 import {
   corpusJson,
   eventsOfType,
@@ -69,18 +79,33 @@ function score(record: RunRecord): ScenarioRunScore {
   const threadId = record.seed.refs.threadId ?? "";
   const commentEventId = record.seed.refs.commentEventId ?? "";
   const rows = weightTableFromRefs(record);
-  const strongest = strongestRow(rows);
 
   const launchEventIds = [
     ...eventsOfType(record, "resident.designated", threadId).map((event) => event.id),
     ...eventsOfType(record, "lane.waiting", threadId).map((event) => event.id),
   ];
   const lines = launchEventIds.flatMap((eventId) => jobLogLines(record, eventId));
-  const provenance = lines.some((entry) => entry.line.includes("defaulted"))
-    ? "defaulted"
-    : lines.some((entry) => entry.line.includes("stated"))
-      ? "stated"
-      : "unrecorded";
+  // `defaulted` is dead vocabulary (AGENT-063), kept detectable so a revert to
+  // the fixed rule shows up in the label rather than as a mute "unrecorded".
+  const provenance = lines.some((entry) => entry.line.includes("judged"))
+    ? "judged"
+    : lines.some((entry) => entry.line.includes("defaulted"))
+      ? "defaulted"
+      : lines.some((entry) => entry.line.includes("stated"))
+        ? "stated"
+        : "unrecorded";
+
+  // The weight the launch *logged*: a declared row named on a judged line —
+  // matched by model family, case-insensitively, the same tolerance
+  // `recordedModelMatches` gives a turn's recorded model.
+  const loggedRow =
+    rows.find((row) =>
+      lines.some(
+        (entry) =>
+          entry.line.includes("judged") &&
+          entry.line.toLowerCase().includes(modelFamilyOf(row.model)),
+      ),
+    ) ?? null;
 
   const thread = threadById(record, threadId);
   const replies = thread === undefined ? [] : turnsBy(thread, "agent");
@@ -101,10 +126,10 @@ function score(record: RunRecord): ScenarioRunScore {
   const label = `${tier} · ${provenance}`;
 
   const pass =
-    strongest !== null &&
+    provenance === "judged" &&
+    loggedRow !== null &&
     matchedRow !== null &&
-    matchedRow.key === strongest.key &&
-    provenance === "defaulted" &&
+    loggedRow.key === matchedRow.key &&
     eventStatus(record, commentEventId) === "processed";
 
   return { kind: "judgment", pass, label };
@@ -113,7 +138,7 @@ function score(record: RunRecord): ScenarioRunScore {
 export const weightlessDesignation: Scenario = {
   id: "02-weightless-designation",
   story: "I designated one and chose no weight.",
-  regressionFor: "AGENT-059",
+  regressionFor: "AGENT-063",
   grade: "judgment",
   runs: 10,
   threshold: 10,

@@ -20,7 +20,7 @@
  * Asserts (invariant, on what the corpus records):
  * - every announcement (`resident.designated` × 2, A's `lane.waiting`) settles
  *   `processed` on the first pass — nothing waits for a second designation;
- * - both lanes' launches are recorded (`defaulted`, AGENT-059);
+ * - both lanes' launches are recorded (`judged`, AGENT-063);
  * - the pending question is answered: exactly one agent reply on lane A;
  * - lane B gains no turns at all — a listener with nothing to answer posts
  *   nothing, and never an apology or a status line into somebody's thread.
@@ -95,8 +95,8 @@ function score(record: RunRecord): ScenarioRunScore {
       if (settled !== null) findings.push(settled);
     }
     const launchEventIds = [...designated.map((event) => event.id), ...noticeIds];
-    if (!launchProvenanceLogged(record, launchEventIds, "defaulted")) {
-      findings.push(`no launch was recorded for ${threadId} (no \`defaulted\` on its logs)`);
+    if (!launchProvenanceLogged(record, launchEventIds, "judged")) {
+      findings.push(`no launch was recorded for ${threadId} (no \`judged\` on its logs)`);
     }
   }
 
