@@ -2260,6 +2260,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | UI-186 | The Residents tab never says what it launched at, and cannot change it | done | P0 | opus | AGENT-059 |
 | SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
 | UI-187 | TipTap 2 carries a shipped advisory with no backport, so the editor moves to 3 | todo | P0 | opus | — |
+| UI-188 | A browser spec pins an absolute date, so it fails on a calendar rather than on a defect | done | P1 | opus | — |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 

@@ -30,12 +30,27 @@ interface Box {
 }
 
 /** An unreflected note — written by a person after the clock the stub carries. */
+/**
+ * Both halves of this fixture are relative to now (UI-188). The count is
+ * "changes since the last reflection", so `updated` and `reflected` only mean
+ * anything **against each other** — pinning either to a date makes the pair
+ * drift apart as the calendar moves, and the spec then fails on the day rather
+ * than on a defect. It did exactly that on 2026-09-02.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A week ago, which the label renders as `1w`. */
+const REFLECTED_AT = new Date(Date.now() - 7 * DAY_MS).toISOString();
+
+/** …and the notes changed after it, so all five count. */
+const NOTE_UPDATED_AT = new Date(Date.now() - 6 * DAY_MS).toISOString();
+
 function note(n: number): StubRow {
   return {
     id: `doc_n${String(n)}`,
     title: `Note ${String(n)}`,
     path: `data/docs/inbox/n${String(n)}.md`,
-    updated: "2026-08-20T10:00:00.000Z",
+    updated: NOTE_UPDATED_AT,
     lastActor: "user",
   };
 }
@@ -125,7 +140,7 @@ test.describe("the board bar's Reflect control", () => {
    */
   test("the label's count keeps a space on either side of it", async ({ page }) => {
     await stubCorpus(page, [VIEW, note(1), note(2), note(3), note(4), note(5)], {
-      reflect: { reflected: "2026-08-19T10:00:00.000Z" },
+      reflect: { reflected: REFLECTED_AT },
     });
     await page.goto("/");
     await page.locator(".reflect-ask").waitFor();
