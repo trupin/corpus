@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-23T00:00:00Z
+updated: 2026-09-02T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -1005,11 +1005,20 @@ None of the three is a reason to drop the work or to fail the event. Dispatch at
 two passes judge best, and state the
 deviation **in the job's log while it runs** and **in the reply the request receives** — both
 naming the same three things: what was asked for, that it could not be met, and what ran
-instead. The log is reaped with its event, so the reply is the durable half: the dispatch
-prompt carries the deviation in words, and the subagent states it in the reply it posts, as
-plainly as "you asked for the lightest tier, this workspace no longer declares it, so I ran
-this at Standard". Silence there would be this workspace claiming work it did not do.
-Progress and job logs below gives the dispatch line for this case.
+instead. **The third statement names the level the work actually ran at, as a level this
+workspace's table declares — in the log and in the reply alike.** It is the statement that
+gets dropped, because the first two are already in hand when the refusal happens — the ask
+is in the payload and the refusal just occurred — while the third exists only if you write
+it, and a deviation without it states what was refused and never what was done. The model
+name alone does not carry it either: levels are what a request chooses from, so the level is
+the word a reader can hold against the table above.
+The log is reaped with its event, so the reply is the durable half: the dispatch prompt
+carries the deviation in words, and the subagent states it in the reply it posts, as
+plainly as "you asked for the lightest tier,
+this workspace no longer declares it, so I ran this at Standard" — the substitute named
+there as **Standard**, a level the table declares. Silence there would be this workspace
+claiming work it did not do. Progress and job logs below gives the dispatch line for this
+case.
 
 **Your own judgment survives as speech, never as substitution.** Where the work proves to
 need more than was asked for, do it at the stated weight and say so in the reply — name what
@@ -2076,9 +2085,16 @@ argument (or piped stdin). Log at these moments, and only these:
   `corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — judged, difficulty: one document, prescribed change)"`,
   `corpus job log evt_4f8a2b "dispatched to a comment-skill subagent (Opus 5 — judged, consequence: the revised paragraph goes to the lender tomorrow)"`,
   `corpus job log evt_9c3b1d "dispatched to a comment-skill subagent (Haiku — stated by the request)"`,
-  `corpus job log evt_2e4f8b "dispatched to a comment-skill subagent (Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so the tier is judged, difficulty)"`.
+  `corpus job log evt_2e4f8b "dispatched to a comment-skill subagent (Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so it ran at standard, judged, difficulty)"`.
   The fourth names the ask, that it went unmet, and what ran instead — the three things the
-  reply carries too, because the log is reaped and the reply is not. It is also the one shape
+  reply carries too, because the log is reaped and the reply is not. **`ran at standard` is
+  the third of those, and the line is not written until it holds a level.** Name the level
+  the substitute went out at by the **Key** cell of the tier-table row your judgment picked —
+  a word the table declares, which is what a reader can check, since the levels are what the
+  request chose from. The model name opening the line does not stand in for it, and neither
+  does the provenance after it: a line that ends at `judged, difficulty` says where the
+  substitute came from and never what it was, which drops exactly the statement the person
+  cannot reconstruct. It is also the one shape
   a reader can check rather than take on trust: the server has already written
   `weight stated by the request: <key>` onto this same log, before any line of yours, so what
   was asked and what you dispatched sit side by side and a claim of honouring is verifiable.

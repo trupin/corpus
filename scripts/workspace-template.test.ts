@@ -2493,6 +2493,25 @@ describe("orchestrate skill body", () => {
         /\*\*in the job's log while it runs\*\* and \*\*in the reply the request receives\*\*/,
       );
       expect(body).toMatch(/what was asked for, that it could not be met, and what ran\s+instead/);
+      // AGENT-062: the third statement is the one the rehearsal suite caught
+      // being dropped (story 8, 2 of 3 runs) — the ask and the refusal were
+      // recorded, and nothing named what ran. It must be asked for by name, as
+      // a level the workspace's own table declares (SHARED-022), and in both
+      // places §7 requires it — the reaped log and the durable reply.
+      expect(body).toMatch(
+        wrapped(
+          "The third statement names the level the work actually ran at, as a level this workspace's table declares — in the log and in the reply alike.",
+        ),
+      );
+      expect(body).toMatch(wrapped("the third exists only if you write it"));
+      expect(body).toMatch(
+        wrapped("the level is the word a reader can hold against the table above"),
+      );
+      // The reply example names its substitute as a declared level, not only a
+      // model — and the text says that is what the naming is.
+      expect(body).toMatch(
+        wrapped("the substitute named there as **Standard**, a level the table declares"),
+      );
       // Why the reply is not optional: the log does not survive the event.
       expect(body).toMatch(/The log is reaped with its event, so the reply is the durable half/);
       expect(body).toMatch(/claiming work it did not do/);
@@ -2510,10 +2529,29 @@ describe("orchestrate skill body", () => {
 
     it("logs a fourth dispatch shape when a stated weight went unmet", () => {
       expect(body).toMatch(/Four shapes, one grammar/);
+      // AGENT-062: the exemplar carries the level that ran (`ran at standard`),
+      // because story 8 showed the agents copy this line's shape verbatim — an
+      // exemplar ending at the provenance produced logs naming no level in 2
+      // runs of 3.
       expect(body).toContain(
-        "(Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so the tier is judged, difficulty)",
+        "(Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so it ran at standard, judged, difficulty)",
       );
       expect(body).toMatch(/names the ask, that it went unmet, and what ran instead/);
+      // The third statement, asked for by name: a level from the table's own
+      // Key cell, which neither the model name nor the provenance stands in
+      // for. This is the guard's subject sentence.
+      expect(body).toMatch(
+        wrapped(
+          "`ran at standard` is the third of those, and the line is not written until it holds a level.",
+        ),
+      );
+      expect(body).toMatch(
+        wrapped("by the **Key** cell of the tier-table row your judgment picked"),
+      );
+      expect(body).toMatch(wrapped("says where the substitute came from and never what it was"));
+      // The old exemplar shape — ask and refusal, provenance, no level — must
+      // not come back: it is the exact line the breached runs reproduced.
+      expect(body).not.toContain("so the tier is judged, difficulty");
       // The line is checkable rather than self-reported: the server wrote the
       // ask onto the same log before any dispatch line existed.
       expect(body).toContain("`weight stated by the request: <key>`");
