@@ -2223,9 +2223,10 @@ correctly read `weight: null`. Nothing was lost there.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| UI-185 | Ask designates a resident and cannot state its weight | todo | P0 | fable | — |
-| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | todo | P0 | fable | UI-185 |
-| INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | todo | P0 | fable | AGENT-059 |
+| UI-185 | Ask designates a resident and cannot state its weight | done | P0 | fable | — |
+| AGENT-059 | A resident designated with no weight is judged by a table written for jobs | done | P0 | fable | UI-185 |
+| CONTRACT-095 | An Ask that carries an attachment drops its designation entirely | done | P0 | opus | UI-185 |
+| INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | done | P0 | fable | AGENT-059 |
 | INFRA-034 | The rehearsal scenarios: nine user stories, graded | todo | P0 | fable | INFRA-033 |
 | CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
 
