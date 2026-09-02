@@ -2229,8 +2229,8 @@ correctly read `weight: null`. Nothing was lost there.
 | INFRA-033 | A rehearsal harness: a real model, the real skills, a real workspace | done | P0 | fable | AGENT-059 |
 | INFRA-034 | The rehearsal scenarios: nine user stories, graded | done | P0 | fable | INFRA-033 |
 | CLI-075 | The park window has no workspace knob | todo | P2 | opus | — |
-| AGENT-061 | A turn states the model the agent guessed, so §10's record can be wrong | todo | P1 | fable | — |
-| AGENT-062 | A deviation says what was asked and that it failed, never what ran instead | todo | P1 | fable | — |
+| AGENT-061 | A turn states the model the agent guessed, so §10's record can be wrong | done | P1 | fable | — |
+| AGENT-062 | A deviation says what was asked and that it failed, never what ran instead | done | P1 | fable | — |
 
 ## Phase 56 — The orchestrator picks, and you can change your mind (2026-09-02, user directive)
 
@@ -2256,8 +2256,8 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | todo | P0 | fable | — |
-| AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | todo | P0 | fable | — |
-| UI-186 | The Residents tab never says what it launched at, and cannot change it | todo | P0 | opus | AGENT-059 |
+| AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | done | P0 | fable | — |
+| UI-186 | The Residents tab never says what it launched at, and cannot change it | done | P0 | opus | AGENT-059 |
 | SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
