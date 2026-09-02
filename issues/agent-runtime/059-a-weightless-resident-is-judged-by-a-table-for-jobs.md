@@ -202,6 +202,50 @@ signed rider and would take a choice away from the person. `UI-185` is not that
 option: it makes the choice *expressible* at Ask, including an explicit
 "the launcher decides" row, and leaves `null` meaning what §7 says it means.
 
+## Open: the §7 rider is drafted and unsigned
+
+**Raised by the pr-reviewer on PR #71, and it is right.** SPEC.md §7 says, in the
+rider signed 2026-08-06:
+
+> Stating no weight means the orchestrator decides, exactly as it decides today —
+> absence of a choice is the judgment above, never a fixed default.
+
+This issue installs exactly a fixed default. Either that clause binds listener
+launches, in which case the shipped skill contradicts the spec, or it is scoped
+to jobs, in which case the listener rule — which model answers your conversation
+when you chose nothing, the most durable model choice the product makes — is
+behaviour the source of truth does not describe. `INFRA-034` story 2 now asserts
+the rule on every release, so the suite polices behaviour §7 reads against.
+
+**The user decided the behaviour on 2026-09-01 and has not signed spec text.**
+`SPEC.md` is therefore untouched, and v0.31.0 ships the code with this recorded
+rather than holding the release for a paragraph. The drafted rider, for
+signature:
+
+> **That clause governs a job the orchestrator dispatches, and not a listener it
+> launches.** A resident's weight is set when it is designated, and a designation
+> that states none launches at **the strongest level the workspace's own guidance
+> declares**. This is a fixed default, deliberately, and the reason is durability
+> rather than a preference about models: an agent already running cannot change
+> what it is without discarding the conversation it is holding, so a resident's
+> weight is the most expensive choice the orchestrator makes to unwind, and it is
+> made at the moment least is known about the conversation. The consequence test
+> above asks what a bad result would do that revising the document afterwards
+> would not undo — a standing conversation has no single document to revise, so
+> the test does not reach it, and the tie-break it carries, in doubt between two
+> levels take the stronger, is what settles it instead. **Strongest is read from
+> the guidance, never named here**: a workspace that renames or reorders its
+> levels moves this rule with it, and a workspace declaring one level has a
+> strongest level all the same. The cost is accepted and stated: a conversation
+> about nothing much runs at the top level for as long as it lives, and a person
+> who knows a lane is cheap says so by stating a lighter weight when they
+> designate it.
+
+**The risk of leaving it unsigned, stated plainly:** a future agent reading §7
+alone finds *"never a fixed default"* and reverts this rule with the source of
+truth behind it — which is the AGENT-059 defect returning, and every wording
+guard in `workspace-template.test.ts` would be satisfied by the rewrite.
+
 ## Testing Strategy
 
 The subject is prose, so the tests are the template guards plus a read-back: the
