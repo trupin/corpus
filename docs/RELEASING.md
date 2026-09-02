@@ -7,6 +7,23 @@ One version number describes the whole tool — the root `package.json`'s `versi
 workspace manifest. That is the **version singularity** (INFRA-008), and `npm run version:check`
 enforces it in pre-push, in CI, and in the release workflow, where it is also the tag guard.
 
+## The rehearsal pass — before the bump
+
+Once per release, before `release:prepare`, run the agent-in-the-loop rehearsal suite
+(INFRA-033):
+
+```sh
+npm run build                          # the harness rehearses this tree's own CLI build
+npm run rehearse -- --release v<x.y.z> # spawns real agents; local only, minutes per run
+git add rehearsals/scorecard.md        # the pass's durable artifact — commit it
+```
+
+Read the scorecard before going on. A scenario that did not pass is a **finding** — file it and
+decide with that knowledge; never weaken an assertion to get to the tag. This step cannot run in CI
+(the runner spawns agents), so the committed scorecard is the only proof the gate ran: a release
+whose scorecard did not move is a release nobody rehearsed. `rehearsals/README.md` has the design
+and its four rules.
+
 ## Cutting a release
 
 ```sh
