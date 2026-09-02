@@ -134,7 +134,7 @@ const OPEN_ROSTER: readonly AgentLane[] = [LANES.orchestrator, LAUNCHER_CHOSE];
  * worked example. A fixture, never this suite's vocabulary — see
  * `launchRecord.test.ts`.
  */
-const DEFAULTED_LAUNCH =
+const JUDGED_LAUNCH =
   "launched a converse listener on th_open — a general resident " +
   "(Haiku — judged: no weight chosen, the lane is for quick factual lookups)";
 
@@ -674,7 +674,7 @@ describe("what the launch went out at", () => {
   it("shows what the launcher chose, read off the launch's own record", async () => {
     renderResidents({
       lanes: OPEN_ROSTER,
-      launches: [{ lane: "th_open", eventId: "evt_d", lines: [DEFAULTED_LAUNCH] }],
+      launches: [{ lane: "th_open", eventId: "evt_d", lines: [JUDGED_LAUNCH] }],
     });
     await selectOpen();
 
@@ -765,7 +765,7 @@ describe("what the launch went out at", () => {
   it("reads the launch for the selected lane and for no other", async () => {
     const wire = renderResidents({
       lanes: OPEN_ROSTER,
-      launches: [{ lane: "th_open", eventId: "evt_d", lines: [DEFAULTED_LAUNCH] }],
+      launches: [{ lane: "th_open", eventId: "evt_d", lines: [JUDGED_LAUNCH] }],
     });
     await waitFor(() => {
       expect(document.querySelectorAll("[data-lane]")).toHaveLength(2);

@@ -29,7 +29,6 @@ interface Box {
   readonly height: number;
 }
 
-/** An unreflected note — written by a person after the clock the stub carries. */
 /**
  * Both halves of this fixture are relative to now (UI-188). The count is
  * "changes since the last reflection", so `updated` and `reflected` only mean
@@ -45,6 +44,7 @@ const REFLECTED_AT = new Date(Date.now() - 7 * DAY_MS).toISOString();
 /** …and the notes changed after it, so all five count. */
 const NOTE_UPDATED_AT = new Date(Date.now() - 6 * DAY_MS).toISOString();
 
+/** An unreflected note — written by a person after the clock the stub carries. */
 function note(n: number): StubRow {
   return {
     id: `doc_n${String(n)}`,

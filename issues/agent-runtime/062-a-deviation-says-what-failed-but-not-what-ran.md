@@ -63,16 +63,16 @@ two thirds of it.
 
 ## Acceptance Criteria
 
-- [ ] A dispatch whose stated weight could not be honoured logs **what ran
+- [x] A dispatch whose stated weight could not be honoured logs **what ran
       instead**, naming a level the workspace's own table declares — never a
       model name written into the skill (SHARED-022)
-- [ ] The reply the request receives carries the same third statement, which §7
+- [x] The reply the request receives carries the same third statement, which §7
       requires separately from the log and which outlives it — §7 makes the job
       log runtime state reaped with its event
-- [ ] The other two statements are unchanged: what was asked, and that it could
+- [x] The other two statements are unchanged: what was asked, and that it could
       not be met
-- [ ] Guarded in `scripts/workspace-template.test.ts`
-- [ ] `INFRA-034` story 8 passes 3/3, which is what will prove it
+- [x] Guarded in `scripts/workspace-template.test.ts`
+- [ ] `INFRA-034` story 8 passes 3/3, which is what will prove it — **deferred to the pre-tag rehearsal pass**, and the only criterion not met at merge
 
 ## Technical Design
 
@@ -170,4 +170,4 @@ the token the scorer looks for.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

@@ -81,17 +81,17 @@ turn would get a confident, wrong answer.
 
 ## Acceptance Criteria
 
-- [ ] An agent turn's recorded model is not a value the agent composes from
+- [x] An agent turn's recorded model is not a value the agent composes from
       belief. Either it is derived from something authoritative at the point of
       the write, or the agent is told plainly that stating a model it has not
       read is worse than stating none
-- [ ] Where the model genuinely cannot be established, **nothing** is recorded —
+- [x] Where the model genuinely cannot be established, **nothing** is recorded —
       §10's own answer, and it must be reachable rather than theoretical
-- [ ] A wrong stamp is never corrected by posting a second turn. §6 already has
+- [x] A wrong stamp is never corrected by posting a second turn. §6 already has
       revision for "the latest turn was wrong"; a correction turn breaks *one
       question, one answer* to fix a frontmatter field
-- [ ] The rule is guarded in `scripts/workspace-template.test.ts`
-- [ ] `INFRA-034` story 4 passes 3/3 afterwards, which is what will prove it
+- [x] The rule is guarded in `scripts/workspace-template.test.ts`
+- [ ] `INFRA-034` story 4 passes 3/3 afterwards, which is what will prove it — **deferred to the pre-tag rehearsal pass**, and the only criterion not met at merge
 
 ## Technical Design
 
@@ -192,4 +192,4 @@ mechanism it would exercise is verified above at the CLI and template level.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix

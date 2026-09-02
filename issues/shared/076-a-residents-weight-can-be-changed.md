@@ -81,7 +81,52 @@ To be appended to the 2026-08-19 rider, replacing its final clause:
 > message reaching a resident's lane still governs only what the resident hands
 > off, and never the resident's own turn. Changing what a resident works at is a
 > deliberate act on the designation, taken where the designation is shown, and it
-> says what it costs before it is taken. _(Rider signed 2026-09-02.)_
+> says what it costs before it is taken. _(Rider signed — date to be filled at
+> signature.)_
+
+## Two more riders belong in the same signature pass
+
+Both were raised by the pr-reviewer on PR #72. Neither is a code defect — they
+are behaviours that shipped without spec text, which is the failure this issue
+exists to stop repeating.
+
+### A: the model a turn may state (`AGENT-061`)
+
+`corpus thread reply --model` now refuses any value the workspace's tier table
+does not declare — exit 2, nothing sent. A workspace whose guidance declares no
+table refuses **every** `--model`, so §10's *"an agent turn says which model
+wrote it"* is unreachable there and turns are recorded with nothing. That is
+§10's own answer to an unknown, but the spec never says a vocabulary gate stands
+on the write.
+
+Drafted, to follow §10's model-record rider:
+
+> **The model a turn states is one the workspace declares.** A turn's recorded
+> model is the word the guidance's own tier table gives it, not a version string
+> an agent composed about itself, and a write that names anything else is
+> refused rather than recorded — an agent's belief about which model is running
+> it is not evidence, and a real-sounding wrong name is the plausible
+> attribution this section already says is worth less than nothing. Where the
+> workspace declares no levels, no turn states a model, which is the same
+> "nothing rather than a guess" this section requires. _(Rider signed — date to
+> be filled at signature.)_
+
+### B: what governs a listener's weight, scoped (`AGENT-063`)
+
+§7 says *"Stating no weight means the orchestrator decides … absence of a choice
+is the judgment above"*, and "the judgment above" is the two-pass job test. The
+skill now says those two passes do not govern a listener launch and installs a
+conversation-read in their place. `AGENT-063` cured the *"never a fixed
+default"* contradiction; this scoping is the residue.
+
+Drafted, to follow that clause:
+
+> **What it decides a listener by is not what it decides a job by.** The passes
+> above weigh one bounded piece of work by what its output touches, and a
+> listener has no output to weigh — only a conversation that has not happened
+> yet. So a designation stating no weight is judged on the conversation: what it
+> was opened for, and what a poor turn would cost there. The guidance states how,
+> and states it alone. _(Rider signed — date to be filled at signature.)_
 
 ## Why this is P0
 
