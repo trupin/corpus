@@ -1,4 +1,5 @@
 import { ACTOR_HEADER, type Actor } from "../actor.js";
+import type { CreateThreadResident } from "../schemas/agents.js";
 import { CaptureResultSchema, type CaptureResult } from "../schemas/capture.js";
 import { ApiErrorSchema, type ApiError } from "../schemas/error.js";
 import {
@@ -105,6 +106,27 @@ export interface ThreadUpload {
   readonly requestsAgent?: boolean;
   /** As {@link TurnUpload.weight}: omit for "the orchestrator decides". */
   readonly weight?: string;
+  /**
+   * **Who will own the conversation** (SPEC.md §7's rider signed 2026-08-25),
+   * exactly as the JSON twin's `resident` carries it — three states, and the
+   * designation's own weight rides *inside* the object rather than beside it.
+   *
+   * - **Omitted** — the default: a general resident.
+   * - **`null`** — no resident at all.
+   * - **an object** — that profile, and/or the level it works at.
+   *
+   * **Omitted and `null` mean different things here**, unlike every other
+   * optional field on this body, which is why the builder sends the whole value
+   * as one JSON-encoded part and sends **no part at all** when it is omitted.
+   * `MultipartResidentSchema` carries the decision: flat parts cannot say
+   * *present, and explicitly nobody*.
+   *
+   * A designation that travelled only on the JSON path would make attaching a
+   * file the one thing that costs a conversation its owner — and §7 makes that
+   * loss expensive, since only a standalone thread may designate and the thread
+   * has already been created by the time anyone notices (CONTRACT-095).
+   */
+  readonly resident?: CreateThreadResident | null;
   readonly files?: readonly File[];
 }
 
@@ -159,6 +181,13 @@ export function buildThreadFormData(upload: ThreadUpload): FormData {
   if (upload.recipient !== undefined) form.append("recipient", upload.recipient);
   if (upload.parent !== undefined) form.append("parent", upload.parent);
   if (upload.selector !== undefined) form.append("selector", JSON.stringify(upload.selector));
+  // The whole designation as one JSON-encoded part, the selector's encoding and
+  // for a sharper reason (`MultipartResidentSchema`): the field's three states
+  // turn on the difference between an absent part and a present one, so `null`
+  // is sent as the part `null` and an omitted field sends no part at all. Flat
+  // `resident.name` / `resident.weight` parts could not say *present, and
+  // explicitly nobody* (CONTRACT-095).
+  if (upload.resident !== undefined) form.append("resident", JSON.stringify(upload.resident));
   if (upload.title !== undefined) form.append("title", upload.title);
   if (upload.text !== undefined) form.append("text", upload.text);
   if (upload.requestsAgent !== undefined) {

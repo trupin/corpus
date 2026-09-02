@@ -3,7 +3,8 @@ import { createCorpusClient, CorpusRequestError } from "./createCorpusClient.js"
 
 /**
  * The turn-write half of the client: the two routes whose path carries a
- * timestamp, the multipart append, and the token-guarded attachment fetch.
+ * timestamp, the two multipart writes — a turn appended with files and a thread
+ * whose first turn carries them — and the token-guarded attachment fetch.
  */
 
 interface Recorded {
@@ -225,6 +226,69 @@ describe("appendTurnWithFiles", () => {
     expect((failure as CorpusRequestError).status).toBe(413);
     expect((failure as CorpusRequestError).message).toContain("per-file limit");
     expect((failure as CorpusRequestError).issues[0]?.path).toBe("files");
+  });
+});
+
+describe("createThreadWithFiles", () => {
+  const THREAD = {
+    id: "th_new",
+    title: "Rates",
+    created: TS,
+    updated: TS,
+    status: "open",
+    tags: [],
+    parent: null,
+    anchor: null,
+    agent: "requested",
+    resident: null,
+    unread: false,
+    turns: [],
+  };
+  const created = () => ({
+    status: 201,
+    payload: { thread: THREAD, anchorId: null, eventId: "evt_1", warnings: [] },
+  });
+
+  /**
+   * A file and an owner on the same request — the case CONTRACT-095 shipped
+   * broken, asserted at the hop where the field used to be dropped.
+   */
+  it("carries the designation across the multipart hop, alongside the attachment", async () => {
+    const { client, calls } = wire(created());
+    await client.createThreadWithFiles({
+      text: "Take the forecast apart.",
+      requestsAgent: true,
+      resident: { name: "researcher", weight: "heavy" },
+      files: [new File(["a"], "shot.png", { type: "image/png" })],
+    });
+    const form = calls[0]?.body as FormData;
+    expect(form.getAll("files")).toHaveLength(1);
+    // A text part, present, before it is decoded: a dropped part then fails as
+    // the missing designation it is rather than as a JSON parse error.
+    const encoded = form.get("resident");
+    expect(typeof encoded).toBe("string");
+    expect(JSON.parse(typeof encoded === "string" ? encoded : "")).toEqual({
+      name: "researcher",
+      weight: "heavy",
+    });
+  });
+
+  /** The two absences the client must keep apart — see `MultipartResidentSchema`. */
+  it("omits the part for the default resident and sends `null` for none at all", async () => {
+    const bare = wire(created());
+    await bare.client.createThreadWithFiles({
+      text: "hi",
+      files: [new File(["a"], "shot.png")],
+    });
+    expect((bare.calls[0]?.body as FormData).has("resident")).toBe(false);
+
+    const nobody = wire(created());
+    await nobody.client.createThreadWithFiles({
+      text: "hi",
+      resident: null,
+      files: [new File(["a"], "shot.png")],
+    });
+    expect((nobody.calls[0]?.body as FormData).get("resident")).toBe("null");
   });
 });
 

@@ -91,6 +91,10 @@ function createServer() {
             `text=${(multipart ? validated.text : validated.body) ?? ""}`,
             `title=${validated.title ?? ""}`,
             `selector=${validated.selector?.exact ?? ""}`,
+            // Three states, so the echo must distinguish all three: an absent
+            // designation, an explicit `null`, and an object. `JSON.stringify`
+            // alone would report the first two identically.
+            `resident=${validated.resident === undefined ? "absent" : JSON.stringify(validated.resident)}`,
             `files=${files.map((file) => file.name).join("|")}`,
             `auth=${c.req.header("authorization") ?? ""}`,
             `actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
@@ -237,6 +241,54 @@ describe("buildThreadFormData", () => {
     expect(form.get("job")).toBe("evt_7c1d");
     expect(form.get("recipient")).toBe("orchestrator");
   });
+
+  /**
+   * The test whose absence let CONTRACT-095 ship: **a file and an owner
+   * together**. Every other assertion here sends one or the other, and the
+   * designation was dropped on exactly the path that carries both.
+   */
+  it("sends the designation alongside the attachment, which is the case that shipped broken", () => {
+    const form = buildThreadFormData({
+      text: "Take the forecast apart.",
+      resident: { name: "researcher", weight: "heavy" },
+      files: [png()],
+    });
+    expect([...form.keys()].sort()).toEqual([FILES_FIELD, "resident", "text"]);
+    expect(form.getAll(FILES_FIELD)).toHaveLength(1);
+    const encoded = form.get("resident");
+    expect(JSON.parse(typeof encoded === "string" ? encoded : "")).toEqual({
+      name: "researcher",
+      weight: "heavy",
+    });
+  });
+
+  /**
+   * The three states through the encoding, which is the whole reason the field
+   * is one JSON part rather than flat parts: an omitted part and a `null` part
+   * mean different things (`MultipartResidentSchema`).
+   */
+  describe("the designation's three states survive the encoding", () => {
+    it("omits the part entirely when the field is omitted — the default resident", () => {
+      expect(buildThreadFormData({ text: "hi" }).has("resident")).toBe(false);
+    });
+
+    it("sends the part `null` for a thread with no resident at all", () => {
+      const form = buildThreadFormData({ text: "hi", resident: null });
+      expect(form.has("resident")).toBe(true);
+      expect(form.get("resident")).toBe("null");
+    });
+
+    it("sends the object for a designated profile", () => {
+      const form = buildThreadFormData({ text: "hi", resident: { name: "researcher" } });
+      expect(form.get("resident")).toBe(JSON.stringify({ name: "researcher" }));
+    });
+
+    /** A level with no name is a general resident at that level, not a fourth state. */
+    it("sends a weight-only designation, which the contract makes independent of the name", () => {
+      const form = buildThreadFormData({ text: "hi", resident: { weight: "heavy" } });
+      expect(form.get("resident")).toBe(JSON.stringify({ weight: "heavy" }));
+    });
+  });
 });
 
 describe("uploadCreateThread against a mounted contract route", () => {
@@ -250,7 +302,8 @@ describe("uploadCreateThread against a mounted contract route", () => {
     });
 
     expect(created.thread.title).toBe(
-      `text=why 6.1%? title=Rates selector= files=shot.png auth=Bearer ${TOKEN} actor=agent`,
+      `text=why 6.1%? title=Rates selector= resident=absent files=shot.png ` +
+        `auth=Bearer ${TOKEN} actor=agent`,
     );
     expect(created.eventId).toBe("evt_7c1d");
   });
@@ -266,6 +319,35 @@ describe("uploadCreateThread against a mounted contract route", () => {
     expect(created.thread.title).toContain("selector=a 30-year fixed at 6.1%");
     expect(created.thread.parent).toBe("doc_a1b2c3");
     expect(created.anchorId).toBe("anc_k4f7");
+  });
+
+  /**
+   * The wire assertion that would have caught CONTRACT-095, made against the
+   * route's **own** validator rather than against the `FormData`: what the
+   * server parses out of the encoded part is what the caller handed in, with a
+   * file riding alongside it.
+   */
+  it("delivers a designation and an attachment together, as the contract's validator reads them", async () => {
+    const created = await uploadCreateThread({
+      ...options(),
+      text: "Take the forecast apart.",
+      resident: { name: "researcher", weight: "heavy" },
+      files: [png()],
+    });
+
+    expect(created.thread.title).toContain('resident={"name":"researcher","weight":"heavy"}');
+    expect(created.thread.title).toContain("files=shot.png");
+  });
+
+  /** `null` is a value on this field, and it must survive the round trip as one. */
+  it("round-trips an explicit `null` designation as no resident at all", async () => {
+    const created = await uploadCreateThread({
+      ...options(),
+      text: "nobody owns this",
+      resident: null,
+      files: [png()],
+    });
+    expect(created.thread.title).toContain("resident=null");
   });
 
   it("posts an attachment-only first turn", async () => {

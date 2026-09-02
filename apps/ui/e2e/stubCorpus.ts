@@ -571,8 +571,13 @@ function fieldsOf(body: MultipartBody): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
   for (const part of body.text) {
     if (part.field === "requestsAgent") fields[part.field] = part.value === "true";
-    else if (part.field === "selector") fields[part.field] = JSON.parse(part.value) as unknown;
-    else fields[part.field] = part.value;
+    // The two JSON-encoded parts (`MultipartSelectorSchema`,
+    // `MultipartResidentSchema`), decoded so one handler reads the same value
+    // whichever encoding it arrived in. `resident` especially: `null` is a value
+    // on that field and must not reach a handler as the string `"null"`.
+    else if (part.field === "selector" || part.field === "resident") {
+      fields[part.field] = JSON.parse(part.value) as unknown;
+    } else fields[part.field] = part.value;
   }
   return fields;
 }

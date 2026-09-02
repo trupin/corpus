@@ -4,6 +4,7 @@ import type {
   CaptureResult,
   CreateDocRequest,
   CreateThreadRequest,
+  CreateThreadResident,
   CreateThreadResponse,
   DeleteDocResult,
   DeleteFolderResult,
@@ -163,6 +164,20 @@ export interface CreateThreadUpload {
   readonly requestsAgent?: boolean | undefined;
   /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
   readonly weight?: string | undefined;
+  /**
+   * **Who will own the conversation** (SPEC.md §7's rider signed 2026-08-25) —
+   * the same three states {@link CreateThreadInput}'s `resident` has, carried on
+   * the multipart branch as one JSON-encoded part.
+   *
+   * **`undefined` and `null` are different answers here**, which is why this one
+   * is not spelled `| undefined` for convenience the way the fields above are:
+   * omitted designates the default general resident, `null` designates nobody,
+   * and an object designates that profile at that level. A designation that
+   * rode only the JSON branch would be dropped by attaching a file, and §7 makes
+   * that expensive — only a standalone thread may designate, and by the time the
+   * loss is visible the thread exists (CONTRACT-095).
+   */
+  readonly resident?: CreateThreadResident | null;
   readonly files: readonly File[];
 }
 
@@ -1362,6 +1377,10 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
           ...(input.weight === undefined ? {} : { weight: input.weight }),
           ...(input.recipient === undefined ? {} : { recipient: input.recipient }),
+          // `null` is a value here rather than a second spelling of absence, so
+          // the test is against `undefined` alone: an omitted designation sends
+          // no part, and a `null` one sends the part `null` (CONTRACT-095).
+          ...(input.resident === undefined ? {} : { resident: input.resident }),
           files: input.files,
         }),
       );

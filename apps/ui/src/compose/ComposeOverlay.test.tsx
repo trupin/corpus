@@ -778,6 +778,64 @@ describe("ComposeOverlay", () => {
       expect("resident" in form).toBe(false);
       expect("weight" in form).toBe(false);
     });
+
+    /**
+     * **A file and an owner, together** (CONTRACT-095).
+     *
+     * Attaching one switches the Ask to `multipart/form-data`, and until this
+     * issue the designation was dropped in that switch: the same form made two
+     * different threads depending on whether a screenshot rode along, and
+     * nothing told the person which one they got. Every test above sends an
+     * owner without a file, and the two attachment tests send a file without an
+     * owner — which is exactly why nothing caught it.
+     */
+    it("carries the designation onto the multipart Ask an attachment forces", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      fireEvent.change(level, { target: { value: "heavy" } });
+      type(container, "look at this forecast");
+      fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
+        target: { files: [file("shot.png")] },
+      });
+      fireEvent.click(button(container, "btn-ask"));
+
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      const call = wire.to("/api/threads")[0];
+      expect(call?.files).toEqual(["shot.png"]);
+      // Multipart: there is no JSON body to read, so the designation can only
+      // have travelled as the one encoded part the route declares.
+      expect(call?.json).toBeUndefined();
+      // Present before decoded, so a dropped part fails as the missing
+      // designation it is rather than as a JSON parse error.
+      const encoded = call?.form?.["resident"];
+      expect(encoded).toBeDefined();
+      expect(JSON.parse(encoded ?? "")).toEqual({ name: "researcher", weight: "heavy" });
+    });
+
+    /**
+     * The state the encoding exists for: `null` is a value here, so it must
+     * arrive as a part rather than as the absence that means the opposite.
+     */
+    it("sends `null` as a part when an attached Ask designates nobody", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
+      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      type(container, "nobody owns this");
+      fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
+        target: { files: [file("shot.png")] },
+      });
+      fireEvent.click(button(container, "btn-ask"));
+
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      expect(wire.to("/api/threads")[0]?.form?.["resident"]).toBe("null");
+    });
   });
 
   /**
