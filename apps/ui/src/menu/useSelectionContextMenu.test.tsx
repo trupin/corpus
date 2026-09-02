@@ -240,7 +240,7 @@ describe("captureReplace", () => {
     const stale = vi.fn();
     const replace = captureReplace(editor, stale);
 
-    editor.commands.setContent("<p>PRICE moved</p>", false);
+    editor.commands.setContent("<p>PRICE moved</p>", { emitUpdate: false });
     replace?.("Findings", "<h2>Findings</h2>");
 
     expect(stale).toHaveBeenCalledOnce();
@@ -275,7 +275,7 @@ describe("captureReplace", () => {
 describe("captureReplace on a document that moved underneath it", () => {
   function adopt(editor: Editor, html: string): void {
     // What `DocEditor` dispatches when the server's copy arrives.
-    editor.commands.setContent(html, false);
+    editor.commands.setContent(html, { emitUpdate: false });
   }
 
   it("refuses rather than replacing other words at the same positions", () => {

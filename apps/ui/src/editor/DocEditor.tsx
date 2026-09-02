@@ -381,9 +381,10 @@ export function DocEditor({
     if (canonical === applied.current) return;
     applied.current = canonical;
     if (canonical === serializeDoc(asPmNode(editor.getJSON()))) return;
-    // `false`: adopting the server's copy is not the user's edit and must not
-    // start an autosave, which would write the document back to itself.
-    editor.commands.setContent(asContent(parseMarkdown(canonical)), false);
+    // `emitUpdate: false`: adopting the server's copy is not the user's edit
+    // and must not start an autosave, which would write the document back to
+    // itself.
+    editor.commands.setContent(asContent(parseMarkdown(canonical)), { emitUpdate: false });
   }, [canonical, editing, editor]);
 
   useEffect(() => {
