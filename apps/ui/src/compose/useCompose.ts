@@ -79,8 +79,19 @@ export interface ComposeInput {
    * capture creates is its document's *filing* thread and has a parent, and only
    * a standalone thread may designate. SHARED-073 carries the question of
    * whether that should change.
+   *
+   * **`weight` rides inside the object, never beside it** (UI-185). It is the
+   * level the resident is designated at — §7's rider of 2026-08-19 makes the
+   * designation the only place that choice exists — and it is a different
+   * field from the top-level `weight` above, which is the *message's* and
+   * never governs the resident's own turn. Omitting it means the launcher
+   * decides, exactly as the designate route spells it; `{weight}` alone
+   * designates a general resident at that level, because the contract makes
+   * the two fields independent.
    */
-  readonly resident: { readonly resident?: { readonly name?: string } | null };
+  readonly resident: {
+    readonly resident?: { readonly name?: string; readonly weight?: string } | null;
+  };
 }
 
 /**

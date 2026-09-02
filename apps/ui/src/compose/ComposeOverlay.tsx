@@ -17,6 +17,7 @@ import {
   useDocs,
   useComposerRecipient,
   useComposerWeight,
+  useWeightLevels,
   type PendingAttachment,
   type RowNotice,
 } from "@corpus/kit";
@@ -32,7 +33,12 @@ import {
   type ReactElement,
 } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
-import { useCompose, type ComposeMode } from "./useCompose";
+import {
+  LAUNCHER_DECIDES_LABEL,
+  LAUNCHER_WEIGHT_META,
+  LEVEL_WEIGHT_META,
+} from "../thread/residentActions";
+import { useCompose, type ComposeInput, type ComposeMode } from "./useCompose";
 import "./compose.css";
 
 /**
@@ -116,6 +122,50 @@ const RESIDENT_TITLE =
   "A new conversation gets its own agent unless you choose otherwise. This is not the " +
   "recipient beside it: a recipient routes this one message and changes nothing else.";
 
+/**
+ * What the designation's weight control is, and what it is not (UI-185).
+ *
+ * The two metas are `residentActions.ts`'s own, joined — one declaration of
+ * what a level row means and what leaving the set alone means, shared with the
+ * thread menu's rows rather than reworded here. The last sentence is this
+ * surface's alone, because only this surface has a second weight beside it to
+ * be mistaken for.
+ */
+const RESIDENT_WEIGHT_TITLE =
+  `${LEVEL_WEIGHT_META} (SPEC.md §7: a resident's weight is set when it is designated, ` +
+  `not per message). Left alone, ${LAUNCHER_WEIGHT_META}. ` +
+  "This is not the weight in the address beside it: that one rides this message.";
+
+/** Names the control for the DOM and the suites. */
+export const RESIDENT_WEIGHT_ARIA = "The weight this conversation's resident works at";
+
+/**
+ * The `resident` the submit carries (UI-185) — the three contract states, with
+ * the designation's weight riding **inside** the object and never beside it.
+ *
+ * - Owner untouched, no level: `{}` — the key stays off the body, which is the
+ *   default the contract's three states are built on.
+ * - Owner untouched, a level: `{resident: {weight}}` — a general resident at
+ *   that level; the contract makes `name` and `weight` independent.
+ * - A profile: `{resident: {name}}`, with the level beside it when one stands.
+ * - Nobody: `{resident: null}`, and no weight rides — there is no resident to
+ *   run at one, the control is not shown in that state, and a value the
+ *   surface no longer shows must not be sent (§10).
+ */
+export function designationRequest(
+  resident: string | null | undefined,
+  weight: string | undefined,
+): ComposeInput["resident"] {
+  if (resident === null) return { resident: null };
+  if (resident === undefined && weight === undefined) return {};
+  return {
+    resident: {
+      ...(resident === undefined ? {} : { name: resident }),
+      ...(weight === undefined ? {} : { weight }),
+    },
+  };
+}
+
 export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): ReactElement {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -154,6 +204,26 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * imply the other would be the collapse §10's rider rules out.
    */
   const [resident, setResident] = useState<string | null | undefined>(undefined);
+  /**
+   * **The level the resident is designated at** (UI-185; SPEC.md §7's rider of
+   * 2026-08-19: the designation is the only place the choice exists).
+   *
+   * Plain `useState` that dies with the overlay, like the thread menu's
+   * (`ThreadMenuItems.tsx`) and deliberately **not** `weightChoice.ts`'s map:
+   * that map remembers a *message's* weight per conversation, and one map
+   * serving both would have a message's standing level silently pre-arming a
+   * designation. `undefined` is "the launcher decides" — a real choice here,
+   * offered as an explicit option, never merely an unpressed state.
+   */
+  const [residentWeight, setResidentWeight] = useState<string | undefined>(undefined);
+  /*
+   * The workspace's own tier table — the same declaration every weight surface
+   * reads (`useWeightLevels`, SHARED-022 Decision 1), through the same cached
+   * query the message control's `useComposerWeight` reads it by. One
+   * vocabulary, two independent choices. Empty means **no control at all**,
+   * exactly as the thread menu behaves — never a fallback list.
+   */
+  const levels = useWeightLevels();
   /*
    * The profiles the picker offers — the same `type: agent-def` directory the
    * `@` autocomplete draws from, at the same bound, rather than a second query
@@ -191,11 +261,21 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * offering a choice it would discard (rider signed 2026-08-19); Capture,
    * which is always the orchestrator's, shares the overlay's one control and
    * therefore its one statement.
+   *
+   * `designating` is what tells the address a resident is being **created**
+   * (UI-185): its weight section then says its levels ride the message and
+   * govern only what that resident hands off — the resident's own level is the
+   * owner control's, one label to the right. The choice still travels, as the
+   * *message* weight, because §7 gives it that job and Capture reads the same
+   * control; what changes is that the overlay now says which weight went
+   * where, instead of letting the one visible control read as the resident's.
    */
   const address = composerAddress({
     weight,
     recipient,
     live: composerReachesAgent({ requestsAgent: true }),
+    designating:
+      resident === null ? undefined : resident === undefined ? DEFAULT_RESIDENT_LABEL : resident,
   });
 
   useEffect(() => {
@@ -248,11 +328,11 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
           weight: address.weightRequest,
           recipient: recipient.request,
           // Absence is the default, so it is spelled by leaving the key out —
-          // and `null` is a value here rather than another absence.
-          resident:
-            resident === undefined
-              ? {}
-              : { resident: resident === null ? null : { name: resident } },
+          // and `null` is a value here rather than another absence. The
+          // designation's level rides *inside* the object (UI-185): it is the
+          // resident's, and the body's top-level `weight` above is the
+          // message's, which never governs the resident's own turn (§7).
+          resident: designationRequest(resident, residentWeight),
         });
         if (outcome.ok) {
           // An override routes the message it was set on and never the next one
@@ -275,7 +355,21 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         textarea.current?.focus();
       })();
     },
-    [address.weightRequest, canAsk, canCapture, compose, intake, onClose, recipient, text],
+    // `resident` was absent here once, and only typing after the pick hid it:
+    // a `useCallback` whose deps miss a state it closes over hands the click a
+    // stale designation (found by UI-185, alongside the weight it adds).
+    [
+      address.weightRequest,
+      canAsk,
+      canCapture,
+      compose,
+      intake,
+      onClose,
+      recipient,
+      resident,
+      residentWeight,
+      text,
+    ],
   );
 
   /**
@@ -398,6 +492,52 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
               ))}
             </select>
           </label>
+          {/*
+           * **The level that resident works at** (UI-185; §7's rider of
+           * 2026-08-19: a resident's weight is set when it is designated, not
+           * per message — and Ask is where most designations are made, so this
+           * is where the choice must exist).
+           *
+           * Beside the owner and *not* inside the address, because the two
+           * weights are different things: the address's rides this message and
+           * governs only hand-offs, this one is what the resident **is** for
+           * as long as the conversation lives. `at` is the lead
+           * `residentActions.ts` gives an act's level ("— at heavy"), so the
+           * pair reads as one designation: *owner researcher, at heavy*.
+           *
+           * Offered only where there is a resident to weigh — with "no owner"
+           * picked it disappears rather than dims, and any standing choice is
+           * then not sent, because a value the surface no longer shows must
+           * not act (§10). A workspace declaring no levels gets no control at
+           * all, exactly as the thread menu's rows behave.
+           */}
+          {levels.length > 0 && resident !== null ? (
+            <label className="compose-resident compose-resident-weight">
+              <span className="compose-resident-label">at</span>
+              <select
+                aria-label={RESIDENT_WEIGHT_ARIA}
+                value={residentWeight ?? ""}
+                title={RESIDENT_WEIGHT_TITLE}
+                onChange={(event) => {
+                  const picked = event.currentTarget.value;
+                  setResidentWeight(picked === "" ? undefined : picked);
+                }}
+              >
+                {/*
+                 * An explicit member, worded as the thread menu words it: "the
+                 * launcher decides" is a real outcome the contract reports
+                 * back (`Resident.weight` null), never merely an unpressed
+                 * state — and it is the way back once a level was picked.
+                 */}
+                <option value="">{LAUNCHER_DECIDES_LABEL}</option>
+                {levels.map((level) => (
+                  <option key={level.key} value={level.key}>
+                    {level.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
 
         <div className="compose-actions">

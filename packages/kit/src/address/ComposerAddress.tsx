@@ -11,8 +11,10 @@ import { LaneDot } from "../recipient/LaneDot.js";
 import type { LaneRow } from "../recipient/laneRows.js";
 import { DEFAULT_ROW_NOTE, statementFor } from "../recipient/statement.js";
 import {
+  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
+  designationWeightSentence,
   residentWeightSentence,
   type ComposerAddress as Address,
 } from "./addressModel.js";
@@ -131,8 +133,9 @@ export function lanesCappedNote(count: number): string {
  * where the sentence should have been. Nested titles do not merge, so the outer
  * one has to be the complete answer.
  */
-function lineTitle(line: string, live: boolean): string {
-  return `${line} — ${live ? ADDRESS_OPEN_TITLE : ADDRESS_FLOOR_TITLE}`;
+function lineTitle(line: string, live: boolean, designating: boolean): string {
+  const explains = designating ? ADDRESS_DESIGNATING_TITLE : ADDRESS_OPEN_TITLE;
+  return `${line} — ${live ? explains : ADDRESS_FLOOR_TITLE}`;
 }
 
 /**
@@ -541,7 +544,11 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           className="address-line"
           data-address-line={surface}
           aria-expanded={open}
-          title={lineTitle(address.line, address.live)}
+          title={lineTitle(
+            address.line,
+            address.live,
+            address.weight.kind === "choice" && address.weight.designating !== undefined,
+          )}
           onClick={() => {
             setOpen((current) => !current);
           }}
@@ -646,6 +653,17 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   );
                 })}
               </div>
+              {weight.designating !== undefined ? (
+                /* The rider of 2026-08-19, met the other way round (UI-185):
+                 * here the rows stay live — the choice rides the message,
+                 * which §7 gives a real job and Capture shares — so the
+                 * section says out loud what they do not govern: the resident
+                 * this send designates, whose own level is the owner
+                 * control's. */
+                <p className="address-resident" data-designation-boundary={weight.designating}>
+                  {designationWeightSentence(weight.designating)}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

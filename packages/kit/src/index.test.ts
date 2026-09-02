@@ -245,11 +245,17 @@ const RUNTIME_SURFACE = [
   "composerAddress",
   "answeringRow",
   "residentWeightSentence",
+  // The sentence the weight rows carry where a send also designates a resident
+  // (UI-185): the rows stay live — the choice is the message's, which §7 gives
+  // a real job — and this is what says they never govern the resident's own
+  // turn, whose level is the owner control's.
+  "designationWeightSentence",
   "weightLabel",
   // What a lane list says when it reached the card's ceiling (UI-130): a capped
   // list that looked complete would be a silent cap.
   "lanesCappedNote",
   "ADDRESS_OPEN_TITLE",
+  "ADDRESS_DESIGNATING_TITLE",
   "ADDRESS_FLOOR_TITLE",
   "ADDRESSED_TO",
   "LAUNCH_WEIGHT_CLAUSE",

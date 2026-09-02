@@ -1,12 +1,15 @@
 /** @vitest-environment jsdom */
-import type { RowNotice } from "@corpus/kit";
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { designationWeightSentence, ADDRESS_DESIGNATING_TITLE, type RowNotice } from "@corpus/kit";
+import { createCorpusTestHarness, docRowFixture, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { isOverlayOpen } from "../shell/overlays";
+import { LAUNCHER_DECIDES_LABEL } from "../thread/residentActions";
+import { skillDoc, skillRow, ORCHESTRATE_SKILL_ID } from "../testing/weightFixture";
 import {
+  designationRequest,
   ASK_LABEL,
   CAPTURE_LABEL,
   COMPOSE_HINT,
@@ -18,6 +21,10 @@ import { composeTransport, type ComposeTransport } from "./composeFixture";
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
+  // The message weight's standing choice outlives a component by design
+  // (`weightChoice.ts`), so without this one test's pick is the next one's
+  // starting state.
+  resetWeightChoices();
 });
 
 interface Mounted extends RenderResult {
@@ -561,6 +568,236 @@ describe("ComposeOverlay", () => {
       expect(container.querySelector(".composer-address")).not.toBeNull();
       expect(container.querySelector(".compose-resident")).not.toBeNull();
       expect(picker(container).getAttribute("aria-label")).toBe("Who will own this conversation");
+    });
+
+    /**
+     * `resident` was missing from the submit's `useCallback` deps, and every
+     * existing test typed *after* picking — which recreates the callback and
+     * hides the stale closure. Pick after typing and the pre-UI-185 overlay
+     * sent the designation the previous render held.
+     */
+    it("sends the owner picked after the text was typed, not a stale one", async () => {
+      const wire = composeTransport();
+      const { container } = mount(wire);
+      type(container, "a question");
+      fireEvent.change(picker(container), { target: { value: "@none" } });
+      fireEvent.click(button(container, "btn-ask"));
+
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      expect(wire.to("/api/threads")[0]?.json).toMatchObject({ resident: null });
+    });
+  });
+
+  /**
+   * The level the resident is designated at (UI-185; SPEC.md §7's rider of
+   * 2026-08-19: the designation is the only place the choice exists — and Ask
+   * is where most designations are made).
+   */
+  describe("the designation's weight", () => {
+    const RESEARCHER = docRowFixture({
+      id: "doc_res",
+      title: "researcher",
+      type: "agent-def",
+      path: ".claude/agents/researcher.md",
+    });
+
+    /** A workspace whose guidance declares the three shipped levels. */
+    const declaring = (): ComposeTransport =>
+      composeTransport({
+        rows: [skillRow(), RESEARCHER],
+        docs: { [ORCHESTRATE_SKILL_ID]: skillDoc() },
+      });
+
+    const ownerPicker = (container: HTMLElement): HTMLSelectElement => {
+      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+      if (found === null) throw new Error("no owner picker");
+      return found;
+    };
+
+    const levelPicker = (container: HTMLElement): HTMLSelectElement | null =>
+      container.querySelector<HTMLSelectElement>(".compose-resident-weight select");
+
+    const shownLevels = async (container: HTMLElement): Promise<HTMLSelectElement> => {
+      await waitFor(() => {
+        expect(levelPicker(container)).not.toBeNull();
+      });
+      return levelPicker(container) as HTMLSelectElement;
+    };
+
+    const askBody = async (wire: ComposeTransport): Promise<Record<string, unknown>> => {
+      await waitFor(() => {
+        expect(wire.to("/api/threads")).toHaveLength(1);
+      });
+      return wire.to("/api/threads")[0]?.json ?? {};
+    };
+
+    it("offers the declared levels and an explicit 'the launcher decides', beside the owner", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      // The set is the parsed declaration's, in its order, behind the same
+      // wording the thread menu's rows use — never a hardcoded list.
+      expect([...level.options].map((option) => option.textContent)).toEqual([
+        LAUNCHER_DECIDES_LABEL,
+        "Small and mechanical",
+        "Standard",
+        "Heavy or judgment-laden",
+      ]);
+      // The launcher's choice stands until somebody picks — an option, not an
+      // unpressed state, so there is a way back once a level was picked.
+      expect(level.value).toBe("");
+      // Visibly its own control, in the settings row beside the owner it
+      // refines — not inside the message's address.
+      const names = [...(container.querySelector(".compose-settings")?.children ?? [])].map(
+        (node) => node.className,
+      );
+      expect(names).toEqual([
+        "composer-address",
+        "compose-resident",
+        "compose-resident compose-resident-weight",
+      ]);
+    });
+
+    it("offers no weight rows in a workspace whose guidance declares none", async () => {
+      const { container } = mount(composeTransport());
+      await settle();
+      expect(levelPicker(container)).toBeNull();
+    });
+
+    it("designates a general resident at the chosen level — the weight rides inside", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      fireEvent.change(level, { target: { value: "heavy" } });
+      type(container, "a weighed question");
+      fireEvent.click(button(container, "btn-ask"));
+
+      const body = await askBody(wire);
+      expect(body["resident"]).toEqual({ weight: "heavy" });
+      // …and never beside it: no message weight was chosen, so the top-level
+      // key stays off the body.
+      expect("weight" in body).toBe(false);
+    });
+
+    it("designates a profile at the chosen level", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      fireEvent.change(level, { target: { value: "light" } });
+      type(container, "for the researcher");
+      fireEvent.click(button(container, "btn-ask"));
+
+      expect((await askBody(wire))["resident"]).toEqual({ name: "researcher", weight: "light" });
+    });
+
+    it("still sends {name} alone when the launcher decides — omission is the wire's default", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
+      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      type(container, "unweighed, on purpose");
+      fireEvent.click(button(container, "btn-ask"));
+
+      expect((await askBody(wire))["resident"]).toEqual({ name: "researcher" });
+    });
+
+    it("disappears for 'no owner', and the choice it held is then not sent", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      fireEvent.change(level, { target: { value: "heavy" } });
+      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      // Nothing to weigh on a thread with no resident — gone, not dimmed.
+      expect(levelPicker(container)).toBeNull();
+      type(container, "nobody owns this");
+      fireEvent.click(button(container, "btn-ask"));
+
+      const body = await askBody(wire);
+      expect(body["resident"]).toBeNull();
+      expect("weight" in body).toBe(false);
+    });
+
+    /**
+     * The two weights, together — the criterion this issue stands on. Neither
+     * choice lands on the other's field, and the overlay says which is which:
+     * the level rows the person might mistake for the resident's carry the
+     * boundary sentence, and the line's title names the split.
+     */
+    it("keeps the message weight and the designation weight apart, and says which is which", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+
+      // The message weight, from the address popover — openable, because the
+      // declared levels make the address a choice by the time the owner's own
+      // control has appeared.
+      await waitFor(() => {
+        expect(container.querySelector('button[data-address-line="compose"]')).not.toBeNull();
+      });
+      const line = container.querySelector('button[data-address-line="compose"]') as HTMLElement;
+      fireEvent.click(line);
+      await waitFor(() => {
+        expect(container.querySelector('[data-weight-key="light"]')).not.toBeNull();
+      });
+      // Where the wrong weight would be picked, the overlay says what a level
+      // here governs and where the resident's own level lives.
+      const boundary = container.querySelector("[data-designation-boundary]");
+      expect(boundary?.textContent).toBe(designationWeightSentence("its own agent"));
+      expect(line.getAttribute("title")).toContain(ADDRESS_DESIGNATING_TITLE);
+      fireEvent.click(container.querySelector('[data-weight-key="light"]') as HTMLElement);
+
+      // The designation weight, from the owner's own control.
+      fireEvent.change(level, { target: { value: "heavy" } });
+      type(container, "both weights stated");
+      fireEvent.click(button(container, "btn-ask"));
+
+      const body = await askBody(wire);
+      // The message's, on the message's field — it governs what the resident
+      // hands off, never the resident's own turn (§7).
+      expect(body["weight"]).toBe("light");
+      // The resident's, inside the designation, where §7 puts the choice.
+      expect(body["resident"]).toEqual({ weight: "heavy" });
+    });
+
+    it("leaves Capture exactly as it was — a capture designates nothing", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      const level = await shownLevels(container);
+      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      fireEvent.change(level, { target: { value: "heavy" } });
+      type(container, "file this thought");
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
+
+      await waitFor(() => {
+        expect(wire.to("/api/capture")).toHaveLength(1);
+      });
+      const form = wire.to("/api/capture")[0]?.form ?? {};
+      expect("resident" in form).toBe(false);
+      expect("weight" in form).toBe(false);
+    });
+  });
+
+  /**
+   * The three wire states, pinned pure (UI-185): the weight rides inside the
+   * object, and never becomes a fourth top-level state.
+   */
+  describe("designationRequest", () => {
+    it.each([
+      ["the default, unweighed", undefined, undefined, {}],
+      ["the default, at a level", undefined, "heavy", { resident: { weight: "heavy" } }],
+      ["a profile, unweighed", "researcher", undefined, { resident: { name: "researcher" } }],
+      [
+        "a profile, at a level",
+        "researcher",
+        "light",
+        { resident: { name: "researcher", weight: "light" } },
+      ],
+      ["nobody — and no weight can ride", null, "heavy", { resident: null }],
+    ] as const)("%s", (_name, resident, weight, expected) => {
+      expect(designationRequest(resident, weight)).toEqual(expected);
     });
   });
 });
