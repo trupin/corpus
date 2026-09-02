@@ -144,6 +144,29 @@ clean (241s, quiescence), **run 2 breached (170s, exit, event pending)**, run 3
 clean (70s, quiescence). Same tree, same seed — the difference is how the run
 ended.
 
+## Consequence found while re-running, recorded rather than patched
+
+At 12 runs into the verifying pass, **4 of 12 were cut short** — a third of the
+sample the old scorer was reporting as product breaches. Two things follow, and
+neither is fixed here:
+
+1. **A declared `N` is not an effective `N`.** A judgment declared at 10 is being
+   decided by six or seven scored runs. `INFRA-035` argues for a second judgment
+   scenario; this says the existing one is also thinner than its number claims.
+2. **A judgment scenario grades `over-budget` if *any* run is excluded**
+   (`scored.length < scenario.runs`), and story 2's threshold is `≥10 of 10`. At
+   this rate it will essentially never reach a verdict — it will report
+   inconclusive rather than pass or fail.
+
+That second one is honest and unhelpful, and it is a **design choice to make
+deliberately**, not a bug to patch mid-pass: either a threshold reads against
+scored runs rather than declared ones, or a story declares a larger `N` and
+accepts attrition, or the harness retries a cut-short run. Each has a different
+failure mode and the first two change what a `k/N` on the scorecard means.
+
+Left open on purpose. Changing it while reading the pass it affects is how a
+gate gets tuned until it agrees with whoever is tuning it.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
