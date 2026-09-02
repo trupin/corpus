@@ -31,6 +31,7 @@ import {
   expectProcessed,
   jobLogLines,
   seedNote,
+  readServedWeightTable,
   threadById,
   turnsBy,
 } from "./support.js";
@@ -60,7 +61,16 @@ async function seed(ctx: SeedContext) {
   if (parsed.eventId === null) {
     throw new Error("the weighted comment enqueued nothing — requestsAgent was not honoured");
   }
-  return { refs: { threadId: parsed.thread.id, commentEventId: parsed.eventId } };
+  // The declared levels travel with the seed so the scorer can ask what ran
+  // instead without re-reading the workspace, and without hardcoding a name.
+  const table = await readServedWeightTable(ctx);
+  return {
+    refs: {
+      threadId: parsed.thread.id,
+      commentEventId: parsed.eventId,
+      declaredKeys: table.rows.map((row) => row.key).join(","),
+    },
+  };
 }
 
 function score(record: RunRecord): ScenarioRunScore {
@@ -78,6 +88,23 @@ function score(record: RunRecord): ScenarioRunScore {
   if (!serverStated) {
     findings.push(
       `no server line on ${commentEventId}'s job log records the stated weight "${UNMEETABLE_WEIGHT}"`,
+    );
+  }
+
+  // …and what ran instead, which §7 requires the deviation to name alongside
+  // what was asked and that it could not be met. Checking only that `colossal`
+  // appears proves the first two thirds of the promise (pr-reviewer, PR #71).
+  // The substitute is a recorded fact, not prose: the dispatch line names the
+  // level the work actually went out at, and it must be one the table declares.
+  const declared = record.seed.refs.declaredKeys?.split(",").filter((key) => key !== "") ?? [];
+  const namesSubstitute = jobLogLines(record, commentEventId).some((entry) =>
+    declared.some((key) => entry.line.includes(key)),
+  );
+  if (declared.length === 0) {
+    findings.push("the seed recorded no declared weight keys — cannot check what ran instead");
+  } else if (!namesSubstitute) {
+    findings.push(
+      `no line on ${commentEventId}'s job log names what ran instead — none of the declared levels (${declared.join(", ")}) appears`,
     );
   }
 

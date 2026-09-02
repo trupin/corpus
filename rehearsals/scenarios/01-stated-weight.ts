@@ -25,7 +25,7 @@
  */
 
 import type { RunRecord, Scenario, ScenarioRunScore, SeedContext } from "../scenario.js";
-import { recordedModelMatches, strongestRow } from "../weight-table.js";
+import { nonStrongestRow, recordedModelMatches } from "../weight-table.js";
 import {
   ComposerThreadResponseSchema,
   eventsOfType,
@@ -44,9 +44,16 @@ const QUESTION =
 
 async function seed(ctx: SeedContext) {
   const table = await readServedWeightTable(ctx);
-  const stated = strongestRow(table.rows);
+  // Deliberately not the strongest row. A weightless designation now defaults to
+  // the strongest (AGENT-059), so seeding that key would make "honoured" and
+  // "defaulted" produce the same model and the turn's own record — the durable
+  // one — would prove nothing. A weaker stated key makes the model discriminating
+  // as well as the log's provenance word (pr-reviewer, PR #71).
+  const stated = nonStrongestRow(table.rows);
   if (stated === null) {
-    throw new Error("the workspace's orchestrate skill declares no tier table — cannot seed");
+    throw new Error(
+      "the workspace's orchestrate skill declares fewer than two tiers — cannot seed a stated weight that differs from the default",
+    );
   }
   const response = await ctx.composer("/api/threads", {
     title: "Raised bed preparation",

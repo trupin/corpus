@@ -100,6 +100,19 @@ export function strongestRow(rows: readonly WeightTableRow[]): WeightTableRow | 
 }
 
 /** The row a stated key resolves to, or `null` — the unhonourable case. */
+/**
+ * A row that is deliberately **not** the strongest, for a story that must tell
+ * "honoured" apart from "defaulted to strongest" (pr-reviewer, PR #71). Seeding
+ * the strongest key makes the two coincide, and then the turn's recorded model
+ * proves nothing — only the log's provenance word does. Returns `null` where the
+ * table declares a single level, which is a workspace this story cannot test.
+ */
+export function nonStrongestRow(rows: readonly WeightTableRow[]): WeightTableRow | null {
+  if (rows.length < 2) return null;
+  // Lightest first, so anything but the last row is weaker than the default.
+  return rows[0] ?? null;
+}
+
 export function rowForKey(rows: readonly WeightTableRow[], key: string): WeightTableRow | null {
   return rows.find((row) => row.key === key) ?? null;
 }

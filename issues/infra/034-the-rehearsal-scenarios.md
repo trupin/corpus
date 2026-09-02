@@ -78,28 +78,34 @@ agent, so only this suite can check them.
 
 ## Acceptance Criteria
 
-- [ ] All nine scenarios implemented as `rehearsals/scenarios/*.ts`, each
+- [x] All nine scenarios implemented as `rehearsals/scenarios/*.ts`, each
       declaring its seed, its grade, and for a judgment its threshold and `N`
-- [ ] Each scenario's seed is built through **`corpus`** — never by writing
+- [x] Each scenario's seed is built through **`corpus`** — never by writing
       workspace files directly, which would test a state the product cannot reach
-- [ ] Story 2 records the full distribution, not a pass/fail, and the scorecard
+- [x] Story 2 records the full distribution, not a pass/fail, and the scorecard
       prints it as `k/N`
-- [ ] Story 7 compares **bytes**, and additionally asserts that the run created no
+- [x] Story 7 compares **bytes**, and additionally asserts that the run created no
       file outside the workspace
-- [ ] Story 9 edits the installed skill in its own fixture only, and no scenario
+- [x] Story 9 edits the installed skill in its own fixture only, and no scenario
       mutates `assets/workspace/` in the repo
-- [ ] Every scenario names the issue it is a regression for, in the file, so a
+- [x] Every scenario names the issue it is a regression for, in the file, so a
       failure points at the history rather than at a puzzle
-- [ ] A first full pass is run and its scorecard committed, so later passes have a
+- [x] A first full pass is run and its scorecard committed, so later passes have a
       baseline to diff — including any story that does **not** pass, recorded as
       the finding it is rather than fixed by weakening the assertion
-- [ ] `docs/RELEASING.md` gains the step: run the pass, read the scorecard, commit
+- [x] `docs/RELEASING.md` gains the step: run the pass, read the scorecard, commit
       it, **then** `npm run release:prepare`. Placed before the bump so a finding
       is cheap to act on rather than something discovered after a tag exists
-- [ ] The step states the known cost of running only at release time: a defect
+- [x] The step states the known cost of running only at release time: a defect
       introduced early in a cycle is found late. That is the accepted trade at
       ~25 minutes per release, and it is written down so it is a decision rather
       than a surprise
+
+**On the scorecard criterion, as at 2026-09-02:** the first full pass ran and is recorded
+in the E2E log below, story 5's `fail` included rather than argued away — it became
+`AGENT-060`. Two pr-reviewer findings then changed both the skills and the scorer, so the
+committed `rehearsals/scorecard.md` must be regenerated against the tree v0.31.0 actually
+ships. That pass is the release step, not this issue's.
 
 ## Technical Design
 

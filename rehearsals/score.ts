@@ -121,7 +121,7 @@ export interface RunOutcome {
   readonly score: ScenarioRunScore | null;
 }
 
-export type ScenarioGrade = "pass" | "fail" | "over-budget";
+export type ScenarioGrade = "pass" | "fail" | "over-budget" | "pass-short";
 
 export interface JudgmentSummary {
   readonly k: number;
@@ -194,8 +194,22 @@ export function scoreScenario(scenario: Scenario, records: readonly RunRecord[])
   const breached = outcomes.some(
     (outcome) => outcome.score?.kind === "invariant" && outcome.score.findings.length > 0,
   );
+  // A run that never finished is excluded from scoring rather than failed
+  // (INFRA-033), and that is right — an exhausted budget is a finding, not a
+  // wrong answer. But it must not read as success (pr-reviewer, PR #71): a
+  // hang-shaped defect, a listener that launches and never claims its lane's
+  // message, presents as `over-budget` every time, so a scenario grading plain
+  // `pass` on its other runs hides exactly the defect the story exists for.
+  // `pass-short` says both things: nothing breached, and not everything ran.
+  const someExcluded = outcomes.some((outcome) => outcome.overBudget);
   const grade: ScenarioGrade =
-    universalBreached || breached ? "fail" : allOverBudget ? "over-budget" : "pass";
+    universalBreached || breached
+      ? "fail"
+      : allOverBudget
+        ? "over-budget"
+        : someExcluded
+          ? "pass-short"
+          : "pass";
   return { scenario: pickMeta(scenario), outcomes, grade, judgment: null };
 }
 
@@ -249,6 +263,13 @@ export function renderScorecard(info: PassInfo, results: readonly ScenarioResult
     lines.push("");
     lines.push(`- Regression for: ${result.scenario.regressionFor ?? "— (spec promise)"}`);
     lines.push(`- Declared runs: ${String(result.scenario.runs)}`);
+    if (result.grade === "pass-short") {
+      lines.push(
+        "- **Not every run scored.** Nothing breached, and a run did not finish inside its " +
+          "budget — which is how a starved lane presents. Read the run lines below before " +
+          "treating this as a pass.",
+      );
+    }
     if (result.judgment !== null) {
       lines.push(
         `- Judgment: k/N = ${String(result.judgment.k)}/${String(result.judgment.n)}, threshold ${String(result.judgment.threshold)}`,

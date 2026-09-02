@@ -126,8 +126,10 @@ not put an operational hint in the prompt (rule 1) and will not shim the CLI
   entry, never through a shell.
 - `--output-format json` — the result document lands in the run record for
   humans; nothing grades it.
-- `--dangerously-skip-permissions` — the run is unattended in a temp workspace
-  it owns; nothing else could let it act.
+- `--dangerously-skip-permissions` — the run is unattended, and nothing else
+  could let it act. **Read the caveat under Safety before running a pass**: this
+  flag grants the agent the operator's own reach, and does not confine it to the
+  workspace.
 - `--setting-sources project` — the run reads the workspace's own `.claude/`
   and nothing of the developer's user-level configuration, so what the agent
   does is a function of the workspace alone.
@@ -148,6 +150,21 @@ build the way an installed user would.
   health-checked and stopped through the workspace's own CLI only.
 - Runs are agents, not workers: concurrency is capped low and starts are
   staggered. Every child the harness starts is stopped before the pass ends.
+
+**What is not achieved, stated plainly.** The runs are isolated from each other
+by ignorance, not by confinement. `--dangerously-skip-permissions` gives the
+child the operator's own reach: an errant run can read or write anything that
+account can — another run's temp workspace, this repository, `$HOME` — and
+nothing stops the _agent_ addressing port 8765 over HTTP, because the refusals
+above bind the harness's operations and not the agent's. What the harness does
+achieve is a fresh workspace per run, a scrubbed environment, project-only
+settings, a neutral temp prefix, and an agent told only its own path.
+
+This matters because story 7 deliberately hands hostile input to that
+unconfined agent. Nobody has been harmed by it and the design does not rely on
+luck — the point of the story is that the CLI's `--flag-file` keeps the value
+out of a shell — but a person deciding whether to run a pass should know what
+they are granting. Run it on a machine you would run an agent on.
 
 ## Writing a scenario (INFRA-034)
 

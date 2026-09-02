@@ -299,6 +299,38 @@ describe("scoreScenario — the two grades are different tests", () => {
     expect(result.outcomes[0]?.score).toBeNull();
   });
 
+  /**
+   * pr-reviewer, PR #71. A hang-shaped defect — a listener that launches and
+   * never claims its lane's message — always presents as `over-budget`, is
+   * excluded from scoring, and used to leave the headline reading `pass` as
+   * long as one other run scored clean. That is the live shape of story 4's
+   * first pass, whose row read `pass | 2/3 runs scored` over a lane that went
+   * unanswered for fifteen minutes.
+   */
+  it("grades pass-short when a run was excluded, so starvation cannot read as success", () => {
+    const scenario = scenarioWith("invariant", 2, () => ({ kind: "invariant", findings: [] }));
+    const result = scoreScenario(scenario, [
+      record({ runIndex: 0 }),
+      record({
+        runIndex: 1,
+        meta: { ...record().meta, overBudget: true, endedBy: "budget" },
+      }),
+    ]);
+    expect(result.grade).toBe("pass-short");
+    expect(
+      renderScorecard(
+        {
+          release: "vX",
+          date: "2026-09-02",
+          treeVersion: "0.31.0",
+          treeCommit: "abc1234",
+          runnerModel: "sonnet",
+        },
+        [result],
+      ),
+    ).toContain("Not every run scored");
+  });
+
   it("a universal breach fails even a judgment scenario", () => {
     const scenario = scenarioWith("judgment", 1, () => ({
       kind: "judgment",
