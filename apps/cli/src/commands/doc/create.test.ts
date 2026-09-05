@@ -430,20 +430,21 @@ describe("corpus doc create", () => {
       // as the rule for every type.
       expect(text).toContain("the root its `--type` declares");
       expect(text).toContain("`.claude/agents/`");
-      expect(text).toContain("**An explicit `--folder` wins over that default**");
-      // The two types the two rules are *not* true of, each said outright
-      // rather than left to be inferred from the general sentence (PR #49
-      // review, third pass): a thread is placed by neither, and a skill's own
-      // root cannot be named.
-      expect(text).toContain("**`--type thread` is placed by neither rule**");
-      expect(text).toContain("`data/threads/<id>.md`");
-      expect(text).toContain("a skill created with no `--folder` lands in the inbox");
+      expect(text).toContain("An explicit `--folder` wins over that default");
+      // The two types the general rules are *not* true of stay said outright
+      // (PR #49 review, third pass). The thread exception lives on the
+      // `--folder` flag since CLI-080 — it is one of the three silent-damage
+      // sentences the orchestrate skill cites, and the flag's full text is
+      // where brief readers are sent for it.
+      expect(text).toContain("with no `--folder` lands in the inbox");
       // `--type skill` is stated rather than left ambiguous (SERVER-122
       // Decision 2): genesis is owned by `corpus skill create`.
       expect(text).toContain("`corpus skill create`");
 
       const folderFlag = createCommand.flags.find((flag) => flag.name === "folder");
-      expect(folderFlag?.description).toContain("`.claude/agents`");
+      expect(folderFlag?.description).toContain(
+        "**`--type thread` is the exception at both ends**",
+      );
       expect(folderFlag?.description).toContain("`data/threads/<id>.md`");
     });
 

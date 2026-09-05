@@ -506,12 +506,16 @@ describe("actor attribution, resolved once by the dispatcher", () => {
     expect(seen.count).toBe(0);
   });
 
-  it("is documented in the global flags every level of help renders", async () => {
+  it("is documented in the root help's global flags, which every verb's page points at", async () => {
+    // Since CLI-080 a verb's page carries the global flags as names on one
+    // line — the glossed block lives on `corpus --help` alone.
     const root = await invoke(["--help"]);
+    expect(root.stdout).toContain("--from <user|agent>");
+    expect(root.stdout).toContain("CORPUS_FROM");
+
     const verb = await invoke(["doc", "create", "--help"]);
-    for (const text of [root.stdout, verb.stdout]) {
-      expect(text).toContain("--from <user|agent>");
-      expect(text).toContain("CORPUS_FROM");
-    }
+    expect(verb.stdout).toContain("--from");
+    expect(verb.stdout).toContain("Global flags: --from,");
+    expect(verb.stdout).toContain("(`corpus --help`)");
   });
 });

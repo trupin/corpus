@@ -138,7 +138,7 @@ export function renderTopicHelp(topic: TopicSpec, options: HelpOptions): string 
     return `${sections.join("\n")}\n`;
   }
 
-  sections.push("", bold("Global flags:"), ...globalFlagLines(options));
+  sections.push("", globalFlagNamesLine());
   sections.push("", `Run \`corpus ${topic.name} <verb> --help\` for a verb's arguments.`);
   return `${sections.join("\n")}\n`;
 }
@@ -169,15 +169,18 @@ export function renderCommandHelp(
     );
   }
 
-  // Global flags stay in brief. A caller asking "does this verb take `--json`?"
-  // is asking exactly the question brief is for, and sending them to the full
-  // text for the answer would undo the saving on the next invocation.
-  sections.push("", bold("Global flags:"), ...globalFlagLines(options));
-
+  // Brief is the verb's own flags and nothing else (CLI-080): the issue's
+  // budget is "summary + each flag's first sentence + the synopsis", and the
+  // global flags are identical on every verb — topic and root brief never
+  // carried them either. Full keeps their *names* on one line, so "does this
+  // verb take `--json`?" is answered here; the glossed block is ~900 bytes of
+  // per-verb repetition and lives on `corpus --help` alone.
   if (brief) {
-    sections.push("", `Run \`corpus ${path} --help\` for the full text and examples.`);
+    sections.push("", `Full text and examples: \`corpus ${path} --help\`.`);
     return `${sections.join("\n")}\n`;
   }
+
+  sections.push("", globalFlagNamesLine());
 
   sections.push("", bold("Examples:"));
   for (const example of command.examples) {
@@ -188,6 +191,12 @@ export function renderCommandHelp(
 
 function isBrief(options: HelpOptions): boolean {
   return (options.mode ?? DEFAULT_HELP_MODE) === "brief";
+}
+
+/** The whole global-flags section of a verb's page: every name, no glosses. */
+function globalFlagNamesLine(): string {
+  const names = GLOBAL_FLAGS.map((flag) => `--${flag.name}`).join(", ");
+  return `Global flags: ${names} (\`corpus --help\`).`;
 }
 
 function globalFlagLines(options: HelpOptions): readonly string[] {

@@ -176,41 +176,21 @@ export const designateCommand: WorkspaceCommandSpec = {
     "exist in the workspace first, so a workspace with no `agent-def` documents can designate on " +
     "its first day. Everything else is identical either way: the lane, the scope, presence, the " +
     "lapse fallback, and release.\n\n" +
-    "**`--agent` names the agent, not a document.** It is the same name `@<subagent>` mentions " +
-    "resolve — for a `type: agent-def` document **under `.claude/agents/`**, either its filename " +
-    "stem or its title, matched case-insensitively, and the two routinely differ, since a persona " +
-    "created with a title of `Legacy Analyst` is written to `legacy-analyst.md` — and the printed " +
-    "line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the " +
-    "lookup. **An `agent-def` filed outside that root answers to neither spelling** (the " +
-    "`--type agent-def --folder inbox` form of `corpus doc create`): it is a document _about_ a " +
-    "persona, nothing loads it as a subagent, and naming it here is a `404`. Where an off-root " +
-    "`agent-def` is titled the name given, that `404` names its path, because moving the file " +
-    "into `.claude/agents/` is what makes it designatable; off root there is no filename stem to " +
-    "answer to, so `--agent legacy-analyst` for a document titled `Legacy Analyst` in the inbox " +
-    "is the bare refusal — try its title to be told where it is. A " +
-    "name that resolves to no agent-def here is likewise the server's `404`: a " +
-    "typo is refused rather than quietly downgraded to a general resident. A **blank** name " +
-    '(`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a ' +
-    "mistake, while asking for no profile is a decision, and the two must not look alike. Where " +
-    `a profile has since been ${MISSING_PROFILE_CAUSES_PHRASE}, the residency stands, and the ` +
-    `printed line reports \`name (${PROFILE_MISSING})\` rather than substituting anything for ` +
-    `it. ${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id.\n\n` +
+    "**`--agent` names the agent, not a document** — the same name `@<subagent>` mentions " +
+    "resolve — and the printed line reports the `{name, docId}` the server resolved it to, so " +
+    "nothing has to repeat the lookup. A name that resolves to no agent-def is the server's " +
+    "`404`: a typo is refused rather than quietly downgraded to a general resident. A **blank** " +
+    'name (`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is ' +
+    "a mistake, while asking for no profile is a decision. Where a profile has since been " +
+    `${MISSING_PROFILE_CAUSES_PHRASE}, the residency stands, and the printed line reports ` +
+    `\`name (${PROFILE_MISSING})\` rather than substituting anything for it. ` +
+    `${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id.\n\n` +
     "**`--weight` says what the resident runs at**, and the designation is the only place that " +
-    "choice exists (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is " +
-    "designated, not per message — a running agent cannot change what it is without discarding " +
-    "the conversation it holds). The value is a **level's key from this workspace's own agent " +
-    "guidance, verbatim** — the same word a message's weight carries, and **never a model name**. " +
-    "It " +
-    `${RESIDENT_WEIGHT_BOUNDARY}. ` +
-    "**Optional**: omit it and the launcher decides, exactly as every designation did before the " +
-    "flag existed. Nothing here checks the key against the table — §7 keeps the tiers in the " +
-    "orchestrate skill, which neither this CLI nor the server reads — so a level the launcher " +
-    "cannot meet is not refused at designation time: the launcher reports it in the listener's " +
-    "first reply, naming what was asked for and what was done instead. A blank " +
-    '(`--weight ""`) is a usage error and nothing is sent. Where a weight is set, every surface ' +
-    "that names the resident prints it after the resident — `a general resident at heavy`, " +
-    "`researcher (doc_r1) at heavy` — and where none was chosen they print nothing extra, since " +
-    "no word is invented for a weight nobody stated.\n\n" +
+    "choice exists (SPEC.md §7, rider signed 2026-08-19): a running agent cannot change what it " +
+    "is without discarding the conversation it holds. Omit it and the launcher decides, exactly " +
+    "as every designation did before the flag existed. Where a weight is set, every surface " +
+    "that names the resident prints it after the resident — `researcher (doc_r1) at heavy` — " +
+    "and where none was chosen they print nothing extra.\n\n" +
     "**Single-valued, so designating again replaces**, and **a repeat is not a no-op**: even when " +
     "the thread already has this exact resident and no file is written, the designation is " +
     "announced again — which is how a person asks for a listener that is no longer running to be " +
@@ -231,14 +211,14 @@ export const designateCommand: WorkspaceCommandSpec = {
       description:
         "The **profile** to make resident, by the name `@<subagent>` mentions use — for an " +
         "`agent-def` document **under `.claude/agents/`**, its filename stem or its title, " +
-        "case-insensitively. Not a document id, and not an `agent-def` filed anywhere else: one " +
-        "under `data/docs/` is a document _about_ a persona, answers to neither spelling, and is " +
-        "a `404` here — one that names the file's path when the name given is that document's " +
-        "**title**, and a bare refusal when it is the filename stem, which off root is nobody's " +
-        "alias. " +
-        "**Optional**: omit it when the workspace's ordinary agent should own this conversation, " +
-        "and name a profile when it wants an agent that behaves differently from the default. A " +
-        "blank name is a usage error rather than absence.",
+        "case-insensitively. Not a document id, and not an `agent-def` filed anywhere else: " +
+        "one under `data/docs/` is a document _about_ a persona, answers to neither spelling, " +
+        "and is a `404` here. Where an off-root `agent-def` is titled the name given, that " +
+        "`404` names its path, because moving the file into `.claude/agents/` is what makes " +
+        "it designatable; the filename stem off root is nobody's alias. **Optional**: omit it " +
+        "when the workspace's ordinary agent should own this conversation, and name a profile " +
+        "when it wants an agent that behaves differently from the default. A blank name is a " +
+        "usage error rather than absence.",
     },
     {
       name: "weight",

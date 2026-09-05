@@ -250,27 +250,24 @@ export const showCommand: WorkspaceCommandSpec = {
     "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
     "SPEC.md §7's comment skill reads before it replies. A designated thread also prints a " +
     "`resident` line naming the agent that owns the conversation, with the `agent-def` document " +
-    "that defines it where it has one — a resident designated with no profile prints as " +
-    `\`${GENERAL_RESIDENT}\`, and one whose profile has since been ` +
+    "that defines it where it has one — no profile prints as " +
+    `\`${GENERAL_RESIDENT}\`, a profile ` +
     `${MISSING_PROFILE_CAUSES_PHRASE} prints \`name (${PROFILE_MISSING})\`. ` +
-    `${ARCHIVING_IS_NOT_A_CAUSE}, so the line keeps printing its id. ` +
-    "Where the designation chose a weight " +
-    "(SPEC.md §7, rider signed 2026-08-19) the line names it after the resident — `resident a " +
-    "general resident at heavy` — with the word taken from this workspace's own agent guidance " +
-    "rather than being a model name, and a designation that chose none prints nothing extra. " +
-    "An undesignated thread prints no such line, because having nobody " +
-    "resident is the ordinary state rather than a value. That line reports the **designation** " +
+    `${ARCHIVING_IS_NOT_A_CAUSE}. ` +
+    "A chosen weight (SPEC.md §7) is named after the resident — `resident a general resident " +
+    "at heavy` — a word from this workspace's own agent guidance, never a model name; choosing " +
+    "none prints nothing extra. " +
+    "An undesignated thread prints no such line. The line reports the **designation** " +
     "and says nothing " +
-    "about whether the agent is currently running — presence is one lane's row in " +
-    "`corpus agents`, and the two are separate reads that may honestly disagree for a moment. " +
+    "about whether the agent is running — presence is `corpus agents`'s answer, and the two " +
+    "reads may honestly disagree for a moment. " +
     "The id line ends in `unread` or `read`, which the server answers from its own " +
     "seen mark — so it survives a browser change and does not depend on this session having " +
     "read anything. Asking does **not** clear it: only `POST /api/threads/{id}/seen` does, and " +
     "this verb never calls a mutation. A thread id that names nothing is the server's `404`, " +
     "which is exit 5.\n\n" +
     "**A conversation can be read in part rather than whole** (CLI-076), which is what stops " +
-    "every reply paying for every turn ever written: a 19-turn thread measured 32,375 bytes, and " +
-    "the cost grows each time somebody speaks. `--index` prints the map — a header, then one row " +
+    "every reply paying for every turn ever written. `--index` prints the map — a header, then one row " +
     "per turn with its author, its timestamp, its size in bytes and a marked first-line excerpt " +
     "— and nothing else. `--turn`, `--turns`, `--last` and `--since` print the turns themselves. " +
     "Read the index, decide, fetch what you need: it is `corpus doc show --headings` and " +
@@ -283,9 +280,9 @@ export const showCommand: WorkspaceCommandSpec = {
     "silently replaced — rewriting it is the resident's job, through `corpus thread digest set`. " +
     "A thread with no digest prints no block, which is the ordinary state. " +
     `${DIGEST_ORIENTS_HELP}\n\n` +
-    "**An addressed turn is byte-exact and a whole read is not.** With no flags every turn's " +
-    "body has its trailing whitespace trimmed, which is right for reading and wrong for " +
-    "quoting, and that behaviour is unchanged. An addressed turn's body is written exactly as " +
+    "**An addressed turn is byte-exact and a whole read is not.** The no-flag read trims each " +
+    "body's trailing whitespace — right for reading, wrong for quoting, unchanged. An " +
+    "addressed turn's body is written exactly as " +
     "stored: nothing trimmed, nothing collapsed, no newline appended after the last one. The " +
     "`author · ts` line above each body and the blank line between two turns are this verb's " +
     "framing, not stored bytes — `--json` is where the bodies arrive with no framing at all.\n\n" +
@@ -307,8 +304,7 @@ export const showCommand: WorkspaceCommandSpec = {
         "bytes; each row carries an ordinal, an author, a timestamp, the body's size and a " +
         "first-line excerpt. **An excerpt that leaves " +
         "anything out ends in `…`**, so it can never be mistaken for the stored text. The rows " +
-        "carry no bodies, which is the point: it is a few hundred bytes against tens of " +
-        "thousands. Under `--json` the same rows arrive with a `truncated` flag per row and no " +
+        "carry no bodies. Under `--json` the same rows arrive with a `truncated` flag per row and no " +
         "`body` key anywhere. Refused beside an address flag (exit 2) — run it first, then " +
         "address what is worth reading.",
     },
@@ -318,12 +314,10 @@ export const showCommand: WorkspaceCommandSpec = {
       valueName: "n|ts",
       description:
         "Print one turn, byte for byte. Takes **either address**: the ordinal `--index` printed " +
-        "(`--turn 7`), or the ISO instant beside it (`--turn 2026-07-28T10:05:00Z`). They differ " +
-        "in what survives an edit — SPEC.md §6 makes the timestamp the turn's _identity_, and a " +
-        "person may delete a single turn, after which every later ordinal points at a different " +
-        "turn while every timestamp still points at its own. Use the ordinal for a decision made " +
-        "from an index you just read, and the timestamp for one you are carrying. Naming no turn " +
-        "is exit 2.",
+        "(`--turn 7`), or the ISO instant beside it (`--turn 2026-07-28T10:05:00Z`). The timestamp " +
+        "is the turn's _identity_ (SPEC.md §6) and survives a deletion; an ordinal is positional " +
+        "and does not. Use the ordinal from an index just read, the timestamp for one you are " +
+        "carrying. Naming no turn is exit 2.",
     },
     {
       name: "turns",
@@ -364,8 +358,8 @@ export const showCommand: WorkspaceCommandSpec = {
     {
       command: "corpus thread show th_a1b2c3 --index",
       description:
-        "The map: one row per turn with its size and a marked excerpt, at a fraction of the " +
-        "whole read. This is what a long conversation should be opened with.",
+        "The map: one row per turn with its size and a marked excerpt. Open a long conversation " +
+        "with this.",
     },
     {
       command: "corpus thread show th_a1b2c3 --last 3",

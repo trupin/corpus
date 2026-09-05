@@ -528,7 +528,7 @@ describe("the doc list command spec", () => {
     it("takes a value, so absent and false stay distinguishable", () => {
       const flag = listCommand.flags.find((candidate) => candidate.name === "is-parent");
       expect(flag?.type).toBe("string");
-      expect(flag?.valueName).toBe("true|false");
+      expect(flag?.valueName).toBe("bool");
     });
 
     /**

@@ -334,8 +334,7 @@ export const showCommand: WorkspaceCommandSpec = {
     "returned, and `corpus doc edit <id> --key <key>` is how you write a new body back: a write " +
     "that replaces the body without one is refused, and one presenting a key the document has " +
     "since moved past is refused with the document as it now stands and a fresh key (exit 9). " +
-    "It is printed whole and is opaque — echo it back exactly, never compute, shorten or compare " +
-    "parts of one. There is nothing to release: reading gives you a key, not a claim.\n\n" +
+    "It is opaque: echo it back whole, exactly as printed.\n\n" +
     "**Read a section instead of a document.** `--headings` prints one heading path per line and " +
     "nothing else. `--section '<heading path>'` prints that section's text **byte for byte**: no " +
     "trimming, no ellipsis, no collapsed newlines, no added newline — which is what makes it " +
@@ -431,17 +430,7 @@ export const showCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc show doc_a1b2c3 doc_d4e5f6 doc_g7h8i9",
       description:
-        "Three documents, one process. Each arrives under a `──── <id> ────` rule, in the order asked for — one startup instead of three, measured at 189 ms against 797 ms for five.",
-    },
-    {
-      command: "corpus doc show doc_a1b2c3 doc_nosuchid --json | jq -r '.[].frontmatter.title'",
-      description:
-        "A missing id does not lose the ones that were found: the array on stdout holds every document that was read, the missing ids arrive on stderr at `.error.details.missing`, and the exit code is 5.",
-    },
-    {
-      command: "corpus doc show doc_a1b2c3 --headings",
-      description:
-        "The document's addresses, one per line — `Mortgage options`, `Mortgage options › Rates`, `Mortgage options › Escrow` — without reading a word of it.",
+        "Three documents, one process: each arrives under a `──── <id> ────` rule, in the order asked for.",
     },
     {
       command:
@@ -456,16 +445,6 @@ export const showCommand: WorkspaceCommandSpec = {
         'corpus doc show "$(jq -r .hits[0].id /tmp/hit.json)" --section "$(jq -r .hits[0].headingPath /tmp/hit.json)"',
       description:
         "Search addresses a passage, `--section` reads it. The two use the same `headingPath` strings, so a hit's address pastes in unchanged — which is the whole reason the syntax is search's rather than a new one.",
-    },
-    {
-      command: "corpus doc show doc_a1b2c3 --section 'No such heading' ; echo $?",
-      description:
-        "A path naming nothing is exit **2** and lists the paths that do exist. It never prints the whole body instead — a silent fallback is the cost this flag removes.",
-    },
-    {
-      command: "corpus doc show doc_a1b2c3 --json | jq -r .key",
-      description:
-        "The key on its own — the value `corpus doc edit <id> --key …` presents back when it replaces the body.",
     },
     {
       command: "corpus doc show doc_a1b2c3 --section 'Mortgage options › Escrow' --json",

@@ -397,7 +397,8 @@ describe("the designate command spec", () => {
     expect(weightFlag?.description).toContain("never a model name");
     expect(weightFlag?.description).toContain("this workspace's own agent guidance");
     expect(weightFlag?.description).toContain(RESIDENT_WEIGHT_BOUNDARY);
-    expect(designateCommand.description).toContain(RESIDENT_WEIGHT_BOUNDARY);
+    // Since CLI-080 the CLI states the boundary once, on the flag a reader of
+    // `--weight` reads; the schema is the contract's own copy.
     expect(DesignateResidentRequestSchema.shape.weight.description).toContain(
       RESIDENT_WEIGHT_BOUNDARY,
     );
@@ -441,7 +442,11 @@ describe("the designate command spec", () => {
     const clause =
       "off-root `agent-def` is titled the name given, that `404` names its path, because moving " +
       "the file into `.claude/agents/` is what makes it designatable";
-    expect(designateCommand.description).toContain(clause);
+    // Since CLI-080 the CLI's copy lives on the `--agent` flag rather than in
+    // the command description — the budget keeps each rule in one place, and
+    // the flag is where a reader of `--agent` finds it.
+    const agentFlag = designateCommand.flags.find((flag) => flag.name === "agent");
+    expect(agentFlag?.description).toContain(clause);
     expect(designateResident.description).toContain(clause);
     expect(DesignateResidentRequestSchema.shape.name.unwrap().description).toContain(clause);
   });

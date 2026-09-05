@@ -1200,57 +1200,42 @@ export const upgradeCommand: StandaloneCommandSpec = {
     "the refusal names what it could not establish and gives the command to run by hand. It never " +
     "elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal " +
     "leaves the installation exactly as it found it and exits **7**.\n\n" +
-    "**7 means nothing changed; 8 means something did.** Exit 7 is only used where that is " +
-    "provably true — every refusal above is decided before the server is touched and before a " +
-    "byte is installed. Once the install has begun the guarantee is gone, so an npm that fails, " +
-    "an interrupt, or a template sync that fails after the tool moved all exit **8** instead and " +
-    'carry `"changed":true` in the `--json` error envelope, with `details.server` saying whether ' +
-    "the workspace's server was stopped and whether it came back. After an 8, re-check `corpus " +
-    "--version` and `corpus server status`; after a 7 there is nothing to re-check.\n\n" +
-    "**Interrupting it.** Between stopping the server and restarting it there is a window the " +
-    "command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm " +
-    "child is killed — processes npm had itself spawned may briefly outlive it — the server is " +
-    "started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A " +
-    "second one is **not** handled — it kills corpus outright — and " +
-    "neither is `kill -9` or a machine going to sleep, either of which can leave the server " +
-    "stopped and the global package half-replaced. To recover from that: `corpus server start`, " +
-    "then `corpus upgrade` again once `corpus --version` has told you what you actually have.\n\n" +
-    "**The workspace half is not optional.** `corpus init` copies the agent's skills into the " +
-    "workspace and from that moment they are the workspace's own documents, so a tool update that " +
-    "ignored them would leave the loop running last version's instructions. The sync is the same " +
-    "three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a " +
+    "**7 means nothing changed; 8 means something did.** Every refusal above is decided before " +
+    "the server is touched and before a byte is installed, so it exits 7. Once the install has " +
+    "begun the guarantee is gone: a failing npm, an interrupt, or a template sync failing after " +
+    'the tool moved exits **8**, carries `"changed":true` in the `--json` error envelope, and ' +
+    "`details.server` says whether the server was stopped and whether it came back. After an " +
+    "8, re-check `corpus --version` and `corpus server status`.\n\n" +
+    "**Interrupting it**: between stopping the server and restarting it, the first Ctrl-C (or " +
+    "`SIGTERM`) is handled — the npm child is killed, the server restarted, the report " +
+    "written, exit 8 with `upgrade_interrupted`. A second one, `kill -9` or a machine going to " +
+    "sleep is not, and can leave the server stopped and the package half-replaced: recover " +
+    "with `corpus server start`, then `corpus upgrade` again once `corpus --version` says what " +
+    "you have.\n\n" +
+    "**The workspace half is not optional.** `corpus init` copied the agent's skills into the " +
+    "workspace, and a tool update that ignored them would leave the loop running last " +
+    "version's instructions. The sync is `corpus workspace upgrade`'s own three-way compare: a " +
     "file the workspace never touched is updated, a file the workspace edited is **never** " +
-    "overwritten, and everything written lands in **one** attributed commit — so a bad upgrade is " +
-    "undone the way any change is: `git revert` that one commit in the workspace, and the " +
-    "watcher picks the result up as the out-of-band edit it is.\n\n" +
-    "**A conflict is unresolved work, not a notice.** A file this workspace edited that the tool " +
-    "also changed is reported apart from everything that merely happened, each entry naming " +
-    "`corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never " +
-    "merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge " +
-    "would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` " +
-    "array, so an agent can tell what it still owes without reading prose. Conflicts do not fail " +
-    "the run: the upgrade succeeded, and exits 0 with the list.\n\n" +
-    "**A data migration is reported, never performed.** A release that stops reading a " +
-    "frontmatter key leaves every existing workspace written for the release before it, and " +
-    "SPEC.md §2.4 answers that with a report rather than a silent rewrite. The run ends with a " +
-    "`migrations` section, listed apart from the updates and the conflicts: one block per " +
-    "migration, a line saying what the tool no longer reads, then the commands that perform it, " +
-    "ready to paste — and every one of them is safe to run twice. The section says `none` when " +
-    "nothing fires. A migration never changes the exit code: it is the agent's work, not the " +
-    "upgrade's failure. Under `--json` it is the `migrations` array. `--check` reports it too, " +
-    "against the tool installed now.\n\n" +
-    "**A skill that names a command this tool does not have is reported as well.** A verb the " +
-    "tool removes lives on in every skill the workspace has edited, and until now the agent " +
-    "found out by running it. After the sync, the workspace's `CLAUDE.md`, `README.md`, " +
-    "`.claude/skills/` and `.claude/agents/` are read for `corpus …` commands the installed " +
-    "registry does not carry, and each is printed with its file, its line and the help that " +
-    "lists what the topic does have. A citation the sync " +
-    "just repaired is already gone and is not reported. It changes no exit code, and under " +
-    "`--json` it is the `staleCitations` array.\n\n" +
-    "**The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started " +
-    "from the board runs detached and its last act restarts the server the browser was talking " +
-    "to, so the file is the only place the answer can still be read afterwards. It is truncated " +
-    "at the start of every run and ends in one `report:` line carrying the whole result as JSON.\n\n" +
+    "overwritten, and everything lands in **one** attributed commit — `git revert` it to undo " +
+    "a bad upgrade.\n\n" +
+    "**A conflict is unresolved work, not a notice.** A file this workspace edited that the " +
+    "tool also changed is reported apart, each entry naming `corpus workspace diff <path>`; " +
+    "corpus never merges prose. Under `--json` they are the `conflicts` array. Conflicts do " +
+    "not fail the run: the upgrade succeeded, exit 0 with the list.\n\n" +
+    "**A data migration is reported, never performed** (SPEC.md §2.4). The run ends with a " +
+    "`migrations` section, apart from the updates and the conflicts: one block per migration — " +
+    "what the tool no longer reads, then the commands that perform it, ready to paste and safe " +
+    "to run twice — or `none`. It never changes the exit code; under `--json` it is the " +
+    "`migrations` array, and `--check` reports it too.\n\n" +
+    "**A skill that names a command this tool does not have is reported as well.** After the " +
+    "sync, the workspace's `CLAUDE.md`, `README.md`, `.claude/skills/` and `.claude/agents/` " +
+    "are read for `corpus …` commands the installed registry does not carry, each printed with " +
+    "its file, its line and the help listing what the topic does have. No exit-code change; " +
+    "`staleCitations` under `--json`.\n\n" +
+    "**The report is written to `.corpus/upgrade.log`**, not only printed — an upgrade started " +
+    "from the board restarts the server the browser was talking to, so the file is where the " +
+    "answer survives. Truncated each run; it ends in one `report:` line carrying the result as " +
+    "JSON.\n\n" +
     "Run outside a workspace it still upgrades the tool, and says that the template sync and the " +
     "restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or " +
     "a mirror instead of `trupin/corpus`.",
@@ -1273,7 +1258,15 @@ export const upgradeCommand: StandaloneCommandSpec = {
       name: "unstable",
       type: "boolean",
       description:
-        "Install a **pull-request build** — the tarball CI attaches to every PR — instead of a release (SPEC.md §2.4's rider). Bare, it takes the newest build across open pull requests and **names the PR it chose before installing**, because the newest build is not always yours; with a `<pr>` it takes that pull request's newest build and says so plainly when there is none, rather than falling back to another's. It states its deviations instead of hiding them: a GitHub token with `actions: read` is required (`CORPUS_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`) and the command refuses with instructions when none is usable rather than silently installing a release; builds expire on CI's 14-day retention, and an expired one is an ordinary answer naming the window; and a PR build carries **no published checksum**, so the verification `corpus upgrade` performs does not run and every install says so. Everything else is the stable path unchanged — same install-method detection, same refusals, same template sync, same conditional restart — and `corpus upgrade` without the flag is untouched.",
+        "Install a **pull-request build** — the tarball CI attaches to every PR — instead of a " +
+        "release (SPEC.md §2.4's rider). Bare, it takes the newest build across open pull " +
+        "requests and **names the PR it chose before installing**; with a `<pr>` it takes that " +
+        "pull request's newest build, and says so plainly when there is none rather than " +
+        "falling back to another's. It states its deviations: a GitHub token with " +
+        "`actions: read` is required (`CORPUS_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `gh auth " +
+        "login`), and it refuses with instructions when none is usable; builds expire on CI's " +
+        "14-day retention; and a PR build carries **no published checksum**, so verification " +
+        "does not run and every install says so. Everything else is the stable path unchanged.",
     },
     {
       name: "allow-fork",
@@ -1306,16 +1299,10 @@ export const upgradeCommand: StandaloneCommandSpec = {
     {
       command: "corpus upgrade --json",
       description:
-        'One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0",' +
-        '"upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the ' +
-        "sync report, `server` whether it was restarted, `reportPath` where the written report is — " +
-        'and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md",' +
-        '"detail":"modified here — 3 lines only here, 1 line only in the new copy",' +
-        '"resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`. `migrations` is the ' +
-        "data half — what the installed tool no longer reads as it is written, each entry carrying " +
-        'the commands that perform it: `[{"id":"views-to-board","statement":"…","commands":' +
-        '["corpus doc create --type board --title Board --folder boards --columns doc_a,doc_b ' +
-        '--default-open true","corpus doc edit doc_a --unset pinned --unset order"],"optional":[]}]`.',
+        "One JSON value: `check` the release comparison, `tool` what was installed, `template` " +
+        "the sync report, `server` whether it restarted, `reportPath` the written report, " +
+        "`conflicts` the unresolved work (each entry naming its `corpus workspace diff` " +
+        "command), and `migrations` the data half, each entry carrying ready-to-paste commands.",
     },
   ],
   handler: (context) => runUpgrade(context),
