@@ -2313,6 +2313,10 @@ and shipped in v0.22.0.
 | CLI-079 | A default `--json` row is a quarter nulls | todo | P0 | opus | — |
 | CLI-080 | The help is 33K tokens and nothing budgets it | todo | P0 | fable | — |
 | AGENT-068 | The skills read whole documents the CLI can slice | todo | P0 | fable | CLI-076 |
+| SHARED-077 | A conversation carries its own digest — the §6 rider and the decomposition | done | P0 | fable | — |
+| CONTRACT-096 | A thread's digest on the wire | todo | P0 | opus | SHARED-077 |
+| SERVER-164 | The digest write path, and staleness on delete and revise | todo | P0 | opus | CONTRACT-096 |
+| AGENT-069 | The resident writes the digest at reply time | todo | P0 | fable | CLI-077, SERVER-164 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole

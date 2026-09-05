@@ -18,8 +18,10 @@ fable
 
 ## Dependencies
 
-- Depends on: **CLI-076** (the index this is surfaced at the top of)
-- **Blocked on work that is not filed yet.** See *This issue cannot ship alone*
+- Depends on: **CLI-076** (the index this is surfaced at the top of),
+  **CONTRACT-096** (the route), **SERVER-164** (the behaviour). The §6 rider is
+  **signed** (SHARED-077, 2026-09-05) — the block below is resolved.
+- ~~**Blocked on work that is not filed yet.**~~ Filed 2026-09-05: See *This issue cannot ship alone*
   below. It needs, at minimum: a signed SPEC §6 rider, a CONTRACT issue for the
   field and the write route, a SERVER issue for the write path, and an AGENT
   issue for the skills that write and honour it.
