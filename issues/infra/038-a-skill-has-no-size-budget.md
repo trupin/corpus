@@ -73,6 +73,28 @@ of done** — a number, a threshold, and a run that says whether today is better
 than yesterday. Every one of the eight files above fails on day one at any
 proposed threshold. **That is the point**, not an argument against the check.
 
+## Out of scope, decided and not open for revisiting
+
+**This is a check on this repository. It is not a product feature.**
+*(User decision, 2026-09-03: "I don't want it to be a `corpus doc check`
+command. I want it to be a pre-commit check / CI check.")*
+
+The finding was first drafted as a validator rule inside `corpus doc check`,
+with a warning at `corpus skill create`. It is not that, and an agent
+implementing this must not add it:
+
+- **No `CHECK_CODES` entry**, so no CONTRACT issue.
+- **No rule in the server's validator**, so no SERVER issue. `corpus doc check`
+  runs none of its own rules — it posts to `POST /api/check` and renders the
+  reply — so a rule there is always a two-domain change.
+- **No warning at `corpus skill create`**, and no new CLI surface of any kind.
+- **No SPEC change.** SPEC.md governs the product. This check governs this
+  repository's files, which is CLAUDE.md's territory.
+
+The product's skills are covered here **because they are files in this
+repository** (`assets/workspace/claude/`), not because the tool grew an opinion
+about skill size. A user's own workspace is unaffected.
+
 ## Where it runs, and why that is not a judgment call
 
 INFRA-025 settled the rule and this check lands on the easy side of it.

@@ -2321,13 +2321,18 @@ turn in place**. So a digest must carry a watermark, and a change at or before i
 must print as stale — never be silently regenerated, because a summary the server
 wrote is the one thing this design exists to avoid.
 
-**`INFRA-038` moved out of `cli` on the user's instruction the same day**
-(*"I want it to be a pre-commit check in this repo, as well as a CI check"*). It
-was drafted as a rule inside `corpus doc check`, which would have been a CONTRACT
-`CHECK_CODES` addition plus a SERVER validator — `doc check` runs no rules of its
-own, it renders `POST /api/check`. As a check on this repository's own files it
-is repo tooling, it lands on the easy side of INFRA-025's rule (a byte count is
-diff-scopable and near-free), and it needs no spec change at all.
+**`INFRA-038` is `infra`, and it is a repository check rather than a product
+feature.** The user decided both the same day, and confirmed the second on being
+shown the filing: *"I want it to be a pre-commit check in this repo, as well as a
+CI check"*, then *"I don't want it to be a `corpus doc check` command."* The
+finding was drafted as a validator rule with a warning at `corpus skill create`,
+which would have been a CONTRACT `CHECK_CODES` addition plus a SERVER validator —
+`doc check` runs no rules of its own, it renders `POST /api/check`. As a check on
+this repository's own files it is repo tooling, it lands on the easy side of
+INFRA-025's rule (a byte count is diff-scopable and near-free), and it needs no
+spec change and no CLI surface at all. The issue carries an **Out of scope**
+section naming each thing not to build, so the cheaper framing cannot be
+reintroduced by an implementing agent trying to be helpful.
 
 **Every skill and profile fails on day one**, which is the point rather than an
 objection: orchestrate is 167,737 bytes (~41,900 tokens), converse 64,952
