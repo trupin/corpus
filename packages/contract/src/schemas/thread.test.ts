@@ -44,6 +44,9 @@ const thread = {
   anchor: "anc_k4f7",
   agent: "engaged",
   resident: null,
+  // The ordinary state, and the reason it is a value rather than a missing key
+  // (SPEC.md §6, rider signed 2026-09-05).
+  digest: null,
   unread: false,
   turns,
 };
@@ -94,6 +97,46 @@ describe("Thread", () => {
     expect(ThreadSchema.safeParse(missing).success).toBe(false);
     expect(ThreadSchema.safeParse({ ...thread, unread: null }).success).toBe(false);
     expect(ThreadSchema.safeParse({ ...thread, unread: "true" }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-096 / SPEC.md §6's digest rider. Required and nullable, because
+   * *"a thread with no digest is the ordinary state, not a fault"* — so the
+   * ordinary state is a value a reader reads, never a key it probes for.
+   */
+  it("carries the digest as a required, nullable field", () => {
+    expect(ThreadSchema.parse(thread).digest).toBeNull();
+
+    const digested = {
+      ...thread,
+      digest: {
+        body: "The user doubts the 6.1% assumption; the agent quoted 6.4%.",
+        watermark: "2026-07-19T10:07:12Z",
+        stale: false,
+      },
+    };
+    expect(ThreadSchema.parse(digested)).toEqual(digested);
+
+    const { digest: _dropped, ...missing } = thread;
+    expect(ThreadSchema.safeParse(missing).success).toBe(false);
+  });
+
+  /**
+   * The three fields are one object on purpose: *"a stale digest is shown as
+   * stale wherever it is shown"*, which is only guaranteed if no surface can
+   * carry the prose without carrying the flag. A digest missing either of the
+   * server's two fields is not a digest.
+   */
+  it("refuses a digest that carries prose without its watermark or its staleness", () => {
+    const body = "Comparing 30-year fixed quotes.";
+    expect(ThreadSchema.safeParse({ ...thread, digest: { body } }).success).toBe(false);
+    expect(
+      ThreadSchema.safeParse({ ...thread, digest: { body, watermark: "2026-07-19T10:07:12Z" } })
+        .success,
+    ).toBe(false);
+    expect(ThreadSchema.safeParse({ ...thread, digest: { body, stale: false } }).success).toBe(
+      false,
+    );
   });
 
   /**

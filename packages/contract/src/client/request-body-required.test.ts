@@ -54,6 +54,11 @@ const MANDATORY = {
   "POST /api/threads/{id}/resident": false satisfies BodyIsMandatory<
     paths["/api/threads/{id}/resident"]["post"]
   >,
+  // CONTRACT-096: the digest write is prose and nothing else, so a bare `PUT`
+  // would ask the server to record nothing at all.
+  "PUT /api/threads/{id}/digest": true satisfies BodyIsMandatory<
+    paths["/api/threads/{id}/digest"]["put"]
+  >,
 } as const;
 
 describe("the generated client types demand every mandatory body", () => {
@@ -75,6 +80,7 @@ describe("the generated client types demand every mandatory body", () => {
       "POST /api/check": true,
       "POST /api/skills": true,
       "POST /api/threads/{id}/resident": false,
+      "PUT /api/threads/{id}/digest": true,
     });
   });
 });

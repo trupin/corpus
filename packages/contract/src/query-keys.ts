@@ -189,7 +189,8 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     key: threadKey,
     parameterised: true,
     emittedBy:
-      "thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread",
+      "thread creation, turn append, turn deletion, resolve/reopen, mark-seen, and a digest " +
+      "write or clear for that thread",
     refetchedBy: "`GET /api/threads/{id}` — the open thread view and its unread badge",
   },
   queue: {

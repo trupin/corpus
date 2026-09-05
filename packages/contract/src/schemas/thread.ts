@@ -3,6 +3,7 @@ import { ActorSchema } from "./actor.js";
 import { CreateThreadResidentSchema, residentField } from "./agents.js";
 import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
+import { digestField } from "./digest.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { recipientField } from "./lane.js";
 import { IsoDateTimeSchema } from "./time.js";
@@ -90,6 +91,11 @@ export const ThreadSchema = openapi(
     ),
     agent: ThreadAgentSchema,
     resident: residentField,
+    // Beside `resident`, because the two are one fact read twice: the digest is
+    // the resident's account of this conversation, and a thread with no resident
+    // never has one (SPEC.md §6, rider signed 2026-09-05). Required and
+    // nullable, never absent — no digest is the ordinary state.
+    digest: digestField,
     unread: z
       .boolean()
       .describe(

@@ -48,6 +48,7 @@ export * from "./capture.js";
 export * from "./check.js";
 export * from "./context.js";
 export * from "./db.js";
+export * from "./digest.js";
 export * from "./doc-patch.js";
 export * from "./doc.js";
 export * from "./edit.js";

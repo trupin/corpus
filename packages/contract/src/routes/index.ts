@@ -41,6 +41,7 @@ import { askReflection, getReflectStatus, setReflectQuiet } from "./reflect.js";
 import { searchCorpus } from "./search.js";
 import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
+import { clearThreadDigest, writeThreadDigest } from "./thread-digest.js";
 import { reattachThread } from "./thread-reattach.js";
 import { designateResident, releaseResident } from "./thread-resident.js";
 import { getThreadScope } from "./thread-scope.js";
@@ -83,6 +84,7 @@ export * from "./responses.js";
 export * from "./search.js";
 export * from "./skills.js";
 export * from "./thread-create.js";
+export * from "./thread-digest.js";
 export * from "./thread-reattach.js";
 export * from "./thread-resident.js";
 export * from "./thread-scope.js";
@@ -141,11 +143,20 @@ export * from "./upgrade.js";
  * than `/api/threads/{id}` where every other route is a `POST` or a `DELETE`, so
  * `scope` competes with nothing and the position is for the reader.
  *
- * `designateResident` and `releaseResident` close the thread group, after
- * `reattachThread`: they are the last of the thread's user-only acts, and they
+ * `designateResident` and `releaseResident` follow `reattachThread`: they are
+ * the last of the thread's user-only acts, and they
  * are a `POST`/`DELETE` pair on one static segment, so the two belong adjacent.
  * `resident` competes with no parameter either — it sits one segment deeper than
  * `/api/threads/{id}`, beside `resolve`, `reopen`, `seen` and `reattach`.
+ *
+ * `writeThreadDigest` and `clearThreadDigest` close the thread group, directly
+ * after the resident pair, because that is what a digest belongs to: it is the
+ * resident's own account of the conversation, and both verbs refuse a thread
+ * that has no resident (CONTRACT-096). They are a `PUT`/`DELETE` pair on one
+ * static segment, so they belong adjacent for the same reason the resident pair
+ * does, and `digest` competes with no parameter — it sits one segment deeper
+ * than `/api/threads/{id}`, where every path is a static word.
+ *
  * `getAgentRoster` follows the whole group and precedes the queue verbs, which
  * is where it belongs in both directions: the roster is what a designation
  * changes and what a `scope` is chosen from.
@@ -208,6 +219,8 @@ export const contractRoutes = {
   reattachThread,
   designateResident,
   releaseResident,
+  writeThreadDigest,
+  clearThreadDigest,
 
   getAgentRoster,
 

@@ -2942,6 +2942,17 @@
             ],
             "description": "The agent resident in this conversation, or null when it has none (SPEC.md §7). **Null means nobody, and never a resident with no profile**: since a designation may name no `agent-def`, a general resident is an object here whose `name` is null — so a designated conversation always carries an object, whatever it was designated with. On a roster row null therefore occurs only on the `orchestrator` lane, which belongs to no conversation; every other lane exists because something was designated. **Standalone threads only** — a thread on a document is *about* that document, and a resident owns a conversation rather than a passage — so this is always null on an anchored or whole-document thread. Single-valued: a thread has one resident or none, and nothing has to arbitrate between two. Designation is **user-only** state, set through `POST /api/threads/{id}/resident` and released through `DELETE`; resolving the thread releases it too, and reopening does not bring it back (§8)."
           },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
+          },
           "unread": {
             "type": "boolean",
             "description": "**Whether this thread holds a turn you have not seen** (SPEC.md §7) — `DocRow.unread` for the thread you are reading, the same comparison against the same server-side mark in `.corpus/seen.json`, so the two agree by construction. Required and **never null**: this resource is only ever a thread, so there is no *null on non-threads* case to spell, and `false` means nothing is unseen rather than *unknown*. A thread with no turns reads `false` — there is nothing to have read. A partial read reads `true`, the same as the row and the same as the `unread` the mark itself reported (`MarkSeenResult`). It is here because SPEC.md §10's interlock makes read state an input to a **placement** — a conversation carrying an unseen turn is never collapsed by §6's rule — and a standalone thread has no list row a reader could take the answer from."
@@ -2964,6 +2975,7 @@
           "anchor",
           "agent",
           "resident",
+          "digest",
           "unread",
           "turns"
         ]
@@ -3014,6 +3026,30 @@
           "docId",
           "weight",
           "designationId"
+        ]
+      },
+      "ThreadDigest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "**The digest's prose, exactly as its author wrote it** (SPEC.md §6, rider signed 2026-09-05). Markdown, a short account of the conversation so far. Written by the thread's resident through `PUT /api/threads/{id}/digest` and **by nothing else**: the server never generates it, never edits it and never repairs it, because a summary nobody wrote is worse than none. Writes are bounded at 2000 characters (`DIGEST_MAX_CHARS`); this field publishes no ceiling of its own, since the only way to bring an over-long value inside one would be to cut it, and cutting it is editing it. **It orients, and it is not a source**: an agent quotes and edits from turns it has read verbatim, never from this."
+          },
+          "watermark": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z",
+            "description": "**The timestamp of the newest turn this digest covers** (SPEC.md §6). A turn's `ts` — the turn's identity within the thread — and always one that existed when the digest was written. **Stamped by the server**, never by the writer: only the server knows what the newest turn is at the instant of the write, so the write request carries no watermark field at all. Turns newer than this are **not yet covered**, which is the ordinary state between a message landing and the resident's next reply — it is not staleness, and it does not make the digest wrong about what it does cover."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "**Whether a turn at or before `watermark` was deleted or revised since** (SPEC.md §6), so this account covers text that is no longer there. `true` is the server *recording* that, and it changes nothing else: the body is left exactly as written, because repairing it is the resident's act and never the server's. A stale digest **is shown as stale wherever it is shown**, which is why the flag rides inside the digest object rather than beside it — a surface cannot carry the prose without carrying this. It clears only when a resident writes the digest again. **Not the same as uncovered**: turns *after* the watermark leave this `false`, and are read from `watermark` instead."
+          }
+        },
+        "required": [
+          "body",
+          "watermark",
+          "stale"
         ]
       },
       "Turn": {
@@ -3285,6 +3321,17 @@
             "description": "The thread this pack briefs.",
             "example": "th_x9y8"
           },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
+          },
           "excerpts": {
             "type": "array",
             "items": {
@@ -3350,6 +3397,7 @@
         "required": [
           "shape",
           "threadId",
+          "digest",
           "excerpts",
           "parent"
         ],
@@ -3406,6 +3454,17 @@
             "description": "The thread this pack briefs.",
             "example": "th_x9y8"
           },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
+          },
           "excerpts": {
             "type": "array",
             "items": {
@@ -3460,6 +3519,7 @@
         "required": [
           "shape",
           "threadId",
+          "digest",
           "excerpts",
           "parent"
         ],
@@ -3479,6 +3539,17 @@
             "pattern": "^th_[A-Za-z0-9]+$",
             "description": "The thread this pack briefs.",
             "example": "th_x9y8"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
           },
           "excerpts": {
             "type": "array",
@@ -3534,6 +3605,7 @@
         "required": [
           "shape",
           "threadId",
+          "digest",
           "excerpts",
           "parent"
         ],
@@ -3553,6 +3625,17 @@
             "pattern": "^th_[A-Za-z0-9]+$",
             "description": "The thread this pack briefs.",
             "example": "th_x9y8"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
           },
           "excerpts": {
             "type": "array",
@@ -3576,6 +3659,7 @@
         "required": [
           "shape",
           "threadId",
+          "digest",
           "excerpts"
         ],
         "additionalProperties": false
@@ -3594,6 +3678,17 @@
             "pattern": "^th_[A-Za-z0-9]+$",
             "description": "The thread this pack briefs.",
             "example": "th_x9y8"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest — a short prose account of the conversation so far, written by the thread's **resident** and never by the server (SPEC.md §6, rider signed 2026-09-05) — or **null**, which is the ordinary state and not a fault. One per thread: a second write replaces the first, and there is no history of them here. A thread with no resident never has one, because writing it is refused on such a thread. Read `stale` before quoting anything from it, and read the conversation itself before quoting anything at all: a digest orients, and an agent quotes and edits from turns it has read verbatim."
           },
           "excerpts": {
             "type": "array",
@@ -3623,6 +3718,7 @@
         "required": [
           "shape",
           "threadId",
+          "digest",
           "excerpts",
           "deletedParent"
         ],
@@ -4300,6 +4396,54 @@
             "description": "The **weight the resident runs at** (SPEC.md §7, rider signed 2026-08-19: a resident's weight is set when it is designated, not per message — a running agent cannot change what it is without discarding the conversation it holds, so the designation is the only place the choice exists). The value is a **level's key from the workspace's own agent guidance, verbatim** — the same token a message's `weight` carries, and never a model name: this contract enumerates no levels, because §7 keeps the tiers in the orchestrate skill and a published enum would reject a workspace's own vocabulary. Validated for **shape only** — non-blank, single line, at most 100 characters — and interpreted by nothing here. It governs the resident's own turns; a weight stated on a message still governs what the resident hands off (SPEC.md §7, rider signed 2026-08-19). **Omit it to choose nothing**, which keeps today's behaviour exactly: the resident runs at whatever the launcher starts it as, `Resident.weight` reads null, and the launcher says what it chose. No default, no `null` spelling, and an empty string is a `400` rather than a second way of saying nothing. A level the launcher cannot meet is not refused here — the tier table is skill text the server never reads — and since a designation is long-lived the report lands where §7's weight rider puts it: in the listener's first reply, naming what was asked for and what was done instead. Sent alone, it designates a general resident at that weight; the two fields are independent."
           }
         },
+        "additionalProperties": false
+      },
+      "ThreadDigestResponse": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "pattern": "^th_[A-Za-z0-9]+$",
+            "description": "The thread whose digest this is.",
+            "example": "th_x9y8"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadDigest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The thread's digest **after this call**: the stored digest — its `watermark` stamped by the server and its `stale` cleared — after a write, and **null** after a clear, including a clear that had nothing to clear. Read the watermark from here rather than guessing it: the writer never states one."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §11), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. **This is a reporting channel and not a severity class**: its members run from `carried_skill`, where nothing went wrong at all, to `commit_failed`, and `validation_error` carries a §11 finding of error severity that the save reported rather than refused (CONTRACT-084). Read `code` to tell them apart, never the position in the array and never `detail`. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do."
+          }
+        },
+        "required": [
+          "threadId",
+          "digest",
+          "warnings"
+        ]
+      },
+      "WriteDigestRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The digest's prose — markdown, a short account of the conversation so far. At most 2000 characters (`DIGEST_MAX_CHARS`); longer is a `400` naming this field. **Blank is refused, not honoured**: an empty or whitespace-only body is a `422`, because clearing a digest is `DELETE /api/threads/{id}/digest` and an empty write is not a clear. **There is no `watermark` field on purpose** — the server stamps the newest turn's timestamp at the instant of the write, which is the only moment at which it can be stated truthfully. A write replaces whatever digest the thread had and clears its `stale` flag."
+          }
+        },
+        "required": [
+          "body"
+        ],
         "additionalProperties": false
       },
       "AgentRoster": {
@@ -9106,6 +9250,202 @@
         }
       }
     },
+    "/api/threads/{id}/digest": {
+      "put": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Write the thread's digest",
+        "description": "Records a **digest** on the thread: a short prose account of the conversation so far, written by the thread's resident (SPEC.md §6, rider signed 2026-09-05). One per thread — a write replaces whatever was there, and there is no history of them on this surface. The digest reads back on `GET /api/threads/{id}` and in the thread's context pack.\n\n**The body carries prose and nothing else. The server stamps the watermark**, which is the timestamp of the newest turn the thread holds at the instant of the write. There is no `watermark` field to send, and sending one is a `400` naming the key: only the server knows what the newest turn is at that instant, so a watermark chosen by the writer is a claim about a moment that has already passed — it would over-claim coverage of a turn the digest never saw. The response carries the stamped value, so the writer never has to re-read the thread to learn what it just wrote.\n\n**A write clears `stale`.** Staleness means a turn at or before the watermark was deleted or revised since the digest was written, and the rider makes rewriting the digest the only thing that corrects it — the server records staleness and repairs nothing.\n\n**Refusals.** `404` when the thread is unknown, or when the id names a document that is not a thread. `422` in two cases, told apart at `code`: `unknown_recipient` when the thread holds **no resident**, because a digest is the resident's and a thread without one may not have one; `bad_request` when the body is **blank**, because clearing a digest is `DELETE /api/threads/{id}/digest` and an empty write is not a clear. Both are `422` rather than `400` because retrying this route with a different body cannot help in either case. A body longer than 2000 characters is an ordinary `400`, since a shorter one is exactly what would work.\n\n**One action, one commit** (SPEC.md §4), authored by the acting party: the write rewrites the thread file's frontmatter and auto-commits it, so the response carries §11's warnings — a workspace hook that rejects the commit leaves the digest on disk and uncommitted. It presents no key (SPEC.md §7): it writes one frontmatter field and replaces nothing a reader was holding.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The digest's prose. The server supplies everything else about it.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteDigestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The digest as stored — the body as written, the server's stamped `watermark`, and `stale` false — plus any warnings raised while writing it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDigestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The write was refused and nothing was written. `unknown_recipient` — the thread holds no resident, and a digest is the resident's (SPEC.md §6); `recipient` carries the thread id, and the remedy is `POST /api/threads/{id}/resident`. `bad_request` — the body is blank, and an empty write is not a clear: `DELETE /api/threads/{id}/digest` removes a digest.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ValidationError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnknownRecipientError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Clear the thread's digest",
+        "description": "Removes the thread's digest, leaving the thread in the state the rider calls ordinary: **a thread with no digest is not a fault** (SPEC.md §6). This is the only way to clear one — an empty `PUT` is refused rather than read as a clear, so a resident that meant to update a digest can never destroy it by sending nothing.\n\n**Idempotent.** Clearing a thread that has no digest is a `200` that changes nothing, writes nothing and commits nothing. It answers with the same shape the write does, its `digest` null, because a clear that *does* write can raise §11's warnings and a rejected auto-commit has to be visible somewhere.\n\n`404` when the thread is unknown. `422` when the thread holds no resident — the same refusal the write makes, because a thread that may not have a digest may not be asked about one either, and answering `200` there would tell a caller its clear had taken effect on a surface that never had anything to clear.\n\nIt presents no key (SPEC.md §7): it clears one frontmatter field and replaces nothing a reader was holding.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread, its `digest` now null, and any warnings raised while clearing it. Unchanged when there was no digest to clear.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDigestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The thread holds no resident, so it has no digest to clear (SPEC.md §6): a digest belongs to a resident, and a thread without one never has one. Nothing was written. `recipient` carries the thread id — the same code and the same field the write is refused with, because it is the same fact about the same thread.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownRecipientError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents": {
       "get": {
         "tags": [
@@ -10875,7 +11215,7 @@
           "events"
         ],
         "summary": "Server-sent invalidation stream",
-        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these 10 shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift.\n\n**An emitter names every key a route carrying the changed fact is cached under, not the key of the route the fact is named after** — so several of these travel in frames named after some other resource, and each entry below says which and why:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects — plus every queue transition, since `needs=failed-job` is computed from an event's status and a transition therefore changes what `GET /api/docs?needs=me` answers, and a projection rebuild, which replaces every row the collection is read from. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill — plus a projection rebuild, which names this key whether or not the hierarchy moved, since a rebuild is a resynchronisation instruction rather than a report of a change. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event — plus every change to agent presence, since the status carries it: a listener parking, its hold ending, and the grace window lapsing — and a projection rebuild, which replaces the rows the counts are read from. **A queue transition names `[\"agents\"]` in the same frame**, because a lane row of the roster is derived from the `events` and `jobs` rows the transition writes: see that key for the rule behind it. Refetch: `GET /api/queue/status` — the console strip's agent pill, depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced) — over HTTP or out of band — and a projection rebuild, which replaces the rows the list is read from. **A transition and an append each name `[\"agents\"]` in the same frame**, because a lane row of the roster is derived from the same `events` and `jobs` rows: see that key for the rule behind it. Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.\n- `[\"agents\"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window — **plus every write that moves a row a lane is derived from**: a queue transition or a job-log append, over HTTP or out of band, since a lane's `summary` is read off the same `events` and `jobs` rows that write touches; a designated root thread being retitled or deleted, since a row carries that conversation's title and its existence; and a projection rebuild, which re-derives all of it. The rule behind that list is worth stating, because no single call site shows it: **a lane row is computed at read time and never stored**, so the roster goes stale on frames named after other resources, and an emitter names this key whenever it writes a row the roster reads — not only when it writes something called an agent. The derivation itself may change without a contract change (`AgentLane.summary` says as much of its own content); the invalidation may not. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.\n- `[\"reflect\"]` — emitted by **every frame that names `[\"docs\"]` or `[\"queue\"]`, and no others** — the union, because the resource moves on two unrelated things and each half would miss the other: a document mutation or an out-of-band file change moves the unreflected count, while a queue transition moves whether a reflection is pending, when the clock last advanced and which thread is the latest digest. Stating it as a rule rather than as a list is deliberate: an emitter can follow it without knowing what a reflection is, and a write added later inherits it. Refetch: `GET /api/workspace/reflect` — the board bar's Reflect control, its unreflected count and the marks each column renders.",
+        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these 10 shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift.\n\n**An emitter names every key a route carrying the changed fact is cached under, not the key of the route the fact is named after** — so several of these travel in frames named after some other resource, and each entry below says which and why:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects — plus every queue transition, since `needs=failed-job` is computed from an event's status and a transition therefore changes what `GET /api/docs?needs=me` answers, and a projection rebuild, which replaces every row the collection is read from. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill — plus a projection rebuild, which names this key whether or not the hierarchy moved, since a rebuild is a resynchronisation instruction rather than a report of a change. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, mark-seen, and a digest write or clear for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and the end of an edit session that re-enters a deferred event — plus every change to agent presence, since the status carries it: a listener parking, its hold ending, and the grace window lapsing — and a projection rebuild, which replaces the rows the counts are read from. **A queue transition names `[\"agents\"]` in the same frame**, because a lane row of the roster is derived from the `events` and `jobs` rows the transition writes: see that key for the rule behind it. Refetch: `GET /api/queue/status` — the console strip's agent pill, depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced) — over HTTP or out of band — and a projection rebuild, which replaces the rows the list is read from. **A transition and an append each name `[\"agents\"]` in the same frame**, because a lane row of the roster is derived from the same `events` and `jobs` rows: see that key for the rule behind it. Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"index\"]` — emitted by the embed worker whenever the index's derived state moves: provider adoption, a new disabled or model-download reason, throttled progress while a backlog drains, and the caught-up transition — plus an index rebuild's start and end. Refetch: `GET /api/index/status` — the console strip's index pill.\n- `[\"agents\"]` — emitted by designating or releasing a thread's resident, a thread's resolution releasing one with it, and every change to a lane's liveness — a scoped `idle` parking, its hold ending, and a lane lapsing past the grace window — **plus every write that moves a row a lane is derived from**: a queue transition or a job-log append, over HTTP or out of band, since a lane's `summary` is read off the same `events` and `jobs` rows that write touches; a designated root thread being retitled or deleted, since a row carries that conversation's title and its existence; and a projection rebuild, which re-derives all of it. The rule behind that list is worth stating, because no single call site shows it: **a lane row is computed at read time and never stored**, so the roster goes stale on frames named after other resources, and an emitter names this key whenever it writes a row the roster reads — not only when it writes something called an agent. The derivation itself may change without a contract change (`AgentLane.summary` says as much of its own content); the invalidation may not. Refetch: `GET /api/agents` — the composer's recipient picker and every surface showing who is running.\n- `[\"reflect\"]` — emitted by **every frame that names `[\"docs\"]` or `[\"queue\"]`, and no others** — the union, because the resource moves on two unrelated things and each half would miss the other: a document mutation or an out-of-band file change moves the unreflected count, while a queue transition moves whether a reflection is pending, when the clock last advanced and which thread is the latest digest. Stating it as a rule rather than as a list is deliberate: an emitter can follow it without knowing what a reflection is, and a write added later inherits it. Refetch: `GET /api/workspace/reflect` — the board bar's Reflect control, its unreflected count and the marks each column renders.",
         "security": [],
         "parameters": [
           {

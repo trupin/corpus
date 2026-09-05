@@ -4,6 +4,7 @@ import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "
 import { AGENT_DEF_ROOT, MISSING_PROFILE_CAUSE_CLAUSE } from "./schemas/agents.js";
 import { BULK_ACTION_NAMES } from "./schemas/bulk.js";
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
+import { DIGEST_MAX_CHARS } from "./schemas/digest.js";
 import {
   CONTEXT_MAX_EXCERPT_CHARS,
   CONTEXT_MAX_EXCERPTS,
@@ -2882,7 +2883,20 @@ describe("unknown_recipient is the code for a lane that is not one (CONTRACT-058
    * with a body of its own, which no per-route assertion would notice.
    */
   it("keeps every declared 422 inside the ApiError union", () => {
-    const inUnion = new Set(["UnknownJobError", "UnknownRecipientError"]);
+    // Transcribed, because `ApiError` is deliberately unpublished — no route
+    // answers with the whole union, so it is in no component and there is
+    // nothing to derive from. `ValidationError` joined the two id-refusals with
+    // CONTRACT-096: `PUT /api/threads/{id}/digest` refuses a blank body with
+    // `bad_request`, on `PAYLOAD_TOO_LARGE_RESPONSE`'s argument that the status
+    // carries the distinction and `ERROR_CODES` does not grow for one.
+    const inUnion = new Set(["UnknownJobError", "UnknownRecipientError", "ValidationError"]);
+    // Each of them really is a member: its `code` is one of the published codes,
+    // which is the property that makes a body reachable by a client narrowing.
+    for (const name of inUnion) {
+      const code = componentSchemas?.[name]?.properties?.["code"]?.enum ?? [];
+      expect(code, name).toHaveLength(1);
+      expect(ERROR_CODES, name).toContain(code[0]);
+    }
     const offenders: string[] = [];
     const inspected: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
@@ -2905,7 +2919,11 @@ describe("unknown_recipient is the code for a lane that is not one (CONTRACT-058
     // the park. A refactor that stopped matching would report zero offenders
     // over zero operations and look like a pass.
     expect(inspected).toContain("GET /api/queue/idle");
-    expect(inspected).toHaveLength(10);
+    // Plus the digest pair, whose `422` is the refusal a thread with no
+    // resident makes to both verbs (CONTRACT-096).
+    expect(inspected).toContain("PUT /api/threads/{id}/digest");
+    expect(inspected).toContain("DELETE /api/threads/{id}/digest");
+    expect(inspected).toHaveLength(12);
   });
 });
 
@@ -4010,6 +4028,11 @@ describe("§11 warnings reach every mutation response", () => {
     // folder acts do — a workspace without git, and a hook that rejects the
     // commit, both leave the renumbered files on disk and uncommitted.
     "ReorderBoardsResult",
+    // CONTRACT-096: writing or clearing a digest rewrites the thread file's
+    // frontmatter and auto-commits it (SPEC.md §6, rider signed 2026-09-05), so
+    // a rejected hook leaves the digest on disk and uncommitted — reachable by
+    // exactly the path `ThreadMutationResponse` covers for resolve and reopen.
+    "ThreadDigestResponse",
   ];
 
   /**
@@ -4970,7 +4993,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(26);
+    expect(bodies).toHaveLength(27);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -5054,6 +5077,10 @@ describe("request bodies declare whether they are mandatory", () => {
       // to set the window to nothing in particular. `0` is how a caller asks
       // for the automatic path to stop, and it is a value, not an absence.
       "PUT /api/workspace/reflect/quiet": true,
+      // CONTRACT-096: the digest write carries prose and nothing else, so a
+      // bare `PUT` would be a request to record nothing. Blank is refused
+      // rather than read as a clear, which `DELETE` on the same path is for.
+      "PUT /api/threads/{id}/digest": true,
     });
   });
 
@@ -6642,5 +6669,138 @@ describe("a thread answers its own read state (CONTRACT-036)", () => {
     const route = operation("/api/threads/{id}", "get").description ?? "";
     expect(route).toContain("`unread` is the same comparison `DocRow.unread` makes");
     expect(route).toContain("standalone thread");
+  });
+});
+/**
+ * The digest (CONTRACT-096; SPEC.md §6's rider signed 2026-09-05). Pinned
+ * against the **generated** document, because the claims worth holding are
+ * claims about what the document publishes: that the write cannot state a
+ * watermark, that the read carries staleness wherever it carries prose, and
+ * that both surfaces carrying a digest carry the *same* one.
+ *
+ * Falsify by adding a `watermark` to the request, by dropping `stale` from the
+ * component, or by giving the pack a second, hand-written digest field.
+ */
+describe("a thread's digest (CONTRACT-096)", () => {
+  const DIGEST_PATH = "/api/threads/{id}/digest";
+
+  const digestComponent = (): SchemaNode => {
+    const found = componentSchemas?.["ThreadDigest"];
+    if (found === undefined) throw new Error("No ThreadDigest component.");
+    return found;
+  };
+
+  it("publishes the digest as three required fields and nothing else", () => {
+    expect(digestComponent().type).toBe("object");
+    expect(Object.keys(digestComponent().properties ?? {})).toEqual(["body", "watermark", "stale"]);
+    expect(digestComponent().required).toEqual(["body", "watermark", "stale"]);
+  });
+
+  /**
+   * The rider's *"a thread with no digest is the ordinary state, not a fault"*,
+   * spelled the only way a client can read without probing: required, and null.
+   * The union spelling is load-bearing — `ThreadDigest.nullable()` would rewrite
+   * the shared component for every route referencing it (CONTRACT-037).
+   */
+  it("gives Thread a required, nullable digest, spelled as a union", () => {
+    expect(componentSchemas?.["Thread"]?.required ?? []).toContain("digest");
+    const field = componentSchemas?.["Thread"]?.properties?.digest;
+    expect(field?.anyOf?.[0]?.$ref).toBe("#/components/schemas/ThreadDigest");
+    expect(field?.anyOf?.[1]?.type).toBe("null");
+    // And the component itself stays a plain object, which is what that spelling
+    // buys: a nullable component would read `["object", "null"]` here.
+    expect(digestComponent().type).toBe("object");
+  });
+
+  /**
+   * The pack is the rehydration read, so it carries the digest — and it carries
+   * the **same** one. Asserted by comparing the published fields rather than by
+   * transcribing the prose twice, which is the only form that catches a
+   * hand-copied second description (CONTRACT-045's lesson).
+   */
+  it("carries one digest on the thread and on every shape of its context pack", () => {
+    const onThread = componentSchemas?.["Thread"]?.properties?.digest;
+    for (const variant of [
+      "AnchoredContextPack",
+      "WholeDocumentContextPack",
+      "OrphanedAnchorContextPack",
+      "StandaloneContextPack",
+      "DeletedParentContextPack",
+    ]) {
+      expect(componentSchemas?.[variant]?.required ?? [], variant).toContain("digest");
+      expect(componentSchemas?.[variant]?.properties?.digest, variant).toEqual(onThread);
+    }
+  });
+
+  /**
+   * The one thing the write's shape exists to make impossible. A `watermark` in
+   * the body would be a claim about a moment that has already passed, so the
+   * body is strict and the key is refused by name.
+   */
+  it("takes prose and no watermark, and says on the route why", () => {
+    const body = componentSchemas?.["WriteDigestRequest"];
+    expect(Object.keys(body?.properties ?? {})).toEqual(["body"]);
+    expect(body?.required).toEqual(["body"]);
+    expect(body?.additionalProperties).toBe(false);
+    expect(body?.properties?.body?.maxLength).toBe(DIGEST_MAX_CHARS);
+
+    const description = operation(DIGEST_PATH, "put").description ?? "";
+    expect(description).toContain("The server stamps the watermark");
+    expect(description).toContain("only the server knows what the newest turn is");
+  });
+
+  /**
+   * The write bound is a write bound. A `maxLength` on the read would have to be
+   * enforced by cutting a digest, and the rider forbids the server to edit one —
+   * so the ceiling is published where it can be honoured and stated where it
+   * cannot.
+   */
+  it("bounds the write and not the read, and says which", () => {
+    expect(digestComponent().properties?.body?.maxLength).toBeUndefined();
+    expect(digestComponent().properties?.body?.description).toContain(
+      `Writes are bounded at ${DIGEST_MAX_CHARS} characters`,
+    );
+    expect(digestComponent().properties?.body?.description).toContain("cutting it is editing it");
+  });
+
+  /** Staleness rides inside the object, which is what makes the rider's "wherever it is shown" true. */
+  it("puts staleness beside the prose and distinguishes it from uncovered", () => {
+    const stale = digestComponent().properties?.stale?.description ?? "";
+    expect(stale).toContain("shown as stale wherever it is shown");
+    expect(stale).toContain("Not the same as uncovered");
+    const watermark = digestComponent().properties?.watermark?.description ?? "";
+    expect(watermark).toContain("Stamped by the server");
+    expect(watermark).toContain("not yet covered");
+  });
+
+  /**
+   * Both refusals, and both are `422` rather than `400` because no body sent to
+   * *this* route can help: a thread with no resident may not have a digest, and
+   * a caller that meant to clear wants the other verb.
+   */
+  it("declares the two refusals on the write and the one on the clear", () => {
+    const write = operation(DIGEST_PATH, "put").responses ?? {};
+    expect(Object.keys(write).sort()).toEqual(["200", "400", "401", "404", "422"]);
+    const refused = JSON.stringify(write["422"]);
+    expect(refused).toContain("ValidationError");
+    expect(refused).toContain("UnknownRecipientError");
+
+    const clear = operation(DIGEST_PATH, "delete").responses ?? {};
+    expect(Object.keys(clear).sort()).toEqual(["200", "400", "401", "404", "422"]);
+    const clearRefused = JSON.stringify(clear["422"]);
+    expect(clearRefused).toContain("UnknownRecipientError");
+    expect(clearRefused).not.toContain("ValidationError");
+  });
+
+  it("says on both routes that an empty write is not a clear", () => {
+    expect(operation(DIGEST_PATH, "put").description).toContain("an empty write is not a clear");
+    expect(operation(DIGEST_PATH, "delete").description).toContain(
+      "an empty `PUT` is refused rather than read as a clear",
+    );
+  });
+
+  it("lists both verbs in the endpoint inventory", () => {
+    expect(ENDPOINT_INVENTORY).toContain("PUT /api/threads/{id}/digest");
+    expect(ENDPOINT_INVENTORY).toContain("DELETE /api/threads/{id}/digest");
   });
 });
