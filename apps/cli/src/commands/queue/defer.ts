@@ -1,5 +1,6 @@
 import { UsageError } from "../../errors.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { SETTLED_NEXT_STEP } from "./next-step.js";
 
 /**
  * The fourth transition of a claimed event, and the only non-terminal one
@@ -32,6 +33,10 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * Like the terminal three, the confirmation states the event's **state** rather
  * than claiming a transition: `QueueEvent` carries no status, so the CLI cannot
  * tell "I moved it" from "it was already there" and does not pretend to.
+ *
+ * And like the terminal three, it names the loop's next step on stderr
+ * (CLI-078). Deferring ends a pass exactly as settling does — the event comes
+ * back by itself, so nothing is owed to it — and the next step is the same park.
  */
 
 export async function runDefer(context: WorkspaceCommandContext): Promise<void> {
@@ -58,8 +63,9 @@ export async function runDefer(context: WorkspaceCommandContext): Promise<void> 
   const event = await context.client.request((api) =>
     api.POST("/api/queue/{id}/defer", { params: { path: { id } }, body }),
   );
-  context.out.emit(event);
+  context.out.emit({ ...event, nextStep: SETTLED_NEXT_STEP });
   context.out.line(`event ${event.id} is deferred on ${blockedOn}.`);
+  context.out.note(SETTLED_NEXT_STEP);
 }
 
 export const deferCommand: WorkspaceCommandSpec = {
@@ -83,7 +89,11 @@ export const deferCommand: WorkspaceCommandSpec = {
     "restart and stays retryable by hand with `corpus job retry`.\n\n" +
     "`--blocked-on` is required and checked before any request — a deferral that named no " +
     "document could never re-enter. Only claimed work can be deferred: an event that is not " +
-    "`in-progress` is a server conflict (exit 5), as is an unknown id.",
+    "`in-progress` is a server conflict (exit 5), as is an unknown id.\n\n" +
+    "**It names the loop's next step** on stderr (CLI-078). Deferring ends a pass exactly as " +
+    "settling does — the event returns by itself, so nothing is owed to it — and the next step " +
+    "is the same park with `corpus queue idle`. Stdout is unchanged and `--json` gains one " +
+    "additive `nextStep` key.",
   args: [
     {
       name: "event-id",

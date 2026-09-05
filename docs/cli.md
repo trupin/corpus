@@ -1073,7 +1073,9 @@ Reads `GET /api/docs`, the single collection query behind every list (SPEC.md §
 
 Archived documents are **excluded by default** (SPEC.md §10). `--status archived` selects them alone; `--include-archived` widens the default set to the union.
 
-**The list is paginated and says so.** The server applies its own page limit, and the last line always states the range shown out of the total that matched, naming the `--offset` that fetches the next page when there is one. Under `--json` the server's `{items, page}` envelope is emitted unchanged — `page` is what makes the truncation visible to a caller that is not reading the human line, and every row carries its `extra` frontmatter, its Attention reasons and its thread affordances, so a skill parses one response instead of issuing a read per row. That full row is wide — ~293 tokens in an agent's context — so a caller that wants a few fields per row names them with `--fields` and pays only for those.
+**The list is paginated and says so.** The server applies its own page limit, and the last line always states the range shown out of the total that matched, naming the `--offset` that fetches the next page when there is one. Under `--json` the server's `{items, page}` envelope arrives with its `page` meta untouched — that is what makes the truncation visible to a caller that is not reading the human line — and every row carries its `extra` frontmatter, its Attention reasons and its thread affordances, so a skill parses one response instead of issuing a read per row.
+
+**A key whose value is null is left out of a row.** A note carries no `parent`, no `turnCount` and no `kanban`, and printing those as `null` spent about a quarter of every row on other types' schemas. So **absent means null** here, which is the same reading `--fields` has always required, and a caller testing `row.parent === null` should test `row.parent == null` or `"parent" in row` instead. Only `null` is dropped, and only at the top level of a row: `[]`, `""`, `false` and `0` are values and stay, and nothing inside `extra` or `kanban` is touched. A field **named** in `--fields` is exempt — asking for a key by name is a question, and it is answered even when the answer is null. The row is still wide — ~293 tokens in an agent's context — so a caller that wants a few fields per row names them with `--fields` and pays only for those.
 
 A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, `--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through verbatim, since the CLI does not know the workspace's tags, its folders, or every `type:` its documents carry.
 
@@ -1108,7 +1110,7 @@ corpus doc list [flags]
 | `--sort <key>`              | string              | —       | Sort key: updated, -updated, created, -created, due, title, order, relevance. Defaults to `-updated` (newest first).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `--limit <n>`               | number              | —       | Rows per page, 1–200. The server applies its own default when omitted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `--offset <n>`              | number              | —       | Rows to skip — how the tally line's next page is fetched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `--fields <a,b,c>`          | string              | —       | Under `--json`, cut each item to exactly these comma-separated fields. The full row is ~293 tokens in an agent's context — `excerpt`, `lastTurn`, `kanban` and ~22 more — against ~34 for `id,title,lastActor,updated`, so a loop that wants a few fields per row should name them (the reflection window read wants `lastActor` and little else). The `page` envelope is kept whole either way, so truncation stays visible. A field no row carries is a usage error naming the known ones (exit 2), before any request; without `--json` the flag itself is one, because the human rows are not a parsing surface. Omitted, `--json` is the full object it has always been.                                                                                                                                                                                                                                                                                 |
+| `--fields <a,b,c>`          | string              | —       | Under `--json`, cut each item to exactly these comma-separated fields. The full row is ~293 tokens in an agent's context — `excerpt`, `lastTurn`, `kanban` and ~22 more — against ~34 for `id,title,lastActor,updated`, so a loop that wants a few fields per row should name them (the reflection window read wants `lastActor` and little else). The `page` envelope is kept whole either way, so truncation stays visible. A field no row carries is a usage error naming the known ones (exit 2), before any request; without `--json` the flag itself is one, because the human rows are not a parsing surface. A named field that is null on a row is **kept**, unlike the default rows, which drop their null keys — you asked for it. Omitted, `--json` is every non-null key of every row.                                                                                                                                                           |
 
 **Examples**
 
@@ -1883,6 +1885,8 @@ Moves the event to `abandoned/` — the terminal give-up state, distinct from `f
 
 It is the one settle that is **not** restricted to claimed work, because it is the operator's give-up rather than the agent's report: a `pending`, `in-progress`, `deferred` or `failed` event can all be abandoned, which is what lets the console offer it beside `retry` on a failed job. What it may not do is give up on work that is **done** — abandoning a `processed` event is a conflict (exit 5), since there is nothing left to give up on and the move would rewrite the history the kept file exists to be. A repeat is refused too, and says `already`.
 
+**It names the loop's next step** on stderr (CLI-078), the same park its two siblings name. Stdout is unchanged and `--json` gains one additive `nextStep` key.
+
 ```
 corpus queue abandon <event-id> [flags]
 ```
@@ -1959,6 +1963,8 @@ That is SPEC.md §7's rule — nobody settles work they did not claim — and it
 
 The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
 
+**It names the loop's next step** on stderr (CLI-078): settling ends a pass, and what follows is a park with `corpus queue idle` on the lane the work was claimed from. Stdout is unchanged, `--json` gains one additive `nextStep` key, and a refused settle prints no such line — an error is not a next step.
+
 ```
 corpus queue complete <event-id> [flags]
 ```
@@ -1994,6 +2000,8 @@ Moves the event to `deferred/` — **waiting, not failed** (SPEC.md §7). The ag
 **The event comes back on its own** when that edit session ends: it returns to `pending` and unparks `corpus queue idle` — no retry call, no operator. Until then it is not claimable, and `corpus queue status` counts it under `deferred` rather than `failed`. Nothing is silently dropped: it stays on disk across a restart and stays retryable by hand with `corpus job retry`.
 
 `--blocked-on` is required and checked before any request — a deferral that named no document could never re-enter. Only claimed work can be deferred: an event that is not `in-progress` is a server conflict (exit 5), as is an unknown id.
+
+**It names the loop's next step** on stderr (CLI-078). Deferring ends a pass exactly as settling does — the event returns by itself, so nothing is owed to it — and the next step is the same park with `corpus queue idle`. Stdout is unchanged and `--json` gains one additive `nextStep` key.
 
 ```
 corpus queue defer <event-id> [flags]
@@ -2041,6 +2049,8 @@ Moves the event to `failed/`, where the console can retry it — the recoverable
 The reason is the whole record of why the work stopped — it is what an operator reads in the failed row, and nothing else carries it. A missing or empty one is a usage error (exit 2) with nothing sent, so the failed row can never exist with nothing to say for itself. Use `corpus queue abandon` when there is genuinely nothing to add.
 
 It is **not** idempotent (SPEC.md §7 — nobody settles work they did not claim). A second `fail` is refused rather than accepted, which is also what stops it quietly discarding the new reason it carried: the first annotation was never going to be overwritten.
+
+**It names the loop's next step** on stderr (CLI-078) — a failed pass is still an ended pass, and the next step is the same park. Stdout is unchanged and `--json` gains one additive `nextStep` key. The usage error for a missing `--reason` prints no such line.
 
 ```
 corpus queue fail <event-id> [flags]
@@ -2112,6 +2122,8 @@ Long-polls `GET /api/queue/idle` and returns the instant a pending event exists 
 
 **Parking here is what presence _is_** (SPEC.md §7). With `--thread` this parks on that conversation's lane, and a resident is live exactly while it holds such a park — there is nothing to register, no heartbeat to send and nothing to reap, which is why no verb in this CLI announces an agent and `corpus agents` only ever _reads_ who is there. An agent that stops parking stops being present, however it stopped. That is also why **a `--thread` naming no lane is refused rather than parked** (exit 5, the server's `422`): a park the roster cannot name would leave `corpus agents` reporting a lane that does not exist. See `--thread` below for the three ways on. Everything else about an accepted park is unchanged by the lane: the same `--wait`, the same output shapes, the same held report, and the same `{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty prints exactly what an unscoped one does.
 
+**Every outcome names the loop's next step** (CLI-078). A listener stays alive only because it decides to park again, and this verb's output is what it reads at that moment — so the timeout, the halted window and the returned-work case each print one line saying what the loop does next, on **stderr** in human mode and as an additive `nextStep` key under `--json`. The events line says the events are _pending, not claimed_, because acting on them without `corpus queue claim-all` settles work that was never held. Nothing on stdout changed, `idle` and `reason` are the keys they always were, and `--wait 0` prints no such line: a probe is not a park.
+
 ```
 corpus queue idle [flags]
 ```
@@ -2131,13 +2143,13 @@ Park for the default rearm window; prints one line per event when work lands.
 corpus queue idle
 ```
 
-The agent loop's form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.
+The agent loop's form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false},"nextStep":"next step in the loop …"}` on work, `{"idle":true,"reason":"timeout","nextStep":"…"}` or `{"idle":true,"reason":"halted","nextStep":"…"}` on expiry. `nextStep` is additive — every other key is what it always was.
 
 ```
 corpus queue idle --json
 ```
 
-Probe the queue without blocking, for a script that must not park.
+Probe the queue without blocking, for a script that must not park. It carries no `nextStep`: a probe is not a park, and its caller is not in the loop.
 
 ```
 corpus queue idle --wait 0 --json
@@ -2793,6 +2805,12 @@ Read a conversation: its status, its anchoring, and every turn.
 
 Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. A designated thread also prints a `resident` line naming the agent that owns the conversation, with the `agent-def` document that defines it where it has one — a resident designated with no profile prints as `a general resident`, and one whose profile has since been renamed, deleted, or moved out of `.claude/agents/` prints `name (profile missing)`. **Archiving is not one of those**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so the line keeps printing its id. Where the designation chose a weight (SPEC.md §7, rider signed 2026-08-19) the line names it after the resident — `resident a general resident at heavy` — with the word taken from this workspace's own agent guidance rather than being a model name, and a designation that chose none prints nothing extra. An undesignated thread prints no such line, because having nobody resident is the ordinary state rather than a value. That line reports the **designation** and says nothing about whether the agent is currently running — presence is one lane's row in `corpus agents`, and the two are separate reads that may honestly disagree for a moment. The id line ends in `unread` or `read`, which the server answers from its own seen mark — so it survives a browser change and does not depend on this session having read anything. Asking does **not** clear it: only `POST /api/threads/{id}/seen` does, and this verb never calls a mutation. A thread id that names nothing is the server's `404`, which is exit 5.
 
+**A conversation can be read in part rather than whole** (CLI-076), which is what stops every reply paying for every turn ever written: a 19-turn thread measured 32,375 bytes, and the cost grows each time somebody speaks. `--index` prints the map — a header, then one row per turn with its author, its timestamp, its size in bytes and a marked first-line excerpt — and nothing else. `--turn`, `--turns`, `--last` and `--since` print the turns themselves. Read the index, decide, fetch what you need: it is `corpus doc show --headings` and `--section` for threads, and the same rule holds — **an address that names nothing is refused (exit 2) and never answered with the whole conversation**.
+
+**An addressed turn is byte-exact and a whole read is not.** With no flags every turn's body has its trailing whitespace trimmed, which is right for reading and wrong for quoting, and that behaviour is unchanged. An addressed turn's body is written exactly as stored: nothing trimmed, nothing collapsed, no newline appended after the last one. The `author · ts` line above each body and the blank line between two turns are this verb's framing, not stored bytes — `--json` is where the bodies arrive with no framing at all.
+
+These flags narrow **what you read, not what crosses the wire**: it is the same single request either way, and the saving is in the reader's context. The index's byte counts are the turn's body in UTF-8, heading line excluded, so the header's total is exactly the sum of the rows and a row predicts what `--turn <n>` will print.
+
 ```
 corpus thread show <id> [flags]
 ```
@@ -2803,12 +2821,52 @@ corpus thread show <id> [flags]
 | -------- | -------- | ---------------- |
 | `id`     | yes      | The thread's id. |
 
+**Flags**
+
+| Flag              | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--index`         | boolean | `false` | Print the conversation's map instead of the conversation: a header, then one row per turn. The header names the title, the id, the status, the turn count and the total bytes; each row carries an ordinal, an author, a timestamp, the body's size and a first-line excerpt. **An excerpt that leaves anything out ends in `…`**, so it can never be mistaken for the stored text. The rows carry no bodies, which is the point: it is a few hundred bytes against tens of thousands. Under `--json` the same rows arrive with a `truncated` flag per row and no `body` key anywhere. Refused beside an address flag (exit 2) — run it first, then address what is worth reading. |
+| `--turn <n\|ts>`  | string  | —       | Print one turn, byte for byte. Takes **either address**: the ordinal `--index` printed (`--turn 7`), or the ISO instant beside it (`--turn 2026-07-28T10:05:00Z`). They differ in what survives an edit — SPEC.md §6 makes the timestamp the turn's _identity_, and a person may delete a single turn, after which every later ordinal points at a different turn while every timestamp still points at its own. Use the ordinal for a decision made from an index you just read, and the timestamp for one you are carrying. Naming no turn is exit 2.                                                                                                                            |
+| `--turns <a,b-c>` | string  | —       | Print several turns: a comma-separated list of ordinals and ranges, `--turns 1,4-6`. Ordinals only — a timestamp addresses one turn through `--turn`, since a range written over instants cannot be told from the dashes inside them. The turns come back oldest first however the list was written, and a repeat is printed once. A backwards range, or an ordinal the thread does not have, is exit 2 with nothing printed.                                                                                                                                                                                                                                                      |
+| `--last <n>`      | number  | —       | Print the newest `n` turns — the usual way back into a conversation you have been away from. Asking for more turns than the thread holds prints every turn and exits 0: _the newest 50 of 19_ has an obvious honest answer. `--last 0` does not, and is exit 2.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--since <iso>`   | string  | —       | Print the turns after an instant, **exclusive**: `--since` the `ts` of the last turn you read returns what has been said since, and not that turn again. Nothing new is not a failure — it prints one line saying so and exits 0, the same carve-out `--last` gets for running past the end. A value that is not a timestamp is exit 2.                                                                                                                                                                                                                                                                                                                                            |
+
 **Examples**
 
 Read a conversation before replying to it.
 
 ```
 corpus thread show th_a1b2c3
+```
+
+The map: one row per turn with its size and a marked excerpt, at a fraction of the whole read. This is what a long conversation should be opened with.
+
+```
+corpus thread show th_a1b2c3 --index
+```
+
+The three newest turns, byte for byte as stored — enough to answer with, without paying for the sixteen before them.
+
+```
+corpus thread show th_a1b2c3 --last 3
+```
+
+The opening turn and the exchange the index showed was the interesting one, oldest first.
+
+```
+corpus thread show th_a1b2c3 --turns 1,7-9
+```
+
+What has been said since the turn you last read — exclusive of it. An empty answer prints one line and exits 0.
+
+```
+corpus thread show th_a1b2c3 --since 2026-07-28T10:05:00Z
+```
+
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","status":"open","turnCount":19,"bytes":32375,"index":[{"turn":1,"author":"user","ts":"2026-07-28T10:00:00.000Z","bytes":14,"excerpt":"Is 6.1% right?","truncated":false}]}` — derived rows, and no turn body anywhere.
+
+```
+corpus thread show th_a1b2c3 --index --json
 ```
 
 One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.

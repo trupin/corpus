@@ -2302,19 +2302,19 @@ and shipped in v0.22.0.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | todo | P0 | opus | — |
+| CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | done | P0 | opus | — |
 | CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | todo | P0 | fable | CLI-076, SHARED rider |
-| INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | todo | P0 | fable | — |
-| CLI-078 | The verbs that end a pass read as endings, so the loop stops there | todo | P0 | opus | — |
+| INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | done | P0 | fable | — |
+| CLI-078 | The verbs that end a pass read as endings, so the loop stops there | done | P0 | opus | — |
 | AGENT-065 | `converse` argues for stopping five ways and for continuing once | todo | P0 | fable | CLI-078 |
-| INFRA-039 | Nothing measures whether a listener stays alive | todo | P0 | fable | CLI-078, AGENT-065 |
+| INFRA-039 | Nothing measures whether a listener stays alive | done | P0 | fable | CLI-078, AGENT-065 |
 | AGENT-066 | Two event procedures live inside `orchestrate` instead of in skills of their own | todo | P0 | fable | — |
 | AGENT-067 | `orchestrate` costs 42K tokens before it does anything | todo | P0 | fable | AGENT-066 |
-| CLI-079 | A default `--json` row is a quarter nulls | todo | P0 | opus | — |
+| CLI-079 | A default `--json` row is a quarter nulls | done | P0 | opus | — |
 | CLI-080 | The help is 33K tokens and nothing budgets it | todo | P0 | fable | — |
 | AGENT-068 | The skills read whole documents the CLI can slice | todo | P0 | fable | CLI-076 |
 | SHARED-077 | A conversation carries its own digest — the §6 rider and the decomposition | done | P0 | fable | — |
-| CONTRACT-096 | A thread's digest on the wire | todo | P0 | opus | SHARED-077 |
+| CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
 | SERVER-164 | The digest write path, and staleness on delete and revise | todo | P0 | opus | CONTRACT-096 |
 | AGENT-069 | The resident writes the digest at reply time | todo | P0 | fable | CLI-077, SERVER-164 |
 

@@ -8,6 +8,7 @@ import {
   stubContext,
 } from "../../testing/stub-server.js";
 import { runDefer } from "./defer.js";
+import { SETTLED_NEXT_STEP } from "./next-step.js";
 
 const EVENT = {
   id: "evt_1111",
@@ -77,7 +78,7 @@ describe("queue defer", () => {
     const harness = stubContext(stub, { args: ARGS, flags: BLOCKED_ON, json: true });
     await runDefer(harness.context);
 
-    expect(JSON.parse(harness.stdout())).toEqual(EVENT);
+    expect(JSON.parse(harness.stdout())).toEqual({ ...EVENT, nextStep: SETTLED_NEXT_STEP });
   });
 
   it.each([
@@ -113,5 +114,35 @@ describe("queue defer", () => {
     expect(exitCodeFor(error)).toBe(ExitCode.serverError);
     expect(error instanceof Error ? error.message : "").toContain(message);
     expect(harness.stdout()).toBe("");
+  });
+});
+
+describe("queue defer names the loop's next step (CLI-078)", () => {
+  it("puts the line on stderr and leaves stdout as it was", async () => {
+    const stub = await startStubServer(jsonResponder(200, EVENT));
+
+    const harness = stubContext(stub, { args: ARGS, flags: BLOCKED_ON });
+    await runDefer(harness.context);
+
+    expect(harness.stdout()).toBe("event evt_1111 is deferred on doc_a1b2c3.\n");
+    expect(harness.stderr()).toBe(`${SETTLED_NEXT_STEP}\n`);
+  });
+
+  it("adds one key under --json and changes none", async () => {
+    const stub = await startStubServer(jsonResponder(200, EVENT));
+
+    const harness = stubContext(stub, { args: ARGS, flags: BLOCKED_ON, json: true });
+    await runDefer(harness.context);
+
+    expect(JSON.parse(harness.stdout())).toEqual({ ...EVENT, nextStep: SETTLED_NEXT_STEP });
+    expect(harness.stderr()).toBe("");
+  });
+
+  it("says nothing about a next step when --blocked-on is missing", async () => {
+    const stub = await startStubServer(jsonResponder(200, EVENT));
+    const harness = stubContext(stub, { args: ARGS });
+
+    await expect(runDefer(harness.context)).rejects.toBeInstanceOf(UsageError);
+    expect(harness.stderr()).toBe("");
   });
 });

@@ -1,5 +1,6 @@
 import { UsageError } from "../../errors.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { SETTLED_NEXT_STEP } from "./next-step.js";
 
 /**
  * The three terminal transitions of a claimed event (SPEC.md §7).
@@ -16,6 +17,15 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * <id> is complete`) rather than claiming the transition: `QueueEvent` carries
  * no `status` field, so the CLI has never been able to see which of the two
  * happened. What changed is that only one of them can now reach that line.
+ *
+ * **All three now name the loop's next step** (CLI-078). These are the strings a
+ * listener reads immediately before deciding whether to park again, and
+ * `event <id> is complete.` is the most terminal thing this CLI prints. The line
+ * comes from `next-step.ts` so three call sites cannot drift into three
+ * wordings, it goes to **stderr** so the stdout an agent parses is byte-identical
+ * to what it was, and under `--json` it is one additive `nextStep` key on the
+ * event that was already emitted. A verb that **fails** prints no such line: the
+ * caller has an error in front of it, and the next step is not parking.
  */
 
 export async function runComplete(context: WorkspaceCommandContext): Promise<void> {
@@ -23,8 +33,9 @@ export async function runComplete(context: WorkspaceCommandContext): Promise<voi
   const event = await context.client.request((api) =>
     api.POST("/api/queue/{id}/complete", { params: { path: { id } } }),
   );
-  context.out.emit(event);
+  context.out.emit({ ...event, nextStep: SETTLED_NEXT_STEP });
   context.out.line(`event ${event.id} is complete.`);
+  context.out.note(SETTLED_NEXT_STEP);
 }
 
 /**
@@ -59,8 +70,9 @@ export async function runFail(context: WorkspaceCommandContext): Promise<void> {
   const event = await context.client.request((api) =>
     api.POST("/api/queue/{id}/fail", { params: { path: { id } }, body: { reason } }),
   );
-  context.out.emit(event);
+  context.out.emit({ ...event, nextStep: SETTLED_NEXT_STEP });
   context.out.line(`event ${event.id} is failed.`);
+  context.out.note(SETTLED_NEXT_STEP);
 }
 
 export async function runAbandon(context: WorkspaceCommandContext): Promise<void> {
@@ -68,8 +80,9 @@ export async function runAbandon(context: WorkspaceCommandContext): Promise<void
   const event = await context.client.request((api) =>
     api.DELETE("/api/queue/{id}", { params: { path: { id } } }),
   );
-  context.out.emit(event);
+  context.out.emit({ ...event, nextStep: SETTLED_NEXT_STEP });
   context.out.line(`event ${event.id} is abandoned.`);
+  context.out.note(SETTLED_NEXT_STEP);
 }
 
 const EVENT_ID_ARG = {
@@ -92,7 +105,11 @@ export const completeCommand: WorkspaceCommandSpec = {
     "you still hold.\n\n" +
     "The confirmation states the event's state rather than claiming a transition — the response " +
     "carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown " +
-    "id is a server error (exit 5).",
+    "id is a server error (exit 5).\n\n" +
+    "**It names the loop's next step** on stderr (CLI-078): settling ends a pass, and what " +
+    "follows is a park with `corpus queue idle` on the lane the work was claimed from. Stdout is " +
+    "unchanged, `--json` gains one additive `nextStep` key, and a refused settle prints no such " +
+    "line — an error is not a next step.",
   args: [EVENT_ID_ARG],
   flags: [],
   examples: [
@@ -119,7 +136,10 @@ export const failCommand: WorkspaceCommandSpec = {
     "itself. Use `corpus queue abandon` when there is genuinely nothing to add.\n\n" +
     "It is **not** idempotent (SPEC.md §7 — nobody settles work they did not claim). A second " +
     "`fail` is refused rather than accepted, which is also what stops it quietly discarding the " +
-    "new reason it carried: the first annotation was never going to be overwritten.",
+    "new reason it carried: the first annotation was never going to be overwritten.\n\n" +
+    "**It names the loop's next step** on stderr (CLI-078) — a failed pass is still an ended " +
+    "pass, and the next step is the same park. Stdout is unchanged and `--json` gains one " +
+    "additive `nextStep` key. The usage error for a missing `--reason` prints no such line.",
   args: [EVENT_ID_ARG],
   flags: [
     {
@@ -160,7 +180,9 @@ export const abandonCommand: WorkspaceCommandSpec = {
     "`retry` on a failed job. What it may not do is give up on work that is **done** — " +
     "abandoning a `processed` event is a conflict (exit 5), since there is nothing left to give " +
     "up on and the move would rewrite the history the kept file exists to be. A repeat is " +
-    "refused too, and says `already`.",
+    "refused too, and says `already`.\n\n" +
+    "**It names the loop's next step** on stderr (CLI-078), the same park its two siblings name. " +
+    "Stdout is unchanged and `--json` gains one additive `nextStep` key.",
   args: [EVENT_ID_ARG],
   flags: [],
   examples: [
