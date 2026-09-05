@@ -46,6 +46,7 @@ import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 import { originOrNull } from "../core/provenance.js";
 import { DEFAULT_LAST_ACTOR } from "./last-actor.js";
+import { storedDigest } from "../core/digest.js";
 import { residentProblem, storedResident } from "../core/resident.js";
 
 /** How much of the body a list row shows (§9.1 `body_excerpt`). */
@@ -451,12 +452,24 @@ function projectThread(
   // all on the ordinary thread, whose block is absent.
   const problem = parentId === null ? residentProblem(data["resident"]) : null;
 
+  // §6's digest (rider signed 2026-09-05), through the one reader every path
+  // asks — the same arrangement the resident block has, and for the same reason:
+  // "what the file may say" is decided in `core/digest.ts` and nowhere else, so
+  // a projection and a thread response can never disagree about one file. Read
+  // verbatim and never repaired: the rider forbids the server to edit a digest,
+  // and that includes editing the copy of it a row holds.
+  //
+  // Not filtered by `parentId`. §7's standalone rule is about designations; the
+  // rider puts no such limit on a digest, and a hand-written one on a parented
+  // thread is somebody's account of that conversation.
+  const digest = storedDigest(data["digest"]);
+
   db.prepare(
     `INSERT INTO threads
        (id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author,
         last_ts, resident_designated, resident_name, resident_doc_id, resident_weight,
-        resident_designation_id, resident_problem)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        resident_designation_id, resident_problem, digest_body, digest_watermark, digest_stale)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     parentId,
@@ -480,6 +493,12 @@ function projectThread(
     // (SERVER-147) — the contract's "no id to compare".
     resident?.designationId ?? null,
     problem,
+    digest?.body ?? null,
+    digest?.watermark ?? null,
+    // NULL exactly when there is no digest, so "has one" and "is it stale" stay
+    // two questions rather than collapsing into a 0 that means both "not stale"
+    // and "not there".
+    digest === null ? null : Number(digest.stale),
   );
 
   // `OR IGNORE`: the primary key is (thread_id, ts) because a turn's timestamp

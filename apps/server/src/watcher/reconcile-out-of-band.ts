@@ -1,4 +1,5 @@
-// The §6 catch-all: keeping anchors attached through edits Corpus never saw.
+// The §6 catch-alls: keeping anchors attached through edits Corpus never saw,
+// and keeping a digest honest about what it covers through the same edits.
 //
 // A document changed by an outside editor never reached the write path, so its
 // `anchors` map still describes the body as it was. SPEC.md §6 says the watcher
@@ -19,13 +20,21 @@
 // - **Never clobber.** A file whose `anchors` block does not parse as a whole is
 //   left exactly as it is. Rewriting it would silently drop the entries that did
 //   not parse, which is a worse outcome than an unreconciled anchor.
+//
+// The digest half (SPEC.md §6's rider, signed 2026-09-05) is here rather than in
+// a pass of its own because it reads the same two bodies and writes the same
+// frontmatter: an out-of-band edit that deletes or revises a turn at or before
+// the digest's watermark marks the digest stale, in the same rewrite and so in
+// the same commit. Nothing here composes, edits or repairs a digest — the rider
+// makes that the resident's, and this pass only ever sets one boolean.
 
 import { randomBytes } from "node:crypto";
 import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { AnchorIdSchema, TextQuoteSelectorSchema } from "@corpus/contract";
+import { AnchorIdSchema, TextQuoteSelectorSchema, type ThreadDigest } from "@corpus/contract";
 import { z } from "zod";
 import { reconcileAnchors, type ReconcileReport } from "../anchors/index.js";
+import { coveredTurnsChanged, stalenessPatch, storedDigest } from "../core/digest.js";
 import {
   DocumentParseError,
   parseDocument,
@@ -46,9 +55,9 @@ const AnchorsFieldSchema = z.record(AnchorIdSchema, TextQuoteSelectorSchema);
 export type OutOfBandOutcome =
   /** Nothing to reconcile — no anchors, no committed version, or an unchanged body. */
   | { readonly kind: "skipped"; readonly reason: string }
-  /** Reconciliation ran and every selector still described the body. */
+  /** The pass ran and found nothing to record: every selector still described the body, and no covered turn changed. */
   | { readonly kind: "unchanged"; readonly report: ReconcileReport }
-  /** The `anchors` map was rewritten on disk. */
+  /** The frontmatter — the `anchors` map, the digest's `stale` flag, or both — was rewritten on disk. */
   | {
       readonly kind: "reconciled";
       readonly report: ReconcileReport;
@@ -94,8 +103,39 @@ function writeAtomically(absPath: string, text: string, selfWrites: SelfWriteReg
 }
 
 /**
+ * The report a rewrite that reconciled no anchors carries — every list empty.
+ *
+ * A digest can go stale on a file that has no anchors at all, so `"reconciled"`
+ * is no longer only ever an anchor outcome. Empty sets are exactly what the
+ * commit trailer treats as nothing to say (`git/commit.ts`'s `mergeAnchors`), so
+ * the caller needs no new branch and no trailer appears.
+ */
+const NO_ANCHOR_WORK: ReconcileReport = { unchanged: [], remapped: [], orphaned: [] };
+
+/**
+ * Is the digest on disk the one the committed version carried — same prose, same
+ * coverage?
+ *
+ * The guard on marking anything stale. An edit that rewrote the body **and** the
+ * digest in one save is somebody stating fresh coverage of the text they just
+ * wrote, and the rider makes that person the only party allowed to say what a
+ * digest covers. Marking their new digest stale against the old body would be
+ * the server contradicting the one writer it has.
+ */
+const digestSurvivedThisEdit = (committed: ThreadDigest | null, current: ThreadDigest): boolean =>
+  committed !== null &&
+  committed.body === current.body &&
+  committed.watermark === current.watermark;
+
+/**
  * Reconciles one out-of-band document edit and persists the result. Returns what
  * happened; the caller projects the file afterwards either way.
+ *
+ * **Two catch-alls, one rewrite.** The anchors and the digest are read from the
+ * same pair of bodies — the committed one and the one on disk — recorded in the
+ * same frontmatter, and landed in the caller's single commit alongside the
+ * person's own edit. A second pass would mean a second commit, and a moment
+ * between them in which the file says something untrue.
  */
 export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutOfBandOutcome {
   const logger = options.logger ?? silentLogger;
@@ -110,18 +150,30 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
     throw error;
   }
 
+  // §6's digest, and only one this pass could still change: a thread with none,
+  // and one already marked stale, have nothing to record. Read first, because it
+  // is what decides whether a file with no anchors is worth asking git about.
+  const digest = storedDigest(parsed.data["digest"]);
+  const digestLive = digest !== null && !digest.stale;
+
   const anchorsField: unknown = parsed.data["anchors"];
-  if (anchorsField === undefined || anchorsField === null) {
-    return { kind: "skipped", reason: "no anchors" };
-  }
-  const anchors = AnchorsFieldSchema.safeParse(anchorsField);
-  if (!anchors.success) {
+  const anchors =
+    anchorsField === undefined || anchorsField === null
+      ? null
+      : AnchorsFieldSchema.safeParse(anchorsField);
+  if (anchors !== null && !anchors.success) {
+    // Refused whole, digest or no digest. The strictness this module opens with
+    // is about *rewriting the file*, and the digest half rewrites it too — so an
+    // `anchors` block nobody can read stops this pass rather than being carried
+    // through a re-serialization it was never checked against.
     logger.info("skipping anchor reconciliation: malformed anchors block", {
       path: options.relativePath,
     });
     return { kind: "skipped", reason: "malformed anchors" };
   }
-  if (Object.keys(anchors.data).length === 0) return { kind: "skipped", reason: "no anchors" };
+  const selectors = anchors === null ? {} : anchors.data;
+  const hasAnchors = Object.keys(selectors).length > 0;
+  if (!hasAnchors && !digestLive) return { kind: "skipped", reason: "no anchors" };
 
   const head = readHead(options.workspaceRoot, options.relativePath);
   if (head === null) return { kind: "skipped", reason: "no committed version" };
@@ -137,25 +189,36 @@ export function reconcileOutOfBandEdit(options: ReconcileOutOfBandOptions): OutO
   }
   if (committed.body === parsed.body) return { kind: "skipped", reason: "body unchanged" };
 
-  const result = reconcileAnchors(committed.body, parsed.body, anchors.data);
-  const next = setFrontmatterFields(parsed, { anchors: result.anchors });
+  const result = hasAnchors ? reconcileAnchors(committed.body, parsed.body, selectors) : null;
+  const stale =
+    digest !== null &&
+    digestSurvivedThisEdit(storedDigest(committed.data["digest"]), digest) &&
+    coveredTurnsChanged(digest, committed.body, parsed.body);
+
+  const next = setFrontmatterFields(parsed, {
+    ...(result === null ? {} : { anchors: result.anchors }),
+    ...stalenessPatch(digest, stale),
+  });
   // `setFrontmatterFields` returns its input untouched when nothing changed, so
   // object identity is the honest test for "the file needs rewriting".
-  if (next === parsed) return { kind: "unchanged", report: result.report };
+  const report = result?.report ?? NO_ANCHOR_WORK;
+  if (next === parsed) return { kind: "unchanged", report };
 
   const text = serializeDocument(next);
   writeAtomically(options.absPath, text, options.selfWrites);
-  logger.info("reconciled anchors after an out-of-band edit", {
+  logger.info("reconciled an out-of-band edit", {
     path: options.relativePath,
-    remapped: result.report.remapped.length,
-    orphaned: result.report.orphaned.length,
+    remapped: report.remapped.length,
+    orphaned: report.orphaned.length,
+    digestStale: stale,
     // No commit is named here, and the absence is deliberate. This used to log
     // `commit: "deferred"` above a comment pointing at a `reconcile:` commit
     // SERVER-007 specified and nothing ever built — which is why an out-of-band
     // edit went uncommitted for so long without anyone noticing (SERVER-090).
     // The commit is the *caller's*: `watcher.ts` commits the file this function
     // has just finished rewriting, authored `user`, so the remapped `anchors`
-    // block and the person's own edit land together as the one change they are.
+    // block, the digest's staleness and the person's own edit land together as
+    // the one change they are.
   });
-  return { kind: "reconciled", report: result.report, text };
+  return { kind: "reconciled", report, text };
 }

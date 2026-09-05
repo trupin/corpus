@@ -21,6 +21,7 @@ import type { SemanticRetrieval } from "../semantic/index.js";
 import { deleteThreadTurn } from "./cascade.js";
 import { threadContextPack } from "./context.js";
 import { createThread, threadRequestBody } from "./create.js";
+import { clearDigest, writeDigest } from "./digest.js";
 import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
 import { reattachThread } from "./reattach.js";
@@ -187,6 +188,35 @@ export function mountThreadRoutes(
     const { thread, result } = await releaseResident(workspace, mutex, actor, id);
     if (result !== null) reportWarnings(workspace, id, result);
     return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
+  });
+
+  // SPEC.md §6's digest (rider signed 2026-09-05). Both verbs answer the same
+  // shape — the digest *after* the call — because the writer cannot know the
+  // watermark the server stamped and would otherwise re-read the thread to learn
+  // what it just wrote.
+  app.openapi(contractRoutes.writeThreadDigest, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { threadId, digest, result } = await writeDigest(
+      workspace,
+      mutex,
+      actor,
+      id,
+      c.req.valid("json"),
+    );
+    reportWarnings(workspace, id, result);
+    return c.json({ threadId, digest, warnings: serializeWarnings(result) }, 200);
+  });
+
+  app.openapi(contractRoutes.clearThreadDigest, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { threadId, digest, result } = await clearDigest(workspace, mutex, actor, id);
+    if (result !== null) reportWarnings(workspace, id, result);
+    return c.json(
+      { threadId, digest, warnings: result === null ? [] : serializeWarnings(result) },
+      200,
+    );
   });
 
   app.openapi(contractRoutes.reattachThread, async (c) => {

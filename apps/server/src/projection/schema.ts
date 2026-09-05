@@ -211,8 +211,14 @@
  * warm workspace re-reads nothing is what forced the fact into a column rather
  * than into a walk. NULL for every thread whose block is absent or good, which
  * is nearly all of them.
+ *
+ * **v24** adds `threads.digest_body`, `threads.digest_watermark` and
+ * `threads.digest_stale` — SPEC.md §6's digest (rider signed 2026-09-05). A
+ * projection written before this issue holds no digest at all, so an existing
+ * database has to be rebuilt before a reader can ask about one, and the version
+ * bump is what makes that happen by itself.
  */
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -483,7 +489,29 @@ CREATE TABLE threads (
   -- corpus db doctor can say it. Asked only of a STANDALONE thread: SPEC.md
   -- section 7 allows the designation nowhere else, so a resident: key on a
   -- parented thread has lost nothing and is not a finding.
-  resident_problem TEXT
+  resident_problem TEXT,
+  -- SPEC.md section 6's digest (rider signed 2026-09-05), verbatim from the
+  -- file's frontmatter -- NULL on the great majority of threads, which is the
+  -- ordinary state and not a fault. Three columns because they answer three
+  -- questions and a client needs all three at once: the prose, the newest turn
+  -- it covers, and whether a turn at or before that has been deleted or revised
+  -- since. Projected for the reason the resident columns are: a reader answers
+  -- from rows rather than opening a file per thread, and corpus db rebuild
+  -- reconstructs all of it from the file, which stays the truth.
+  --
+  -- Never written by anything but the projector reading a file. The rider makes
+  -- a digest the resident's, so a row here is a mirror and never a source: a
+  -- staleness flag is recorded into the FILE by the write that caused it, and
+  -- arrives here on the re-projection that follows.
+  --
+  -- Not filtered by parent_id the way the resident columns are: section 7 allows
+  -- a designation only on a standalone thread, and the rider puts no such limit
+  -- on a digest.
+  digest_body TEXT,
+  digest_watermark TEXT,
+  -- 1 or 0, and NULL exactly when digest_body is NULL -- so "has a digest" and
+  -- "is that digest stale" stay two separate questions with no third state.
+  digest_stale INTEGER
 );
 
 CREATE TABLE anchors (

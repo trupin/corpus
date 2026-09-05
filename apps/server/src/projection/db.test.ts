@@ -90,6 +90,15 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "resident_weight",
     "resident_designation_id",
     "resident_problem",
+    // Past §9.1's list too, retyped from SPEC.md §6's digest rider (signed
+    // 2026-09-05, SERVER-164): the prose, the newest turn it covers, and
+    // whether a turn at or before that has been deleted or revised since. Three
+    // columns because a reader needs all three at once, and a mirror of the file
+    // rather than a source — the rider makes a digest the resident's, and this
+    // server writes one only where the resident's write already put it.
+    "digest_body",
+    "digest_watermark",
+    "digest_stale",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
   // `has_form` and `form_answered` are past §9.1's list, retyped from

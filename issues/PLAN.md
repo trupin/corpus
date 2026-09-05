@@ -2315,7 +2315,7 @@ and shipped in v0.22.0.
 | AGENT-068 | The skills read whole documents the CLI can slice | todo | P0 | fable | CLI-076 |
 | SHARED-077 | A conversation carries its own digest — the §6 rider and the decomposition | done | P0 | fable | — |
 | CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
-| SERVER-164 | The digest write path, and staleness on delete and revise | todo | P0 | opus | CONTRACT-096 |
+| SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
 | AGENT-069 | The resident writes the digest at reply time | todo | P0 | fable | CLI-077, SERVER-164 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the

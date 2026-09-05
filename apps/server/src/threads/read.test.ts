@@ -57,6 +57,7 @@ describe("GET /api/threads/{id}", () => {
       anchor: created.anchorId,
       agent: "none",
       resident: null,
+      digest: null,
       // Nobody has marked this thread read, so every turn in it is unseen
       // (CONTRACT-036). The field is on the resource, not derived from `turns`.
       unread: true,
@@ -140,6 +141,7 @@ describe("GET /api/threads/{id} — hand-written files", () => {
       anchor: null,
       agent: "none",
       resident: null,
+      digest: null,
       // No mark on record reads as nothing seen, never as nothing to see.
       unread: true,
       turns: [
