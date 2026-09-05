@@ -30,6 +30,8 @@ assets/workspace/
                                          #   read only when the event needs one (AGENT-047)
       converse/SKILL.md                  # a resident's own loop, on its conversation's lane (SPEC §7)
       profile/SKILL.md                   # writes a subagent profile into agents/ (SPEC §7, §10)
+      reflect-edit/SKILL.md              # reflects on a finished user edit — doc.edited (SPEC §7)
+      reflect-corpus/SKILL.md            # reflects on the whole corpus — workspace.reflect (SPEC §7)
       asd-ste100/                        # vendored, MIT — controlled language (AGENT-037)
         SKILL.md                         #   the skill itself, byte-identical to .claude/skills/
         LICENSE                          #   the licence it ships under

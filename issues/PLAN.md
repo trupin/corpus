@@ -2308,7 +2308,7 @@ and shipped in v0.22.0.
 | CLI-078 | The verbs that end a pass read as endings, so the loop stops there | done | P0 | opus | — |
 | AGENT-065 | `converse` argues for stopping five ways and for continuing once | todo | P0 | fable | CLI-078 |
 | INFRA-039 | Nothing measures whether a listener stays alive | done | P0 | fable | CLI-078, AGENT-065 |
-| AGENT-066 | Two event procedures live inside `orchestrate` instead of in skills of their own | todo | P0 | fable | — |
+| AGENT-066 | Two event procedures live inside `orchestrate` instead of in skills of their own | done | P0 | fable | — |
 | AGENT-067 | `orchestrate` costs 42K tokens before it does anything | todo | P0 | fable | AGENT-066 |
 | CLI-079 | A default `--json` row is a quarter nulls | done | P0 | opus | — |
 | CLI-080 | The help is 33K tokens and nothing budgets it | todo | P0 | fable | — |

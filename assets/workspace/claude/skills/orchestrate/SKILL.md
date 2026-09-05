@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-09-02T00:00:00Z
+updated: 2026-09-05T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -461,8 +461,8 @@ row below is failed with a reason and is never silently completed.
 | --------------------- | --------------------------------------------------------------------------------------------- |
 | `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
-| `doc.edited`          | A subagent working **Reflecting on a user edit** below — one of the two events whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
-| `workspace.reflect`   | A subagent working **Reflecting on the corpus** below — the other one. Its dispatch carries the payload's `since` verbatim, `null` included. It falls in no scope and is always yours.                     |
+| `doc.edited`          | A subagent applying the **reflect-edit** skill to the document named in the payload. Its dispatch carries the payload verbatim, both shas included. |
+| `workspace.reflect`   | A subagent applying the **reflect-corpus** skill. Its dispatch carries the payload's `since` verbatim, `null` included. It falls in no scope and is always yours.                     |
 | `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (Launching a listener below). It is one of the three rows that are not jobs. |
 | `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (Losing a listener below). It is another row that is not a job. |
 | `lane.waiting`        | A conversation has work and nobody listening. **Never dispatched** — it is a report about somebody else's conversation, not the conversation. Make sure a listener is running for the payload's `lane` (Launching a listener below), then complete. The third row that is not a job. |
@@ -853,9 +853,7 @@ the background**, one subagent per event. A subagent inherits nothing, so its pr
 carries everything: the event id and type, the payload's ids (thread, parent, the
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
 payload directs to), the model you are launching it at, and the anchors it should start
-from — plus, **only** where the dispatch runs a procedure from this skill rather than a
-skill of its own, the binding rules below. Its
-report comes back as the task's final message.
+from. Its report comes back as the task's final message.
 
 **The call's `model` argument is what chooses the runtime, and the prompt chooses
 nothing.** The Task tool takes `model` beside `prompt`, and passing it is the one act that
@@ -874,7 +872,7 @@ Task(
   description: "comment-skill subagent for evt_7c1d9a",
   prompt: "Apply the comment skill to th_4b8e2c (evt_7c1d9a, comment.created). You are
            running as Sonnet — that word is the --model value on every turn you post.
-           …the payload's ids, the anchors as retrieved, the binding rules below…"
+           …the payload's ids, the anchors as retrieved…"
 )
 ```
 
@@ -1080,12 +1078,12 @@ decides: material a later stage genuinely needs is passed on, and a stage that w
 otherwise have to guess is briefed further rather than left short.
 
 **Every invariant binds inside the subagent, and exactly one document states them to it.**
-A dispatch that names a skill — the comment skill's two routing rows — restates nothing:
-that skill's own *Inherited invariants* section is the copy that binds its subagent, and a
-prompt that repeated them beside it would be a second copy to keep in step, paid again on
-every event. Name the skill and let it speak. A dispatch worked from a section of **this**
-skill — the two reflections — reads no skill of its own, so its prompt is the only road the
-rules have into it: state them there, in full. They are:
+Every dispatch names a skill, and the dispatch restates nothing: that skill's own
+*Inherited invariants* section is the copy that binds its subagent, and a prompt that
+repeated them beside it would be a second copy to keep in step, paid again on every event.
+Name the skill and let it speak. What those sections condense is stated here in full,
+because this skill is their authority — and because the last three below bind the turns and
+prompts you write yourself, outside any dispatch. They are:
 
 - Every mutation goes through the `corpus` CLI — never hand-edit `data/`, `.corpus/`, or
   `.claude/`, never call the HTTP API directly.
@@ -1141,8 +1139,7 @@ rules have into it: state them there, in full. They are:
   often is a **prompt written for a subagent**, which is markdown and usually contains fenced
   examples of its own. Check the payload before you write the fence and the newline before you
   close it, every time. The comment skill carries both halves with worked shapes, so its
-  subagents read them there; a reflection subagent never will, and would get this wrong —
-  which is why this bullet rides in a reflection's prompt.
+  subagents read them there; yours is the copy that binds the fences you write yourself.
 
 **Queue state never crosses the boundary — the boundary being your lane.** A subagent you
 dispatched to work one of your events never runs `corpus queue claim-all`,
@@ -1621,435 +1618,6 @@ that happens the CLI prints the server's sentence about it on a **separate line 
 `edited <id>`, naming the board that decided. The confirmation is therefore not always the
 last line of the output, and a second effect nobody read is a second effect nobody reported.
 Read the whole output, and say in the reply what the stage did to the status.
-
-## Reflecting on a user edit
-
-`doc.edited` says a person finished an editing session on a document. It carries the
-document id, an opaque `sessionId`, the commit range (`from`, `to`) and three numbers
-(`commits`, `insertions`, `deletions`) — and never the diff itself. Reflecting on it is
-three decisions taken in order: what changed, whether it ripples into other documents, and
-what to say. The whole procedure runs inside the dispatched subagent, weighed by the two
-passes in Delegation like any other work and by no rule of its own: reflecting answers the
-first pass **no** — what it produces is a changelog entry in this corpus, read, commented on
-and revised like the rest of the body — so the weight comes from the second pass, which puts
-a one-document reflection at the **Sonnet** tier and raises it to **Opus 5** where step 4 is
-going to write another document. The dispatch prompt carries the payload verbatim, the two
-shas above all, because they are passed straight back.
-
-**Your own edits never wake you.** The payload's actor is always `user`: the server emits
-nothing for an agent-authored write, and a payload claiming otherwise is dropped before it
-reaches you.
-
-**But an agent turn can still wake the loop, so this needs care rather than confidence.**
-The server checks the turn's *body* before it checks the author: a turn mentioning `@agent`
-enqueues whoever wrote it. So the rule is two things, not one — post **no `--requests-agent`
-and no `@agent` in the body**, in every turn you write here. That matters most where you are
-least thinking about it: a ripple comment or an acknowledgment that **quotes a user's line**
-carries whatever that line said, and a quoted `@agent` wakes the loop exactly as a written
-one does. Quote the passage you mean, and drop the mention if it carries one.
-
-**The turn's lane is where it lands, and it is not always yours.** A turn carrying `@agent`
-enqueues on the lane of the **thread it was posted in**. An agent turn posted into a
-designated conversation wakes that conversation's resident and never appears on your claim;
-one posted anywhere else wakes you. So the rule binds every turn any agent in this
-workspace writes — yours, your subagents', a resident's — and it binds them all for the same
-reason rather than because of who gets woken. What reaches you is the ordinary case, a turn in
-a conversation nobody is resident in, and you triage it as you triage everything: it arrives
-as a `comment.created` like any other, with no marker anywhere saying a machine wrote the
-mention that produced it. That is exactly why the rule is *write no `@agent`* rather than
-*detect one*.
-
-Get those two right and nothing here feeds itself. The one other thing to drop is a repeat:
-at most one event exists per `sessionId`, so a second carrying an id you already handled is
-completed without acting on it.
-
-**1 — Read the change, always, exactly once.** The event's `from` and `to` go in as
-`--from-rev` and `--to-rev` unchanged — no conversion, no resolution, including the
-empty-tree sha an event carries for a document's **first** change, which diffs as wholly
-added:
-
-```bash
-corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
-doc_a1b2c3 · data/docs/finance/mortgage-options.md
-0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b..9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
-1 commit · +2 -2 · 268 characters
-```
-
-The stats do not decide whether to make that call, and this is the one place where the
-cheap move is the wrong one: they cannot tell a one-word correction from a one-word
-reversal, because `will` becomes `will not` at `+1 -1` exactly like a misspelling does.
-What they are for is sizing the read — a change far past the 16000-character bound comes
-back cut, and the numbers say so before you spend the call — and giving you the honest
-figure to quote when it does. The read is bounded, so it costs about the same whatever the
-person wrote.
-
-**An empty-tree base is the ordinary shape of a first change, not an anomaly to report.**
-`from` is git's empty tree whenever nothing before the range ever touched **this
-document** — that is **any** document's first commit, not only one the repository's root
-commit introduced. Both ends of a range walk this document's history, not the branch's, and
-they have to: a commit window belongs to a party rather than to a document and gathers that
-party's saves across documents, so the commit sitting immediately before a document's first
-one is routinely somebody else's save to a different file — a commit at which this document
-did not exist, and naming it as the base would be a false claim about where this document
-came from. What comes back is the whole document as added, which is the truth about a
-document with no earlier revision. Read it and judge it like any other change; a new
-document being new is not something to raise with anyone.
-
-**2 — Decide triviality from the diff, never from its size.** Read the `-` lines and the
-`+` lines as claims and ask one question: does the document assert anything different now?
-An edit is **trivial** when every changed line says what it said before — spelling,
-punctuation, casing, whitespace, rewrapping, markdown formatting, an ordering that preserves
-meaning. It is **substantive** when any changed line adds, removes or reverses a claim: a
-number, a date, a name, a status, a negation, a modal (`must` against `may`, `will` against
-`will not`), a `[[ref]]`, a heading that renames a section, or prose that is simply new.
-
-Length is never the test. One word is substantive when the word is a negation, a quantity, a
-name or a modal; two hundred reflowed lines are trivial. Where the diff leaves you unable to
-tell, call it substantive and let the ripple check come back empty — a check that finds
-nothing costs two retrievals, while a thread about a whitespace fix is the behaviour that
-gets the loop switched off by lunchtime.
-
-**A trivial edit is completed in silence** — no thread, no reply, no write. One job-log line
-is the whole record, so the console still shows that the event was seen and judged:
-
-```bash
-corpus job log evt_7c1d9a "doc.edited on [[doc_a1b2c3]] — rewrapped a paragraph, no claim changed"
-corpus queue complete evt_7c1d9a
-```
-
-**3 — Check the ripple by retrieving.** A substantive edit gets two bounded lookups and no
-more. `corpus doc related doc_a1b2c3 --limit 5` walks the documents already linked to this
-one, and one `corpus search` per changed claim — at most three claims — finds the ones that
-are not. Search on what the `-` and `+` lines disagree about, the old value or the name or
-the decision phrase, never on the document's own title, which returns the document you are
-already holding. `--references doc_a1b2c3` narrows a search to the documents that point back
-at it. Both verbs print ids, heading paths and snippets; open a body with
-`corpus doc show <id>` only where a snippet restates the old claim, and open at most three.
-
-**Those lookups are one invocation, not four.** You know every query before you run any of
-them — they come from the diff, and no lookup here reads another's answer — so this is the
-shape *Several commands in one invocation* is for, at its cheapest and safest:
-
-```bash
-corpus batch <<'CORPUS_EOF'
-[["doc","related","doc_a1b2c3","--limit","5"],
- ["search","6.1%","--limit","5"],
- ["search","rate assumption","--references","doc_a1b2c3","--limit","5"]]
-CORPUS_EOF
-```
-
-The reads you then decide on — the at most three `corpus doc show` calls — go the same way,
-in one more invocation, because you have chosen all three ids before you open any of them.
-
-**4 — Update, log, or ask, and lean to logging.** Three outcomes, and only the third one is a
-thread. **Update** another document when the correction is mechanical and entailed — the same
-fact, stated the same way, now wrong, with exactly one way to write the new one: the rate this
-document quotes is the rate the person just corrected. **Log** when the ripple is real and you
-have no question about it — a conclusion drawn from the old fact, a passage that now reads
-oddly, anything you would once have raised in a comment. It becomes an entry in that
-document's changelog, saying what changed upstream and what it means here, and it opens
-nothing. Log rather than update whenever the diff came back cut. **Ask** only when you cannot
-act without a decision from the person: a rewrite that takes a decision, a ripple that could
-go two ways with nothing in the corpus to pick between them. That is one thread on the
-document the decision is about —
-`corpus thread create --parent doc_7e3a91 --from agent --model <name> --quote "<the passage that is now wrong>"`
-when you can quote the span exactly, because that is what makes it findable, and the same
-command without `--quote` when the passage is not one span — and it asks with a **form**: a
-fenced block whose info string is
-`form`, last in the turn body, one field per question, asked once. The comment skill's
-**Forms** section, with the `references/forms.md` file it directs a read of, is the whole
-grammar and binds here unchanged. Stop at three documents: past
-that, name what looks affected in the entry on the edited document instead of spraying entries
-and threads, and let the person point at the ones that matter.
-
-**5 — Write the entry, and open no thread.** Every substantive edit ends in exactly one entry,
-appended to the changelog at the end of the edited document's own body. **Noticing is written
-down, not asked about.** A thread means _I need something from you_; a changelog entry means
-_I noticed_. Every observation this reflection produced is an entry — the routine ones and the
-ones that look worrying, on the same terms. An observation that troubles you and carries no
-question is still an entry and nothing more; the moment it carries a question you cannot
-proceed without, that is step 4's ask, on one thread, with a form, about that question alone.
-One entry per session, never a second. A trivial edit gets none of this.
-
-Why the document rather than a thread: an open thread is this corpus's one signal that
-something is waiting on the person, and an acknowledgment nobody needs to answer spends that
-signal until the threads that do want an answer are buried among the ones that do not. The
-entry instead lives where the change lives, is read by whoever next opens the document, and is
-ordinary body text — commentable, anchorable, searchable, and the person's to edit exactly
-like the rest of the body. **The changelog is yours to maintain and theirs to edit; neither of
-you owns it.** Somebody remarking on an entry is an ordinary anchored comment and needs
-nothing special from you. The cost is accepted rather than hidden: an observation nobody reads
-is an observation nobody sees, and that trade was made deliberately against a corpus of
-threads nobody needed to answer.
-
-**Say what you made of it, not what the diff said.** Git holds every diff already, so an entry
-that only restates one is worth less than the room it takes. Name the claim that changed, then
-what it means for the corpus: what you checked, what you found, what you changed elsewhere,
-what you deliberately left alone. A date and two sentences is the size of it. The entry is
-body text rather than a turn, so it carries no trace arrow.
-
-**Append; never rewrite the section.** There is no append verb — `corpus doc edit` replaces
-the body — so it is `corpus doc show doc_a1b2c3` for the body as it now stands **and for its
-key**, then one `corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent`
-sending that body back with the new entry after the last one, every other byte reproduced
-exactly. **This is the bounded change that does not go back as a patch**, and the reason is
-the one *Writing a document* gives: this section is the last thing in the body, so the append
-has nothing on its far side to quote. A patch quoting the tail of the last entry applies
-perfectly well to a document somebody appended to while you were reading it, splicing your
-entry above theirs and reporting success — because what the excerpt checks is that the entry
-you quoted is unchanged, and what has to be true here is that it is still the **last** one.
-The key is the check that covers the text you did not name: it makes the append safe rather
-than hopeful, refusing a body that never saw the move instead of writing over it.
-
-The person writes in this section too:
-re-wording, re-ordering, re-dating, merging or condensing an existing entry is how their
-writing disappears — and every thread anchored into an entry you rewrote comes loose, which
-the edit reports as an orphan after the fact rather than refusing beforehand. No reason for
-rewriting is a good one, and sending the body back is not a licence to tidy it on the way
-through: every byte above your entry goes back exactly as the read printed it, the person's
-wording included. Entries run oldest first, so the
-newest goes last and the append disturbs nothing above it. Where the section is absent the
-first entry creates it, as the last thing in the body — a blank line, the heading, a blank
-line, the entry. That heading is spelled `## Changelog` and nothing else —
-a second spelling is a second section, and the reader's clip finds neither.
-
-**The word to read in the anchor report is `orphaned`.** Appending at the end moves no
-earlier offset, so nothing above the section shifts and an honest append orphans nothing. An
-orphan after one means what you sent was not what you read: go back to `corpus doc show` and
-redo the append from what the document actually says. A **remap** is a different thing and
-not a warning — the first entry introduces the section directly under whatever text used to
-end the body, so the anchor sitting on that text has its trailing context rewritten and is
-reported as remapped while staying exactly where it was. Later appends land past the section
-and report nothing at all.
-
-**This write replaces the body, so it presents a key — where a thread post would have needed
-none.** The read one paragraph above is where that key comes from, and two things can have
-happened since. The document moved — somebody appended their own entry, or changed a line
-anywhere else in the body: the write is refused at exit `9` carrying the current text and a
-fresh key, nothing is written, and you append your entry to *that* body and write again. The
-session you are reflecting on is over, so what moved is somebody else's change and your entry
-belongs after it either way. Or the person's editor is open again: leave the document alone and
-defer with `--blocked-on` naming it, and the entry lands when the event comes back. Never drop
-the entry because the document was busy.
-
-**Length is never a reason to prune.** Past a threshold the reader clips the section and says
-how many entries sit behind the control, and expanding shows them whole; the entries
-themselves stay. You never delete one, never fold two into one, and never start the section
-over — the same rule that has you archive rather than delete everywhere else.
-
-**A cut diff is never reasoned about as if it were whole.** The size slot on the counts line
-says which case you are in — `268 characters` when whole, `showing 16000 of 61200 characters`
-when cut — and a `#` notice repeats it under the body. When it is cut: say so in the entry,
-in the numbers the counts line printed; never update another document off it,
-because the correction may sit in the part you did not see; and when the session was more
-than one commit, `corpus doc diff doc_a1b2c3` with no range reads its newest commit whole,
-which is a smaller change you can see all of. `corpus doc show doc_a1b2c3` gives the document
-as it now stands whenever the ripple check needs the current text rather than the change.
-
-**Worked, end to end.** The person edited a mortgage note; the reflection finds one document
-that copied the old figure and fixes it.
-
-```bash
-corpus job log evt_7c1d9a "claimed doc.edited on [[doc_a1b2c3]] (1 commit, +2 -2, ended by idle)"
-corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
-doc_a1b2c3 · data/docs/finance/mortgage-options.md
-0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b..9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
-1 commit · +2 -2 · 268 characters
-
-@@ -3,7 +3,7 @@
--The working rate assumption is 6.1% as of 2026-05-02.
-+The working rate assumption is 6.4% as of 2026-07-28.
-```
-
-A number changed, so it is substantive; the claim that changed is the rate assumption, so
-that is what the two lookups ask about:
-
-```bash
-corpus doc related doc_a1b2c3 --limit 5
-doc_7e3a91  linked  Refinance plan — every projection here assumes 6.1% for the whole term
-corpus search "rate assumption 6.1%" --limit 5
-doc_7e3a91  Refinance plan › Costs  …every projection here assumes 6.1% for the whole term…
-corpus doc show doc_7e3a91
-key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa
-```
-
-One document, one figure, one way to write the new one — mechanical and entailed, so it is
-an update rather than a question. That last read is the one the write is written against, so
-its key goes straight into the edit. The update carries its own entry, because with no thread
-opened anywhere nothing else would tell a reader of that document why its figure moved:
-
-```bash
-corpus doc edit doc_7e3a91 --key 839161c3c8ece7a085f1f417041af2ee0348ddeb05da1abb30d32cf4313a61aa --from agent <<'CORPUS_EOF'
-# Refinance plan
-
-Every projection here assumes 6.4% for the whole term, following the rate
-assumption in [[doc_a1b2c3]].
-
-## Changelog
-
-- **2026-07-28** — carried the working rate assumption from 6.1% to 6.4%, following the
-  correction in [[doc_a1b2c3]]. Every projection here reads that one figure, so the change
-  is arithmetic and takes no decision.
-CORPUS_EOF
-edited doc_7e3a91
-key 401056da72e89508679079c53bb06a0f4db1601033ed1d3139545d83119f7895
-corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assumption across"
-```
-
-That write replaced a whole body — one figure changed and the section it now carries did not
-exist — so it presented a key, and it printed a fresh one, which is what any further edit to
-`doc_7e3a91` would present with no second read. The entry on the edited document itself is a
-different document, so it takes its own read, and it is an append at the end of a body: the
-key rather than a quote, the July 14th entry passed back through untouched.
-
-```bash
-corpus doc show doc_a1b2c3
-key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70
-corpus doc edit doc_a1b2c3 --key 028ee5455198acebc06757dee3a14c12d0009a271ebf5131fc33c7e2c4778d70 --from agent <<'CORPUS_EOF'
-# Mortgage options
-
-The working rate assumption is 6.4% as of 2026-07-28.
-
-## Changelog
-
-- **2026-07-14** — replaced last year's lender table with this year's. Nothing else in the
-  corpus quoted those figures.
-- **2026-07-28** — the working rate assumption moved from 6.1% to 6.4%. [[doc_7e3a91]]
-  projected the whole term at the old figure and I carried the new one across; nothing else
-  quotes it, and nothing here needs a decision from you.
-CORPUS_EOF
-edited doc_a1b2c3
-key 5c0f2a7d18e6b4930c1d8f27a6b5430e9f8c72d1a04b6e35f9c2807d61a34be8
-corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"
-corpus queue complete evt_7c1d9a
-```
-
-## Reflecting on the corpus
-
-**Reflection is an act over the whole corpus, and never a side effect of one change.** A stage
-moved, a status flipped, a tag added, a document moved or archived: none of those enqueues
-anything, and none of them is a message to you. The one event that reaches you is
-`workspace.reflect`, and its payload is one timestamp, `since` — the start of the window, the
-moment the corpus was last reflected on. Somebody asked for it from the board bar or with
-`corpus reflect`, or the corpus went quiet for long enough after a change and the server
-enqueued it. Either way the work is the same, and the event is always yours: it falls in no
-scope, so no resident owns it.
-
-**You gather the window yourself, and that is the whole cost control.** The event carries a
-timestamp and nothing else — no document list, no diff, no summary. One command opens the
-window:
-
-```bash
-corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,type,title,path,status,stage,tags,excerpt,lastActor
-```
-
-`since` is `null` for a corpus nobody has reflected on yet. That means **everything**, so run
-the same command with **no `--since` at all** rather than with an empty value. The list
-excludes archived documents by default, which is the right default here: an archived document
-has been put away rather than left waiting. The list is paginated and the `page` object beside
-the items says so — read the next page with `--offset` when the window is wider than one page.
-
-**`--fields` names the nine the paragraphs below read, and asking for the row whole is the
-expensive mistake here.** A full `--json` row carries around thirty-five fields — every
-excerpt, every last-turn preview, every board key — and measured on a twenty-document window
-it costs 203.6 tokens a row against 59.6 for the nine named above. A five-hundred-document
-window is the difference between reading a novel and reading a page. Name a field the moment
-one of these paragraphs starts reading it, and drop one the moment none of them does: a field
-the projection omits is simply absent from the row, with no error anywhere, so the list is
-what these paragraphs need and nothing else. `--fields` needs `--json`, and a name no row
-carries is a usage error listing the real ones before any request is sent.
-
-**Read a document only when its list line is not enough.** The row carries the title, the
-type, the folder (its `path`), the tags, the stage, the status and an excerpt, and for a great
-many changes that is the whole story. `corpus doc show <id>` is the deliberate second act,
-taken on the few ids that earned it, and `corpus doc diff <id>` shows what moved in one of
-them without the document around it. You pick every one of those ids off the listing before
-you open any of them, so they go as one invocation together — *Several commands in one
-invocation*, on the shape it costs least on. A reflection that reads every document in its
-window has turned a cheap act into an expensive one and learned very little more.
-
-**Your own writes are not new work.** A document whose last write was yours is your own output
-coming back at you — the changelog entries and the digest a reflection produces are exactly
-that. `lastActor` on every row is what tells the two apart, and `user` is the half worth your
-attention.
-
-**Never read a stage as an instruction.** A stage is where a document sits in somebody's
-workflow. A document in `doing` is not asking you to do it, a document in `review` is not
-asking you to review it, and a stage called `agent` is a column name rather than an address.
-What a person wants from you arrives as a comment, a form answer, or an ask — not as a word in
-a frontmatter field. Report a stage that moved. Never act on it.
-
-**What a reflection produces is two things, and neither is a surprise.** First, an entry in
-the changelog of each document you have something to say about — the same appended
-`## Changelog` section as everywhere else, one entry, saying what you noticed. A document you
-have nothing to say about gets nothing. Second, **one standalone thread, the digest**, and
-exactly one per reflection.
-
-**Three things about the digest are mechanical, and getting any of them wrong loses it.**
-
-- **No parent.** It is a standalone thread, so pass no `--parent`. A digest written on a
-  document is a comment on that document, and the corpus's digest is about the corpus.
-- **`--job <the reflect event id>`.** This is what records the thread as this reflection's
-  digest, at the one moment both facts are in the same place. Nothing can recover the link
-  afterwards: the event's payload names no thread. Leave the flag off and the board's "what
-  the agent said last time" points at nothing, with no error anywhere.
-- **Post it before you settle the event.** The thread is promoted to the corpus's digest when
-  the event reaches `processed`, so a digest posted after the completion is posted too late.
-
-The digest's first turn is written in this order:
-
-1. **The window**, on the first line: `since <the payload's timestamp> until <the moment you
-   gathered>`. A person reading it a week later must be able to tell what it covered.
-2. **What moved** — the documents that changed in the window, grouped so the shape is
-   readable rather than listed one per line for two hundred rows.
-3. **What you did** — every change you made, one line each, naming the document.
-4. **What you ask** — the decisions you could not take yourself. Nothing here is rhetorical.
-
-```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
-since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z
-
-Eleven documents changed, nine of them in `finance/` while you reworked the mortgage
-material. [[doc_a1b2c3]] moved its rate assumption to 6.4% and four documents quoted the
-old figure.
-
-I carried the new figure into [[doc_7e3a91]] and logged it on both. I filed three inbox
-captures into `finance/` and retitled them.
-
-[[doc_f4e9d2]] and [[doc_2f7b91]] both now describe the same refinance scenario, and one of
-them should go. I have not merged them, because which one is the keeper is your call.
-
-↳ edited [[doc_7e3a91]], filed 3 captures into finance/ and logged entries on 5 documents
-CORPUS_EOF
-```
-
-**Post the digest even when there is nothing to say, and post it in one line.** A quiet window
-is a real result, and a reflection that stayed silent is indistinguishable from a reflection
-that never ran. One line, naming the window, is the whole thread.
-
-```bash
-corpus thread create --title "Reflection — 21 Aug" --from agent --model "Opus 5" --job evt_3d8f04 <<'CORPUS_EOF'
-since 2026-08-21T09:00:00Z until 2026-08-22T09:04:11Z — nothing changed, nothing to report.
-CORPUS_EOF
-```
-
-**The digest asks for nothing to run.** Never pass `--requests-agent true` on it and never
-write `@agent` in it, or the thread you just posted wakes you to answer yourself. Asking a
-person for a decision is what the fourth part is for, and a person answering the digest
-re-triggers you the ordinary way.
-
-**Where residents are running, hand each one its own part.** A reflection covers the whole
-corpus, and part of that window may sit inside a conversation somebody else owns. Say so in
-the digest, and send that resident a message about its own documents rather than settling
-their fate from outside. The reflection stays one event, one digest and yours.
-
-**A failed reflection is safe to retry.** The clock only moves when the job reaches
-`processed`, so a failure leaves it exactly where it was and the retry opens the same window.
-Fail the event with the reason, the way you fail any other, and never invent a narrower window
-to make a second attempt cheaper. Never ask for a reflection while you are doing one either —
-`corpus reflect` answers an ask that arrives while one is pending with the pending one, at
-exit 0, so a second ask is not an error and is also not a second reflection. `--json` carries
-`pending`, which is the field that tells the two apart.
 
 ## Concurrency and ordering
 
