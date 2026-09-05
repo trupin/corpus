@@ -2293,3 +2293,46 @@ replies, and a listener-specific judgment rule needs a vocabulary for weighing a
 standing conversation that does not exist yet. A fourth option, making the
 designation surfaces refuse `null`, is rejected outright: §7 says in terms that
 stating no weight is permitted and means the orchestrator decides.
+
+## Phase 57 — What a conversation costs to read (2026-09-03, token measurements)
+
+Three findings from a measurement session against the `cos` workspace on corpus
+0.32.0, all counted at 1 token ≈ 4 bytes. `CLI-065` came from the same session
+and shipped in v0.22.0.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | todo | P0 | opus | — |
+| CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | todo | P0 | fable | CLI-076 |
+| INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | todo | P1 | fable | — |
+
+**`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
+thread file" means thread frontmatter gains a field, and the server is the sole
+writer — so it needs a signed **SPEC §6 rider** plus CONTRACT, SERVER and AGENT
+issues that are **not filed**. The closest precedent is the per-turn model
+record, which §6 carries under a rider signed 2026-08-08 for the same reason:
+derived data, about turns, recorded outside them.
+
+**One premise in the report is not true of the built system**, and the issue
+corrects it rather than building on it. The report reasons that a digest can
+never go stale retroactively because turns are immutable. §6 permits a person to
+**delete an individual turn**, and permits the agent to **revise its own last
+turn in place**. So a digest must carry a watermark, and a change at or before it
+must print as stale — never be silently regenerated, because a summary the server
+wrote is the one thing this design exists to avoid.
+
+**`INFRA-038` moved out of `cli` on the user's instruction the same day**
+(*"I want it to be a pre-commit check in this repo, as well as a CI check"*). It
+was drafted as a rule inside `corpus doc check`, which would have been a CONTRACT
+`CHECK_CODES` addition plus a SERVER validator — `doc check` runs no rules of its
+own, it renders `POST /api/check`. As a check on this repository's own files it
+is repo tooling, it lands on the easy side of INFRA-025's rule (a byte count is
+diff-scopable and near-free), and it needs no spec change at all.
+
+**Every skill and profile fails on day one**, which is the point rather than an
+objection: orchestrate is 167,737 bytes (~41,900 tokens), converse 64,952
+(~16,200), comment 41,132 (~10,300), and five more sit above any proposed
+threshold. The gating decision is the issue's one real question, and its
+recommendation is a ratchet — error on growth, warn while over — because
+`bytes ÷ 4` is deterministic and so this check, unlike `test:slow`, can gate
+honestly.
