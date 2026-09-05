@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { UsageError } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
 import {
   closeStubServers,
@@ -247,6 +248,305 @@ describe("corpus thread show", () => {
   });
 });
 
+/**
+ * CLI-076 — reading part of a conversation. The fixture is nineteen turns
+ * because that is the thread the issue measured, and the whole feature is a
+ * claim about what nineteen turns cost.
+ */
+
+/** A body with trailing whitespace and an internal blank line: the byte-exactness case. */
+const RAGGED_BODY = "First line.\n\nSecond paragraph, with a trailing space. \n\n";
+
+const LONG_TURNS = Array.from({ length: 19 }, (_, position) => ({
+  author: position % 2 === 0 ? "user" : "agent",
+  ts: `2026-07-28T10:${String(position).padStart(2, "0")}:00.000Z`,
+  body: position === 16 ? RAGGED_BODY : `Turn ${String(position + 1)} says something.\n`,
+  model: null,
+}));
+
+const LONG = { ...ANCHORED, turns: LONG_TURNS };
+
+/** Runs the verb and returns the harness, for the many one-assertion cases below. */
+async function show(
+  body: unknown,
+  flags: Record<string, boolean | string | number>,
+): Promise<{ stdout: string; requests: number }> {
+  const stub = await startStubServer(jsonResponder(200, body));
+  const harness = stubContext(stub, { args: ARGS, flags });
+  await runThreadShow(harness.context);
+  return { stdout: harness.stdout(), requests: stub.requests.length };
+}
+
+async function refusal(
+  body: unknown,
+  flags: Record<string, boolean | string | number>,
+): Promise<{ error: unknown; stdout: string }> {
+  const stub = await startStubServer(jsonResponder(200, body));
+  const harness = stubContext(stub, { args: ARGS, flags });
+  try {
+    await runThreadShow(harness.context);
+  } catch (error) {
+    return { error, stdout: harness.stdout() };
+  }
+  throw new Error("the command was expected to refuse and did not");
+}
+
+describe("corpus thread show --index", () => {
+  it("prints a header and one row per turn, and nothing else", async () => {
+    const { stdout } = await show(LONG, { index: true });
+    const lines = stdout.split("\n").filter((line) => line !== "");
+
+    expect(lines).toHaveLength(20);
+    expect(lines[0]).toBe("Is 6.1% right? · th_x9y8 · open · 19 turns · 479 bytes");
+    expect(lines[1]).toBe("1   user   2026-07-28T10:00:00.000Z  23 B  Turn 1 says something.");
+    expect(lines[17]).toBe("17  user   2026-07-28T10:16:00.000Z  56 B  First line.…");
+    expect(lines[19]).toBe("19  user   2026-07-28T10:18:00.000Z  24 B  Turn 19 says something.");
+  });
+
+  it("states a total that is exactly the sum of the rows", async () => {
+    const { stdout } = await show(LONG, { index: true });
+    const rows = stdout.split("\n").slice(1);
+    const summed = rows.reduce((sum, row) => {
+      const bytes = /\s(\d+) B\s/.exec(row)?.[1];
+      return bytes === undefined ? sum : sum + Number(bytes);
+    }, 0);
+
+    expect(stdout.split("\n")[0]).toContain(`${String(summed)} bytes`);
+  });
+
+  it("costs a fraction of the whole read on a conversation of real size", async () => {
+    const bulky = {
+      ...ANCHORED,
+      turns: LONG_TURNS.map((turn) => ({
+        ...turn,
+        body: `${turn.body}${"detail ".repeat(100)}\n`,
+      })),
+    };
+    const whole = await show(bulky, {});
+    const index = await show(bulky, { index: true });
+
+    expect(index.stdout.length).toBeLessThan(whole.stdout.length / 4);
+  });
+
+  it("marks an excerpt that leaves anything out, and does not mark one that does not", async () => {
+    const { stdout } = await show(
+      {
+        ...ANCHORED,
+        turns: [
+          { author: "user", ts: "2026-07-28T10:00:00.000Z", body: "Short.", model: null },
+          { author: "agent", ts: "2026-07-28T10:01:00.000Z", body: "One.\nTwo.\n", model: null },
+          {
+            author: "user",
+            ts: "2026-07-28T10:02:00.000Z",
+            body: `${"x".repeat(80)}\n`,
+            model: null,
+          },
+        ],
+      },
+      { index: true },
+    );
+    const lines = stdout.split("\n");
+
+    expect(lines[1]?.endsWith("Short.")).toBe(true);
+    expect(lines[2]?.endsWith("One.…")).toBe(true);
+    expect(lines[3]?.endsWith(`${"x".repeat(60)}…`)).toBe(true);
+  });
+
+  it("gives an empty turn a row with a zero count rather than dropping it", async () => {
+    const { stdout } = await show(
+      {
+        ...ANCHORED,
+        turns: [{ author: "user", ts: "2026-07-28T10:00:00.000Z", body: "", model: null }],
+      },
+      { index: true },
+    );
+
+    expect(stdout).toContain("· 1 turn · 0 bytes");
+    expect(stdout.split("\n")[1]).toBe("1  user  2026-07-28T10:00:00.000Z  0 B");
+  });
+
+  it("prints its header and the (no turns) line for a thread with none", async () => {
+    const { stdout } = await show({ ...ANCHORED, turns: [] }, { index: true });
+
+    expect(stdout).toBe("Is 6.1% right? · th_x9y8 · open · 0 turns · 0 bytes\n(no turns)\n");
+  });
+
+  it("emits derived rows under --json and no body anywhere", async () => {
+    const stub = await startStubServer(jsonResponder(200, LONG));
+    const harness = stubContext(stub, { args: ARGS, flags: { index: true }, json: true });
+    await runThreadShow(harness.context);
+
+    const payload = JSON.parse(harness.stdout()) as Record<string, unknown>;
+    expect(harness.stdout()).not.toContain('"body"');
+    expect(payload["turnCount"]).toBe(19);
+    expect(payload["bytes"]).toBe(479);
+    expect((payload["index"] as unknown[])[0]).toEqual({
+      turn: 1,
+      author: "user",
+      ts: "2026-07-28T10:00:00.000Z",
+      bytes: 23,
+      excerpt: "Turn 1 says something.",
+      truncated: false,
+    });
+  });
+
+  it("makes exactly one request, because the saving is context and not wire", async () => {
+    const { requests } = await show(LONG, { index: true });
+
+    expect(requests).toBe(1);
+  });
+});
+
+describe("corpus thread show, addressed", () => {
+  it("prints only the newest three turns and no other body", async () => {
+    const { stdout } = await show(LONG, { last: 3 });
+
+    expect(stdout).toBe(
+      [
+        "user · 2026-07-28T10:16:00.000Z\n",
+        RAGGED_BODY,
+        "\n",
+        "agent · 2026-07-28T10:17:00.000Z\n",
+        "Turn 18 says something.\n",
+        "\n",
+        "user · 2026-07-28T10:18:00.000Z\n",
+        "Turn 19 says something.\n",
+      ].join(""),
+    );
+    expect(stdout).not.toContain("Turn 16 says");
+  });
+
+  it("prints a ragged body byte for byte, trailing whitespace and blank line intact", async () => {
+    const { stdout } = await show(LONG, { turn: "17" });
+
+    expect(stdout).toBe(`user · 2026-07-28T10:16:00.000Z\n${RAGGED_BODY}`);
+    expect(stdout.endsWith(RAGGED_BODY)).toBe(true);
+  });
+
+  it("appends no newline to a body that carries none", async () => {
+    const { stdout } = await show(
+      {
+        ...ANCHORED,
+        turns: [
+          { author: "user", ts: "2026-07-28T10:00:00.000Z", body: "no newline", model: null },
+        ],
+      },
+      { turn: "1" },
+    );
+
+    expect(stdout).toBe("user · 2026-07-28T10:00:00.000Z\nno newline");
+  });
+
+  it("addresses a turn by its timestamp, which is the address a deletion cannot move", async () => {
+    const { stdout } = await show(LONG, { turn: "2026-07-28T10:16:00Z" });
+
+    expect(stdout).toBe(`user · 2026-07-28T10:16:00.000Z\n${RAGGED_BODY}`);
+  });
+
+  it("takes a list of ordinals and ranges, oldest first, with repeats printed once", async () => {
+    const { stdout } = await show(LONG, { turns: "3,1,1-2" });
+
+    expect(stdout).toContain("Turn 1 says something.");
+    expect(stdout).toContain("Turn 2 says something.");
+    expect(stdout).toContain("Turn 3 says something.");
+    expect(stdout).not.toContain("Turn 4 says something.");
+    expect(stdout.indexOf("Turn 1 ")).toBeLessThan(stdout.indexOf("Turn 2 "));
+    expect(stdout.split("Turn 1 says something.")).toHaveLength(2);
+  });
+
+  it("returns the turns after an instant, exclusive of the turn at it", async () => {
+    const { stdout } = await show(LONG, { since: "2026-07-28T10:17:00.000Z" });
+
+    expect(stdout).toBe("user · 2026-07-28T10:18:00.000Z\nTurn 19 says something.\n");
+  });
+
+  it("says nothing is new rather than failing, and never prints the thread", async () => {
+    const { stdout } = await show(LONG, { since: "2026-07-28T23:00:00.000Z" });
+
+    expect(stdout).toBe("(no turns after 2026-07-28T23:00:00.000Z)\n");
+    expect(stdout).not.toContain("Turn 1 says");
+  });
+
+  it("prints every turn when --last exceeds the count, and exits normally", async () => {
+    const { stdout } = await show(LONG, { last: 50 });
+
+    expect(stdout).toContain("Turn 1 says something.");
+    expect(stdout).toContain("Turn 19 says something.");
+  });
+
+  it("emits the addressed turns under --json with their bytes and ordinals", async () => {
+    const stub = await startStubServer(jsonResponder(200, LONG));
+    const harness = stubContext(stub, { args: ARGS, flags: { last: 1 }, json: true });
+    await runThreadShow(harness.context);
+
+    expect(JSON.parse(harness.stdout())).toEqual({
+      id: "th_x9y8",
+      turnCount: 19,
+      turns: [
+        {
+          turn: 19,
+          author: "user",
+          ts: "2026-07-28T10:18:00.000Z",
+          body: "Turn 19 says something.\n",
+          model: null,
+          bytes: 24,
+        },
+      ],
+    });
+  });
+
+  it("makes exactly one request", async () => {
+    const { requests } = await show(LONG, { last: 3 });
+
+    expect(requests).toBe(1);
+  });
+});
+
+describe("an address that names nothing", () => {
+  const cases: readonly (readonly [string, Record<string, boolean | string | number>])[] = [
+    ["--turn 0", { turn: "0" }],
+    ["--turn 99", { turn: "99" }],
+    ["--turn on a timestamp no turn carries", { turn: "2020-01-01T00:00:00Z" }],
+    ["--turn on something that is not an address", { turn: "banana" }],
+    ["--turns 5-3", { turns: "5-3" }],
+    ["--turns 25", { turns: "25" }],
+    ["--turns with a timestamp", { turns: "2026-07-28T10:00:00Z" }],
+    ["--last 0", { last: 0 }],
+    ["--since garbage", { since: "not-a-time" }],
+    ["--index with an address", { index: true, last: 3 }],
+    ["two address flags", { last: 3, turn: "1" }],
+  ];
+
+  it.each(cases)("refuses %s without printing a turn", async (_name, flags) => {
+    const { error, stdout } = await refusal(LONG, flags);
+
+    expect(error).toBeInstanceOf(UsageError);
+    expect(stdout).toBe("");
+    expect(stdout).not.toContain("says something");
+  });
+
+  it("refuses to address a turn of a thread that has none", async () => {
+    const { error, stdout } = await refusal({ ...ANCHORED, turns: [] }, { turn: "1" });
+
+    expect(error).toBeInstanceOf(UsageError);
+    expect(stdout).toBe("");
+  });
+
+  it("says the addressed thread has no turns rather than dumping it", async () => {
+    const { stdout } = await show({ ...ANCHORED, turns: [] }, { last: 3 });
+
+    expect(stdout).toBe("(no turns)\n");
+  });
+
+  it("refuses a malformed address before the request is made", async () => {
+    const stub = await startStubServer(jsonResponder(200, LONG));
+    const harness = stubContext(stub, { args: ARGS, flags: { last: 0 } });
+
+    await expect(runThreadShow(harness.context)).rejects.toBeInstanceOf(UsageError);
+    expect(stub.requests).toHaveLength(0);
+  });
+});
+
 describe("the thread show command spec", () => {
   it("keeps the topic a valid registry topic", () => {
     expect(collectRegistryProblems({ summary: "s.", commands: [], topics: [threadTopic] })).toEqual(
@@ -254,19 +554,46 @@ describe("the thread show command spec", () => {
     );
   });
 
-  it("is a workspace command taking one required id and no flags of its own", () => {
+  it("is a workspace command taking one required id and the five reading flags", () => {
     expect(showCommand.requiresWorkspace).not.toBe(false);
     expect(showCommand.args).toEqual([
       { name: "id", required: true, description: "The thread's id." },
     ]);
-    expect(showCommand.flags).toEqual([]);
+    expect(showCommand.flags.map((flag) => flag.name)).toEqual([
+      "index",
+      "turn",
+      "turns",
+      "last",
+      "since",
+    ]);
   });
 
   it("carries a plain example and a --json example that inlines its shape", () => {
-    expect(showCommand.examples).toHaveLength(2);
-    const machine = showCommand.examples.find((example) => example.command.includes("--json"));
+    const machine = showCommand.examples.find(
+      (example) => example.command.includes("--json") && !example.command.includes("--index"),
+    );
     expect(machine?.description).toContain('"turns"');
     expect(machine?.description).toContain('"anchor"');
+  });
+
+  it("says in its help that the saving is context rather than wire", () => {
+    expect(showCommand.description).toContain("not what crosses the wire");
+  });
+
+  it("says which address survives a deleted turn, and which does not", () => {
+    const turn = showCommand.flags.find((flag) => flag.name === "turn");
+    expect(turn?.description).toContain("identity");
+    expect(turn?.description).toContain("ordinal");
+  });
+
+  it("says --since is exclusive, because one invocation cannot tell you", () => {
+    const since = showCommand.flags.find((flag) => flag.name === "since");
+    expect(since?.description).toContain("exclusive");
+  });
+
+  it("says the whole read trims and an addressed read does not", () => {
+    expect(showCommand.description).toContain("byte-exact");
+    expect(showCommand.description).toContain("trimmed");
   });
 
   it("is reachable as `corpus thread show`", () => {

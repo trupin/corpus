@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -99,29 +99,100 @@ this workspace already know. Read the index, decide, fetch what you need.
 
 ## Acceptance Criteria
 
-- [ ] `corpus thread show <id> --index` prints the header and one line per turn,
+- [x] `corpus thread show <id> --index` prints the header and one line per turn,
       and nothing else.
-- [ ] The index for the 19-turn thread above prints in **~1.5KB** — the reported
+- [x] The index for the 19-turn thread above prints in **~1.5KB** — the reported
       measurement is the target, and the issue records what it actually came to.
-- [ ] `corpus thread show <id> --last 3` prints only those three turns, **byte
+      **Measured: 2,073 bytes** for a 19-turn, 34,713-byte conversation. Above
+      the 1.5KB target because a row carries a 20-character ISO timestamp and a
+      60-character excerpt; the index size is bounded by turn *count* and does
+      not grow with turn size.
+- [x] `corpus thread show <id> --last 3` prints only those three turns, **byte
       for byte** as stored.
-- [ ] `--turn`, `--turns`, `--last` and `--since` each address turns and print
+- [x] `--turn`, `--turns`, `--last` and `--since` each address turns and print
       no other turn's body.
-- [ ] An address that matches nothing **fails loudly** and never falls back to
-      printing the whole thread.
-- [ ] `--index --json` emits the derived rows and **no turn bodies**.
-- [ ] `corpus thread show <id>` with no flags is byte-for-byte what it prints
+- [x] An address that matches nothing **fails loudly** and never falls back to
+      printing the whole thread. **With one argued exception, recorded as
+      decision 5**: a `--since` whose instant is valid but later than every turn
+      exits 0 with `(no turns after <ts>)`, on the same reasoning the issue's own
+      Edge Cases give `--last 50` of 19 turns. Every *malformed or unsatisfiable*
+      address — including an unparseable `--since` — is exit 2, and in no case is
+      the whole thread printed.
+- [x] `--index --json` emits the derived rows and **no turn bodies**.
+- [x] `corpus thread show <id>` with no flags is byte-for-byte what it prints
       today. This verb's existing contract does not move.
-- [ ] `docs/cli.md` regenerates cleanly (SPEC.md §11 drift check).
+- [x] `docs/cli.md` regenerates cleanly (SPEC.md §11 drift check).
 
 ## Technical Design
 
 ### Files to Create/Modify
 
-- `apps/cli/src/commands/thread/show.ts` — the flags, the index projection, the
-  address parsing and slicing.
+- `apps/cli/src/commands/thread/show.ts` — the flags, the two printing paths.
+- `apps/cli/src/commands/thread/turns.ts` — **new, a deviation from the plan
+  above**: the index projection, the address grammar and the selection. Split out
+  on `doc/show.ts` + `doc/sections.ts`'s precedent, which is the same feature on
+  the document side; `show.ts` was already 7KB of prose and behaviour. Added to
+  both pinned inventories in `commands/hygiene.test.ts`.
 - `apps/cli/src/commands/thread/show.test.ts` — the cases below.
 - `docs/cli.md` — regenerated, not hand-edited.
+
+### Decisions taken (recorded 2026-09-05, implemented on opus)
+
+**1 — CLI-side projection, not a server route.** The whole thread still crosses
+the socket, and the help says so in as many words. CLI-055's decisive argument
+does **not** carry here and was not borrowed: a turn is a discrete record with
+its own identity, not a substring that a later `doc patch --old` has to match, so
+a server-computed slice would not be a second definition of anything. The wire
+case is therefore genuinely stronger than it was for `--section` — a route would
+save ~35KB per read on the measured thread. It was still declined for this issue,
+on three grounds: the cost being paid is the **agent's context**, which a CLI
+slice removes in full; a route needs a CONTRACT issue and a SERVER issue before
+it can deliver a byte, and this is P0; and slicing the one response already in
+hand cannot disagree with what that response said. A test pins the request count
+at one so no future edit can quietly start claiming a wire saving.
+**Escalated to the orchestrator**: a follow-up CONTRACT/SERVER pair for a
+turn-range parameter on `GET /api/threads/{id}` is worth filing, and this issue
+deliberately does not pre-empt it.
+
+**2 — `--turn` addresses by ordinal *or* timestamp.** SPEC.md §6 makes the
+timestamp the turn's identity, and it permits deleting a single turn, after which
+every later ordinal silently points at a different turn. So the index prints
+both, `--turn` accepts either (`--turn 7` or `--turn 2026-07-28T10:05:00Z`), and
+the flag's help states plainly which one survives a deletion. Instants are
+compared as parsed times, so the file's second-precision form and the API's
+millisecond form both address the same turn. `--turns` takes **ordinals only** —
+a range written over instants cannot be told from the dashes inside them, and a
+single turn already has a durable address through `--turn`.
+
+**3 — A byte count is the turn's body in UTF-8, and nothing around it.** Not the
+`## author · ts` heading, not the blank line between turns. Two properties follow
+and both are asserted by tests: the header's total is exactly the sum of the
+rows, and a row's count predicts what `--turn <n>` writes. The help says the
+heading is excluded.
+
+**4 — The addressed path is byte-exact and the whole read keeps its `trimEnd`.**
+The no-flag path is the existing contract and does not move. An addressed turn's
+body is written raw through `out.write`: nothing trimmed, nothing collapsed, and
+no newline appended after the last one. The `author · ts` line above each body,
+and the blank line between two of them, are the verb's **framing** rather than
+stored bytes — the help says so, and the E2E log below shows exactly which lines
+of a slice are framing and which are the file's own.
+
+**5 — `--since` is exclusive.** The natural caller holds the `ts` of the last
+turn it read and asks what came after it, so that turn is not part of the answer.
+The help states it, because one invocation cannot tell you. An **empty** result
+is exit 0 with `(no turns after <ts>)`: a loop asking "anything new?" on every
+wake would otherwise read its own quiet as a failure, and the issue's own Edge
+Cases already carve out the same shape for `--last 50` of 19 turns. An
+unparseable instant is still exit 2.
+
+**6 — Flag combinations.** `--index` beside any address flag is exit 2, on
+`doc show --headings`/`--section`'s precedent — they ask different questions.
+Two address flags together are exit 2, naming both. Any address flag with
+`--json` is accepted and emits `{id, turnCount, turns:[…]}` with byte-exact
+bodies and no framing; `--index --json` emits `{id, title, status, turnCount,
+bytes, index:[…]}` and no `body` key anywhere. Every combination check runs
+**before the request**, so a usage error never costs a round trip.
 
 ### Decisions left to the implementer, to make and record in this file
 
@@ -231,23 +302,120 @@ command tests use.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model it ran
-on ("implemented on: opus | fable")._
+Implemented on: **opus**.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, byte
-counts, confirmation]_
+Real binary (`node apps/cli/dist/bin/corpus.js`, built from this branch) against
+a real server: a scratch workspace at `/private/tmp/.../scratchpad/ws`,
+`corpus init --port 8972` then `corpus server start` (pid 14297, stopped at the
+end, port confirmed free). The user's own server on 8765 was never touched.
+
+Two 19-turn threads were seeded through the CLI: `th_xx5spuft` with ~456-byte
+turns, and `th_freo7ey4` with ~1,827-byte turns, which is the size the reported
+32,375-byte conversation had.
+
+**The two byte counts and the ratio** (`th_freo7ey4`, 19 turns):
+
+```
+$ corpus thread show th_freo7ey4 | wc -c
+   35505
+$ corpus thread show th_freo7ey4 --index | wc -c
+    2073
+$ corpus thread show th_freo7ey4 --last 3 | wc -c
+    5573
+```
+
+**35,505 → 2,073 bytes: a 17.1× reduction**, against the reported 32,375 → ~1,500
+(21.6×). The index is 2,073 rather than ~1,500 because each row carries a
+20-character ISO timestamp and a 60-character excerpt. The smaller thread gives
+9,443 → 2,040 (4.6×), which is the same index size — the index is bounded by turn
+count and does not grow with turn size, which is the property the feature is for.
+
+The header and the first rows:
+
+```
+$ corpus thread show th_freo7ey4 --index
+Rate assumptions, at length · th_freo7ey4 · open · 19 turns · 34713 bytes
+1   user   2026-09-05T21:02:58Z  1827 B  I pulled the rate sheet again this morning and the 6.1% figu…
+2   agent  2026-09-05T21:02:59Z  1827 B  I pulled the rate sheet again this morning and the 6.1% figu…
+```
+
+19 × 1,827 = 34,713, so the header's total is exactly the sum of the rows. Every
+excerpt ends in `…` because every turn body is longer than its first line.
+
+**The byte-exactness proof**, against the thread file rather than a paraphrase:
+
+```
+$ corpus thread show th_freo7ey4 --last 3 > /tmp/tail2.txt
+$ grep -c . /tmp/tail2.txt
+75
+$ grep -F -x -v -f data/threads/th_freo7ey4.md /tmp/tail2.txt
+user · 2026-09-05T21:03:14Z
+agent · 2026-09-05T21:03:15Z
+user · 2026-09-05T21:03:16Z
+```
+
+Every one of the 75 non-blank lines of the slice is found **verbatim** in
+`data/threads/th_freo7ey4.md` except three — and those three are exactly the
+`author · ts` framing lines, which the file writes as `## author · ts`
+(decision 4). Not one line of the three turns' bodies differs by a byte. The same
+run on `th_xx5spuft` gives 21 lines with the same 3 framing exceptions.
+
+**A miss never falls back to the dump:**
+
+```
+$ corpus thread show th_xx5spuft --turn 999
+corpus: --turn 999 names no turn: this thread has 19 turns.
+  Turns are numbered 1–19, oldest first; --index prints them.
+$ echo $?
+2
+```
+
+Nothing of the conversation is printed — the two lines above are the whole
+output.
+
+**One turn, verbatim**, and `--since` exclusive of the instant it names:
+
+```
+$ corpus thread show th_xx5spuft --turn 5
+user · 2026-09-05T21:02:08Z
+I pulled the rate sheet again this morning and the 6.1% figure still stands.
+…
+I will check again next week and say if anything has changed.
+$ corpus thread show th_xx5spuft --since 2026-09-05T21:02:21Z | head -3
+user · 2026-09-05T21:02:22Z
+I pulled the rate sheet again this morning and the 6.1% figure still stands.
+```
+
+`--since` on the 18th turn's `ts` returns the 19th and not the 18th.
+
+**`--index --json` carries no body:**
+
+```
+$ corpus thread show th_xx5spuft --index --json | grep -c '"body"'
+0
+```
+
+**Docs.** `npm run docs:cli -w apps/cli` regenerates `docs/cli.md`; running it a
+second time produces an identical file (same md5), and
+`npx prettier --check docs/cli.md` passes. `node --import tsx
+scripts/check-generated-artifacts.ts` reports the CLI reference as differing from
+`HEAD`, which is the expected state for an uncommitted regeneration — the
+generator's output is stable and formatted.
+
+**Unit tests.** 53 in `thread/show.test.ts`, all passing, including the pinned
+no-flag rendering that proves the existing contract did not move.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence, including the two
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence, including the two
       measured byte counts
-- [ ] The six decisions above are recorded in this file, with reasons
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] The six decisions above are recorded in this file, with reasons
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
