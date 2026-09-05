@@ -177,7 +177,9 @@ export async function runDocList(context: WorkspaceCommandContext): Promise<void
     api.GET("/api/docs", Object.keys(wire).length === 0 ? {} : { params: { query: wire } }),
   );
 
-  context.out.emit(fields === undefined ? result : projectFields(result, fields));
+  context.out.emit(
+    fields === undefined ? withoutNullFields(result) : projectFields(result, fields),
+  );
 
   if (result.items.length === 0) {
     context.out.line(
@@ -309,6 +311,47 @@ function projectFields(
   };
 }
 
+/**
+ * The default `--json` rows with their **null-valued keys dropped** (CLI-079).
+ *
+ * Measured on a 23-document scratch workspace: 382 null-valued keys across the
+ * page, 23% of 1,066 bytes a row. A `note` carries 35 keys and most of them are
+ * another type's schema — the thread affordances (`parent`, `turnCount`,
+ * `unread`, …), the board keys (`query`, `columns`, `kanban`, …) and the
+ * sometimes keys (`due`, `stage`, `origin`, `stale`). Every row paid for every
+ * other type's shape, on SPEC.md §7's hot path: the reflection window read and
+ * every scripted list.
+ *
+ * **Absent already means null on this surface.** CLI-065's `--fields`
+ * projection shipped with the rule that _a field absent on a row stays absent
+ * rather than becoming `null`_, so a caller written against this verb's JSON
+ * cannot have been assuming a null-keyed row. That is what makes this a lossless
+ * cut rather than a contract change, and it is why the semantics are stated in
+ * the help rather than left to be discovered.
+ *
+ * **Only `null` goes, and only at the top of a row.** `[]`, `""`, `false` and
+ * `0` are values a caller filters on — `tags: []` and `unreadThreads: 0` say
+ * something — and are kept. Nothing recurses into `extra` or `kanban` either:
+ * those hold the workspace's own frontmatter, where a null the author wrote is
+ * the author's data and not this verb's verbosity.
+ *
+ * `--fields` is untouched. A field **explicitly named** that is null on a row
+ * keeps exactly the behaviour CLI-065 shipped and tested, because a caller that
+ * asked for a key by name is asking a question, and dropping the key would
+ * answer it with silence.
+ */
+function withoutNullFields(result: DocList): {
+  items: readonly Record<string, unknown>[];
+  page: DocList["page"];
+} {
+  return {
+    items: result.items.map((item) =>
+      Object.fromEntries(Object.entries(item).filter(([, value]) => value !== null)),
+    ),
+    page: result.page,
+  };
+}
+
 /** One row per document, columns padded to the widest value in the page. */
 function renderRows(items: readonly DocRow[]): readonly string[] {
   return renderColumns(
@@ -352,12 +395,20 @@ export const listCommand: WorkspaceCommandSpec = {
     "**The list is paginated and says so.** The server applies its own page limit, and the last " +
     "line always states the range shown out of the total that matched, naming the `--offset` " +
     "that fetches the next page when there is one. Under `--json` the server's `{items, page}` " +
-    "envelope is emitted unchanged — `page` is what makes the truncation visible to a caller " +
-    "that is not reading the human line, and every row carries its `extra` frontmatter, its " +
-    "Attention reasons and its thread affordances, so a skill parses one response instead of " +
-    "issuing a read per row. That full row is wide — ~293 tokens in an agent's context — so a " +
-    "caller that wants a few fields per row names them with `--fields` and pays only for " +
-    "those.\n\n" +
+    "envelope arrives with its `page` meta untouched — that is what makes the truncation " +
+    "visible to a caller that is not reading the human line — and every row carries its `extra` " +
+    "frontmatter, its Attention reasons and its thread affordances, so a skill parses one " +
+    "response instead of issuing a read per row.\n\n" +
+    "**A key whose value is null is left out of a row.** A note carries no `parent`, no " +
+    "`turnCount` and no `kanban`, and printing those as `null` spent about a quarter of every " +
+    "row on other types' schemas. So **absent means null** here, which is the same reading " +
+    "`--fields` has always required, and a caller testing `row.parent === null` should test " +
+    '`row.parent == null` or `"parent" in row` instead. Only `null` is dropped, and only at ' +
+    'the top level of a row: `[]`, `""`, `false` and `0` are values and stay, and nothing ' +
+    "inside `extra` or `kanban` is touched. A field **named** in `--fields` is exempt — asking " +
+    "for a key by name is a question, and it is answered even when the answer is null. The row " +
+    "is still wide — ~293 tokens in an agent's context — so a caller that wants a few fields " +
+    "per row names them with `--fields` and pays only for those.\n\n" +
     "A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, " +
     "`--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request " +
     "is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through " +
@@ -410,7 +461,9 @@ export const listCommand: WorkspaceCommandSpec = {
         "The `page` envelope is kept whole either way, so truncation stays visible. A field no " +
         "row carries is a usage error naming the known ones (exit 2), before any request; " +
         "without `--json` the flag itself is one, because the human rows are not a parsing " +
-        "surface. Omitted, `--json` is the full object it has always been.",
+        "surface. A named field that is null on a row is **kept**, unlike the default rows, " +
+        "which drop their null keys — you asked for it. Omitted, `--json` is every non-null " +
+        "key of every row.",
     },
   ],
   // Both sides of `--is-parent` get an example, deliberately. A reader who skims

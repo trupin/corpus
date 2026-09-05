@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -65,15 +65,17 @@ path: the orchestrate reflection window read, and every scripted list.
 
 ## Acceptance Criteria
 
-- [ ] A `doc list --json` row carries no key whose value is `null`.
-- [ ] `--fields` output is unchanged — a field **explicitly requested** that is
+- [x] A `doc list --json` row carries no key whose value is `null`.
+- [x] `--fields` output is unchanged — a field **explicitly requested** that is
       null on a row keeps CLI-065's behaviour exactly as shipped and tested.
-- [ ] The `page` envelope is untouched.
-- [ ] Non-null values are byte-identical to today — this removes keys and
+- [x] The `page` envelope is untouched.
+- [x] Non-null values are byte-identical to today — this removes keys and
       changes nothing else.
-- [ ] Measured on the same 23-row fixture shape: the total drops ~20% or more,
-      and the issue records before and after.
-- [ ] `docs/cli.md` regenerates cleanly if any help text changes.
+- [x] Measured on the same 23-row fixture shape: the total drops ~20% or more,
+      and the issue records before and after. **Measured 16,976 B → 12,977 B on a
+      16-row page, a 23.6% cut** — the reported 23% share, confirmed against the
+      raw wire response.
+- [x] `docs/cli.md` regenerates cleanly if any help text changes.
 
 ## Technical Design
 
@@ -84,11 +86,20 @@ path: the orchestrate reflection window read, and every scripted list.
 
 ### Key Implementation Details
 
-One decision to make and record: **whether other list emitters follow.**
-`job list`, `agents --json`, `search --json` were measured lean (their rows are
-small or already sparse), so the recommendation is `doc list` alone, with the
-others left until a measurement says otherwise — CLI-065 made the same call for
-`search --json` in as many words.
+**Decision recorded 2026-09-05 (implemented on opus): `doc list` alone.** No
+other list emitter follows. `job list`, `agents --json` and `search --json` were
+measured lean, and the recommendation is taken as it stands — CLI-065 made the
+same call for `search --json` in as many words. Extending the cut to a surface
+nobody has measured would buy nothing and would put a second copy of the rule
+somewhere a future reader has to reconcile with this one. When a measurement says
+a row is null-heavy, that surface gets its own issue and its own before/after.
+
+**A second decision the acceptance criteria imply but do not spell:** the cut is
+**top-level only** and does not recurse. `extra` holds the workspace's own
+frontmatter (SPEC.md §5) and `kanban` holds a board's configuration, so a null in
+either is the author's data rather than this verb's verbosity. Dropping it would
+silently rewrite what somebody wrote. A test pins `extra: {assignee: null}`
+surviving intact.
 
 **State the semantics in the help**: a key absent from a row is a key whose
 value is null, the same reading `--fields` already requires.
@@ -120,19 +131,67 @@ value is null, the same reading `--fields` already requires.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+Implemented on: **opus**.
 
 ### Post-Implementation Verification
 
-_[Agent fills: both byte totals, the zero-null assertion]_
+Real binary against a real server: scratch workspace on port **8972**
+(`corpus init` then `corpus server start`, pid 14297, stopped afterwards, port
+confirmed free). Seeded with the workspace template's own documents plus a note
+and three threads — 16 documents of mixed type, which is the shape a real
+workspace holds.
+
+**Before** is not a guess: it is the raw wire response, which is exactly what the
+CLI emitted under `--json` until this change.
+
+```
+$ curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8972/api/docs?limit=200' | wc -c
+16976
+rows: 16   null-valued keys: 264
+
+$ corpus doc list --json --limit 200 | wc -c
+12978
+null values in output: 0
+```
+
+```
+before bytes: 16976   after bytes: 12977   cut: 23.6%
+every non-null value byte-identical and present: true
+page envelope identical: true
+```
+
+The third and fourth lines are a row-by-row comparison of the two payloads: every
+key the server sent with a non-null value is present in the CLI's output with a
+byte-identical value, no key was added, and `page` is unchanged. 264 null-valued
+keys across 16 rows disappeared and nothing else moved. `grep -o ':null'` over
+the whole output counts **0**.
+
+**`--fields` is untouched**, on a note where both named fields are null:
+
+```
+$ corpus doc list --json --fields id,parent,stage --limit 200
+… {"id":"doc_xm62f3jc","parent":null,"stage":null} …
+```
+
+CLI-065's behaviour exactly as shipped: a field asked for by name is answered,
+even when the answer is null.
+
+**Docs.** `npm run docs:cli -w apps/cli` regenerated `docs/cli.md` for the changed
+help text; a second run produces an identical file and
+`npx prettier --check docs/cli.md` passes.
+
+**Unit tests.** 63 in `doc/list.test.ts`, all passing, including the two
+pre-existing `--json` assertions rewritten to the new contract and eleven new
+cases covering each row type, the `[]`/`""`/`false`/`0` carve-out, the untouched
+`page` envelope, the unchanged human rendering, and the nested-null rule.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E log with both measurements
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E log with both measurements
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
