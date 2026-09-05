@@ -139,20 +139,29 @@ function spawnRunner(handle: RehearsalWorkspace): RunnerHandle {
   };
 }
 
-type WaitResult = Pick<RunMeta, "overBudget" | "cutShort" | "endedBy">;
+type WaitResult = Pick<RunMeta, "overBudget" | "cutShort" | "endedBy" | "followUps">;
 
 /**
  * A run ends on the first of: the queue going quiet (nothing pending, nothing
  * in progress, something settled — held for {@link QUIESCENCE_HOLD_MS}), the
  * scenario's wall-clock budget, or the runner exiting on its own.
+ *
+ * When the scenario declares a follow-up act (INFRA-039), the first completed
+ * quiescence hold performs it instead of ending the run, and the run then
+ * continues to the next end condition. The hold doing double duty is the
+ * point: the gap before the second act is exactly "the first act settled and
+ * stayed settled", never a guessed sleep.
  */
 async function waitForRunEnd(
   handle: RehearsalWorkspace,
   runner: RunnerHandle,
   budgetMs: number,
+  inject: (() => Promise<void>) | null,
 ): Promise<WaitResult> {
   const deadline = Date.now() + budgetMs;
   let quietSince: number | null = null;
+  let pendingInject = inject;
+  let followUps = 0;
   let exited = false;
   // Fire-and-forget on purpose: the loop below reads the flag each pass, and
   // the promise itself is awaited by `kill` when the run ends any other way.
@@ -167,11 +176,11 @@ async function waitForRunEnd(
       const atExit = await readQueueState(handle.workspaceRoot);
       const outstanding =
         atExit.byStatus.pending.length + atExit.byStatus["in-progress"].length > 0;
-      return { overBudget: false, cutShort: outstanding, endedBy: "exit" };
+      return { overBudget: false, cutShort: outstanding, endedBy: "exit", followUps };
     }
     if (Date.now() >= deadline) {
       await runner.kill();
-      return { overBudget: true, cutShort: false, endedBy: "budget" };
+      return { overBudget: true, cutShort: false, endedBy: "budget", followUps };
     }
     const queue = await readQueueState(handle.workspaceRoot);
     const pending = queue.byStatus.pending.length;
@@ -184,8 +193,16 @@ async function waitForRunEnd(
     if (quiet) {
       quietSince = quietSince ?? Date.now();
       if (Date.now() - quietSince >= QUIESCENCE_HOLD_MS) {
+        if (pendingInject !== null) {
+          const act = pendingInject;
+          pendingInject = null;
+          await act();
+          followUps += 1;
+          quietSince = null;
+          continue;
+        }
         await runner.kill();
-        return { overBudget: false, cutShort: false, endedBy: "quiescence" };
+        return { overBudget: false, cutShort: false, endedBy: "quiescence", followUps };
       }
     } else {
       quietSince = null;
@@ -216,11 +233,21 @@ async function runOnce(scenario: Scenario, runIndex: number, outDir: string): Pr
   const handle = await createWorkspace();
   let runner: RunnerHandle | null = null;
   try {
-    const seed = await scenario.seed(seedContext(handle));
+    let seed = await scenario.seed(seedContext(handle));
     const seedSnapshot = await snapshotSeed(handle);
+    const followUp = scenario.followUp?.bind(scenario);
+    // The follow-up's refs merge over the seed's, so the scorer reads one map
+    // and their absence tells it the act never fired.
+    const inject =
+      followUp === undefined
+        ? null
+        : async (): Promise<void> => {
+            const act = await followUp(seedContext(handle), seed);
+            seed = { refs: { ...seed.refs, ...act.refs } };
+          };
     const startedAt = new Date();
     runner = spawnRunner(handle);
-    const ended = await waitForRunEnd(handle, runner, scenario.budgetMs);
+    const ended = await waitForRunEnd(handle, runner, scenario.budgetMs, inject);
     const endedAt = new Date();
     const observation = await observeRun(handle, seedSnapshot.head);
     const record: RunRecord = {
@@ -236,6 +263,7 @@ async function runOnce(scenario: Scenario, runIndex: number, outDir: string): Pr
         overBudget: ended.overBudget,
         cutShort: ended.cutShort,
         endedBy: ended.endedBy,
+        followUps: ended.followUps,
         runnerExitCode: await Promise.race([runner.exited, Promise.resolve(null)]),
       },
     };

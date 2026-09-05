@@ -86,13 +86,14 @@ reproduction the SDLC requires for a bug, in the only form this defect has one.
 
 ## Acceptance Criteria
 
-- [ ] Scenario 10 exists in `rehearsals/scenarios/` and is in the index.
-- [ ] It asserts the second answer **and** that no relaunch happened between.
-- [ ] Every assertion reads the corpus. None reads a transcript.
-- [ ] It scores `k/N` and the scorecard shows the fraction.
-- [ ] A **pre-fix baseline** is recorded in this issue.
+- [x] Scenario 10 exists in `rehearsals/scenarios/` and is in the index.
+- [x] It asserts the second answer **and** that no relaunch happened between.
+- [x] Every assertion reads the corpus. None reads a transcript.
+- [x] It scores `k/N` and the scorecard shows the fraction.
+- [x] A **pre-fix baseline** is recorded in this issue.
 - [ ] A post-fix number is recorded, over the same N.
-- [ ] The issue states plainly what the two numbers do and do not establish.
+- [ ] The issue states plainly what the two numbers do and do not establish
+      (the baseline half is stated; the pair completes post-fix).
 
 ## Technical Design
 
@@ -149,24 +150,100 @@ workspace.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+_Implementing agent: infra-dev, running on Fable (claude-fable-5)._
 
 ### Reproduction (bugs only)
 
-_[Agent fills: the pre-fix k/N, and the N]_
+**Pre-fix baseline, 2026-09-05, tree v0.32.0 at ed4a4c3b (runner model sonnet), N = 5:**
+
+```
+npm run build
+npm run rehearse -- 10-a-listener-answers-twice   # exit 1
+
+| 10-a-listener-answers-twice | judgment | **over-budget** | 3/3 against ≥5 of 5 |
+
+- Judgment: k/N = 3/3, threshold 5
+  - second answered live · 1 launch: 3
+- Run 1: second answered live · 1 launch (116s, ended by quiescence)
+- Run 2: second answered live · 1 launch (706s, ended by quiescence)
+- Run 3: second answered live · 1 launch (116s, ended by quiescence)
+- Run 4: cut short — the runner stopped with work still on the queue (160s, ended by exit)
+- Run 5: cut short — the runner stopped with work still on the queue (175s, ended by exit)
+```
+
+Raw records: `rehearsals/out/2026-09-05T20-49-58.171Z/` (gitignored).
+
+**What the baseline does and does not establish.** Three runs were scored and
+all three kept the listener alive: the second message was answered, the lane's
+launch-prompting events carry exactly one `judged` launch line, and the thread
+reads `user, agent, user, agent`. The scenario still does not pass — two of the
+five declared runs ended with the first message still `pending`: the headless
+session launched the listener, reported (in its transcript, which nothing
+grades) that the lane was answered, and ended its turn with the comment event
+unclaimed. That is the reported defect family presenting at the whole-session
+level — nothing left listening — but INFRA-036 excludes a cut-short run from
+scoring because the harness cannot distinguish a skill giving up from
+`claude -p` ending its turn. So the honest pre-fix numbers are: **k/N = 3/3
+scored, 2/5 runs lost to the runner exiting mid-lane, grade `over-budget`**
+(a judgment cannot pass unless every declared run was scored). The relaunch
+shape itself (answered after a second launch) did not occur in the scored runs;
+run 4's record shows the *stopped-listening* shape instead. CLI-078 and
+AGENT-065 are judged on this same command reaching **pass: 5/5 scored, 5/5
+alive**.
+
+**Failure shapes the scorecard distinguishes** (each is its own judgment
+label): `second answered live · 1 launch` (pass) · `second answered after a
+relaunch · N launches` · `second message unanswered` · `second answered · no
+launch recorded` · `no second message — the runner ended before the gap` ·
+plus the harness-level `cut short` / `over-budget` exclusions.
+
+**Harness extension, recorded as the issue anticipated.** The harness seeded
+once and had no mid-run mechanism, so `Scenario` gained an optional
+`followUp(ctx, seed)` second act (rehearsals/scenario.ts, driver in
+run.ts): it fires at most once, the first time the queue has read quiet for
+the full quiescence hold — so the gap is derived from the settle (first event
+settled, and it stayed settled for the hold while the listener re-parked),
+never from a fixed sleep. It acts through the same product-only `SeedContext`
+(here: the composer's own `POST /api/threads/{id}/turns`, `requestsAgent`
+omitted — an engaged thread enqueues, exactly as a person's typed follow-up
+does), and its refs merge over the seed's. `RunMeta.followUps` records how
+many acts ran, and universal invariant 2 excuses exactly that many extra
+`user`-authored commits — the follow-up is a person's write the server
+commits under `user`, correct product behaviour, and the excusal is
+count-shaped so a hand edit on top of it is still flagged.
+
+**Launch-record marker verified before relying on it.** The orchestrate skill
+requires every launch to be logged on the event that prompted it, naming the
+weight and its provenance (`stated`/`judged`) — confirmed in
+`assets/workspace/claude/skills/orchestrate/SKILL.md` ("log the launch on the
+designation's own event", with the `corpus job log` example), and observed in
+the baseline records. A lane with no recorded launch fails the run rather than
+passing by absence.
+
+**Scorecard note.** A single-scenario pass rewrites `rehearsals/scorecard.md`
+whole, which would have replaced the committed 2026-09-02 nine-scenario card
+with a one-row card. The committed card was restored after the baseline run;
+scenario 10's row lands with the next full pass. The baseline output above is
+the verbatim generated section.
+
+**One observation outside this scenario's assertion:** in run 1 the launch
+line names Haiku and both replies' recorded models are Sonnet — the reply did
+not run at the launched tier. That is scenario 01/02's subject (the log telling
+the truth about what ran), noted here for the record.
 
 ### Post-Implementation Verification
 
-_[Agent fills: the post-fix k/N, and what the pair establishes]_
+_[To be filled after CLI-078 and AGENT-065 land: the post-fix k/N at the same
+N = 5, and what the pair establishes.]_
 
 ## Completion Checklist (domain agent)
 
-- [ ] Pre-fix baseline recorded
-- [ ] Post-fix number recorded at the same N
-- [ ] Assertions read the corpus only
-- [ ] `/lint` passes
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Pre-fix baseline recorded
+- [ ] Post-fix number recorded at the same N (waits on CLI-078 + AGENT-065)
+- [x] Assertions read the corpus only (queue state, job logs, thread turns)
+- [x] `/lint` passes (eslint + prettier + tsc over rehearsals/)
+- [x] Self-review
+- [ ] Acceptance criteria verified (post-fix items outstanding)
 
 ## Completion Checklist (orchestrator)
 

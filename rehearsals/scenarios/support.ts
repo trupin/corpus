@@ -50,6 +50,11 @@ export const ComposerThreadResponseSchema = z.object({
   eventId: z.string().nullable(),
 });
 
+/** The composer's `POST /api/threads/{id}/turns` answer — the follow-up's event. */
+export const ComposerTurnResponseSchema = z.object({
+  eventId: z.string().nullable(),
+});
+
 /**
  * Create a note through the CLI and hand back its id — the parent most stories
  * hang their conversation on.

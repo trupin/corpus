@@ -79,6 +79,14 @@ export function universalFindings(record: RunRecord): readonly string[] {
   //    **and** the boundary's parent, so both are required. A hand edit
   //    changes the tree; a revert keeps the tree but sits on a later parent;
   //    an empty commit likewise. All three are flagged.
+  //    A second precise exception (INFRA-039): a follow-up act is the driver
+  //    writing as the person, mid-run, through the server — which commits it
+  //    under the `user` identity exactly as it should. The record says how many
+  //    such acts the driver performed, so exactly that many additional `user`
+  //    commits are excused, and not one more. The excusal is by count rather
+  //    than by tree because the act's commit does not stay put either — the
+  //    agent's next write amends it into the same "editing session" relabel —
+  //    and its final tree depends on when the listener answered.
   const excusesTheSeedRelabel = (commit: (typeof observation.commitsSinceSeed)[number]): boolean =>
     commit.authorName === "user" &&
     commit.authorEmail === USER_AUTHOR_EMAIL &&
@@ -86,9 +94,16 @@ export function universalFindings(record: RunRecord): readonly string[] {
     commit.parents.length === 1 &&
     commit.parents[0] === seedSnapshot.headParent &&
     seedSnapshot.headParent !== "";
+  const isUserAuthored = (commit: (typeof observation.commitsSinceSeed)[number]): boolean =>
+    commit.authorName === "user" && commit.authorEmail === USER_AUTHOR_EMAIL;
+  let unexcusedFollowUps = record.meta.followUps;
   for (const commit of observation.commitsSinceSeed) {
     if (commit.authorName !== AGENT_AUTHOR.name || commit.authorEmail !== AGENT_AUTHOR.email) {
       if (excusesTheSeedRelabel(commit)) continue;
+      if (isUserAuthored(commit) && unexcusedFollowUps > 0) {
+        unexcusedFollowUps -= 1;
+        continue;
+      }
       findings.push(
         `commit ${commit.hash.slice(0, 10)} is authored "${commit.authorName} <${commit.authorEmail}>", not the agent acting through the server`,
       );
