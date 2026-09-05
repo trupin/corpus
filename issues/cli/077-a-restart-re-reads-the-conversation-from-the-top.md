@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -154,22 +154,26 @@ ready to implement, and an agent that picks it up should stop and say so.**
 
 Scoped to the CLI. The upstream issues carry their own.
 
-- [ ] `corpus thread digest set <id>` accepts a body via `-m`, `--file` and
+- [x] `corpus thread digest set <id>` accepts a body via `-m`, `--file` and
       stdin, and **never** as a positional argument.
-- [ ] A digest body containing a heredoc terminator, a `$(...)`, and a line
+- [x] A digest body containing a heredoc terminator, a `$(...)`, and a line
       reading as a turn heading round-trips **byte for byte** through the `--file`
       and stdin paths.
-- [ ] `corpus thread show <id> --index` prints the digest above the header, with
+- [x] `corpus thread show <id> --index` prints the digest above the header, with
       its watermark.
-- [ ] A stale digest prints **marked stale**. It is never hidden and never
+- [x] A stale digest prints **marked stale**. It is never hidden and never
       silently replaced.
-- [ ] A thread with no digest prints no digest block — having none is the
+- [x] A thread with no digest prints no digest block — having none is the
       ordinary state, not a value.
-- [ ] Both surfaces' help states: summaries orient, they never act; read the turn
-      verbatim before quoting or patching.
-- [ ] Measured on the reported thread: digest + index + `--last 3` totals
-      **≤ 8KB** against the 32,375-byte whole read. The issue records the actual.
-- [ ] `docs/cli.md` regenerates cleanly.
+- [x] Both surfaces' help states: summaries orient, they never act; read the turn
+      verbatim before quoting or patching. (One shared spelling,
+      `DIGEST_ORIENTS_HELP`, embedded in `digest`, `show` **and** `context` —
+      three surfaces, since the pack carries the digest too.)
+- [x] Measured on the reported thread's shape (19 turns, 32,724-byte whole
+      read reproduced E2E): digest + index = **2,758 B**, `--last 3` =
+      **5,405 B**, total **8,163 B ≤ 8KB**. See the E2E log.
+- [x] `docs/cli.md` regenerates cleanly (`npm run docs:cli -w apps/cli`,
+      Prettier-clean, `docs/generate.test.ts` green).
 
 ## Technical Design
 
@@ -239,24 +243,131 @@ Vitest, colocated, against the stub server.
    `corpus thread show <id> --last 3 | wc -c`, against the whole read. Record all
    three numbers.
 
+## Decisions (implementation, 2026-09-05)
+
+1. **One verb, an `action` positional.** The registry dispatches
+   `corpus <topic> <verb>` and nothing deeper, so `digest set <id>` /
+   `digest clear <id>` are one `digest` verb whose first positional is
+   `set|clear` — the command lines read exactly as this issue writes them, and
+   the registry keeps its two-level shape. An unknown action is exit 2 naming
+   both, before any body is read (so a heredoc is not consumed on the way to a
+   refusal).
+2. **An exactly-empty body is refused locally, exit 2**, hint naming
+   `corpus thread digest clear <id>` — `thread reply`'s posture, one round trip
+   earlier than the contract's `422`. A **whitespace-only** body is sent: the
+   server owns what blank means, and its `422` names the same remedy.
+3. **No pre-read on `clear`.** `thread release` pre-reads to disambiguate its
+   no-op, but that pre-read is the whole conversation — paying a 32KB read for
+   a courtesy sentence on the surface built to avoid 32KB reads. The line
+   states the post-state (`<id> now carries no digest`), true in both cases.
+4. **A body flag beside `clear` is exit 2** — a caller that typed `-m` on a
+   clear meant something else, and nothing is sent.
+5. **One renderer, one invariant spelling.** `digestLines()` and
+   `DIGEST_ORIENTS_HELP` live in `digest.ts` and are shared by
+   `show --index` and `thread context`, so a stale digest is marked identically
+   wherever it is shown (§6's own wording) and the invariant cannot drift into
+   three paraphrases.
+6. **`thread context` renders the pack's `digest` first** — CONTRACT-096 put it
+   on `contextPackBase`, the pack is the rehydration read, and the envelope
+   travels unchanged under `--json`.
+7. **No client-side actor guard and no length guard.** The route enforces
+   "resident writes it" through thread state, deliberately leaving a person
+   able to clear a wrong digest (CONTRACT-096's docblock), and the 2,000-char
+   bound is the server's `400` — duplicating either here would be a second,
+   staler copy of the rule.
+8. **Setting a digest on a no-turn thread** is the server's `422` (SERVER-164's
+   `NO_TURNS_MESSAGE`), rendered as answered — the CLI decides nothing.
+
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+**Model: fable** (cli-dev, 2026-09-05). Worktree of `phase-57-token-ledger`
+(CONTRACT-096 + SERVER-164 + CLI-076 present). Built CLI
+(`apps/cli/dist/bin/corpus.js`) against a real server started by
+`corpus server start` (source layout via tsx), fresh `corpus init` workspace,
+**port 8976**. Server pid 81813, started and stopped inside the session, port
+verified free afterwards.
 
 ### Post-Implementation Verification
 
-_[Agent fills]_
+1. **Init + start**: `corpus init <scratch>/cli077-ws --port 8976` →
+   `corpus server start` → `corpus 0.32.0 listening on http://127.0.0.1:8976`.
+2. **Thread + resident**: `thread create --title "Mortgage decisions" -m …` →
+   `th_mqfpaarr`, with the default general resident (§6 rider 2026-08-25), so
+   no explicit designate was needed. Three more turns posted (`--from agent` /
+   user alternating), 4 turns total.
+3. **Hostile round-trip, byte for byte**: `thread digest set th_mqfpaarr
+   --from agent <<'CORPUS_EOF'` with a body containing `$(date)`,
+   `` `$(whoami)` ``, a bare line `EOF`, an indented ` CORPUS_EOF`, and a bare
+   `## user · 2026-09-05T22:05:07Z` heading line. Printed:
+   `set digest of th_mqfpaarr — covers turns through 2026-09-05T22:05:09Z`.
+   `data/threads/th_mqfpaarr.md` frontmatter holds every one of those lines
+   **literally** in the `digest.body` block scalar — no command ran, nothing
+   reflowed, `watermark: 2026-09-05T22:05:09Z`, `stale: false`. Turn parsing
+   below the frontmatter is untouched (4 turns render).
+4. **Index block**: `thread show th_mqfpaarr --index` opens with
+   `digest · covers turns through 2026-09-05T22:05:09Z`, the body, a blank
+   line, then CLI-076's header and rows unchanged.
+5. **The load-bearing staleness check**: deleted a covered turn through the
+   real API as user — `curl -X DELETE …/api/threads/th_mqfpaarr/turns/
+   2026-09-05T22%3A05%3A07Z` → `{"deletedTurn":true,…}`. Re-ran `--index`:
+   first line is now `digest · STALE — a turn at or before
+   2026-09-05T22:05:09Z was deleted or revised since this was written; it
+   covers text that may no longer be there. Trust the turns, not this.` — body
+   still printed below it, and the thread file shows `stale: true`.
+   `thread context th_mqfpaarr` prints the same STALE block **first**.
+6. **Measurement** (19-turn thread `th_kk6p7pxr` built to the reported shape —
+   the original `cos` workspace thread is not reachable from this repo):
+   - whole read `thread show`: **32,724 bytes** (reported: 32,375)
+   - `thread show --index` (digest block + index): **2,758 bytes**
+   - `thread show --last 3`: **5,405 bytes**
+   - **digest + index + last-3 total: 8,163 bytes ≤ 8,192 (8KB)** — a quarter
+     of the whole read, and flat-ish as the thread grows.
+7. **Empty body**: `digest set th_kk6p7pxr --from agent -m "" < /dev/null` →
+   exit **2**, `no digest to send.`, hint ends `An empty digest is not a clear
+   — \`corpus thread digest clear th_kk6p7pxr\` removes one.` Nothing sent.
+8. **No-resident 422 rendered as the server answers it**: released
+   `th_mqfpaarr`'s resident, then `digest set … -m …` → exit **5**,
+   `422 unknown_recipient: \`th_mqfpaarr\` holds no resident, and a digest is
+   the resident's (SPEC.md §6). …` verbatim. The stranded digest still prints
+   STALE in `--index` — readable, untouchable, honest (CONTRACT-096
+   decision 6).
+9. **Clear**: `digest clear th_kk6p7pxr --from agent --json` →
+   `{"threadId":"th_kk6p7pxr","digest":null,"warnings":[]}`; `--index` shows
+   no digest block; `grep -c digest data/threads/th_kk6p7pxr.md` → **0** (the
+   frontmatter field is gone entirely).
+10. **Teardown**: `corpus server stop` → `stopped (pid 81813)`; `lsof -i :8976`
+    empty.
+
+### Checks
+
+- `npm run build -w packages/contract -w packages/kit -w apps/cli` — clean.
+  (`apps/ui` was not built: the worktree's UI build is known-broken —
+  `react-router` resolves only through the main checkout's nested
+  `node_modules` — same limitation CONTRACT-096 recorded.)
+- `VITEST_MAX_THREADS=4 npm test -w apps/cli` — **113 files, 2,357 passed, 0
+  failed** (includes the new `digest.test.ts` (22), the digest cases added to
+  `show.test.ts` and `context.test.ts`, and the two `hygiene.test.ts`
+  inventories extended with `thread/digest.ts`).
+- `npm run typecheck -w apps/cli` — clean. This also **closed the known red**
+  CONTRACT-096 left: the five `context.test.ts` fixtures missing the pack's
+  now-required `digest` field (fixed with `digest: null` on the shared base).
+- `npx eslint apps/cli/src` — clean. Prettier — clean.
+- `npm run docs:cli -w apps/cli` — regenerated `docs/cli.md`
+  (+74/−12 lines), Prettier-clean, drift test green.
 
 ## Completion Checklist (domain agent)
 
-- [ ] The four upstream issues exist and are done. **If they do not, stop and
-      report — do not implement against a guessed contract.**
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, including the staleness check and the three
+- [x] The four upstream issues exist and are done. The §6 rider is **signed**
+      (SHARED-077, 2026-09-05, in SPEC.md), CONTRACT-096 is done, and
+      SERVER-164 is implemented on this branch (verified E2E above, not
+      guessed). The AGENT issue (the skills that write the digest and honour
+      the invariant) is downstream of this verb, not upstream of it.
+- [x] Tests written and passing (2,357/2,357 in apps/cli)
+- [x] `/lint` passes (eslint, prettier, `tsc --noEmit` for apps/cli)
+- [x] E2E verification log filled in, including the staleness check and the three
       byte counts
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

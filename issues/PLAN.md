@@ -2303,7 +2303,7 @@ and shipped in v0.22.0.
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | done | P0 | opus | — |
-| CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | todo | P0 | fable | CLI-076, SHARED rider |
+| CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | done | P0 | fable | CLI-076, SHARED rider |
 | INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | done | P0 | fable | — |
 | CLI-078 | The verbs that end a pass read as endings, so the loop stops there | done | P0 | opus | — |
 | AGENT-065 | `converse` argues for stopping five ways and for continuing once | todo | P0 | fable | CLI-078 |

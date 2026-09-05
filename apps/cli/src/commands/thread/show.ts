@@ -7,6 +7,7 @@ import {
   PROFILE_MISSING,
   residentLabel,
 } from "../resident.js";
+import { DIGEST_ORIENTS_HELP, digestLines, type ThreadDigestLike } from "./digest.js";
 import {
   renderTurnIndex,
   selectTurns,
@@ -131,12 +132,21 @@ export async function runThreadShow(context: WorkspaceCommandContext): Promise<v
 }
 
 /**
- * The map: a header, then one row per turn, and **nothing else**.
+ * The map: the digest when the thread carries one, a header, then one row per
+ * turn, and **nothing else**.
  *
  * No state lines, no tags, no bodies. The 19-turn conversation that prompted
  * this issue reads whole at 32,375 bytes and indexes at about a twentieth of
  * that, and every line the index prints that a caller did not ask for is paid
  * on the same loop the whole read was costing.
+ *
+ * **The digest is the one part of this output that is not derived** (CLI-077).
+ * Every row below it is a projection of `turns` and cannot be wrong; the digest
+ * is written prose that can be, which is why `digestLines` prints it under a
+ * header carrying its watermark — what it claims to cover — and marks it STALE,
+ * never hides it, when the server says a covered turn changed. A thread with no
+ * digest prints no block at all: having none is the ordinary state, not a value
+ * (SPEC.md §6).
  */
 function showTurnIndex(
   context: WorkspaceCommandContext,
@@ -144,6 +154,7 @@ function showTurnIndex(
     readonly id: string;
     readonly title: string;
     readonly status: string;
+    readonly digest?: ThreadDigestLike | null;
     readonly turns: readonly TurnLike[];
   },
 ): void {
@@ -154,10 +165,15 @@ function showTurnIndex(
     id: thread.id,
     title: thread.title,
     status: thread.status,
+    digest: thread.digest ?? null,
     turnCount: rows.length,
     bytes,
     index: rows,
   });
+
+  const digest = digestLines(thread.digest);
+  for (const line of digest) context.out.line(line);
+  if (digest.length > 0) context.out.line("");
 
   context.out.line(
     `${thread.title} · ${thread.id} · ${thread.status} · ${plural(rows.length, "turn")} · ` +
@@ -260,6 +276,13 @@ export const showCommand: WorkspaceCommandSpec = {
     "Read the index, decide, fetch what you need: it is `corpus doc show --headings` and " +
     "`--section` for threads, and the same rule holds — **an address that names nothing is " +
     "refused (exit 2) and never answered with the whole conversation**.\n\n" +
+    "**A thread that carries a digest prints it above the index** (SPEC.md §6, CLI-077): the " +
+    "resident's rolling account of the conversation, under a header naming its **watermark** — " +
+    "the newest turn it covers, so turns after it are simply not covered yet. A **stale** digest " +
+    "(a covered turn was deleted or revised since) prints marked `STALE`, never hidden and never " +
+    "silently replaced — rewriting it is the resident's job, through `corpus thread digest set`. " +
+    "A thread with no digest prints no block, which is the ordinary state. " +
+    `${DIGEST_ORIENTS_HELP}\n\n` +
     "**An addressed turn is byte-exact and a whole read is not.** With no flags every turn's " +
     "body has its trailing whitespace trimmed, which is right for reading and wrong for " +
     "quoting, and that behaviour is unchanged. An addressed turn's body is written exactly as " +
@@ -276,8 +299,11 @@ export const showCommand: WorkspaceCommandSpec = {
       name: "index",
       type: "boolean",
       description:
-        "Print the conversation's map instead of the conversation: a header, then one row per " +
-        "turn. The header names the title, the id, the status, the turn count and the total " +
+        "Print the conversation's map instead of the conversation: the digest when the thread " +
+        "carries one, a header, then one row per turn. The digest block opens with its " +
+        "watermark and prints `STALE` when the server says a covered turn changed — it orients " +
+        "only, and the turns below are what you quote from. The header names the title, the " +
+        "id, the status, the turn count and the total " +
         "bytes; each row carries an ordinal, an author, a timestamp, the body's size and a " +
         "first-line excerpt. **An excerpt that leaves " +
         "anything out ends in `…`**, so it can never be mistaken for the stored text. The rows " +
@@ -363,7 +389,7 @@ export const showCommand: WorkspaceCommandSpec = {
       command: "corpus thread show th_a1b2c3 --index --json",
       description:
         'One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","status":"open",' +
-        '"turnCount":19,"bytes":32375,"index":[{"turn":1,"author":"user",' +
+        '"digest":null,"turnCount":19,"bytes":32375,"index":[{"turn":1,"author":"user",' +
         '"ts":"2026-07-28T10:00:00.000Z","bytes":14,"excerpt":"Is 6.1% right?",' +
         '"truncated":false}]}` — derived rows, and no turn body anywhere.',
     },
@@ -372,7 +398,8 @@ export const showCommand: WorkspaceCommandSpec = {
       description:
         'One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":' +
         '"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open",' +
-        '"tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"turns":' +
+        '"tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,' +
+        '"digest":null,"turns":' +
         '[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.',
     },
   ],

@@ -7,6 +7,7 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
+import { DIGEST_ORIENTS_HELP } from "./digest.js";
 import { threadTopic } from "./index.js";
 import { runThreadShow, showCommand } from "./show.js";
 
@@ -395,6 +396,78 @@ describe("corpus thread show --index", () => {
 
     expect(requests).toBe(1);
   });
+
+  /**
+   * CLI-077 — the digest block, above the header. Three distinct renderings —
+   * with a digest, without one, and with a stale one — each asserted for the
+   * marker's presence and absence.
+   */
+  describe("the digest block (CLI-077)", () => {
+    const DIGEST = {
+      body: "Decided: 30-year fixed (turn 7).\nOpen: escrow (turn 16).",
+      watermark: "2026-07-28T10:18:00.000Z",
+      stale: false,
+    };
+
+    it("prints the digest above the header, with its watermark, when the thread carries one", async () => {
+      const { stdout } = await show({ ...LONG, digest: DIGEST }, { index: true });
+      const lines = stdout.split("\n");
+
+      expect(lines[0]).toBe("digest · covers turns through 2026-07-28T10:18:00.000Z");
+      expect(lines[1]).toBe("Decided: 30-year fixed (turn 7).");
+      expect(lines[2]).toBe("Open: escrow (turn 16).");
+      expect(lines[3]).toBe("");
+      expect(lines[4]).toBe("Is 6.1% right? · th_x9y8 · open · 19 turns · 479 bytes");
+      expect(stdout).not.toContain("STALE");
+    });
+
+    it("marks a stale digest STALE and still prints its body — never hidden, never replaced", async () => {
+      const { stdout } = await show(
+        { ...LONG, digest: { ...DIGEST, stale: true } },
+        { index: true },
+      );
+      const lines = stdout.split("\n");
+
+      expect(lines[0]).toContain("digest · STALE");
+      expect(lines[0]).toContain("2026-07-28T10:18:00.000Z");
+      expect(lines[0]).toContain("deleted or revised");
+      expect(stdout).toContain("Decided: 30-year fixed (turn 7).");
+      expect(stdout).toContain("Is 6.1% right? · th_x9y8 · open · 19 turns");
+    });
+
+    it("prints no digest block at all for a thread without one — absence is the ordinary state", async () => {
+      const explicit = await show({ ...LONG, digest: null }, { index: true });
+      const absent = await show(LONG, { index: true });
+
+      for (const { stdout } of [explicit, absent]) {
+        expect(stdout).not.toContain("digest");
+        expect(stdout.split("\n")[0]).toBe(
+          "Is 6.1% right? · th_x9y8 · open · 19 turns · 479 bytes",
+        );
+      }
+    });
+
+    it("carries the digest, stale flag included, under --json", async () => {
+      const stub = await startStubServer(
+        jsonResponder(200, { ...LONG, digest: { ...DIGEST, stale: true } }),
+      );
+      const harness = stubContext(stub, { args: ARGS, flags: { index: true }, json: true });
+      await runThreadShow(harness.context);
+
+      const payload = JSON.parse(harness.stdout()) as Record<string, unknown>;
+      expect(payload["digest"]).toEqual({ ...DIGEST, stale: true });
+    });
+
+    it("emits digest null, not an absent key, when the thread has none", async () => {
+      const stub = await startStubServer(jsonResponder(200, { ...LONG, digest: null }));
+      const harness = stubContext(stub, { args: ARGS, flags: { index: true }, json: true });
+      await runThreadShow(harness.context);
+
+      const payload = JSON.parse(harness.stdout()) as Record<string, unknown>;
+      expect("digest" in payload).toBe(true);
+      expect(payload["digest"]).toBeNull();
+    });
+  });
 });
 
 describe("corpus thread show, addressed", () => {
@@ -598,5 +671,16 @@ describe("the thread show command spec", () => {
 
   it("is reachable as `corpus thread show`", () => {
     expect(threadTopic.commands.map((command) => command.name)).toContain("show");
+  });
+
+  /**
+   * CLI-077's wording assertion: the invariant is present in the one shared
+   * spelling. Presence, never truth — the AGENT issue's rehearsal is what tests
+   * whether an agent reading it acts on it.
+   */
+  it("states that summaries orient and never act, and marks the digest stale in its help", () => {
+    expect(showCommand.description).toContain(DIGEST_ORIENTS_HELP);
+    expect(showCommand.description).toContain("never hidden and never silently replaced");
+    expect(showCommand.description).toContain("watermark");
   });
 });

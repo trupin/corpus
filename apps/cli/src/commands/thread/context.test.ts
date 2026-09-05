@@ -20,6 +20,7 @@ import {
   stubContext,
 } from "../../testing/stub-server.js";
 import { contextCommand, runThreadContext } from "./context.js";
+import { DIGEST_ORIENTS_HELP } from "./digest.js";
 import { threadTopic } from "./index.js";
 
 /**
@@ -40,8 +41,11 @@ const excerpt = (overrides: Partial<ContextExcerpt> = {}): ContextExcerpt => ({
 });
 
 /** The envelope fields every shape carries, so each fixture declares only its own. */
-const base: Pick<ContextPack, "threadId" | "excerpts"> = {
+const base: Pick<ContextPack, "threadId" | "digest" | "excerpts"> = {
   threadId: "th_zdg2aius",
+  // Null is the ordinary no-digest state (SPEC.md §6, CONTRACT-096); the digest
+  // rendering has its own cases below.
+  digest: null,
   excerpts: [excerpt()],
 };
 
@@ -387,6 +391,53 @@ describe("corpus thread context", () => {
     },
   );
 
+  /**
+   * CLI-077 — the digest leads the pack. Same three renderings the index has:
+   * with, without, and stale — the with-and-without pair asserted whole, since
+   * the block's position (first) is the behaviour.
+   */
+  describe("the digest block (CLI-077, CONTRACT-096)", () => {
+    const DIGEST = {
+      body: "Decided: 30-year fixed (turn 7).",
+      watermark: "2026-09-04T10:00:00.000Z",
+      stale: false,
+    };
+
+    it("prints the digest first, before the parent block, with its watermark", async () => {
+      expect(await render(standalone({ digest: DIGEST }))).toBe(
+        [
+          "digest · covers turns through 2026-09-04T10:00:00.000Z",
+          "Decided: 30-year fixed (turn 7).",
+          "",
+          "# related excerpts",
+          "doc_kp62gce5  Impound account true-up  similar  The lender re-runs the impound analysis every twelve months.",
+          "",
+        ].join("\n"),
+      );
+
+      const withParent = await render({ ...anchored(), digest: DIGEST });
+      expect(withParent.split("\n")[0]).toBe(
+        "digest · covers turns through 2026-09-04T10:00:00.000Z",
+      );
+      expect(withParent).toContain("parent doc_54oblxxe");
+    });
+
+    it("marks a stale digest STALE and still prints its body", async () => {
+      const output = await render(standalone({ digest: { ...DIGEST, stale: true } }));
+
+      expect(output.split("\n")[0]).toContain("digest · STALE");
+      expect(output.split("\n")[0]).toContain("2026-09-04T10:00:00.000Z");
+      expect(output).toContain("Decided: 30-year fixed (turn 7).");
+    });
+
+    it("prints no digest block when the pack carries null, which is the ordinary state", async () => {
+      const output = await render(standalone());
+
+      expect(output).not.toContain("digest");
+      expect(output.split("\n")[0]).toBe("# related excerpts");
+    });
+  });
+
   it("treats an unknown thread as the shipped 404 — exit 5, message verbatim", async () => {
     const stub = await startStubServer(
       jsonResponder(404, { code: "not_found", message: "no thread with id th_nope" }),
@@ -423,6 +474,15 @@ describe("the thread context command spec", () => {
     expect(contextCommand.description).toContain("corpus doc show");
     expect(contextCommand.description).toContain("never a body");
     expect(contextCommand.description).toContain("exit 5");
+  });
+
+  /**
+   * CLI-077's wording assertion, in the one shared spelling. Presence, never
+   * truth — the AGENT issue's rehearsal tests whether it is heeded.
+   */
+  it("states that summaries orient and never act", () => {
+    expect(contextCommand.description).toContain(DIGEST_ORIENTS_HELP);
+    expect(contextCommand.description).toContain("STALE");
   });
 
   it("carries a --json example that inlines the pack's shape", () => {

@@ -75,6 +75,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus thread context`](#corpus-thread-context)
   - [`corpus thread create`](#corpus-thread-create)
   - [`corpus thread designate`](#corpus-thread-designate)
+  - [`corpus thread digest`](#corpus-thread-digest)
   - [`corpus thread release`](#corpus-thread-release)
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
@@ -2428,13 +2429,15 @@ corpus skill create triage --description "Triage the inbox." --json
 
 Open conversations, read them, reply to them, and resolve them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `context` is the bounded briefing around it (the anchored passage plus the excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone conversation and everything that grows out of it, and take it away again. `scope` lists what "everything that grows out of it" has come to mean — one line per artifact the resident owns.
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `context` is the bounded briefing around it (the anchored passage plus the excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the conversation, `digest` is the resident's rolling account of it — written at reply time, shown at the top of `show --index` and of the context pack, and only ever an orientation, never a source (SPEC.md §6) — and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone conversation and everything that grows out of it, and take it away again. `scope` lists what "everything that grows out of it" has come to mean — one line per artifact the resident owns.
 
 ### `corpus thread context`
 
 Brief yourself on a conversation: what it is about, and what else bears on it.
 
-Reads `GET /api/threads/{id}/context` (SPEC.md §7 Retrieval discipline, §9.2) and prints the thread's **context pack** in the order an agent reads it: what the conversation is about, then the most-related excerpts from elsewhere in the corpus, then a note if ranking was degraded.
+Reads `GET /api/threads/{id}/context` (SPEC.md §7 Retrieval discipline, §9.2) and prints the thread's **context pack** in the order an agent reads it: the thread's digest when it carries one, what the conversation is about, then the most-related excerpts from elsewhere in the corpus, then a note if ranking was degraded.
+
+**The digest leads the pack** (SPEC.md §6, rider signed 2026-09-05): the resident's rolling account of the conversation, under a header naming its watermark, and marked `STALE` — never hidden — when a covered turn was deleted or revised since it was written. A thread with no digest prints no block, which is the ordinary state. **Summaries orient, they never act.** Before you quote a passage, patch a document, or answer a question about what was said, read the turn verbatim — `corpus thread show <id> --turn <n>`. The digest tells you _which_ turn; it is never the source of a quotation and never the basis of a write.
 
 **This is where the comment skill starts.** One call replaces reading the thread, then the whole parent document to find the anchored passage inside it, then searching for whatever else bears on it. And it stays affordable: the pack is bounded by contract — at most 10 excerpts, 320 characters each, 4000 characters of parent-side prose — so reading a briefing costs roughly the same however large the corpus grows. There are no flags beyond `--json`: the bounds live in the contract, so there is no way to ask this verb for the dump it exists to refuse.
 
@@ -2466,7 +2469,7 @@ The briefing for an anchored thread: the parent, the quote, its whole section, t
 corpus thread context th_a1b2c3
 ```
 
-One JSON value: `{"shape":"anchored","threadId":"th_a1b2c3","parent":{"id":"doc_a1b2c3","title":"Mortgage options","headingPath":"Mortgage options › Escrow","quote":"recalculated annually","section":"## Escrow\n\nThe escrow reserve is recalculated annually.","truncated":false},"excerpts":[{"id":"doc_zz","headingPath":"Impound account true-up","excerpt":"The lender re-runs the impound analysis every twelve months.","relation":"similar"}],"semanticIndex":"current"}`.
+One JSON value: `{"shape":"anchored","threadId":"th_a1b2c3","digest":null,"parent":{"id":"doc_a1b2c3","title":"Mortgage options","headingPath":"Mortgage options › Escrow","quote":"recalculated annually","section":"## Escrow\n\nThe escrow reserve is recalculated annually.","truncated":false},"excerpts":[{"id":"doc_zz","headingPath":"Impound account true-up","excerpt":"The lender re-runs the impound analysis every twelve months.","relation":"similar"}],"semanticIndex":"current"}`.
 
 ```
 corpus thread context th_a1b2c3 --json
@@ -2596,6 +2599,63 @@ One JSON value — `{"thread":{…,"resident":{"name":null,"docId":null,"weight"
 
 ```
 corpus thread designate th_4b8e2c --json
+```
+
+### `corpus thread digest`
+
+Write, or clear, the thread's rolling digest — the resident's account of it so far.
+
+A thread may carry one **digest**: a short prose account of the conversation so far, written by the thread's **resident** at reply time and never by the server (SPEC.md §6, rider signed 2026-09-05). It is what makes a restart affordable — a listener that has never seen a long conversation reads the digest, then `corpus thread show <id> --index`, then the few turns that matter, instead of every turn ever written — and its cost stays roughly flat as the thread grows.
+
+**Summaries orient, they never act.** Before you quote a passage, patch a document, or answer a question about what was said, read the turn verbatim — `corpus thread show <id> --turn <n>`. The digest tells you _which_ turn; it is never the source of a quotation and never the basis of a write.
+
+**`set` writes it** — one per thread, replacing whatever was there. The body is sent **byte for byte**: nothing is summarized, reflowed or trimmed here, and nothing refuses a digest longer than the turns it covers — though at that length it has stopped being a summary and is doing nobody's restart any favours. The server stamps the **watermark** (the timestamp of the newest turn at the instant of the write — a writer cannot state one honestly, so there is no flag for it) and clears any staleness, because the writer has just read the turns. The printed line names the watermark, so you never re-read the thread to learn what you just covered. Deleting or revising a covered turn later marks the digest **stale** wherever it is shown; rewriting it is the only repair. At most 2000 characters — longer is the server's `400` naming the field.
+
+**`clear` removes it**, and is the only thing that does: an **empty** `set` is refused (exit 2, nothing sent) rather than read as a clear, so a resident that meant to update a digest can never destroy it by sending nothing. Clearing a thread that has no digest changes nothing and exits 0 — no digest is the ordinary state, not a fault.
+
+**Refusals the server owns, reported as it answers them (exit 5).** A thread with **no resident** may not hold a digest at all (`422`): designate one first — `corpus thread designate <id>` — and note that resolving a thread released its resident, so a resolved thread's digest can be neither rewritten nor removed. A thread with **no turns** has nothing for a watermark to name (`422`). An unknown thread is the `404` it always is.
+
+**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — `spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, whose socket never ends and would hang a read forever. So a run whose stdin is a socket and which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the empty body: a document written without the body you sent is worse than one not written. Redirect `< /dev/null` when you mean to send none.
+
+```
+corpus thread digest <action> <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                           |
+| -------- | -------- | --------------------------------------------------------------------- |
+| `action` | yes      | `set` writes the digest; `clear` removes it. Anything else is exit 2. |
+| `id`     | yes      | The thread's id.                                                      |
+
+**Flags**
+
+| Flag                   | Type   | Default | Description                                                             |
+| ---------------------- | ------ | ------- | ----------------------------------------------------------------------- |
+| `-m, --message <text>` | string | —       | The digest as a literal string. Wins over --file and stdin.             |
+| `--file <path>`        | string | —       | Read the digest from this file. Wins over stdin; the file is only read. |
+
+**Examples**
+
+The resident's form, at reply time: a heredoc digest of what was decided and what is still open, naming the turns to read verbatim.
+
+```
+corpus thread digest set th_a1b2c3 --from agent <<'CORPUS_EOF'
+Decided: 30-year fixed, 6.1% verified against the note (turn 7).
+Open: whether to escrow taxes — user leaning yes (turn 16).
+CORPUS_EOF
+```
+
+One JSON value — `{"threadId":"th_a1b2c3","digest":{"body":"…","watermark":"2026-09-04T10:00:00.000Z","stale":false},"warnings":[]}` — the watermark the server stamped, read back without re-reading the thread.
+
+```
+corpus thread digest set th_a1b2c3 --from agent --file digest.md --json
+```
+
+Remove the digest outright — the explicit act an empty `set` is refused in favour of.
+
+```
+corpus thread digest clear th_a1b2c3 --from agent
 ```
 
 ### `corpus thread release`
@@ -2807,6 +2867,8 @@ Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, s
 
 **A conversation can be read in part rather than whole** (CLI-076), which is what stops every reply paying for every turn ever written: a 19-turn thread measured 32,375 bytes, and the cost grows each time somebody speaks. `--index` prints the map — a header, then one row per turn with its author, its timestamp, its size in bytes and a marked first-line excerpt — and nothing else. `--turn`, `--turns`, `--last` and `--since` print the turns themselves. Read the index, decide, fetch what you need: it is `corpus doc show --headings` and `--section` for threads, and the same rule holds — **an address that names nothing is refused (exit 2) and never answered with the whole conversation**.
 
+**A thread that carries a digest prints it above the index** (SPEC.md §6, CLI-077): the resident's rolling account of the conversation, under a header naming its **watermark** — the newest turn it covers, so turns after it are simply not covered yet. A **stale** digest (a covered turn was deleted or revised since) prints marked `STALE`, never hidden and never silently replaced — rewriting it is the resident's job, through `corpus thread digest set`. A thread with no digest prints no block, which is the ordinary state. **Summaries orient, they never act.** Before you quote a passage, patch a document, or answer a question about what was said, read the turn verbatim — `corpus thread show <id> --turn <n>`. The digest tells you _which_ turn; it is never the source of a quotation and never the basis of a write.
+
 **An addressed turn is byte-exact and a whole read is not.** With no flags every turn's body has its trailing whitespace trimmed, which is right for reading and wrong for quoting, and that behaviour is unchanged. An addressed turn's body is written exactly as stored: nothing trimmed, nothing collapsed, no newline appended after the last one. The `author · ts` line above each body and the blank line between two turns are this verb's framing, not stored bytes — `--json` is where the bodies arrive with no framing at all.
 
 These flags narrow **what you read, not what crosses the wire**: it is the same single request either way, and the saving is in the reader's context. The index's byte counts are the turn's body in UTF-8, heading line excluded, so the header's total is exactly the sum of the rows and a row predicts what `--turn <n>` will print.
@@ -2823,13 +2885,13 @@ corpus thread show <id> [flags]
 
 **Flags**
 
-| Flag              | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--index`         | boolean | `false` | Print the conversation's map instead of the conversation: a header, then one row per turn. The header names the title, the id, the status, the turn count and the total bytes; each row carries an ordinal, an author, a timestamp, the body's size and a first-line excerpt. **An excerpt that leaves anything out ends in `…`**, so it can never be mistaken for the stored text. The rows carry no bodies, which is the point: it is a few hundred bytes against tens of thousands. Under `--json` the same rows arrive with a `truncated` flag per row and no `body` key anywhere. Refused beside an address flag (exit 2) — run it first, then address what is worth reading. |
-| `--turn <n\|ts>`  | string  | —       | Print one turn, byte for byte. Takes **either address**: the ordinal `--index` printed (`--turn 7`), or the ISO instant beside it (`--turn 2026-07-28T10:05:00Z`). They differ in what survives an edit — SPEC.md §6 makes the timestamp the turn's _identity_, and a person may delete a single turn, after which every later ordinal points at a different turn while every timestamp still points at its own. Use the ordinal for a decision made from an index you just read, and the timestamp for one you are carrying. Naming no turn is exit 2.                                                                                                                            |
-| `--turns <a,b-c>` | string  | —       | Print several turns: a comma-separated list of ordinals and ranges, `--turns 1,4-6`. Ordinals only — a timestamp addresses one turn through `--turn`, since a range written over instants cannot be told from the dashes inside them. The turns come back oldest first however the list was written, and a repeat is printed once. A backwards range, or an ordinal the thread does not have, is exit 2 with nothing printed.                                                                                                                                                                                                                                                      |
-| `--last <n>`      | number  | —       | Print the newest `n` turns — the usual way back into a conversation you have been away from. Asking for more turns than the thread holds prints every turn and exits 0: _the newest 50 of 19_ has an obvious honest answer. `--last 0` does not, and is exit 2.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `--since <iso>`   | string  | —       | Print the turns after an instant, **exclusive**: `--since` the `ts` of the last turn you read returns what has been said since, and not that turn again. Nothing new is not a failure — it prints one line saying so and exits 0, the same carve-out `--last` gets for running past the end. A value that is not a timestamp is exit 2.                                                                                                                                                                                                                                                                                                                                            |
+| Flag              | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--index`         | boolean | `false` | Print the conversation's map instead of the conversation: the digest when the thread carries one, a header, then one row per turn. The digest block opens with its watermark and prints `STALE` when the server says a covered turn changed — it orients only, and the turns below are what you quote from. The header names the title, the id, the status, the turn count and the total bytes; each row carries an ordinal, an author, a timestamp, the body's size and a first-line excerpt. **An excerpt that leaves anything out ends in `…`**, so it can never be mistaken for the stored text. The rows carry no bodies, which is the point: it is a few hundred bytes against tens of thousands. Under `--json` the same rows arrive with a `truncated` flag per row and no `body` key anywhere. Refused beside an address flag (exit 2) — run it first, then address what is worth reading. |
+| `--turn <n\|ts>`  | string  | —       | Print one turn, byte for byte. Takes **either address**: the ordinal `--index` printed (`--turn 7`), or the ISO instant beside it (`--turn 2026-07-28T10:05:00Z`). They differ in what survives an edit — SPEC.md §6 makes the timestamp the turn's _identity_, and a person may delete a single turn, after which every later ordinal points at a different turn while every timestamp still points at its own. Use the ordinal for a decision made from an index you just read, and the timestamp for one you are carrying. Naming no turn is exit 2.                                                                                                                                                                                                                                                                                                                                             |
+| `--turns <a,b-c>` | string  | —       | Print several turns: a comma-separated list of ordinals and ranges, `--turns 1,4-6`. Ordinals only — a timestamp addresses one turn through `--turn`, since a range written over instants cannot be told from the dashes inside them. The turns come back oldest first however the list was written, and a repeat is printed once. A backwards range, or an ordinal the thread does not have, is exit 2 with nothing printed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `--last <n>`      | number  | —       | Print the newest `n` turns — the usual way back into a conversation you have been away from. Asking for more turns than the thread holds prints every turn and exits 0: _the newest 50 of 19_ has an obvious honest answer. `--last 0` does not, and is exit 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `--since <iso>`   | string  | —       | Print the turns after an instant, **exclusive**: `--since` the `ts` of the last turn you read returns what has been said since, and not that turn again. Nothing new is not a failure — it prints one line saying so and exits 0, the same carve-out `--last` gets for running past the end. A value that is not a timestamp is exit 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 **Examples**
 
@@ -2863,13 +2925,13 @@ What has been said since the turn you last read — exclusive of it. An empty an
 corpus thread show th_a1b2c3 --since 2026-07-28T10:05:00Z
 ```
 
-One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","status":"open","turnCount":19,"bytes":32375,"index":[{"turn":1,"author":"user","ts":"2026-07-28T10:00:00.000Z","bytes":14,"excerpt":"Is 6.1% right?","truncated":false}]}` — derived rows, and no turn body anywhere.
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","status":"open","digest":null,"turnCount":19,"bytes":32375,"index":[{"turn":1,"author":"user","ts":"2026-07-28T10:00:00.000Z","bytes":14,"excerpt":"Is 6.1% right?","truncated":false}]}` — derived rows, and no turn body anywhere.
 
 ```
 corpus thread show th_a1b2c3 --index --json
 ```
 
-One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","resident":null,"digest":null,"turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
 
 ```
 corpus thread show th_a1b2c3 --json
