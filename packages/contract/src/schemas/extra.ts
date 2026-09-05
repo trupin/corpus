@@ -71,6 +71,13 @@ export const RESERVED_FRONTMATTER_KEYS = [
   "parent",
   "anchor",
   "agent",
+  // SPEC.md §6 — the digest rider (signed 2026-09-05). Reserved for the reason
+  // `resident` is, and the hazard was reproduced against a running server
+  // before this line existed (SERVER-164's E2E): an unreserved `digest` let an
+  // agent write a digest onto a thread whose digest verbs answer 422 for
+  // having no resident — and clear a `stale` flag the server set. The PUT/
+  // DELETE digest routes are the only writers.
+  "digest",
   // SPEC.md §7 — the resident a standalone thread designates (SHARED-043).
   // Reserved for exactly the reason `origin` and `turnModels` are, and the
   // hazard was **reproduced against a running server** before this line existed

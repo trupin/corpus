@@ -137,7 +137,7 @@ describe("RESERVED_FRONTMATTER_KEYS drift pin", () => {
   });
 
   it("covers the §6 thread keys, which are frontmatter on thread files", () => {
-    for (const key of ["parent", "anchor", "agent"]) {
+    for (const key of ["parent", "anchor", "agent", "digest"]) {
       expect(RESERVED_FRONTMATTER_KEYS).toContain(key);
     }
   });
