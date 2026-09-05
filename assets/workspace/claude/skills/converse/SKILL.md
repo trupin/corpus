@@ -5,7 +5,7 @@ id: doc_skillconverse
 type: skill
 title: Converse
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-23T00:00:00Z
+updated: 2026-09-05T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -72,8 +72,9 @@ them as binding on you exactly as they bind it, and go there when a detail is mi
 5. **`corpus queue idle` is the only wait.** Never poll, never busy-wait, never sleep between
    passes.
 6. **You retrieve; you never enumerate.** `corpus search "<query>"` and
-   `corpus doc related <id>` locate things; `corpus doc show <id>` opens the one id they
-   returned. Never list a folder, never sweep the tree. Being resident in a conversation is
+   `corpus doc related <id>` locate things; `corpus doc show <id> --headings` then
+   `--section "<path>"` slice the one id they returned, whole only before a whole-body
+   rewrite. Never list a folder, never sweep the tree. Being resident in a conversation is
    not a licence to read the corpus around it.
 7. **A write presents the key its read gave you.** Read → work → write with the key you were
    given → keep the key the write returned. Nothing is acquired and nothing is released.
@@ -175,9 +176,7 @@ failures later.
      cost rather than an oversight. A listener starts when work arrives and ends when the
      conversation goes quiet, so it does not carry the conversation in its head between
      messages — it reads it. §7 already says the thread's turns *are* the conversation, and
-     `corpus thread context` is the briefing. The alternative was a listener parked on every
-     conversation anybody has ever started, warm and idle, and the count was the reason
-     against it.
+     `corpus thread context` is the briefing.
 
      **Neither reading says nobody is here, either.** Presence is the parked request, so a
      listener in the middle of a turn — which is where a resident spends most of its time —
@@ -240,10 +239,11 @@ failures later.
    never changes what is yours to answer.
 
 4. **Hydrate from the conversation, not from a briefing somebody wrote you.**
-   `corpus thread context th_4b8e2c` for the bounded pack and `corpus thread show th_4b8e2c`
-   for the turns. A standalone thread has no parent block, so the pack is the related
-   excerpts and the thread is the whole context. Those two reads are the default; escalate to
-   a document only on the comment skill's terms.
+   `corpus thread context th_4b8e2c` for the bounded pack and `corpus thread show th_4b8e2c
+   --index` for the map, then `--last <n>` for the turns you are answering into. A standalone
+   thread has no parent block, so the pack is the related excerpts and the thread is the
+   whole context — read it whole only when the index says it is short. Those two reads are
+   the default; escalate to a document only on the comment skill's terms.
 
 5. **Say nothing yet.** Do not post a turn announcing that you have arrived. Presence is
    already visible — the person's board shows the lane live the moment you park — and an
@@ -289,7 +289,8 @@ order, indefinitely:
    are messages in one conversation, and the order that governs is the thread's rather than
    the batch's. The later message was written by somebody who had read the earlier one's
    context. So take the earliest turn you are holding first. You read that order in
-   `corpus thread show th_4b8e2c`, and each event's payload names the turn it belongs to.
+   `corpus thread show th_4b8e2c --index`, and each event's payload names the turn it
+   belongs to.
    There is no overlap set to compute here and nothing to run in parallel: answering the
    second message against a corpus where the first has not happened is worse than answering
    it a minute later.
@@ -301,9 +302,8 @@ order, indefinitely:
    **Compare `resident.designationId` on your row with the one your launch named.** A
    designation carries an identity, and a re-designation mints a new one, so a row whose id is
    not yours is a designation that is not yours however familiar the rest of it looks. Your row
-   being **present** proves nothing: a person can release this conversation and designate it
-   again — to a different profile, or the same one — between two of your passes, and every
-   other field on that row can come back reading exactly as it did.
+   being **present** proves nothing — a release and a fresh designation both fit between two of
+   your passes, as `references/leaving.md` spells out.
 
    Where the id differs, you have been replaced. Take *Retirement*'s reading of that and go:
    finish the turn you are in, settle everything you claimed, and exit without a goodbye.
@@ -318,21 +318,26 @@ order, indefinitely:
 7. **Read what parking returned before anything else.** That return is the arrival
    notification: it names what is pending and what is still held. A return nobody read is a
    message nobody answered.
-
-Then repeat from step 1.
+8. **Go again from step 1 — the pass ends by starting the next one.** The park's own output
+   already names this step, in the same words every time. After a return with work:
+   *next step in the loop: these are pending, not claimed — `corpus queue claim-all`, work, settle, then park.*
+   After a quiet window:
+   *next step in the loop: nothing arrived, so park again with `corpus queue idle` — a timeout is not an error.*
+   Those lines mean you. Continuing is the default and needs no reason: a listener is present
+   exactly while it keeps parking, so one that stops parking stops existing. Ending needs a
+   signal — five endings exist, each named where it arises, and the reasoning that earns each
+   one lives in `references/leaving.md`, read when you are about to leave rather than on every
+   pass.
 
 **An id your park named, held by somebody else when you claim, means another listener is on
-this lane.** Your startup check could tell you a listener was here and could never tell you one
-was not, so you may be the second listener on this conversation and have no way to have known
-it. Step 1 is where that is found out, and it is the first moment it matters. Your park at step
-6 names what is **pending** on your lane, one line per event; the claim that immediately follows
-it then either hands you those ids or reports them in `inProgress`, which is what was already
-held when your call arrived and never includes what that same call has just claimed for you. So
-an id your park named as pending, coming back in `inProgress` instead of in your `events`, was
+this lane.** Step 1 is where that is found out, and it is the first moment it matters. Your
+park at step 6 names what is **pending** on your lane, one line per event; the claim that
+immediately follows it then either hands you those ids or reports them in `inProgress`, which
+is what was already held when your call arrived and never includes what that same call has just claimed for you.
+So an id your park named as pending, coming back in `inProgress` instead of in your `events`, was
 claimed by another caller in the seconds between the two — and on your lane that can only be
-another listener. The orchestrator is not a candidate: your park released moments ago, the lane
-therefore reads live for the whole grace window that follows, and an unscoped claim never sees
-a live lane's events. **One such id is the whole of the evidence. Exit.**
+another listener; why the orchestrator cannot be that caller is `references/leaving.md`'s to
+show. **One such id is the whole of the evidence. Exit.**
 
 **Two other held rows look like it and are neither**, and reading one of them as a peer costs
 the conversation the listener it really had — where both of you do it, it costs the
@@ -345,27 +350,23 @@ this session?*, before you read any row as a peer's. That is also why this test 
 claim that follows your park and to no other call: a claim made in the middle of a pass is
 looking at work you are holding yourself.
 
-**Judge it on that id, and never on the claim being empty.** The two claims are two independent
-sessions each deciding to run a command, seconds apart — and a person who has just written one
-message writing a second is the ordinary case, not a rare one. That second message is pending
-by the time you claim, so your `events` comes back **non-empty**: a rule that waits for an empty
-batch does not fire, the peer's held row reads as merely *not yours* (*Settling your own lane*),
-and you answer the second message while the other listener answers the first. Two agents, one
-conversation, alternate messages, neither able to see what the other said, and no error raised
-anywhere. That is the failure this check exists to prevent, and the id in `inProgress` is
-present in exactly the same way whether the batch was empty or not.
+**Judge it on that id, and never on the claim being empty.** A person who has just written one
+message writing a second is the ordinary case, not a rare one, and that second message is
+pending by the time you claim — so your `events` comes back **non-empty**, a rule that waits
+for an empty batch does not fire, and the peer's held row reads as merely *not yours*
+(*Settling your own lane*). The id in `inProgress` is
+present in exactly the same way whether the batch was empty or not; what reading it that way
+would cost the conversation is `references/leaving.md`'s to tell.
 
 **Go without finishing what that claim handed you.** Do not work it, do not settle it, do not
 reply to it. It is not lost: it stays in `in-progress/` on this lane, and the orchestrator's
 `corpus queue reap-stale` returns it to `pending/` **on the lane it was claimed from**, where
-the listener that stays claims it as an ordinary row — *Declining a row strands nothing*
-describes the rest, and this is the same trade it makes. A late answer costs the person a wait;
-two agents answering alternate messages costs them their reading of every answer either of you
-gives. Post nothing to the thread: a farewell here would be a turn about the agents rather than
-about the conversation. Where that claim did hand you events, `corpus job log` one line on each
-saying you stood down and left it — that line is the only account of why the event sat between
-being claimed and being reaped. Where it handed you none, there is nothing to log to and
-nothing to leave.
+the listener that stays claims it as an ordinary row — the trade this makes is
+`references/leaving.md`'s to weigh. Post nothing to the thread: a farewell here would be a
+turn about the agents rather than about the conversation. Where that claim did hand you
+events, `corpus job log` one line on each saying you stood down and left it — that line is
+the only account of why the event sat between being claimed and being reaped.
+Where it handed you none, there is nothing to log to and nothing to leave.
 
 **Two quiet claims look like it and are not**, and both mean loop again rather than exit. An id
 your park named that comes back in **neither** list left `pending/` by another door — the operator
@@ -376,15 +377,10 @@ of a quiet conversation. **An empty `events` is not the signal in either directi
 what a quiet lane looks like and what a lost race often looks like, and only the held id tells
 those apart.
 
-**Two parked listeners cost nothing until a message arrives**, which is exactly why the check
-belongs at the claim and nowhere earlier. Parking costs no tokens and answers nobody, so a
-duplicate sitting on a silent lane splits no story; the moment the lane has something to
-answer, one of the two finds out and goes, before the person has been answered twice or in two
-voices. Which of you loses the race is not worth arbitrating and cannot be: the survivor
-rehydrates from the thread and the artifacts, the way *When your context runs heavy* already
-describes, because that is the only handoff there has ever been. And do not go looking for a
-peer any other way — there is no probe for this, the roster's summary is display text you must
-never parse, and a shortened park to "check" is the keep-alive this skill forbids.
+And do not go looking for a peer any other way — there is no probe for this, the roster's
+summary is display text you must never parse, and a shortened park to "check" is the keep-alive
+this skill forbids. Why the check belongs at the claim rather than anywhere earlier, and why
+the race it loses is not worth arbitrating, is `references/leaving.md`'s to tell.
 
 `corpus queue idle` exits `0` in every normal case but one, and that one is an ending rather
 than an error: a park on a lane that no longer exists is **refused**, and *Retirement* below
@@ -410,8 +406,7 @@ a thread's parents and a document's `origin` to work out whether an event falls 
 conversation. So the draft this conversation produced, and a comment somebody leaves on that
 draft weeks later, both reach you — which is the point of owning a conversation rather than a
 thread. Because it is computed and not stored, a document written before you existed is
-captured the moment its conversation is designated; its origin was recorded when it was
-written, not when it became interesting.
+captured the moment its conversation is designated.
 
 Two consequences you will actually meet:
 
@@ -457,7 +452,8 @@ What being resident adds is context you already have and must actually use. You 
 every turn of this conversation and you wrote half of them. Do not re-derive from scratch
 what you settled three messages ago, do not re-ask a question that was answered, and do not
 brief yourself with `corpus thread context` a second time on a thread you have been sitting
-in — read the new turns with `corpus thread show th_4b8e2c` and go. Retrieval discipline is
+in — read the new turns alone, `corpus thread show th_4b8e2c --since <ts of your last
+read>`, and go. Retrieval discipline is
 untouched by any of that: the corpus outside this conversation is still reached by searching,
 never by looking around.
 
@@ -650,8 +646,8 @@ asked is unconditional.
 What you must not do is bring it home. Do not post about it in your root thread, do not treat
 the host thread's later messages as yours — they are not, unless another one is routed to you
 the same way — and do not adopt its documents into this conversation. The filing takes care of
-itself: the origin of anything you write follows the job you were serving, and that job is the
-message you were sent, which lives in the host's conversation. Routing follows the recipient;
+itself: the origin of anything you write follows the job you were serving, and that job is
+the message you were sent. Routing follows the recipient;
 filing follows the conversation. **An override never rewires anything**: it does not
 re-designate, it does not persist past the message it was set on, and answering a question
 does not annex the thread it was asked in.
@@ -703,30 +699,37 @@ Everything you might be tempted to do about it is wrong:
 
 ## When your context runs heavy
 
-You are long-lived and your context is not. A resident that keeps going on a context it can
-no longer work well in produces worse answers than the same conversation would get from a
-fresh one, and it does something worse than that: while it is parked it is **present**, and
-presence is what tells a person somebody is here. A degraded listener holding a lane is worse
-than no listener at all, because the lane still looks answered.
+You are long-lived and your context is not, and a listener that can no longer hold its
+conversation well answers it worse than a fresh one would — the full argument, and why a
+degraded listener is worse than none, is `references/leaving.md`'s to give. This is also the
+one ending with no external signal: nothing refuses it, nothing measures it, and it is
+available on every pass. So it carries a bar, and it leaves a record.
 
-So when your context is running out, stop cleanly rather than continuing:
+**The bar is a named casualty, and "this is getting long" does not meet it.** You stop for
+this reason only when you can name what you have lost: a document whose content you can no
+longer recall, an instruction you had to re-read and still got wrong, an exchange you now
+hold only as your own summary of it. Length is what a conversation accumulates by working,
+and feeling expensive is not evidence of anything. If you cannot write the casualty down in
+one concrete sentence, you have not met the bar — park again and keep working.
+
+When you can, stop cleanly rather than continuing:
 
 1. Finish the work you are holding, or defer it if it is genuinely blocked.
-2. Settle every event you claimed — nothing may be left in `in-progress/` that you could have
+2. **Record the reason while you still hold an event.** A job log takes an event id, so
+   before you settle the last one, `corpus job log` the casualty you named. That line is what
+   makes this ending an act with a visible cause rather than a quiet non-continuation.
+3. Settle every event you claimed — nothing may be left in `in-progress/` that you could have
    accounted for.
-3. Write down anything durable this conversation produced that is not in a document yet. This
+4. Write down anything durable this conversation produced that is not in a document yet. This
    is the step that makes the next listener's job possible.
-4. Say it in the last reply you post — one sentence, so the person is not left wondering why
-   the next answer is slower — and exit. **Do not park again.** A job log takes an event id,
-   so a line there only has somewhere to go while you are still holding one.
+5. Say it in the last reply you post — one sentence naming the same casualty, so the person
+   is not left wondering why the next answer is slower — and exit. **Do not park again.**
 
 There is no transcript handoff and you must not attempt one. Whoever comes next — the
 orchestrator relaunching a listener, or the operator — rehydrates the same way you did:
-`corpus thread context th_4b8e2c`, `corpus thread show th_4b8e2c`, and retrieval over what
-the conversation produced. The thread and its artifacts are the memory, which is the whole
-reason stewardship is not optional for a resident. A summary you write for your successor is
-a fourth account of the conversation nobody asked for and nobody will trust; a document you
-wrote while the work was fresh is one they can read.
+`corpus thread context th_4b8e2c`, `corpus thread show th_4b8e2c --index` and the turns it
+names, and retrieval over what the conversation produced. The thread and its artifacts are the memory, which is the whole
+reason stewardship is not optional for a resident.
 
 ## Retirement
 
@@ -752,9 +755,8 @@ corpus queue idle --thread th_4b8e2c
 corpus: 422 unknown_recipient: `th_4b8e2c` names no lane to consume: …
 ```
 
-**Retire on it; do not die on it.** That refusal is exit `5`, and a listener with no
-instruction for it exits at the shell — holding its last event, which then sits in
-`in-progress/` until somebody reaps it, and owing the conversation a goodbye nobody posts.
+**Retire on it; do not die on it.** That refusal is exit `5`, and dying at the shell on it is
+the failure `references/leaving.md` describes — an event left held, a goodbye nobody posts.
 There is nothing here to retry and nothing to report as broken: read the refusal as the
 roster read you were going to make next, and run the steps below from the first.
 
@@ -768,22 +770,16 @@ still hold. Park again instead.
 **The claim is not refused, and the asymmetry is deliberate.**
 `corpus queue claim-all --thread th_4b8e2c` still answers on a lane whose resident was just
 released, and hands back the events stamped for it before the release. Nothing else can reach
-them: you are refused at the park, and the orchestrator's unscoped claim cannot see this lane
-until it has lapsed out of presence, so a guarded claim would strand them for a whole grace
-window in order to tidy a parameter. Draining them is therefore the departing listener's job,
-and it is the first step below.
+them until the lane lapses — `references/leaving.md` has the server's reasoning.
+Draining them is therefore the departing listener's job, and it is the first step below.
 
 **Unless the conversation has been designated again — and then the drain is not yours to
 make.** One thread released and designated again is one lane with two residents in succession,
-and the second one's listener takes that lane exactly as you took it. So the argument above
-turns over on its own premise: those events *can* be reached by somebody else now, they are the
-successor's ordinary pending work, and your claim would take them out from under a listener
-that has just parked on them. What that costs is not a late answer. An id its own park named,
-coming back held by a caller it cannot identify, is the one thing a listener stands down on
-(*The loop*) — and the row says nothing about who holds it or that they are leaving, so it
-cannot read your departure as anything but a peer. Your last act would be to evict the healthy
-listener that replaced you. So **read the roster immediately before you drain**, and read a row
-for your thread as what it now is: a designation that is not yours.
+and the second one's listener takes that lane exactly as you took it. The events still stamped
+for it are not stranded — they are the successor's ordinary pending work, and what a drain
+would cost the listener that replaced you is `references/leaving.md`'s to tell.
+So **read the roster immediately before you drain**, and read a row for your thread as what
+it now is: a designation that is not yours.
 
 **Here the test is the row's presence, and that is not the same test as step 5's.** Comparing
 ids would answer a question this moment does not ask: you are leaving either way, and what you
@@ -799,11 +795,9 @@ so *The loop*'s comparison catches it along with every other kind of replacement
 swapped, a profile added, a profile removed — and there is one test rather than a list of the
 ways a row can change.
 
-The reason is unchanged and is why the act is what it is: **no running agent becomes another
-one without discarding the conversation it is holding.** Somebody has asked for this
-conversation to be worked at a weight this session cannot become, and the only way to give
-them that is to stop. So take the reading the paragraph above gives you: your row is a
-designation that is not yours. Finish the turn you are in, settle
+The reason a listener stops rather than adjusts is `references/leaving.md`'s to give. Take
+the reading the paragraph above gives you: your row is a designation that is not yours.
+Finish the turn you are in, settle
 everything you claimed, and exit. Write no goodbye and claim nothing further — the
 conversation is not going back to the general agent, and a farewell would say something
 untrue about where it went. The lane is taken again from the roster as soon as you stop
@@ -823,7 +817,8 @@ When your row is gone from the roster, or your park was refused:
    whole pending batch in a single call, and nothing written after the release is stamped
    for this lane, so a second claim can only ever come back empty. Work what the one claim
    gave you, settle it, and go on to the sign-off — and park at no point in any of this.
-2. Read the thread: `corpus thread show th_4b8e2c`.
+2. Read the thread's header: `corpus thread show th_4b8e2c --index` — it says open or
+   resolved.
 3. **If it is still open, sign off once**, in one line, and exit — the reply is the block
    directly below. That turn changed nothing, so it carries no trace line, and an agent's turn
    never reopens anything.
@@ -862,7 +857,7 @@ corpus agents
 orchestrator · waiting for a listener
 th_4b8e2c "Q3 planning" · a general resident · waiting for a listener
 corpus thread context th_4b8e2c
-corpus thread show th_4b8e2c
+corpus thread show th_4b8e2c --index
 corpus queue idle --thread th_4b8e2c
 ```
 
@@ -930,8 +925,7 @@ corpus queue idle --thread th_4b8e2c
 
 A week later somebody leaves a comment on `doc_5c8b2f` itself. That document's origin walks
 back to `th_4b8e2c`, so the event is stamped for this lane and lands on this park rather than
-on the orchestrator's — the conversation and the artifact it produced reach the same agent,
-which is what a scope is for. It is worked exactly as above, with one difference: the reply
+on the orchestrator's. It is worked exactly as above, with one difference: the reply
 goes to the thread the payload names, which is the new one on the document and not the root
 conversation.
 
@@ -943,7 +937,7 @@ corpus agents
 orchestrator · waiting for a listener
 corpus queue claim-all --thread th_4b8e2c
 {"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
-corpus thread show th_4b8e2c
+corpus thread show th_4b8e2c --index
 corpus thread reply th_4b8e2c --from agent --model "Sonnet" <<'CORPUS_EOF'
 Stepping out of this conversation — it has been handed back to the general agent, which will pick up anything you write here next.
 CORPUS_EOF

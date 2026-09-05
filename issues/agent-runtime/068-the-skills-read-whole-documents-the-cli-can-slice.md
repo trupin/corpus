@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -101,19 +101,31 @@ In `comment`, `converse` and `orchestrate` (and `profile` where it reads):
 
 ## Acceptance Criteria
 
-- [ ] Every `doc show` instruction in the four skills either reads a section
+- [x] Every `doc show` instruction in the four skills either reads a section
       path or states why that site needs the whole body. Zero unexplained
-      whole-body reads remain.
-- [ ] Every `thread show` instruction starts at `--index` or states why not.
-- [ ] The byte-exact quoting rule is stated once per skill and cited at the
-      patch and reply sites.
-- [ ] The skills grow by less than they direct readers to save — net token
-      change of the skill files is recorded and is not positive by more than
-      500 bytes total.
-- [ ] `workspace-template.test.ts` guards updated.
-- [ ] One `comment.created` handled end-to-end on a seeded workspace with the
+      whole-body reads remain. _(Verified by grep and read; the surviving whole
+      reads and their stated reasons are listed in the E2E log.)_
+- [x] Every `thread show` instruction starts at `--index` or states why not.
+      _(One deliberate exception, measured: the `form.respond` parent
+      re-derivation keeps the bare read because the `--index` header does not
+      print the parent — the skill now says so in as many words.)_
+- [x] The byte-exact quoting rule is stated once per skill and cited at the
+      patch and reply sites. _(`comment` states it at the patch grammar and
+      cites `--section` at the quote bullet; `orchestrate` states it at its
+      patch grammar; `converse` binds the whole turn grammar by reference to
+      `comment` and slices in its own invariant 6.)_
+- [x] The skills grow by less than they direct readers to save — net change
+      recorded: **comment −24 B, converse −29 B, orchestrate −4 B, profile 0 —
+      total −57 B** (cap was +500 B). Every addition displaced prose of at
+      least its own size, per INFRA-038's anti-gaming rule.
+- [x] `workspace-template.test.ts` guards updated. _(New AGENT-068 describe with
+      three wording guards, marked as wording guards; two existing pins updated
+      to the new text, none deleted.)_
+- [x] One `comment.created` handled end-to-end on a seeded workspace with the
       new instructions, its reads logged, and the per-event total recorded
-      against the ~25,100 B baseline above.
+      against the ~25,100 B baseline above. _(See the E2E log: 3,751 B of
+      instructed reads on the seeded fixture, and a baseline-shaped 19-turn
+      thread measured at 19,218 B whole vs 5,028 B index + last-3.)_
 
 ## Technical Design
 
@@ -167,20 +179,133 @@ patches the wrong section would surface there, not in wording guards.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+Implementing agent: agent-runtime-dev, ran on **Fable** (claude-fable-5), 2026-09-05.
 
-### Post-Implementation Verification
+### Flags verified against the real CLI first
 
-_[Agent fills: the command list, the byte sum, the patch evidence]_
+`node apps/cli/dist/bin/corpus.js doc show --help=brief` → `--headings`,
+`--section <heading-path>`, `--nth <n>`; `thread show --help=brief` →
+`--index`, `--turn <n|ts>`, `--turns`, `--last <n>`, `--since <iso>`
+(exclusive). Both byte-for-byte promises are the help text's own words.
+`corpus search` prints the heading path as its second column (verified live:
+`doc_m72vwiwv  Rates  …`), so a hit's `headingPath` really is what `--section`
+accepts. `corpus batch` accepts a flag inside an entry:
+`[["thread","show","<id>","--index"]]` ran as one invocation.
+
+### The read fork, as landed
+
+- **comment**: invariant 6 teaches the sliced read; the escalation bullet
+  slices (`--headings` then `--section`, whole where a document has no
+  headings); the quote bullet cites the byte-exact `--section` read; the patch
+  example reads `--section "Rates"`; the opening batch is
+  `[["thread","context",…],["thread","show",…,"--index"]]` with `--turn
+  <turnTs>` / `--last <n>` fetches and the whole-thread case named (a reply
+  that must square with the whole history). The rewrite bullet is untouched:
+  the full read stays, with the key, and "rewriting a parent from its section
+  alone deletes the rest of the document" is now test-pinned.
+- **converse**: invariant 6 slices; startup hydrates `--index` then `--last`;
+  the loop's ordering read is `--index`; the return-to-thread read is
+  `--since <ts of your last read>`; the retirement header read is `--index`
+  (measured: the index header prints the status). The persona read stays whole
+  — "what it says binds you for as long as you hold this lane" is the stated
+  reason a map cannot answer it.
+- **orchestrate**: invariant 6 slices and names `headingPath` as the
+  `--section` address; the launch read is `--index` plus `--turn 1`; the patch
+  procedure and worked example read `--section "Rates"`; the whole-body-edit
+  and revert sites keep their whole reads with the key as the stated reason;
+  the board read states why it is whole (`columns` is frontmatter, outside
+  every section). The subagent-rules restatements defer to invariant 6, which
+  "crosses the subagent boundary intact".
+- **profile** (audited, unamended): its one read —
+  `corpus doc show <id>` on a name-collision — is followed by "say what it is
+  for", which no heading map answers; the whole read is the explained right
+  one, and profile sits exactly at its ratchet baseline, so a no-value edit
+  was not made.
+
+### Post-Implementation Verification (the measured event)
+
+Workspace: `corpus init` scratch on port **8975**, real server, skills
+installed by the installer (and `corpus workspace upgrade` verified to carry a
+later template edit in — it rewrote exactly the one changed file). Seeded: a
+sectioned parent (`doc_m72vwiwv`, four sections, ~2.1 KB), an anchored thread
+`th_4dval5as` grown to 18 turns, then one user ask ("update the rate assumption
+to 6.4%") enqueued as `evt_cbw5wzcyzvuo`.
+
+Worked by hand, running exactly the commands the amended comment skill
+prescribes, reads captured to files and summed:
+
+| read | bytes |
+| --- | --- |
+| `corpus batch` (thread context + `thread show --index`) | 2,813 |
+| `thread show --turn 2026-09-05T22:12:56Z` | 156 |
+| `thread show --last 3` | 343 |
+| `doc show doc_m72vwiwv --headings` | 34 |
+| `doc show doc_m72vwiwv --section "Rates"` | 405 |
+| **event total** | **3,751 B** |
+
+The patch quoted the section read's bytes and landed first try:
+`corpus doc patch doc_m72vwiwv --old '6.1% as of 2026-05-02' --new '6.4% as of
+2026-07-28'` → `patched doc_m72vwiwv — 1 occurrence replaced — 2 anchors
+remapped`, then the reply with its trace line and `queue complete` (exit 0,
+next-step line printed).
+
+**Against the 25,100 B baseline.** The seeded thread's turns were smaller than
+the Phase 57 fixture's, so the same-fixture whole-read column here is 4,881 B
+(context 701 + whole thread 2,128 + whole doc 2,052) — the bounded run reads
+77% of it, dominated by the bounded-anyway context pack. To measure the
+thread half at the baseline's scale, a second thread was seeded at the
+fixture's shape — 19 turns, ~1 KB each, whole `thread show` = **19,218 B**
+(the baseline's 17,635 B column) — where the instructed reads cost **2,024 B
+(`--index`) + 3,004 B (`--last 3`) = 5,028 B**, matching the baseline table's
+bounded column (~1,500 + ~2,600). The document half measured 439 B
+(`--headings` + `--section`) against 2,052 B whole. The instructed reads land
+the event at the issue's Bounded column on the shape it was measured on.
+
+Server stopped cleanly both times; port 8975 free at the end.
+
+### Edge cases and lag, settled
+
+- No headings: stated in `comment` ("a document with no headings has no map,
+  and is read whole").
+- Duplicate heading paths: `--nth` exists and the skills defer to the verb's
+  own refusal — nothing restated.
+- Version floor: the flags shipped in v0.20.0 (`doc show`) and this branch
+  (`thread show`); a workspace runs the skills its own `corpus init`/`upgrade`
+  installed, so skill text and CLI travel together and no floor sentence is
+  needed.
+
+### Sequencing against AGENT-067 (decision, recorded)
+
+The orchestrate edits here are **surgical** — invariant 6's tail, one launch
+parenthetical, the patch/worked-example reads, two displacement trims — landed
+**before** AGENT-067's wholesale rewrite. AGENT-067 carries them forward: its
+brief should treat the sliced-read invariant and the `--section`-quoting
+examples as fixed points of the text it restructures. Recorded here per the
+issue's dispatch note; the two did not race on the file.
+
+### Sizes (all touched skills, before this pair of issues → after)
+
+| file | before AGENT-065 | after both | net |
+| --- | --- | --- | --- |
+| `converse/SKILL.md` | 64,952 | 64,111 | −841 B |
+| `converse/references/leaving.md` | — | 6,514 | new, read at an ending |
+| `orchestrate/SKILL.md` | 139,824 | 139,798 | −26 B |
+| `comment/SKILL.md` | 41,132 | 41,108 | −24 B |
+| `profile/SKILL.md` | 18,972 | 18,972 | 0 |
+
+`npm run skills:check` green; the ratchet baseline was lowered
+(`--update-baseline`) to lock every shrink in, and no entry was raised.
+`workspace-template.test.ts` + `skill-budget.test.ts`: **612 passed, 0
+failed**. ESLint and Prettier clean on every touched file.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Zero unexplained whole reads, both kinds, verified by grep and read
-- [ ] Net skill-size change recorded
-- [ ] `/lint` passes
-- [ ] E2E log with the measured event total
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Zero unexplained whole reads, both kinds, verified by grep and read
+- [x] Net skill-size change recorded
+- [x] `/lint` passes _(ESLint + Prettier on touched files; `tsc` is CI's)_
+- [x] E2E log with the measured event total
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

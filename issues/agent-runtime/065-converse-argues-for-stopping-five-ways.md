@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -115,17 +115,29 @@ Four changes, and the third is the one that matters.
 
 ## Acceptance Criteria
 
-- [ ] Continuing is a numbered step of *The loop*, not a trailing sentence.
-- [ ] The stop-to-continue signal ratio is at or below **2:1**, measured the same
-      way as above. The issue records both counts, before and after.
-- [ ] All five exits still exist, and each still states its rule.
-- [ ] *When your context runs heavy* states a bar that "this is getting long" does
-      not meet.
-- [ ] `orchestrate`'s *If the loop breaks* names both causes of a listener that
+- [x] Continuing is a numbered step of *The loop*, not a trailing sentence.
+      _(Step 8, quoting CLI-078's next-step lines verbatim — the constants are
+      imported from `apps/cli/src/commands/queue/next-step.ts` into the test, so
+      the two can never drift into separate wordings.)_
+- [x] The stop-to-continue signal ratio is at or below **2:1**, measured the same
+      way as above. The issue records both counts, before and after. _(Before
+      24:9 = 2.67, after 23:14 = 1.64, under the phrase-list method recorded in
+      the E2E log and encoded in the counting test. The Summary's hand count was
+      25:7 — the mechanical method calibrates slightly differently on the same
+      text, and both counts here are the mechanical ones.)_
+- [x] All five exits still exist, and each still states its rule.
+- [x] *When your context runs heavy* states a bar that "this is getting long" does
+      not meet. _(Both directions were taken: the named-casualty bar **and** the
+      required record — job log line plus the same casualty in the last reply.)_
+- [x] `orchestrate`'s *If the loop breaks* names both causes of a listener that
       will not stay up, and how an operator tells them apart.
-- [ ] `converse/SKILL.md` gets no larger. It should get smaller.
-- [ ] `scripts/workspace-template.test.ts` passes, and any wording guard this
-      change invalidates is **updated rather than deleted**.
+- [x] `converse/SKILL.md` gets no larger. It should get smaller.
+      _(64,952 → 64,140 bytes; the AGENT-068 pass in the same session took it to
+      64,111. `references/leaving.md` is new at 6,514 bytes, read only at an
+      ending.)_
+- [x] `scripts/workspace-template.test.ts` passes, and any wording guard this
+      change invalidates is **updated rather than deleted**. _(Every pin on moved
+      text was retargeted at `references/leaving.md`; none was deleted.)_
 
 ## Technical Design
 
@@ -175,20 +187,98 @@ INFRA-039 is the only thing that will answer whether this worked.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+Implementing agent: agent-runtime-dev, ran on **Fable** (claude-fable-5), 2026-09-05.
+
+### The counting method (the ratio criterion's record)
+
+Counted over `converse/SKILL.md` whole, whitespace-normalized, case-insensitive.
+Stop-signals: imperative `exit` (excluding `exits`, exit codes and `exit
+status`), `do not park again`, `stand/stands/standing/stood down`, `stop
+cleanly`, `retire on it`, `just go`, `and go`, `go without finishing`.
+Continue-signals: `park again` not preceded by `do not`, `park anyway`, `loop
+again`, `keep looping`, `carry on`, `from step 1`, `you work on`, `next step in
+the loop`, `keep working`. The counting test in `workspace-template.test.ts`
+holds these exact patterns, states in its own docblock that it is a wording
+guard that can never check behaviour, and pins the ratio at ≤ 2.
+
+| | stop | continue | ratio |
+| --- | --- | --- | --- |
+| before | 24 | 9 | 2.67 |
+| after | 23 | 14 | **1.64** |
+
+### What moved where
+
+- **Step 8 of *The loop*** quotes CLI-078's `IDLE_EVENTS_NEXT_STEP` and
+  `IDLE_TIMEOUT_NEXT_STEP` verbatim (test-pinned via import from the CLI
+  source), and states the mechanism: a listener is present exactly while it
+  keeps parking, so one that stops parking stops existing.
+- **`references/leaving.md`** (new, 6,514 B) carries the reasoning behind all
+  five endings: the grace-window argument, the empty-batch failure story, the
+  two-parked-listeners cost argument, the refused-park shell death, the drain
+  asymmetry and the successor-eviction story, the replaced-listener reason, the
+  degraded-listener argument, and the resolved-thread case. The body keeps
+  every rule and points at the file by name at each site.
+- ***When your context runs heavy*** now opens with the bar (a named casualty —
+  a document you cannot recall, an instruction you re-read and got wrong; "this
+  is getting long" named as not meeting it), makes the recorded reason step 2
+  (`corpus job log` before the last settle, then the same casualty in the last
+  reply), and ends "park again and keep working" where the bar is unmet.
+- **`orchestrate` → *If the loop breaks*** now names both causes of the climbing
+  pending count and the discriminator: a **corrupted file** kills the listener
+  before it works (nothing settled, no job log, no reply — restore the file); a
+  **listener that chose to leave** settled its events and recorded its reason
+  (job log or last reply — restoring the file fixes nothing; read the reason).
+  Compensating trims in the same section keep `orchestrate` net smaller
+  (139,824 → 139,802 B).
 
 ### Post-Implementation Verification
 
-_[Agent fills: both signal counts, the install, the two-message run]_
+Real workspace from this worktree (full build), `corpus init` on port **8975**
+(scratch, never 8765): "installed 29 template files" — one more than
+AGENT-066's 28, and the new file is `.claude/skills/converse/references/leaving.md`.
+
+The two-message run, driven by hand following the amended skill text (no live
+`claude` session — the loop's commands were executed literally, one listener):
+
+1. Standalone thread `th_bjecrndf` created, `corpus thread designate` as user —
+   roster read **before** the park showed the row `a general resident · waiting
+   for a listener` (startup step 2's ordering).
+2. Parked with `corpus queue idle --thread th_bjecrndf`. A plain user reply
+   **did not** unpark it: on a thread whose `agent` is `none`, a turn enqueues
+   nothing even under a designation — participation gating (§8) still applies.
+   A second message written as `@agent …` enqueued `evt_4av4qx5gqrn2` on the
+   resident lane and the park returned instantly, printing
+   `"nextStep":"next step in the loop: these are pending, not claimed — \`corpus
+   queue claim-all\`, work, settle, then park."` — the exact line step 8 quotes.
+3. Scoped claim handed the event; worked inline (job log, `--last 2` read,
+   reply); `corpus queue complete` printed the settle line step 8's sibling
+   quotes: `next step in the loop: park for the next event with \`corpus queue
+   idle\`, on the lane you claimed from.`
+4. Retirement, live: `corpus thread release` as user, then the scoped park was
+   refused — `422 unknown_recipient` at exit **5** — the roster re-read showed
+   no row, the one drain claim came back empty, the `--index` header read said
+   `open`, and the sign-off was posted. Every step of the retirement list ran
+   as written.
+
+**One run is not evidence.** This exercised the wording once, by hand; whether
+listeners now actually stay up is INFRA-039's scenario to answer, as the issue
+itself says. The observation in step 2 (a designated thread with `agent: none`
+swallows plain user turns) is reported to the orchestrator as a possible
+participation-semantics surprise, not fixed here.
+
+Tests: `workspace-template.test.ts` **589 passed** at the end of this issue
+(612 with `skill-budget.test.ts` at session end), ESLint and Prettier clean on
+every touched file, `npm run skills:check` green after
+`--update-baseline` locked the shrink in.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Both signal counts recorded, before and after
-- [ ] All five exits verified present
-- [ ] `/lint` passes
-- [ ] E2E log filled in, and it states what one run proves
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Both signal counts recorded, before and after
+- [x] All five exits verified present
+- [x] `/lint` passes _(ESLint + Prettier on touched files; `tsc` is CI's)_
+- [x] E2E log filled in, and it states what one run proves
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

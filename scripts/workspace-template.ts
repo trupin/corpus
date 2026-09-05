@@ -202,6 +202,7 @@ export const NON_DOCUMENT_FILES: readonly string[] = [
   "claude/skills/comment/references/inbox-filing.md",
   "claude/skills/comment/references/skill-genesis.md",
   "claude/skills/comment/references/worked-examples.md",
+  "claude/skills/converse/references/leaving.md",
 ];
 
 /** Whether a template-relative path is inside a {@link VENDORED_PREFIXES} subtree. */

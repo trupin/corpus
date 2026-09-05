@@ -38,7 +38,7 @@ can have many, and it is how you tell the new request from the exchange around i
 `form.respond` — a form you raised was answered. Its payload names the thread, the timestamp
 of the turn that carried the form (`formTs`), and what was given for **every** field the form
 asked. **There is no `parentId` on this payload**: re-derive the parent with
-`corpus thread show <threadId>`, which prints it. Before acting on one, read
+`corpus thread show <threadId>` — its header prints it; the index's does not. Before acting on one, read
 `references/forms.md` — it carries the payload's exact shape and how you resume from it.
 
 This skill keeps its rarely-needed grammars in `references/` files beside it. Such a file is
@@ -78,8 +78,10 @@ you: there is no second copy in the prompt.
    `corpus doc related <id>` — one frugal line per hit and never a body — never a folder
    listing and never a sweep over the corpus to see what is in it. For a thread you were
    handed, the bounded briefing of *Gather context* is that same rule aimed at a conversation.
-   Reading a body is the separate, deliberate next step on an id retrieval returned:
-   `corpus doc show <id>`. When
+   Reading is the separate, deliberate next step on an id retrieval returned, and it is
+   sliced: `--headings` on `corpus doc show <id>` for the map, then `--section` on the one
+   part the work names — a hit's heading path is that address — with the whole body kept for
+   *Doing the work*'s rewrite. When
    you hand work to a subagent it receives those anchors — ids, heading paths, snippets —
    and never a document body; it retrieves what it needs itself.
 
@@ -97,12 +99,11 @@ one invocation:
 
 ```bash
 corpus batch <<'CORPUS_EOF'
-[["thread","context","th_4b8e2c"],["thread","show","th_4b8e2c"]]
+[["thread","context","th_4b8e2c"],["thread","show","th_4b8e2c","--index"]]
 CORPUS_EOF
 ```
 
-That is the default context for every event that reaches this skill, and it is the first thing
-you run. **What a batch is, and when a run may go as one, is the orchestrate skill's to state,
+That is the default context for every event, and the first thing you run. **What a batch is, and when a run may go as one, is the orchestrate skill's to state,
 and it is stated there alone.**
 
 `corpus thread context` prints the **context pack**, in reading order: the parent block — the
@@ -110,12 +111,13 @@ anchored quote with the **whole enclosing section** around it, or a whole-docume
 title and opening content, or nothing at all when the thread stands alone — then the excerpts
 most related to this conversation from elsewhere in the corpus, one line each (id, heading path,
 relation, excerpt, and never a body), then a `#` note when the parent text was cut to fit or
-the ranking was degraded. The pack is bounded, so briefing yourself costs about the same on a
-corpus of fifty documents and one of fifty thousand.
+the ranking was degraded. The pack is bounded, so it costs the same on any size of corpus.
 
-The second read is the conversation itself. `corpus thread show <threadId>` prints every turn,
-oldest first: the request is the turn at `turnTs`, and the turns before it are the context you
-must not contradict. **Those two reads are the whole default.** Stop there when you can restate
+The second read is the conversation's map: `corpus thread show <threadId> --index`, one row
+per turn, oldest first. Fetch verbatim what the work needs — `--turn <turnTs>` for the
+request, `--last <n>` for the exchange before it, the context you must not
+contradict — and read every turn (the bare verb) only where the reply must square with the
+whole history. **Those two reads are the whole default.** Stop there when you can restate
 the request in your own words and point at the text it is about.
 
 Two rules still govern where any read comes from, pack or no pack:
@@ -131,16 +133,17 @@ Two rules still govern where any read comes from, pack or no pack:
   line per hit — and so are `corpus search "<query>"` and `corpus doc related <id>` when you
   need to reach past what the pack carried. Never list `data/docs/`, never open files to find
   out what they are about: what it costs you to find something must not grow with the corpus.
-  Reading a body stays the separate, deliberate step on one id a ranking pointed at — and it
-  is `corpus doc show <id>`, never the markdown on disk.
+  Reading stays the separate, deliberate step on one id a ranking pointed at — invariant 6's
+  sliced read, never the markdown on disk.
 
-**Escalating past the pack** is a deliberate read of one named document, never a sweep — the
-same doctrine as invariant 6, not an exception to it. The pack is insufficient when:
+**Escalating past the pack** is a deliberate read of one named document, never a sweep — invariant
+6's doctrine, not an exception to it. The pack is insufficient when:
 
 - **The ask reaches past what it carried.** The comment turns on a figure, a section, a
   definition or a decision that appears neither in the parent block nor in any excerpt line.
-  The pack briefs you on the passage, not on the whole document — so read the one document
-  that holds it, `corpus doc show <parentId>` or the id on the excerpt row that pointed at it.
+  The pack briefs you on the passage, not on the whole document — so slice the one that holds
+  it, `<parentId>` or the excerpt row's id: `--headings`, then `--section` on the part the ask
+  names. A document with no headings has no map, and is read whole.
 - **You are about to rewrite a body.** `corpus doc edit` with a heredoc replaces the
   document's whole body, so an edit that must preserve the headings, order and passages around
   your change needs all of them in hand first. Rewriting a parent from its section alone
@@ -148,9 +151,10 @@ same doctrine as invariant 6, not an exception to it. The pack is insufficient w
   presents, so this escalation and the write discipline are one act, not two.
 - **You are about to quote one.** `corpus doc patch` matches byte for byte, and the pack is a
   briefing rather than a copy of the document's bytes: its parent block can be cut to fit the
-  bounds and an excerpt line is a snippet by construction. Quote from `corpus doc show <id>`,
-  never from the pack — a patch built out of a briefing is refused for text that is really
-  there, and you will go looking for the wrong mistake.
+  bounds and an excerpt line is a snippet by construction. Quote from a byte-exact read —
+  `corpus doc show <id> --section "<path>"`, or the whole read where no heading addresses the
+  passage — never from the pack: a patch built from a briefing is refused for text that is
+  really there.
 - **The pack says it truncated.** When the parent-side prose was cut to fit the bounds, the
   pack prints a `#` line saying so and naming the escalation. Read that line, and take it:
 
@@ -164,8 +168,8 @@ same doctrine as invariant 6, not an exception to it. The pack is insufficient w
   ranked on links alone. Work from what is there, and run `corpus search "<query>"` when the
   subject needs neighbours the links graph cannot know about.
 
-Nothing else earns a full read — not a hunch, not background nobody asked for, and not the
-habit of opening the parent because it is there. Stop reading the moment you can act.
+Nothing else earns a full read — not a hunch, not background nobody asked for. Stop reading
+the moment you can act.
 
 The pack takes the thread's shape, and the shape is what you are handling:
 
@@ -293,13 +297,13 @@ cannot quote is a whole body.** If you can point at the text that is wrong — a
 sentence, a paragraph that should go — quote it and say what belongs there instead, and
 `corpus doc patch` writes that and touches nothing else. If the document is being restructured,
 or several separate corrections land in one pass, the change *is* the body and it goes back
-whole. Both mistakes cost something: rewriting for one line pays the length of the document
-for it and puts every other line in your hands, where a bad paste loses them; patching what
-should have been a rewrite leaves the document half migrated across a pile of little writes.
-Ask which you have before you start.
+whole. Both mistakes cost something: rewriting for one line pays the length of the document and
+puts every other line in your hands; patching what should have been a rewrite leaves the
+document half migrated. Ask which you have before you start.
 
 ```bash
-corpus doc show doc_a1b2c3
+corpus doc show doc_a1b2c3 --section "Rates"
+## Rates
 The working rate assumption is 6.1% as of 2026-05-02.
 corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02' --new '6.4% as of 2026-07-28'
 patched doc_a1b2c3 — 1 occurrence replaced
@@ -311,17 +315,13 @@ normalisation, no patterns — so quote it exactly as `corpus doc show` printed 
 and line breaks included; single quotes span lines, so a multi-line excerpt is still one
 command. The frontmatter block is not part of the body, and `--new ''` is how a deletion is
 spelled. **A patch presents no key**, and that is a consequence rather than an omission: the
-text it names *is* the staleness check for the text it replaces, and a better one there,
-because it says which text has gone rather than only that the document moved. It checks
-nothing it did not quote — which is why **a patch replaces; it does not insert**. An append
-spelled as one, quoting the last thing and handing it back with yours under it, is checked on
-text that another writer's append leaves exactly as it was, so it lands above theirs and
-reports success. Insert between two things by quoting across the gap — the tail of what comes
-before and the head of what comes after, as one excerpt — so that any other insertion there is
-refused; add at the end of a body with a whole-body write, whose key is the only check that
-covers text you did not name. Everything else about a patch is an ordinary write — validated, anchors
-reconciled and reported on the same line, one commit, a fresh key handed back for whatever you
-do next.
+text it names *is* the staleness check for the text it replaces, and it checks nothing it
+did not quote — which is why **a patch replaces; it does not insert**. Insert between two
+things by quoting across the gap — the tail of what comes before and the head of what comes
+after, as one excerpt — so any other insertion there is refused; an append at the end of the
+body goes back whole under `corpus doc edit`, whose key is the only check on text you never
+quoted. Everything else about a patch is an ordinary write — validated, anchors
+reconciled and reported on the same line, one commit, a fresh key handed back.
 
 **Two refusals, exit `10` both, nothing written, and their recoveries are opposites.** The
 message names the count, so branch on it rather than guessing. **Matched 0 times** means the

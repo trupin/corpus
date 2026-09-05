@@ -80,14 +80,15 @@ everything after depends on them.
    the matching passage, a snippet, and never a body — or `corpus doc related <id>` to expand
    from a document you already hold. Never list a folder, never sweep the tree, never read
    documents to find out what is in them: what it costs you to find something must not grow
-   with the corpus. Reading a body is a separate, deliberate act on an id retrieval handed
-   you: `corpus doc show <id>`. The rule crosses the subagent boundary intact — a dispatch
+   with the corpus. Reading is a separate, deliberate act on an id retrieval handed you, sliced first:
+   `corpus doc show <id> --headings` maps it, `--section "<heading path>"` prints one part
+   byte for byte, and a hit's `headingPath` is that address. The whole body is the read
+   before a whole-body rewrite — where its `--key` comes from — and of a document with no
+   headings. The rule crosses the subagent boundary intact — a dispatch
    carries anchors, never documents (Delegation).
 7. **A write presents the key its read gave you.** Replacing a document's body or rewriting
    its frontmatter wholesale means passing the `--key` that `corpus doc show` printed, and
-   the write prints a fresh key for the next edit. This adds no step to anything: you
-   already read a document before rewriting it, and that read is where the key comes from.
-   Nothing is acquired and nothing is released, so nothing can be forgotten, leaked or
+   the write prints a fresh key for the next edit. Nothing is acquired and nothing is released, so nothing can be forgotten, leaked or
    wedged. *Writing a document* below has the loop, the two refusals, and what to do when a
    person is editing.
 
@@ -533,8 +534,8 @@ switch.
   touches, and a listener has no output to weigh — only a conversation that has not
   happened yet. So weigh the conversation itself: **what did the person open this lane for,
   and what would a poor turn cost them there?** Read what exists at the moment of launch —
-  the thread's title, its opening message where one was posted (`corpus thread show` on the
-  payload's `threadId`), and the designated profile's own document where the designation
+  the thread's title, its opening message where one was posted (`corpus thread show --index` on the
+  payload's `threadId`, `--turn 1` for the opening), and the designated profile's own document where the designation
   names one — and place the lane between the two ends of the tier table, read from the
   table itself and never from a model name remembered from anywhere else:
 
@@ -1188,14 +1189,14 @@ Getting that choice wrong costs something in both directions, which is why it is
 before you start rather than after. Rewriting a document to correct one line pays the length
 of the document for that line and puts every other line in your hands, where a bad paste can
 lose them. Patching what should have been a rewrite is the opposite failure: one change
-becomes a pile of little ones, each its own quote-and-replace, with the document sitting half
-migrated between them and a commit for every step.
+becomes a pile of little writes with the document sitting half migrated between them.
 
-**Patching: quote it, replace it.** Read the document, quote a line of it back exactly, say
-what it should say instead. One command, nothing sent but the change.
+**Patching: quote it, replace it.** Read the section that holds it, quote a line of it back
+exactly, say what it should say instead. One command, nothing sent but the change.
 
 ```bash
-corpus doc show doc_a1b2c3
+corpus doc show doc_a1b2c3 --section "Rates"
+## Rates
 - 30-year fixed at 6.1%.
 corpus doc patch doc_a1b2c3 --from agent --old '30-year fixed at 6.1%.' --new '30-year fixed at 5.8%.'
 patched doc_a1b2c3 — 1 occurrence replaced
@@ -1208,38 +1209,35 @@ whitespace, indentation and line breaks all count, and single quotes span lines 
 so a multi-line excerpt is still one command. The **body** is the markdown alone — the
 frontmatter block is not part of it, so an excerpt quoting a frontmatter field matches nothing
 and those fields are changed by naming them on `corpus doc edit` instead. `--new ''` is how a
-deletion is spelled, and quoting the line breaks around a passage takes its blank line with it
-rather than leaving a hole; an omitted `--new` is a usage error, not a deletion, and nothing
-is sent.
+deletion is spelled, and quoting the line breaks around a passage takes its blank line with
+it; an omitted `--new` is a usage error, not a deletion, and nothing is sent.
 
 **A patch presents no key, and that is a consequence rather than an omission.** It names the
 text it expects to find, which is the same staleness check by another route — and, *for the
 text it replaces*, the more useful one, because it tells you which text has gone rather than
-merely that the document moved. Read the scope of that check literally: it covers what you
-quoted and nothing else. The excerpt says the passage you are replacing is still the passage
-you read; it says nothing about what has grown up around it since. There is no `--key` flag on
+merely that the document moved. Its scope is literal: it covers what you quoted and
+nothing else, and says nothing about what has grown up around the passage since. There is no `--key` flag on
 this verb and passing one is a usage error. Everything else about a patch is an ordinary
 write: it is validated before it lands, anchors are reconciled and reported on the same line,
 one commit is made under `--from`, and a fresh key comes back for whatever you do next.
 
-**A patch replaces; it does not insert — and an append is an insertion.** You can spell one
-anyway, by quoting text and handing it back with your addition attached, and it will work. Its
-check is on the wrong thing: your quote proves the text you quoted is unchanged, and what
-would make you wrong is somebody else's insertion at the same place, which leaves that text
-exactly as it was. So decide by what sits on either side of where you are inserting. Between
+**A patch replaces; it does not insert — and an append is an insertion.** One can be spelled
+anyway, and its check is on the wrong thing: your quote proves the text you quoted is
+unchanged, and what would make you wrong is somebody else's insertion at the same place,
+which leaves that text exactly as it was. So decide by what sits on either side of where you are inserting. Between
 two things, **quote across the gap** — the tail of what comes before and the head of what
 comes after, as one excerpt — and any other insertion there breaks the quote and is refused.
-At the **end of the body** there is nothing on the far side to quote and so nothing to refuse:
-another writer's paragraph can land between your read and your write, your patch splices yours
-above theirs, and the confirmation says one occurrence replaced. That one goes back whole
-under a key, which is the only check that covers text you did not name.
+At the **end of the body** there is nothing on the far side to quote and so nothing to
+refuse: another writer's paragraph can land between your read and your write, and your patch
+splices above theirs at exit 0. That one goes back whole under a key, the only check that
+covers text you did not name.
 
 **Two refusals, exit `10` both, nothing written — and their recoveries are opposites.** The
 message names the count, so branch on it rather than guessing.
 
 - **Matched 0 times: the text is not there.** Either the document is not what you last read,
-  or you quoted from memory instead of from a read. **Re-read it** — `corpus doc show <id>` —
-  and quote what it says now. Do not resend the same excerpt, and do not go hunting for the
+  or you quoted from memory instead of from a read. **Re-read it** — the read you
+  quoted from — and quote what it says now. Do not resend the same excerpt, and do not go hunting for the
   normalisation that would have made it match; there is none. This refusal is the staleness
   check doing its work, so answer it the way you answer a stale key: read, reconcile, write
   again.
@@ -1355,8 +1353,7 @@ exit `2`, both name the repair, and neither writes anything.
 
 **The whole-body edit, and the key that protects it.** When there is nothing to quote, the
 write replaces the body, and then: **read → work → write with the key you were given → keep
-the key the write returned.** That is the whole discipline, and every step of it is something
-you were doing anyway. Reading a
+the key the write returned.** That is the whole discipline. Reading a
 document prints its **key**; a write that replaces the body presents that key; the write
 prints a fresh key on the line after its confirmation, which is the key the next edit
 presents. There is nothing to acquire, nothing to release, and nothing left behind if you
@@ -1538,7 +1535,8 @@ edited doc_seedboardattention
 
 **`--columns` is the whole list, in order, and never an append.** It sets the key to exactly
 what you pass, so read the board first and send its current ids with yours added — a list that
-drops a column takes that column off the board, silently and successfully. Removing a column
+drops a column takes that column off the board, silently and successfully. The read is whole:
+`columns` is frontmatter, outside every section. Removing a column
 is the same write with one id left out, and reordering is the same ids in another order. The
 view document itself is untouched by all three: taking a view off a board deletes nothing.
 
@@ -1844,8 +1842,8 @@ Two consequences:
 *This section is for the operator, not the agent.*
 
 Symptoms of a broken core-loop skill: `/orchestrate` errors immediately or spins without
-claiming, events pile up in `pending/`, jobs are claimed and never settled, replies stop
-arriving while the pending indicator keeps escalating. The way back:
+claiming, events pile up in `pending/`, replies stop while the pending indicator escalates.
+The way back:
 
 ```bash
 corpus queue halt
@@ -1856,35 +1854,37 @@ corpus queue resume
 
 **This is the one repair that does not go through the agent**, and that is why it is git and
 not a command: the agent reverts a document by reading history and writing it back, but when
-the broken document is the loop there is no agent running to do it. So the operator does it
-by hand, in the workspace — use `comment` or `converse` in place of `orchestrate` when that is
-the broken one. `git log` lists the revisions of that one file and `git restore --source=<sha>`
-puts one of them back in the working tree, staging nothing. Restore the **file**, not the
-commit: a commit here belongs to an editing session rather than to a save, so it gathers
-everything that party changed while its window was open, and `git revert <sha>` would take
-neighbouring documents back with it.
+the broken document is the loop there is no agent running to do it. So the operator does it by
+hand — use `comment` or `converse` in place of `orchestrate` when that is the broken one.
+`git log` lists the revisions of that one file and `git restore --source=<sha>` puts one back
+in the working tree, staging nothing. Restore the **file**, not the commit: a commit here is
+an editing session's window, gathering everything that party changed while it was open, and
+`git revert <sha>` would take neighbouring documents back with it.
 
 **A broken `converse` shows up differently, and is worth recognising as its own thing.** The
 loop is fine and what fails is one conversation: its lane reads live on `corpus agents` while
 nothing gets answered in it, or its listener exits the moment it starts and the lane keeps
-reading not-live with its pending count climbing, pass after pass, while you launch into it
-and nothing sticks. **That climbing count is the symptom**, and it is now the only one: the
-work is not being quietly done by anybody else, so a broken `converse` means a conversation
-going unanswered rather than answered oddly. Restore the file the same way, and the next launch
-picks it up; listeners already running keep the text they started with until they end.
+reading not-live with its pending count climbing, pass after pass, however often you launch
+into it. Nobody else quietly does that work, and the climbing count has **two causes**, told
+apart by what the listener left. A **corrupted skill file** stops a listener before it works:
+nothing settled, no job log line, no reply. Restore the file the same way, and the next
+launch picks it up; listeners already running keep the text they started with until they end.
+A **listener that chose to leave** settled its events and recorded why — in its job log or
+its last reply, a record the converse skill requires of every ending — so restoring the file
+fixes nothing: read the recorded reason instead.
 
-Halt first so a half-working loop cannot claim events mid-repair; resume last and the loop
-picks up everything that queued while you fixed it, without restarting the server. The
-restored skill takes effect at the next `/orchestrate`, which is a fresh read of the file.
+Halt first so a half-working loop cannot claim events mid-repair; resume last — the loop then
+picks up everything that queued, and the restored skill takes effect at the next
+`/orchestrate`.
 
-Nothing needs telling about the edit and the server stays up: it watches the workspace, so it
+Nothing needs telling about the edit and the server stays up: it watches the workspace,
 re-projects the restored skill within moments — the board shows the good text back — and
-commits the change as the out-of-band `user` edit it is, which is what keeps `git log` a
-complete account of the workspace even for the one change the agent did not make.
+commits the change as the out-of-band `user` edit it is, keeping `git log` a complete
+account of the workspace.
 
 To turn a skill off entirely rather than revert it, `corpus doc archive` it: its folder moves
-to `.claude/skills-archived/`, it stays indexed and restorable on the board, and it is no
-longer discovered as a skill.
+to `.claude/skills-archived/`, still indexed and restorable on the board, and no longer
+discovered as a skill.
 
 ## Worked example
 
@@ -1923,14 +1923,16 @@ batch claimed into silence.
 Inside the subagent, the comment skill briefs itself on the one thread that matters —
 `corpus thread context th_4b8e2c`, one bounded pack carrying the anchored passage with its
 enclosing section and whatever else bears on it, the second line never opened at all — reads
-the turns with `corpus thread show`, escalates to `corpus doc show doc_a1b2c3` because the
-patch below quotes that document byte for byte — a quote is bytes you have seen, and that read
+the map with `corpus thread show --index` and the request's turn verbatim, escalates to
+`corpus doc show doc_a1b2c3 --section "Rates"` because the patch below quotes it byte for
+byte — a quote is bytes you have seen, and that read
 is also where a person's open session would have shown up had there been one — and does the
 work: every mutation through the CLI, every progress line on the dispatched event's id.
 
 ```bash
 export CORPUS_FROM=agent
-corpus doc show doc_a1b2c3
+corpus doc show doc_a1b2c3 --section "Rates"
+## Rates
 The working rate assumption is 6.1% as of 2026-05-02, and every projection in
 this document uses it.
 corpus doc patch doc_a1b2c3 --from agent --old '6.1% as of 2026-05-02, and every projection in

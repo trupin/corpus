@@ -13,6 +13,13 @@ import { describe, expect, it } from "vitest";
 // directories, so importing them is what stops the install contract from drifting
 // away from the implementation it documents.
 import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
+// The instruction CLI-078 prints at every pass's decision point — imported from
+// the CLI's own source so the converse loop's step 8 and the tool can never
+// drift into two wordings of one step (AGENT-065).
+import {
+  IDLE_EVENTS_NEXT_STEP,
+  IDLE_TIMEOUT_NEXT_STEP,
+} from "../apps/cli/src/commands/queue/next-step.js";
 import { planTemplateInstall } from "../apps/cli/src/template/install.js";
 import {
   CLI_COMMANDS_PENDING_CLI_006,
@@ -60,6 +67,7 @@ const EXPECTED_TREE = [
   "claude/skills/comment/references/skill-genesis.md",
   "claude/skills/comment/references/worked-examples.md",
   "claude/skills/converse/SKILL.md",
+  "claude/skills/converse/references/leaving.md",
   "claude/skills/orchestrate/SKILL.md",
   "claude/skills/profile/SKILL.md",
   "claude/skills/reflect-corpus/SKILL.md",
@@ -145,19 +153,25 @@ const installedSkills: readonly InstalledSkill[] = templatePlan
   }));
 
 /**
- * The comment skill's `references/` files (AGENT-047): skill payload read on a
- * directed pointer from `SKILL.md`, installed beside it and excluded from the
- * document rules the way the vendored skill's references are — but authored
- * here, so every sweep that binds a skill body's worked commands binds them
- * too. Drawn from the installer's plan for the same reason `installedSkills`
- * is: a reference added to the template is swept the day it lands.
+ * A skill's `references/` files (AGENT-047): skill payload read on a directed
+ * pointer from `SKILL.md`, installed beside it and excluded from the document
+ * rules the way the vendored skill's references are — but authored here, so
+ * every sweep that binds a skill body's worked commands binds them too. Drawn
+ * from the installer's plan for the same reason `installedSkills` is: a
+ * reference added to the template is swept the day it lands.
  */
-const skillReferences: readonly InstalledSkill[] = templatePlan
-  .filter((file) => file.to.startsWith(".claude/skills/comment/references/"))
-  .map((file) => ({
-    label: `assets/workspace/${file.from}`,
-    body: readTemplateFile(file.from),
-  }));
+const referencesOfSkill = (name: string): readonly InstalledSkill[] =>
+  templatePlan
+    .filter((file) => file.to.startsWith(`.claude/skills/${name}/references/`))
+    .map((file) => ({
+      label: `assets/workspace/${file.from}`,
+      body: readTemplateFile(file.from),
+    }));
+
+const commentReferences = referencesOfSkill("comment");
+/** The converse skill's reference (AGENT-065): the reasoning behind its five endings. */
+const converseReferences = referencesOfSkill("converse");
+const skillReferences: readonly InstalledSkill[] = [...commentReferences, ...converseReferences];
 
 /** Every installed skill text — bodies and reference files alike — for the sweeps. */
 const installedSkillTexts: readonly InstalledSkill[] = [...installedSkills, ...skillReferences];
@@ -170,7 +184,16 @@ const installedSkillTexts: readonly InstalledSkill[] = [...installedSkills, ...s
  */
 const commentPackage = [
   documentAt("claude/skills/comment/SKILL.md").body,
-  ...skillReferences.map(({ body }) => body),
+  ...commentReferences.map(({ body }) => body),
+].join("\n\n");
+
+/**
+ * The converse skill as its listener can read it: the body plus the reference
+ * it points at (AGENT-065), on the same terms as `commentPackage` above.
+ */
+const conversePackage = [
+  documentAt("claude/skills/converse/SKILL.md").body,
+  ...converseReferences.map(({ body }) => body),
 ].join("\n\n");
 
 /**
@@ -1549,7 +1572,72 @@ describe("skills", () => {
       const flat = documentAt("claude/skills/comment/SKILL.md").body.replace(/\s+/g, " ");
       expect(flat).toMatch(/\*\*You are about to quote one\.\*\*/);
       expect(flat).toMatch(/briefing rather than a copy of the document's bytes/i);
-      expect(flat).toMatch(/quote from `corpus doc show <id>`, never from the pack/i);
+      // AGENT-068: the byte-exact read is the section read first.
+      expect(flat).toMatch(
+        /quote from a byte-exact read — `corpus doc show <id> --section "<path>"`/i,
+      );
+      expect(flat).toMatch(/never from the pack/i);
+    });
+  });
+
+  /**
+   * AGENT-068 — CLI-055 and CLI-076 built bounded reads (`doc show
+   * --headings`/`--section`, `thread show --index`/`--turn`/`--last`/`--since`)
+   * with measured savings, and no skill ever instructed them. These are wording
+   * guards per CLAUDE.md's standing caveat: they check that the instructions
+   * exist and can never check that an agent actually reads less — the
+   * rehearsal harness (INFRA-033/034) is the behavioural side.
+   */
+  describe("the skills instruct the bounded reads the CLI can make (AGENT-068)", () => {
+    const comment = documentAt("claude/skills/comment/SKILL.md").body;
+    const converse = documentAt("claude/skills/converse/SKILL.md").body;
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+    it("forks the document read on the write it feeds", () => {
+      // The sliced read is the retrieval invariant's own text, in all three.
+      expect(orchestrate).toMatch(wrapped("`corpus doc show <id> --headings` maps it"));
+      expect(orchestrate).toMatch(wrapped("a hit's `headingPath` is that address"));
+      expect(orchestrate).toMatch(
+        wrapped("The whole body is the read before a whole-body rewrite"),
+      );
+      expect(comment).toMatch(wrapped("`--headings` on `corpus doc show <id>` for the map"));
+      expect(converse).toMatch(
+        wrapped(
+          '`corpus doc show <id> --headings` then `--section "<path>"` slice the one id they returned',
+        ),
+      );
+      // The full-read-before-rewrite rule stays: its deletion is the failure
+      // mode the issue's "what must not change" names.
+      expect(comment).toMatch(
+        wrapped("Rewriting a parent from its section alone deletes the rest of the document"),
+      );
+      // A document with no headings has no map, so the whole read stays right.
+      expect(comment).toMatch(wrapped("A document with no headings has no map"));
+    });
+
+    it("starts the thread read at the index, and says when whole is right", () => {
+      expect(comment).toContain(
+        '[["thread","context","th_4b8e2c"],["thread","show","th_4b8e2c","--index"]]',
+      );
+      expect(comment).toMatch(wrapped("`corpus thread show <threadId> --index`, one row"));
+      expect(comment).toMatch(
+        wrapped("read every turn (the bare verb) only where the reply must square with the"),
+      );
+      expect(converse).toMatch(wrapped("`corpus thread show th_4b8e2c --index` for the map"));
+      expect(converse).toMatch(
+        wrapped(
+          "read the new turns alone, `corpus thread show th_4b8e2c --since <ts of your last read>`",
+        ),
+      );
+    });
+
+    it("keeps the quoting byte-exact from a verbatim fetch", () => {
+      expect(comment).toMatch(
+        wrapped('Quote from a byte-exact read — `corpus doc show <id> --section "<path>"`'),
+      );
+      // The worked patches quote from a section read in both loop skills.
+      expect(comment).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
+      expect(orchestrate).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
     });
   });
 
@@ -4559,7 +4647,7 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
   });
 
   it("points at every reference it ships, and ships every reference it points at", () => {
-    const shipped = skillReferences
+    const shipped = commentReferences
       .map(({ label }) => label.replace("assets/workspace/claude/skills/comment/", ""))
       .sort();
     expect(shipped, "the reference tree is empty — the plan no longer sees it").not.toEqual([]);
@@ -4571,11 +4659,12 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
     const directed = body.match(
       /read\s+`references\/[a-z-]+\.md`|`references\/[a-z-]+\.md`[^.]{0,60}\bread\b|are in `references\/worked-examples\.md`/gi,
     );
-    expect(directed?.length ?? 0).toBeGreaterThanOrEqual(skillReferences.length);
+    expect(directed?.length ?? 0).toBeGreaterThanOrEqual(commentReferences.length);
   });
 
   it("gives no reference frontmatter, and excludes each for that reason", () => {
-    expect(skillReferences).toHaveLength(7);
+    // 7 comment references (AGENT-047) plus converse's leaving.md (AGENT-065).
+    expect(skillReferences).toHaveLength(8);
     for (const { label, body: text } of skillReferences) {
       expect(text.startsWith("---"), `${label} grew frontmatter`).toBe(false);
       expect(text.startsWith("# "), `${label} opens with no title`).toBe(true);
@@ -4738,6 +4827,8 @@ describe("folder acts are bounded by who named the folder (AGENT-046)", () => {
  */
 describe("converse skill body", () => {
   const body = documentAt("claude/skills/converse/SKILL.md").body;
+  /** The reasoning behind the five endings (AGENT-065) — pins on moved text read this. */
+  const leaving = readTemplateFile("claude/skills/converse/references/leaving.md");
 
   it("carries no skeleton remnants and no dev-harness references", () => {
     for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
@@ -4896,7 +4987,10 @@ describe("converse skill body", () => {
       expect(body).toMatch(wrapped("take the earliest turn you are holding first"));
       // And where that order is read, so the instruction is executable rather
       // than an intention.
-      expect(body).toMatch(wrapped("You read that order in `corpus thread show th_4b8e2c`"));
+      // AGENT-068: the order is read off the index, not the whole conversation.
+      expect(body).toMatch(
+        wrapped("You read that order in `corpus thread show th_4b8e2c --index`"),
+      );
       expect(body).toMatch(wrapped("each event's payload names the turn it belongs to"));
       expect(body).toMatch(
         wrapped("There is no overlap set to compute here and nothing to run in parallel"),
@@ -5017,10 +5111,11 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         wrapped("**Compare `resident.designationId` on your row with the one your launch named.**"),
       );
-      // The trap: the row comes back looking identical.
+      // The trap: the row comes back looking identical. The rule stays in the
+      // body; the release-window explanation moved to the reference (AGENT-065).
       expect(body).toMatch(wrapped("Your row being **present** proves nothing"));
-      expect(body).toMatch(
-        wrapped("every\nother field on that row can come back reading exactly as it did"),
+      expect(leaving).toMatch(
+        wrapped("every other field on that row can come back reading exactly as it did"),
       );
     });
 
@@ -5073,12 +5168,13 @@ describe("converse skill body", () => {
        * the sentence that explains why a listener stops rather than adjusts is
        * not (CONTRACT-071's decision 4).
        */
-      expect(body).toMatch(
+      // The reason moved to the reference whole (AGENT-065); the acts stay below.
+      expect(leaving).toMatch(
         wrapped(
           "**no running agent becomes another one without discarding the conversation it is holding.**",
         ),
       );
-      expect(body).toMatch(
+      expect(leaving).toMatch(
         wrapped(
           "Somebody has asked for this conversation to be worked at a weight this session cannot become",
         ),
@@ -5389,9 +5485,15 @@ describe("converse skill body", () => {
       );
       expect(body).toMatch(/\*\*One such id is the whole of the evidence\. Exit\.\*\*/);
       // Why the orchestrator is not a candidate — the half a reader cannot
-      // rederive, and the half the whole rule rests on.
+      // rederive. It moved to the reference whole (AGENT-065), and the body
+      // points there instead of restating it.
+      expect(leaving).toMatch(
+        wrapped(
+          "your park released moments ago, the lane therefore reads live for the whole grace window that follows, and an unscoped claim never sees a live lane's events",
+        ),
+      );
       expect(body).toMatch(
-        /your park released moments ago, the lane\s+therefore reads live for the whole grace window that follows, and an unscoped claim never sees\s+a live lane's events/,
+        wrapped("why the orchestrator cannot be that caller is `references/leaving.md`'s to show"),
       );
       // Structural: the firing sentence must not condition on emptiness at all.
       // A rewrite that re-adds "and the events array is empty" lands in this
@@ -5406,13 +5508,18 @@ describe("converse skill body", () => {
     it("says a second message does not suppress it, which is how it shipped", () => {
       expect(body).toMatch(/\*\*Judge it on that id, and never on the claim being empty\.\*\*/);
       expect(body).toMatch(
-        /a person who has just written one\s+message writing a second is the ordinary case, not a rare one/,
+        wrapped(
+          "A person who has just written one message writing a second is the ordinary case, not a rare one",
+        ),
       );
       expect(body).toMatch(/so your `events` comes back \*\*non-empty\*\*/);
-      // The exact failure the conjunction produced, named as what it is.
+      // The exact failure the conjunction produced, named as what it is — the
+      // full story lives in the reference (AGENT-065).
       expect(body).toMatch(/the peer's held row reads as merely \*not yours\*/);
-      expect(body).toMatch(
-        /Two agents, one\s+conversation, alternate messages, neither able to see what the other said/,
+      expect(leaving).toMatch(
+        wrapped(
+          "two agents, one conversation, alternate messages, neither able to see what the other said",
+        ),
       );
       expect(body).toMatch(/present in exactly the same way whether the batch was empty or not/);
     });
@@ -5428,7 +5535,8 @@ describe("converse skill body", () => {
       expect(body).toMatch(/Do not work it, do not settle it, do not\s+reply to it/);
       expect(body).toMatch(/returns it to `pending\/` \*\*on the lane it was claimed from\*\*/);
       expect(body).toMatch(/the listener that stays claims it as an ordinary row/);
-      expect(body).toMatch(/A late answer costs the person a wait/);
+      // The trade that makes declining cheap moved to the reference (AGENT-065).
+      expect(leaving).toMatch(wrapped("a late answer costs the person a wait"));
       // Post nothing to the thread — but the job log is now reachable, and it is
       // the only account of why the event sat.
       expect(body).toMatch(/Post nothing to the thread/);
@@ -5511,12 +5619,18 @@ describe("converse skill body", () => {
     });
 
     it("says why the check belongs at the claim and forbids every earlier probe", () => {
-      expect(body).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
-      expect(body).toMatch(/before the person has been answered twice or in two\s+voices/);
+      // The cost argument moved to the reference whole (AGENT-065); the body
+      // keeps the prohibition and points at the reasoning.
+      expect(leaving).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
+      expect(leaving).toMatch(
+        wrapped("before the person has been answered twice or in two voices"),
+      );
       expect(body).toMatch(/there is no probe for this/);
-      expect(body).toMatch(/a shortened park to "check" is the keep-alive this skill forbids/);
+      expect(body).toMatch(
+        wrapped('a shortened park to "check" is the keep-alive this skill forbids'),
+      );
       // The tie-break is deliberately not arbitrated, and the reason it can be.
-      expect(body).toMatch(/Which of you loses the race is not worth arbitrating/);
+      expect(leaving).toMatch(/Which of you loses the race is not worth arbitrating/);
     });
 
     it("names a long turn as the cause, without proposing a way to look present", () => {
@@ -5772,10 +5886,11 @@ describe("converse skill body", () => {
 
     it("sends the listener into retirement rather than out of the shell", () => {
       expect(body).toMatch(/\*\*Retire on it; do not die on it\.\*\*/);
-      // The consequence of the missing instruction, named as what it is.
-      expect(body).toMatch(/exits at the shell/);
-      expect(body).toMatch(/holding its last event/);
-      expect(body).toMatch(/owing the conversation a goodbye nobody posts/);
+      // The consequence of the missing instruction, named as what it is — in
+      // the reference since AGENT-065, with the body pointing at it.
+      expect(leaving).toMatch(/exits at the shell/);
+      expect(leaving).toMatch(wrapped("holding its last event"));
+      expect(leaving).toMatch(wrapped("owing the conversation a goodbye nobody posts"));
       expect(body).toMatch(/run the steps below from the first/);
       // And the steps are entered from either discovery, not only the roster.
       expect(body).toMatch(/When your row is gone from the roster, or your park was refused:/);
@@ -5799,10 +5914,13 @@ describe("converse skill body", () => {
         /still answers on a lane whose resident was just\s+released, and hands back/,
       );
       // Why refusing it too would be worse: nobody could reach those events.
-      expect(body).toMatch(
-        /the orchestrator's unscoped claim cannot see this lane\s+until it has lapsed out of presence/,
+      // The server's reasoning moved to the reference whole (AGENT-065).
+      expect(leaving).toMatch(
+        wrapped(
+          "the orchestrator's unscoped claim cannot see this lane until it has lapsed out of presence",
+        ),
       );
-      expect(body).toMatch(/strand them for a whole grace\s+window/);
+      expect(leaving).toMatch(wrapped("strand them for a whole grace window"));
       // So the drain is an instruction, not a fact about the server.
       expect(body).toMatch(/Draining them is therefore the departing listener's job/);
       expect(body).toMatch(/make \*\*one\*\* last/);
@@ -5866,15 +5984,18 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         /\*\*Unless the conversation has been designated again — and then the drain is not yours to\s+make\.\*\*/,
       );
-      // Why the paragraph above it no longer settles the question on its own.
-      expect(body).toMatch(/the argument above\s+turns over on its own premise/);
+      // Why the paragraph above it no longer settles the question on its own —
+      // moved to the reference whole (AGENT-065).
+      expect(leaving).toMatch(wrapped("the argument above turns over on its own premise"));
       expect(body).toMatch(/they are the\s+successor's ordinary pending work/);
       // What it costs, in the successor's own terms — this is the part a
       // rewrite cannot rederive, and the reason the drain is not merely rude.
-      expect(body).toMatch(
-        /the row says nothing about who holds it or that they are leaving, so it\s+cannot read your departure as anything but a peer/,
+      expect(leaving).toMatch(
+        wrapped(
+          "the row says nothing about who holds it or that they are leaving, so it cannot read your departure as anything but a peer",
+        ),
       );
-      expect(body).toMatch(/evict the healthy\s+listener that replaced you/);
+      expect(leaving).toMatch(wrapped("evict the healthy listener that replaced you"));
       // The instrument, and its ordering — a roster read minutes old is no test.
       expect(body).toMatch(/\*\*read the roster immediately before you drain\*\*/);
       expect(body).toMatch(/a designation that is not yours/);
@@ -5924,13 +6045,109 @@ describe("converse skill body", () => {
   });
 
   it("hands a successor the corpus, never a transcript", () => {
-    expect(body).toMatch(/A degraded listener holding a lane is worse\s+than no listener at all/);
-    expect(body).toMatch(/presence is what tells a person somebody is here/);
+    // The argument that earns the exit lives in the reference (AGENT-065); the
+    // body keeps the bar, the record, and the steps.
+    expect(leaving).toMatch(
+      wrapped("A degraded listener holding a lane is worse than no listener at all"),
+    );
+    expect(leaving).toMatch(wrapped("presence is what tells a person somebody is here"));
     expect(body).toMatch(/\*\*Do not park again\.\*\*/);
     expect(body).toMatch(/There is no transcript handoff and you must not attempt one/);
     expect(body).toMatch(/The thread and its artifacts are the memory/);
     // Which is what makes stewardship machinery rather than good manners here.
     expect(body).toMatch(/\*\*Stewardship is how you remember\.\*\*/);
+  });
+
+  /**
+   * AGENT-065 — reported from live use: listeners kept stopping although the
+   * skill was meant to keep them alive. The skill documented five ways to
+   * stop, each with an essay, against four trailing words of continue. The
+   * essays moved to `references/leaving.md`; continuing became step 8 of the
+   * loop, in the same words CLI-078's next-step lines print at the decision
+   * point — one instruction, one wording, or the two drift apart.
+   */
+  describe("the loop argues for continuing, not only for stopping (AGENT-065)", () => {
+    it("numbers continuing as step 8, in the CLI's own next-step words", () => {
+      expect(body).toMatch(
+        /8\. \*\*Go again from step 1 — the pass ends by starting the next one\.\*\*/,
+      );
+      // Verbatim: the constants the CLI prints, imported from its source, so a
+      // rewording of either side fails here rather than shipping two versions.
+      expect(body).toContain(IDLE_EVENTS_NEXT_STEP);
+      expect(body).toContain(IDLE_TIMEOUT_NEXT_STEP);
+      expect(body).toMatch(
+        wrapped(
+          "a listener is present exactly while it keeps parking, so one that stops parking stops existing",
+        ),
+      );
+    });
+
+    it("keeps all five endings, each with its rule in the body", () => {
+      // 1. the contested claim
+      expect(body).toMatch(/\*\*One such id is the whole of the evidence\. Exit\.\*\*/);
+      // 2. a designation that is not yours
+      expect(body).toMatch(
+        wrapped("**Compare `resident.designationId` on your row with the one your launch named.**"),
+      );
+      // 3. the refused park
+      expect(body).toMatch(/\*\*Retire on it; do not die on it\.\*\*/);
+      // 4. a resolved thread, which releases the resident with it
+      expect(body).toMatch(/\*\*If it is resolved, post nothing\*\*/);
+      // 5. context running heavy — the one exit with no external signal, so it
+      // alone carries a bar and a required record.
+      expect(body).toMatch(
+        wrapped('**The bar is a named casualty, and "this is getting long" does not meet it.**'),
+      );
+      expect(body).toMatch(wrapped("**Record the reason while you still hold an event.**"));
+      expect(body).toMatch(wrapped("you have not met the bar — park again and keep working"));
+    });
+
+    it("moves the reasoning to references/leaving.md and points at it by name", () => {
+      expect(templateFiles).toContain("claude/skills/converse/references/leaving.md");
+      expect(leaving).toMatch(/^# Leaving a lane/);
+      // Directed pointers: the body sends its reader there by path, per exit.
+      expect((body.match(/`references\/leaving\.md`/g) ?? []).length).toBeGreaterThanOrEqual(5);
+      // And the reference adds no rule of its own — the body's rules govern.
+      expect(leaving).toMatch(wrapped("the rule you act on is always the body's"));
+    });
+
+    /**
+     * The ratio criterion, as a wording guard. This counts signal phrases and
+     * claims nothing about behaviour — this file checks wording and can never
+     * check truth; INFRA-039's scenario is what answers whether a listener
+     * actually stays up. What the count stops is the balance silently
+     * drifting back: AGENT-065 measured 24 stop-signals against 9
+     * continue-signals (2.67:1) under these patterns before the rebalance,
+     * 23 against 14 (1.64:1) after, and the criterion is at or below 2:1.
+     */
+    it("keeps the stop-to-continue signal ratio at or below 2:1", () => {
+      const flat = body.replace(/\s+/g, " ");
+      const count = (patterns: readonly RegExp[]): number =>
+        patterns.reduce((sum, pattern) => sum + (flat.match(pattern) ?? []).length, 0);
+      const stopSignals = count([
+        /\bexit\b(?!s\b)(?! `)(?! code| status)/gi,
+        /do not park again/gi,
+        /\bst(?:and|ands|anding|ood) down\b/gi,
+        /stop cleanly/gi,
+        /retire on it/gi,
+        /\bjust go\b/gi,
+        /\band go\b/gi,
+        /\bgo without finishing\b/gi,
+      ]);
+      const continueSignals = count([
+        /(?<!do not )park again/gi,
+        /park anyway/gi,
+        /loop again/gi,
+        /keep looping/gi,
+        /carry on/gi,
+        /\bfrom step 1\b/gi,
+        /\byou work on\b/gi,
+        /next step in the loop/gi,
+        /keep working/gi,
+      ]);
+      expect(continueSignals).toBeGreaterThan(0);
+      expect(stopSignals / continueSignals).toBeLessThanOrEqual(2);
+    });
   });
 
   it("runs the loop as discrete steps and never chains the claim to the park", () => {
@@ -7598,10 +7815,10 @@ describe("one rule, one skill", () => {
 
   const skillBody: Record<SkillName, string> = {
     orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
-    converse: documentAt("claude/skills/converse/SKILL.md").body,
-    // The package, not the body: text AGENT-047 moved into `references/` is
-    // still the comment skill's text, and a rule restated there would drift
-    // exactly as one restated in the body would.
+    converse: conversePackage,
+    // The packages, not the bodies: text AGENT-047 and AGENT-065 moved into
+    // `references/` is still each skill's text, and a rule restated there
+    // would drift exactly as one restated in the body would.
     comment: commentPackage,
     profile: documentAt("claude/skills/profile/SKILL.md").body,
   };
