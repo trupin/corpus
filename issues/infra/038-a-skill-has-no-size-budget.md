@@ -115,9 +115,23 @@ INFRA-025 settled the rule and this check lands on the easy side of it.
 A `SKILL.md` body, or an agent-profile body, must stay under a token budget,
 counted **deterministically as bytes ÷ 4**.
 
-- **Numbers are open.** Aspiration: **1K tokens**. Proposed enforcement: **warn at
-  2K, error at 4K**. Settle them against the table above and record what was
-  chosen and why.
+- **Numbers are settled** *(user decision, 2026-09-05)*. Aspiration: **1K
+  tokens**, kept as an aspiration and **not encoded**. Enforcement: **warn at 2K,
+  error at 4K**, with the ratchet below. The distribution over all 28 tracked
+  files is what chose them:
+
+  | Budget | Files over | Share |
+  | --- | --- | --- |
+  | 1K | 22 / 28 | 78% |
+  | 2K | 14 / 28 | 50% |
+  | **4K** | **8 / 28** | **28%** |
+  | 8K | 4 / 28 | 14% |
+
+  The median is 2,182 tokens and the total is 134,116. **2K sits at the median**,
+  so the warn line flags the upper half and no more. **4K is about 3× the
+  median**, which is the shape a lint threshold wants: it names eight real
+  outliers rather than half the repository. 1K would fail 78% of files on day one
+  and would be ignored within a week, which is why it stays an aspiration.
 - **Over budget → split, and there are exactly two ways:**
   1. Extract a reusable piece into a **separate skill**. Invocable in its own
      right, and skills can link to each other.
@@ -164,7 +178,7 @@ honestly. The only obstacle is that eight tracked files already exceed the
 budget, and a hook that goes red on every commit is a hook that gets
 `--no-verify`d.
 
-**Recommended shape — a ratchet:**
+**The shape is a ratchet** *(user decision, 2026-09-05)*:
 
 - **Error if a file over budget grows**, measured against a committed baseline of
   current sizes. This gates from day one, blocks nobody, and makes the direction
@@ -200,7 +214,11 @@ predictable outcome is the hook being disabled rather than the files being cut.
 - [ ] A commit that grows an over-budget file **fails**, and the message names the
       file, its old size, its new size, and the two split options.
 - [ ] A commit touching no skill or profile prints a skip line and costs nothing.
-- [ ] The thresholds live in one place, alongside the baseline.
+- [ ] The thresholds live in one place, alongside the baseline, and read **2000**
+      and **4000** tokens.
+- [ ] `orchestrate` is **not** exempted to make the check pass. It is 41,934
+      tokens, 10× the error line, and `AGENT-067` is what shrinks it. A threshold
+      bent to fit the largest file measures nothing.
 
 ## Technical Design
 

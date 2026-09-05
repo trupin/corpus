@@ -2305,6 +2305,11 @@ and shipped in v0.22.0.
 | CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | todo | P0 | opus | — |
 | CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | todo | P0 | fable | CLI-076 |
 | INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | todo | P1 | fable | — |
+| CLI-078 | The verbs that end a pass read as endings, so the loop stops there | todo | P0 | opus | — |
+| AGENT-065 | `converse` argues for stopping five ways and for continuing once | todo | P0 | fable | CLI-078 |
+| INFRA-039 | Nothing measures whether a listener stays alive | todo | P0 | fable | CLI-078, AGENT-065 |
+| AGENT-066 | Two event procedures live inside `orchestrate` instead of in skills of their own | todo | P1 | fable | — |
+| AGENT-067 | `orchestrate` costs 42K tokens before it does anything | todo | P1 | fable | AGENT-066 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole
@@ -2341,3 +2346,50 @@ threshold. The gating decision is the issue's one real question, and its
 recommendation is a ratchet — error on growth, warn while over — because
 `bytes ÷ 4` is deterministic and so this check, unlike `test:slow`, can gate
 honestly.
+
+### Phase 57 addendum — the loop stops because the text says stop (2026-09-05, user report)
+
+*"Subagents keep stopping although the skill is meant to keep the agent alive. Maybe we make the
+CLI idle command always prompt the agent to repark it once it's done working, so that the skill's
+instructions always stay fresh."*
+
+**The mechanism.** A Claude Code Task subagent lives exactly as long as it keeps calling tools.
+Nothing loops it. So a resident survives one more pass only because it chooses to call
+`corpus queue idle --thread <id>` again — and the line it reads immediately before choosing is
+`event evt_7c1d9a is complete.` The instruction meant to override that sits at line 325 of a
+1,600-line skill, roughly 13K tokens back by then.
+
+**The proposal was right and landed one verb short.** `idle` is not what runs last. The decision
+point is straight after settling, so `CLI-078` puts the next step on all five verbs that can end a
+pass — `complete`, `fail`, `defer`, and `idle` on both its outcomes. On stderr in human mode and as
+an additive field under `--json`, because the loop parses stdout. Never on the `422` retirement
+path, where stopping is correct.
+
+**The text half is `AGENT-065`.** `converse` documents five ways to stop, each with a paragraph
+arguing why stopping is right, against one four-word sentence to continue — 25 stop-signals to 7.
+The softest of the five asks a model to assess its own context with no external signal, and it is
+available on every pass. All five exits stay. The weight changes.
+
+**`orchestrate`'s recovery section documents this symptom under the wrong cause**, and `AGENT-065`
+fixes that too. *If the loop breaks* attributes a listener that will not stay up to a corrupted
+`converse` file. The operator is seeing it with an intact one, so the only recovery section in the
+workspace sends them to restore a file that is not broken.
+
+**Neither half can be proved by a unit test**, because what they change is a model's choice.
+`INFRA-039` adds the tenth rehearsal scenario — a listener answers a **second** message without
+being relaunched — and scores it `k/N` with a pre-fix baseline. None of the existing nine tests
+liveness, and `03-one-question-one-answer` is a single pass. A relaunch produces the same reply and
+hides the defect entirely, which is why the operator had to notice it by hand.
+
+**The rewrite is in this phase, on the user's instruction.** `AGENT-066` takes the two event
+procedures that `orchestrate`'s own routing table calls anomalies — *"one of the two events whose
+procedure lives in this skill instead of in a skill of its own"* — and makes them skills, which is
+6,448 tokens and needs no rewriting. `AGENT-067` splits the rest against a stated budget: three
+sections are half the file, and `Writing a document` is 7,525 tokens of guidance for an agent whose
+first delegation rule is that it never writes anything. The rehearsal suite is the gate, run before
+and after each section, because a broken `orchestrate` has no agent left to repair it.
+
+**Thresholds signed the same day**: warn 2K, error 4K, ratchet. The distribution chose them — 2K is
+the median of the 28 tracked files and 4K is about 3× it, naming eight outliers rather than half the
+repository. 1K stays an aspiration and is not encoded, because it fails 78% on day one. `orchestrate`
+is not exempted to make the check pass.
