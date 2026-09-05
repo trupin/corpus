@@ -10,7 +10,9 @@ todo
 
 ## Priority
 
-P1
+P0 — raised from P1 on the user's token-consumption directive (2026-09-05): the
+skill files are the largest fixed token cost in the product, and this issue is
+part of the sequenced plan that removes it.
 
 ## Model
 
