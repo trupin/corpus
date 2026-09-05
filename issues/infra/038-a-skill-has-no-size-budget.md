@@ -200,25 +200,26 @@ predictable outcome is the hook being disabled rather than the files being cut.
 
 ## Acceptance Criteria
 
-- [ ] `npm run skills:check` reports every tracked `SKILL.md` and agent profile
+- [x] `npm run skills:check` reports every tracked `SKILL.md` and agent profile
       with its bytes, its token estimate, and its verdict.
-- [ ] Each skill's `references/` files are reported with their sizes and **their
+- [x] Each skill's `references/` files are reported with their sizes and **their
       sum with the SKILL.md**.
-- [ ] The pre-commit hook runs it **on the staged list only**, and adds **under
+- [x] The pre-commit hook runs it **on the staged list only**, and adds **under
       1 second** to a commit. Measure it and record the number — INFRA-025's first
-      two attempts guessed and were wrong.
-- [ ] CI's `validate` job runs it over the whole tree.
-- [ ] Enumeration is by **`git ls-files`**, not `find`. `.claude/worktrees/` is
+      two attempts guessed and were wrong. (Measured: 0.13–0.15 s skill-staged,
+      ~0.002 s otherwise — see the E2E log.)
+- [x] CI's `validate` job runs it over the whole tree.
+- [x] Enumeration is by **`git ls-files`**, not `find`. `.claude/worktrees/` is
       gitignored and contains a full second checkout of this repo — a `find`-based
       scan reports every skill twice and blames the wrong file.
-- [ ] Both trees are covered: `assets/workspace/claude/` (product) and `.claude/`
+- [x] Both trees are covered: `assets/workspace/claude/` (product) and `.claude/`
       (dev harness).
-- [ ] A commit that grows an over-budget file **fails**, and the message names the
+- [x] A commit that grows an over-budget file **fails**, and the message names the
       file, its old size, its new size, and the two split options.
-- [ ] A commit touching no skill or profile prints a skip line and costs nothing.
-- [ ] The thresholds live in one place, alongside the baseline, and read **2000**
-      and **4000** tokens.
-- [ ] `orchestrate` is **not** exempted to make the check pass. It is 41,934
+- [x] A commit touching no skill or profile prints a skip line and costs nothing.
+- [x] The thresholds live in one place (`scripts/skill-budget.ts`, beside the
+      baseline it reads), and read **2000** and **4000** tokens.
+- [x] `orchestrate` is **not** exempted to make the check pass. It is 41,934
       tokens, 10× the error line, and `AGENT-067` is what shrinks it. A threshold
       bent to fit the largest file measures nothing.
 
@@ -317,22 +318,110 @@ the repo's real skill files, whose sizes will change.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State which model it ran on._
+_Implementing agent: infra-dev, running on Fable (claude-fable-5)._
+
+Domain agents may not run state-changing git commands, so the two hook steps
+were verified by invoking exactly what the hook invokes — the bash pre-filter
+and `scripts/check-skill-budget.ts --staged <files>` — instead of a real
+`git commit`. Nothing was staged or unstaged; every working-tree edit below
+was restored byte-for-byte (verified with `git status --porcelain`).
 
 ### Post-Implementation Verification
 
-_[Agent fills: exact commands, the full first report, the blocked commit, the
-two timings]_
+**1. First whole-tree report** (`npm run skills:check`, 2026-09-05, exit 0):
+28 files measured, 14 over the warn line, 8 grandfathered — the issue's
+distribution exactly. The Summary table's eight files at their predicted
+sizes, headline rows:
+
+```
+skills:check ▷ tokens ≈ bytes ÷ 4, whole file (frontmatter included) — warn 2000, error 4000 (INFRA-038)
+skills:check ⚠ assets/workspace/claude/skills/orchestrate/SKILL.md — 167737 bytes ≈ 41934 tokens: over the 4000-token budget at 41934 tokens (grandfathered, not growing) — split it …
+skills:check ⚠ assets/workspace/claude/skills/converse/SKILL.md — 64952 bytes ≈ 16238 tokens: …
+skills:check ⚠ assets/workspace/claude/skills/comment/SKILL.md — 41132 bytes ≈ 10283 tokens: …
+skills:check     total with references ≈ 18600 tokens — a split that only moved bytes shows here as a flat sum
+skills:check ⚠ .claude/agents/server-dev.md — 37602 bytes ≈ 9401 tokens: …
+skills:check ⚠ .claude/agents/agent-runtime-dev.md — 28462 bytes ≈ 7116 tokens: …
+skills:check ⚠ .claude/agents/contract-dev.md — 21084 bytes ≈ 5271 tokens: …
+skills:check ⚠ assets/workspace/claude/skills/profile/SKILL.md — 18972 bytes ≈ 4743 tokens: …
+skills:check ⚠ .claude/agents/infra-dev.md — 16488 bytes ≈ 4122 tokens: …
+skills:check ✓ 28 file(s) measured, 14 over the warn line
+```
+
+**2. A grown over-budget file blocks.** Appended one paragraph to
+`assets/workspace/claude/skills/comment/SKILL.md`, ran the hook's own command
+(`… check-skill-budget.ts --staged assets/workspace/claude/skills/comment/SKILL.md`):
+
+```
+skills:check ✗ assets/workspace/claude/skills/comment/SKILL.md — 41347 bytes ≈ 10337 tokens: over the 4000-token budget and grew: 10283 → 10337 tokens — split it — extract a separate skill, or move guidance into references/; move only what a minority of runs reads
+skills:check ✗ 1 file(s) fail the budget (1 measured)
+exit: 1
+```
+
+File, old size, new size, both split options. Reverted.
+
+**3./4. Measured hook cost** (the number, not a guess): the skill-staged run is
+**0.13–0.15 s wall** (three runs: 0.146 / 0.134 / 0.132 s — tsx startup
+dominates; the measurement itself is a stat and a read). A commit with no
+skill staged pays only the hook's bash pre-filter: **~0.002 s**, and prints
+`pre-commit ▷ skills:check skipped (no skill or agent profile staged)`.
+Invoking the runner itself on a staged `.ts` file prints its own skip line in
+0.13 s — the pre-filter exists so ordinary commits never pay that startup.
+
+**5. CI.** One `skill size budget` step added to `validate` beside
+`spec:check`, running `npm run skills:check` whole-tree. Runs on the phase
+PR's push (the orchestrator watches CI).
+
+**6. Anti-gaming visibility.** Moved the last 3000 bytes of
+`comment/SKILL.md` into its tracked `references/history.md`: the report shows
+the SKILL.md at 9533 tokens (was 10283), history.md at 1382 (was 632), and
+**`total with references ≈ 18600 tokens` — unchanged to the token**. The same
+run demonstrated the shrink lock: `shrank below its ratchet baseline (10283 →
+9533 tokens) — lock the gain in: run npm run skills:check -- --update-baseline`,
+and `--update-baseline` then lowered exactly that one entry
+(`lowered assets/workspace/claude/skills/comment/SKILL.md: 10283 → 9533`)
+while keeping the other seven. All three files restored.
+
+**Decisions recorded** (Key Implementation Details asked for each):
+
+- **Frontmatter counts** — whole-file bytes, so the number reconciles with
+  `wc -c`; the report header says so.
+- **One budget for both trees** — per the issue's own recommendation.
+- **Scope glob**: `(^|/)skills/[^/]+/SKILL\.md$` and `(^|/)agents/[^/]+\.md$`
+  over `git ls-files` output (index only, so gitignored `.claude/worktrees/`
+  is excluded by construction — a test asserts it).
+- **Rename**: accepted false positive — the new path faces the absolute
+  threshold; the baseline's `$comment` says to move the entry by hand,
+  keeping its value.
+- **Shrink handling goes one step past the issue's minimum**: a grandfathered
+  file that shrank *errors* until the baseline is lowered, because a stale
+  high entry is regrowth headroom — the ratchet would otherwise allow the
+  file to climb back to its old size unremarked. The fix is one command and
+  the message names it.
+- **Initial grandfathering is a hand-authored commit** (this one):
+  `--update-baseline` never adds or raises an entry, so the eight day-one
+  entries were written by hand at their measured sizes. Recreating the file
+  from nothing is the only re-grandfathering path, and deleting a committed
+  baseline is loud in review.
+- **It gates** (exit 1), unlike `test:slow` — bytes ÷ 4 is machine-independent,
+  so the INFRA-020 reason for report-only does not apply. The report-only and
+  absolute-error-from-day-one alternatives were rejected for the issue's own
+  reasons.
+
+**Consequence worth knowing when appending to agent profiles**: four
+`.claude/agents/*.md` files are grandfathered (server-dev, agent-runtime-dev,
+contract-dev, infra-dev). Appending domain knowledge to one of them now fails
+the commit hook unless at least as many bytes are trimmed — that is the
+ratchet doing what the user asked, not a bug.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Thresholds settled and the reason recorded in this file
-- [ ] The gating posture (ratchet vs. alternatives) settled and recorded
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in, including the measured hook cost
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Thresholds settled and the reason recorded in this file
+- [x] The gating posture (ratchet vs. alternatives) settled and recorded
+- [x] Tests written and passing (`scripts/skill-budget.test.ts`, 23 tests)
+- [x] `/lint` passes (eslint + prettier + `tsc -p scripts/tsconfig.json`)
+- [x] E2E verification log filled in, including the measured hook cost
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

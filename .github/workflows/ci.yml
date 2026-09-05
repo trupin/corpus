@@ -39,6 +39,15 @@ jobs:
       # unrecoverable after the fact. Needs no build — runs in under a second.
       - name: SPEC cross-references
         run: npm run spec:check
+      # Skill and agent-profile size budget (INFRA-038): tokens ≈ bytes ÷ 4,
+      # warn 2000 / error 4000, ratcheted against the committed baseline for
+      # the files grandfathered over the line — growth errors, a shrink must
+      # lower the baseline, new files face the absolute threshold. Whole-tree
+      # here (a file nobody touched can drift past a lowered threshold); the
+      # commit hook runs the same runner on the staged list only. Needs no
+      # build — a stat and a read per tracked file.
+      - name: skill size budget
+        run: npm run skills:check
       # Supply-chain gate (INFRA-013): zero `npm audit` findings of ANY severity.
       # Not `--audit-level` — that tolerates the `info` bucket — but a
       # `metadata.vulnerabilities.total === 0` assertion, which has no floor.
