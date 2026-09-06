@@ -241,6 +241,7 @@ describe("createThreadWithFiles", () => {
     anchor: null,
     agent: "requested",
     resident: null,
+    digest: null,
     unread: false,
     turns: [],
   };

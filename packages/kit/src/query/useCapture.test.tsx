@@ -79,6 +79,7 @@ function wire(options: { readonly eventId?: string | null; readonly status?: num
               agent: "requested",
               resident: null,
               unread: false,
+              digest: null,
               turns: [],
               created: "2026-07-28T10:00:00Z",
               updated: "2026-07-28T10:00:00Z",

@@ -2210,6 +2210,7 @@ export async function stubCorpus(
             anchor: selector === undefined ? null : anchorId,
             agent: thread.agent,
             resident: null,
+            digest: null,
             // A conversation you just wrote holds nothing you have not seen.
             unread: false,
             turns: [firstTurn],
@@ -2814,6 +2815,7 @@ export async function stubCorpus(
         anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
         agent: doc.agent,
         resident: null,
+        digest: null,
         /*
          * The store's own flag, not a constant (CONTRACT-036). The seen route
          * clears it and this read reports it, so a conversation read in one page

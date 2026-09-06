@@ -194,6 +194,7 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
             agent: "requested",
             resident: null,
             unread: false,
+            digest: null,
             turns: [],
             created: "2026-07-28T10:00:00Z",
             updated: "2026-07-28T10:00:00Z",

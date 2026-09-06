@@ -193,6 +193,7 @@ export function threadFixture(overrides: Partial<Thread> = {}): Thread {
     anchor: null,
     agent: "none",
     resident: null,
+    digest: null,
     // The server's answer to §10's interlock, not a derivation of it
     // (CONTRACT-036). A fixture thread is read unless a test says otherwise,
     // which is what lets a placement test name the unread case explicitly

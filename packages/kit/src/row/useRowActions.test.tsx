@@ -71,6 +71,7 @@ function renderStaleRow(
           agent: "requested",
           resident: null,
           unread: false,
+          digest: null,
           turns: [],
         } satisfies Thread,
         anchorId: null,

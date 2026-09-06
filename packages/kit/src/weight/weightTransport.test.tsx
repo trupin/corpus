@@ -63,6 +63,7 @@ function wire(): { fetch: typeof globalThis.fetch; sent: Sent[] } {
       tags: [],
       agent: "requested",
       resident: null,
+      digest: null,
       unread: false,
       turns: [],
       created: "2026-08-08T10:00:00Z",
