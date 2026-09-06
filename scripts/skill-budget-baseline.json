@@ -1,14 +1,13 @@
 {
   "$comment": "INFRA-038 ratchet: token counts (bytes ÷ 4) of the files grandfathered over the 4000-token error budget when this check landed. Entries only shrink or disappear — regenerate with `npm run skills:check -- --update-baseline`, which never adds or raises one. A renamed grandfathered file: move its entry by hand, keeping the value.",
   "files": {
-    ".claude/agents/agent-runtime-dev.md": 7110,
+    ".claude/agents/agent-runtime-dev.md": 6924,
     ".claude/agents/contract-dev.md": 5271,
     ".claude/agents/infra-dev.md": 4122,
     ".claude/agents/server-dev.md": 9401,
     "assets/workspace/claude/skills/comment/SKILL.md": 10277,
     "assets/workspace/claude/skills/converse/SKILL.md": 16028,
-    "assets/workspace/claude/skills/orchestrate/SKILL.md": 34950,
-    "assets/workspace/claude/skills/profile/SKILL.md": 4743,
-    "assets/workspace/claude/skills/reflect-edit/SKILL.md": 5885
+    "assets/workspace/claude/skills/orchestrate/SKILL.md": 12521,
+    "assets/workspace/claude/skills/profile/SKILL.md": 4743
   }
 }
