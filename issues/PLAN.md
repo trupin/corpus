@@ -2255,7 +2255,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | todo | P0 | fable | — |
+| SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | done | P0 | fable | — |
 | AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | done | P0 | fable | — |
 | UI-186 | The Residents tab never says what it launched at, and cannot change it | done | P0 | opus | AGENT-059 |
 | SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
@@ -2317,7 +2317,9 @@ and shipped in v0.22.0.
 | CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
 | SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
 | AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
-| SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | todo | P1 | fable | — |
+| SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | done | P1 | fable | — |
+| SERVER-165 | Designating a thread engages it | todo | P0 | opus | SHARED-078 |
+| AGENT-070 | The skills still read "a parked resident answers only mentions" | todo | P1 | opus | SERVER-165 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole
@@ -2448,3 +2450,56 @@ sizes.
 Liveness (CLI-078/AGENT-065/INFRA-039) rides in the token plan on purpose: every listener that dies
 is a relaunch that re-reads the skill and rehydrates the conversation from the top, so the leak the
 user reported is also the most expensive single event in the ledger.
+
+## Phase 58 — An upgrade you do not fight (2026-09-06, corpus-agent report from the cos workspace)
+
+All five conflicts the 0.32.0 → 0.33.0 upgrade reported were systemic, not accidents: presentation
+state written into tracked documents, a manifest with no word for deliberate divergence, dual-owned
+skills with no merge verb, server restamps counted as edits, and a stale-verb scan that judges the
+incoming template against the outgoing tool. Filed as reported, with one diagnosis corrected on
+reading: the scan's parser handles the three-word grammar fine — what was running was the old
+binary's registry (CLI-084 records both hypotheses and mandates the reproduction).
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| UI-189 | Resizing a column manufactures a template conflict by clicking | todo | P0 | fable | — |
+| CLI-081 | The manifest cannot record deliberate divergence | todo | P0 | fable | — |
+| CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
+| CLI-083 | `updated:` restamps count as modification | todo | P0 | opus | — |
+| CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
+
+## Phase 59 — What a document costs is measured, not felt (2026-09-06, user directive)
+
+*"The goal is to be able to measure how heavy documents really are and whether agents are able to
+deal with heavy documents in a way that makes token consumption flat."*
+
+The token-accounting chain: every CLI invocation weighs what the agent wrote and read (bytes ÷ 4,
+the house estimate), reports it fire-and-forget, the server keeps it as runtime state beside the
+queue, and a document's own view shows its cost over time beside its size — flat cost against a
+growing document is Phase 57's bounded reads visibly working. Placement reading recorded in
+SHARED-079: the panel lives with the document, not in the console. The §9 rider is drafted in
+SHARED-079 and signs at the next release proposal before anything lands.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-079 | What a document costs is measured, not felt — the token-accounting chain | done | P0 | fable | — |
+| CONTRACT-097 | Token measurements on the wire | todo | P0 | opus | SHARED-079 |
+| SERVER-166 | The server keeps the cost ledger | todo | P0 | opus | CONTRACT-097 |
+| CLI-085 | Every invocation weighs itself | todo | P0 | fable | SERVER-166 |
+| UI-190 | A document shows what it costs | todo | P0 | fable | CLI-085 |
+
+## Phase 60 — The product has one button (2026-09-06, user directive, two screenshots)
+
+The editor toolbar renders native select chrome while the document header's pill row is the
+product's real language. UI-191 designs the primitives in `design/index.html` first (the token
+pipeline's authoritative source), builds Button/IconButton/Select/Chip in kit, and migrates all 82
+files carrying raw interactive elements. INFRA-040 then makes the end state permanent as an ESLint
+rule riding the existing diff-scoped pre-commit lint and whole-repo CI lint — zero new hook steps,
+INFRA-025-clean by construction — with exemptions as config paths, never inline disables.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| UI-191 | One button, one dropdown, everywhere | todo | P0 | fable | — |
+| INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
+| UI-193 | Overlays correct by construction, and a battery that proves it | todo | P0 | fable | UI-191, INFRA-040 |
+| UI-192 | The designation popover is broken four ways | todo | P0 | fable | UI-191, UI-193 |

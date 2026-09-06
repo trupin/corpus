@@ -6,7 +6,9 @@ shared
 
 ## Status
 
-todo
+done — the decision this issue asked for was made by the user 2026-09-06
+(designation engages; see Decision below). The build-out is SERVER-165 and
+AGENT-070, filed with the rider text drafted for signature.
 
 ## Priority
 
@@ -49,4 +51,16 @@ A decision, then the trio it implies:
 3. If no: the converse skill should say plainly that a parked resident answers
    only mentions, so the person's expectation is set by the UI/docs.
 
-Not scoped for v0.33.0 — filed so the finding is not lost.
+## Decision (user, surveyed 2026-09-06)
+
+**Designation engages.** Option 1 as presented and chosen: designating a
+thread sets `agent: engaged` at designation time, server-side, so every plain
+turn thereafter enqueues on the resident's lane. Release or resolve returns
+the thread to ordinary opt-in. The cost accepted with it: a person who wanted
+a silent owner must release it.
+
+The behaviour is decided; the §7/§8 rider *text* is drafted in SERVER-165 and
+gets read back for signature at the next release proposal, per the standing
+rider doctrine. Decomposition: **SERVER-165** (the write, the release/resolve
+return, and the rider), **AGENT-070** (the skills' now-stale
+"a parked resident answers only mentions" reading).
