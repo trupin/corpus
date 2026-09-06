@@ -2467,3 +2467,23 @@ binary's registry (CLI-084 records both hypotheses and mandates the reproduction
 | CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
 | CLI-083 | `updated:` restamps count as modification | todo | P0 | opus | — |
 | CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
+
+## Phase 59 — What a document costs is measured, not felt (2026-09-06, user directive)
+
+*"The goal is to be able to measure how heavy documents really are and whether agents are able to
+deal with heavy documents in a way that makes token consumption flat."*
+
+The token-accounting chain: every CLI invocation weighs what the agent wrote and read (bytes ÷ 4,
+the house estimate), reports it fire-and-forget, the server keeps it as runtime state beside the
+queue, and a document's own view shows its cost over time beside its size — flat cost against a
+growing document is Phase 57's bounded reads visibly working. Placement reading recorded in
+SHARED-079: the panel lives with the document, not in the console. The §9 rider is drafted in
+SHARED-079 and signs at the next release proposal before anything lands.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SHARED-079 | What a document costs is measured, not felt — the token-accounting chain | done | P0 | fable | — |
+| CONTRACT-097 | Token measurements on the wire | todo | P0 | opus | SHARED-079 |
+| SERVER-166 | The server keeps the cost ledger | todo | P0 | opus | CONTRACT-097 |
+| CLI-085 | Every invocation weighs itself | todo | P0 | fable | SERVER-166 |
+| UI-190 | A document shows what it costs | todo | P0 | fable | CLI-085 |
