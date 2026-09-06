@@ -420,9 +420,40 @@ export async function createThread(
     // *after* the write, and computing it twice would mint two designation ids
     // for one designation.
     const designated = designationFor(workspace, input, parentId);
-    // A brand-new thread cannot be `engaged`, so an omitted `requestsAgent` is
-    // mention-only here — which is exactly what the contract's
-    // `THREAD_CREATE_OMITTED_BEHAVIOUR` promises its callers.
+    /*
+     * **The creating turn is not a later turn** (SERVER-165, open question O1).
+     *
+     * §8's automatic clause reads *"Every **later** turn in a thread where the
+     * agent is `engaged`"*, and the first message is posted **with** the thread,
+     * not later than it. So an omitted `requestsAgent` is mention-only here even
+     * now that the creation's own designation engages the thread — which is
+     * exactly what the contract's `THREAD_CREATE_OMITTED_BEHAVIOUR` promises its
+     * callers, and it is unchanged by the rider.
+     *
+     * Two of this spec's own rules would break under the other reading, which is
+     * why it is settled here rather than left to taste:
+     *
+     *  - §7's rider A designates a general resident on **every** new standalone
+     *    thread. If the creating turn enqueued on the strength of that
+     *    designation, every `corpus thread create` would enqueue work — and
+     *    §8's opening line, *"A plain comment is a passive note … Human-only
+     *    threads are normal"*, would hold for no standalone thread at all.
+     *  - §7's rider A also says *"The designation costs nothing until there is
+     *    work. A listener is started when its lane has something pending and
+     *    none is running, not when the thread is created."* An enqueue per
+     *    creation is a listener per conversation, which is the cost that clause
+     *    exists to refuse.
+     *
+     * A person who wants the agent on the first message says so, exactly as
+     * before: `requestsAgent: true`, an `@agent` mention, or a `/skill`
+     * directive. Every **later** plain turn then reaches the resident with no
+     * mention, which is what the rider bought.
+     *
+     * `thread: null` is where that answer lives — `shouldEnqueue` returns false
+     * for it before §8's engaged clause is reached — so nothing below needs a
+     * branch and the ordering is stated rather than implied: the designation is
+     * written with the thread, and the turn's enqueue decision never reads it.
+     */
     const decision = decideParticipation({
       requestsAgent: input.requestsAgent,
       author: actor,
@@ -459,7 +490,15 @@ export async function createThread(
             stamp,
             parent: parentId,
             anchor: anchorId,
-            agent: decision.agent,
+            // SPEC.md §8's rider signed 2026-09-06 (SERVER-165): designating a
+            // conversation engages it, and a creation that designates is a
+            // designation like any other. In **this** frontmatter, so a
+            // designated thread is never a commit old before it is engaged —
+            // the same reason `resident` itself is written here rather than by
+            // a second call. It outranks `decision.agent` rather than racing
+            // it: `engaged` is above `requested` on the one-way climb
+            // `participation.ts` describes, so this can only ever raise the key.
+            agent: designated === null ? decision.agent : "engaged",
             model: input.model,
             origin: stampedOrigin(workspace, input.job),
             resident: designated,
@@ -561,6 +600,40 @@ export async function createThread(
      * exists before the work it is being started for, and an orchestrator that
      * wakes and reads the roster in one pass sees the lane already carrying its
      * count.
+     *
+     * ## The silent creation is deliberate, and this is the record of it
+     *
+     * **SERVER-163**, filed from UI-186's drill: *"a plain `corpus thread
+     * create` gives a general resident with no designation event at all, so a
+     * very common lane has never had a launch record"*. The decision, taken
+     * 2026-09-06, is that the gate above stays and the fix is on the reading
+     * side. Three reasons, in order of weight:
+     *
+     * 1. **The event is a launch instruction, not a receipt.** The orchestrate
+     *    skill launches a listener on `resident.designated`. Enqueuing one for
+     *    every created thread starts one background agent per conversation,
+     *    which is the exact cost §7's rider A refuses in its own words: *"The
+     *    designation costs nothing until there is work. A listener is started
+     *    when its lane has something pending and none is running, not when the
+     *    thread is created."*
+     * 2. **A launch record is not lost by this, it is deferred.** The
+     *    orchestrate skill logs a launch on *whichever* event prompted it, and
+     *    the other one that does is `lane.waiting` (§7's rider signed
+     *    2026-08-27) — enqueued the first time work lands on this lane with no
+     *    listener present. So the lane gets its account of itself at the first
+     *    moment there is anything to account for. `jobs/project.ts` resolves a
+     *    `lane.waiting` job's origin to the lane it names, which is what lets a
+     *    surface find that record by conversation.
+     * 3. **The absence therefore means something exact.** No launch-prompting
+     *    event for a lane is *"this lane has never been launched"*, which is a
+     *    true sentence and a different one from *"the record was reaped"*. The
+     *    two are told apart by whether the queue holds such an event at all,
+     *    and `apps/ui/src/console/launchRecord.ts` reports them as two states.
+     *
+     * **One event per creation path, never per code path** (SERVER-163's third
+     * criterion): this is the only place a creation announces a designation, and
+     * the designate route is the only other door. A thread created with a
+     * resident named explicitly reaches exactly this line, so it announces once.
      */
     const designatedEventId =
       designated === null || !decision.enqueue

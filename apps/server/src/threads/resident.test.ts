@@ -271,6 +271,61 @@ describe("a creation that asks for the agent asks for a listener", () => {
     expect(pendingPayloads()).toEqual([]);
   });
 
+  /**
+   * **SERVER-163's decision, asserted by name.** UI-186's drill found that a
+   * plain `corpus thread create` designates a general resident and announces
+   * nothing. That is deliberate, and `threads/create.ts` carries the reasoning:
+   * the event is a launch instruction, and announcing one per created thread
+   * starts one background agent per conversation — the cost §7's rider A refuses
+   * in its own words.
+   *
+   * The lane still gets an account of itself. It gets it from `lane.waiting` the
+   * first time work lands on it with no listener present, which is the first
+   * moment there is anything to account for.
+   */
+  it("announces no designation for the ordinary creation, and does on its first work", async () => {
+    ws = createThreadWorkspace("create-ordinary");
+    const thread = await createThread(ws, { title: "Herb planter", body: "notes to myself" });
+
+    // The thread *is* designated — the frontmatter says so — and the queue is
+    // empty. Those two facts together are the decision.
+    expect(threadFrontmatterOf(ws, thread.id)["resident"]).toMatchObject({
+      name: null,
+      docId: null,
+    });
+    expect(designations()).toEqual([]);
+    expect(pendingPayloads()).toEqual([]);
+
+    ws.advance(61_000);
+    await appendTurn(ws, thread.id, { body: "and now a question for you" });
+
+    // The first work on the lane announces the lane, which is what the
+    // orchestrator launches a listener from and logs the launch on.
+    const waiting = pendingPayloads().filter((event) => event.type === LANE_WAITING_EVENT_TYPE);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]?.payload["lane"]).toBe(thread.id);
+    expect(waiting[0]?.lane).toBe("orchestrator");
+  });
+
+  /** One event per creation path, never per code path (SERVER-163). */
+  it("announces exactly once for a creation that names a resident explicitly", async () => {
+    ws = createThreadWorkspace("create-explicit");
+    seedAgents();
+    const thread = await createThread(ws, {
+      title: "Ask the researcher",
+      body: "what do we know?",
+      requestsAgent: true,
+      resident: { name: "researcher" },
+    });
+
+    const announced = designations();
+    expect(announced).toHaveLength(1);
+    expect(announced[0]?.payload["threadId"]).toBe(thread.id);
+    expect(
+      (announced[0]?.payload["resident"] as Record<string, unknown> | undefined)?.["name"],
+    ).toBe("researcher");
+  });
+
   /** A comment on a document designates nobody, so there is no lane to launch. */
   it("stays silent for a thread with a parent", async () => {
     ws = createThreadWorkspace("create-parented");
@@ -2405,13 +2460,41 @@ describe("which designation this is (SERVER-147)", () => {
     const created = await createThread(ws, { body: "legacy", resident: null });
     spliceFrontmatter(created.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
     ws.advance(61_000);
-    const commits = ws.log("%H").length;
 
     expect((await designateWith(created.id, { name: "researcher" })).status).toBe(200);
 
     expect(await idOf(created.id)).toBeNull();
-    expect(ws.log("%H")).toHaveLength(commits);
+    // The **id** did not move, which is what this case is about, and no listener
+    // was displaced. The write that did happen is SERVER-165's engagement: this
+    // thread was hand-designated with `agent: none`, and a designation puts
+    // `agent: engaged` in force. That is the upgrade path for every workspace
+    // designated before the rider, and it is not a re-designation — the id is
+    // still the one it found, and nothing was released.
+    expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("engaged");
     expect(releases()).toEqual([]);
+  });
+
+  it("writes nothing at all when the thread is already engaged (SERVER-165)", async () => {
+    // The same request against a thread whose two designated keys are both
+    // already in force: `sameResident` and `agent: engaged`. This is the
+    // re-announce §7 exists for — ask for a stopped listener to be launched
+    // again — and it must still cost no commit and no `updated` stamp.
+    const created = await createThread(ws, { body: "legacy", resident: null });
+    spliceFrontmatter(created.id, "resident:\n  name: researcher\n  docId: doc_researcher\n");
+    ws.advance(61_000);
+    expect((await designateWith(created.id, { name: "researcher" })).status).toBe(200);
+    ws.advance(61_000);
+    const commits = ws.log("%H").length;
+    const before = threadFrontmatterOf(ws, created.id)["updated"];
+
+    expect((await designateWith(created.id, { name: "researcher" })).status).toBe(200);
+
+    expect(ws.log("%H")).toHaveLength(commits);
+    expect(threadFrontmatterOf(ws, created.id)["updated"]).toEqual(before);
+    expect(releases()).toEqual([]);
+    // …and the event is still written, because that is the whole point of
+    // asking for a designation already in force.
+    expect(designations().length).toBeGreaterThanOrEqual(2);
   });
 
   it("reads a malformed id as no designation at all, taking the block with it", async () => {
@@ -2424,5 +2507,206 @@ describe("which designation this is (SERVER-147)", () => {
 
     expect((await readThread(created.id))["resident"]).toBeNull();
     expect(designatedRow(created.id)).toBe(0);
+  });
+});
+
+/**
+ * **Designating a conversation engages it** — SPEC.md §8's rider signed
+ * 2026-09-06, cross-referenced from §7's designation paragraph (SERVER-165).
+ *
+ * > the server sets the thread engaged in the same act that designates it, so a
+ * > plain message to a designated conversation reaches its resident without a
+ * > mention. Releasing the resident returns the **lane** to ordinary routing and
+ * > reverts nothing on the thread … Resolving the thread ends both, exactly as
+ * > it always has.
+ *
+ * Every case here runs against the real app, the real file and the real
+ * `git log`, because "the same write" and "the same commit" are claims about
+ * bytes rather than about a return value.
+ */
+describe("designating a conversation engages it (SERVER-165)", () => {
+  /** A standalone thread with **no** resident and `agent: none` — the before state. */
+  async function undesignated(): Promise<string> {
+    const created = await createThread(ws, { body: "let us talk", resident: null });
+    expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("none");
+    // Out of the create's own commit window (SPEC.md §4), so a designation that
+    // writes is a commit this test can count.
+    ws.advance(61_000);
+    return created.id;
+  }
+
+  /** The paths one commit touched. */
+  const filesInHead = (): string[] =>
+    ws
+      .git("show", "--name-only", "--format=", "HEAD")
+      .split("\n")
+      .filter((line) => line !== "");
+
+  it("writes `agent: engaged` in the same commit as the designation", async () => {
+    const id = await undesignated();
+    const before = ws.log("%H").length;
+
+    expect((await designate(id, "researcher")).status).toBe(200);
+
+    const frontmatter = threadFrontmatterOf(ws, id);
+    expect(frontmatter["agent"]).toBe("engaged");
+    expect(frontmatter["resident"]).toMatchObject({ name: "researcher" });
+    // One commit, and it is the designation's own — both keys moved inside it.
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(ws.log("%s")[0]).toContain("resident designate: researcher");
+    expect(filesInHead()).toEqual([threadPath(id)]);
+    // …and the projection agrees before the response returned.
+    expect(ws.db.prepare("SELECT agent FROM threads WHERE id = ?").get(id)).toEqual({
+      agent: "engaged",
+    });
+  });
+
+  it("engages through the general designation too", async () => {
+    const id = await undesignated();
+    expect((await designateGeneral(id)).status).toBe(200);
+    expect(threadFrontmatterOf(ws, id)["agent"]).toBe("engaged");
+  });
+
+  it("engages a creation that designates, in the creation's own frontmatter", async () => {
+    // The Ask composer's surface: one `POST /api/threads`, and the thread is
+    // never a commit old before it is engaged.
+    const created = await createThread(ws, { title: "Ask", body: "what about escrow?" });
+    expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("engaged");
+    expect(filesInHead()).toEqual([threadPath(created.id)]);
+  });
+
+  it("engages a creation that names a profile, and leaves a parented one alone", async () => {
+    const named = await createThread(ws, { body: "who is on this?", resident: { name: "editor" } });
+    expect(threadFrontmatterOf(ws, named.id)["agent"]).toBe("engaged");
+
+    // A thread on a document designates nothing (§7), so nothing engages it.
+    const parent = (await createDoc(ws, { type: "note", title: "Rates", body: "A body.\n" })).id;
+    const comment = await createThread(ws, { parent, body: "a plain note" });
+    expect(threadFrontmatterOf(ws, comment.id)["agent"]).toBe("none");
+  });
+
+  it("keeps a creation that chose no resident un-engaged", async () => {
+    // `resident: null` is the person explicitly declining an owner (§7 rider A),
+    // and there is then no designation to engage anything.
+    const created = await createThread(ws, { body: "a note to myself", resident: null });
+    expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("none");
+  });
+
+  it("engages on a re-designation that replaces an existing resident", async () => {
+    const id = await undesignated();
+    expect((await designate(id, "researcher")).status).toBe(200);
+    // Lower it by hand, the way an out-of-band edit could, so the replacement
+    // has something to raise.
+    ws.write(threadPath(id), ws.read(threadPath(id)).replace("agent: engaged", "agent: none"));
+    ws.reproject();
+    ws.advance(61_000);
+    const before = ws.log("%H").length;
+
+    expect((await designate(id, "editor")).status).toBe(200);
+
+    expect(threadFrontmatterOf(ws, id)["agent"]).toBe("engaged");
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    // Still a replacement: the displaced occupant is announced exactly once.
+    expect(releases().map((event) => event.payload["reason"])).toEqual(["replaced"]);
+  });
+
+  it("lets a plain user turn on a designated thread enqueue on the resident's lane", async () => {
+    // §8's rider in one case: no mention, no skill directive, no
+    // `requestsAgent` — and the message still reaches the resident.
+    const id = await undesignated();
+    expect((await designate(id, "researcher")).status).toBe(200);
+
+    const appended = await appendTurn(ws, id, { body: "and one more thing" });
+
+    expect(appended.eventId).toMatch(/^evt_/);
+    const comment = pendingPayloads().find((event) => event.type === "comment.created");
+    expect(comment?.lane).toBe(id);
+  });
+
+  it("does not enqueue the creating turn (open question O1)", async () => {
+    // §8's automatic clause is about *"every **later** turn"*, and the turn a
+    // thread arrives with is not one. Otherwise every `thread create` would
+    // enqueue, because §7's rider A designates every standalone thread — and
+    // §8's own opening line, "human-only threads are normal", would hold for no
+    // standalone thread at all.
+    const created = await createThread(ws, { title: "Herbs", body: "no mention here" });
+
+    expect(created.eventId).toBeNull();
+    expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("engaged");
+    expect(pendingPayloads()).toEqual([]);
+
+    // The very next plain turn does enqueue: that one is a later turn.
+    ws.advance(61_000);
+    const appended = await appendTurn(ws, created.id, { body: "and another thing" });
+    expect(appended.eventId).toMatch(/^evt_/);
+  });
+
+  it("reverts nothing on release, and routes the next plain turn to the orchestrator", async () => {
+    const id = await undesignated();
+    expect((await designate(id, "researcher")).status).toBe(200);
+    ws.advance(61_000);
+
+    expect((await release(id)).status).toBe(200);
+
+    // The lane went back to ordinary routing; the thread did not go back to
+    // anything (PR #74 finding 3 — the pre-designation restore reading is
+    // rejected).
+    const frontmatter = threadFrontmatterOf(ws, id);
+    expect(frontmatter["agent"]).toBe("engaged");
+    expect(Object.hasOwn(frontmatter, "resident")).toBe(false);
+
+    const appended = await appendTurn(ws, id, { body: "carrying on" });
+    expect(appended.eventId).toMatch(/^evt_/);
+    const comment = pendingPayloads().find((event) => event.type === "comment.created");
+    expect(comment?.lane).toBe("orchestrator");
+  });
+
+  it("ends the re-trigger on resolve, through the cascade that already did it", async () => {
+    const id = await undesignated();
+    expect((await designate(id, "researcher")).status).toBe(200);
+    ws.advance(61_000);
+
+    expect((await ws.post(`/api/threads/${id}/resolve`, {})).status).toBe(200);
+
+    // Resolution released the resident and closed the conversation. No code
+    // path was added for either: `threads/status.ts` writes the status, and
+    // `participation.ts` reads it.
+    const frontmatter = threadFrontmatterOf(ws, id);
+    expect(Object.hasOwn(frontmatter, "resident")).toBe(false);
+    expect(frontmatter["status"]).toBe("resolved");
+    expect(releases().map((event) => event.payload["reason"])).toEqual(["resolved"]);
+
+    // The agent's own turn on a settled conversation wakes nobody and leaves it
+    // settled — §8's "a conversation the agent closes stays closed".
+    const reply = await appendTurn(ws, id, { body: "closing this out" }, "agent");
+    expect(reply.eventId).toBeNull();
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("resolved");
+
+    // A person's reply reopens it and re-triggers on §8's ordinary terms (the
+    // reopen rider signed 2026-08-05, unchanged by this issue) — and the lane it
+    // goes to is the **orchestrator's**, because resolution released the
+    // resident and reopening does not bring one back (§8, rider 2026-08-13).
+    ws.advance(61_000);
+    const reply2 = await appendTurn(ws, id, { body: "picking this back up" });
+    expect(reply2.eventId).toMatch(/^evt_/);
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("open");
+    const comment = pendingPayloads().find((event) => event.type === "comment.created");
+    expect(comment?.lane).toBe("orchestrator");
+  });
+
+  it("carries nothing new on either payload", async () => {
+    const id = await undesignated();
+    expect((await designate(id, "researcher")).status).toBe(200);
+    ws.advance(61_000);
+    expect((await release(id)).status).toBe(200);
+
+    // The lane semantics carry the engagement; the events are the same shape
+    // they were before the rider.
+    expect(Object.keys(designations()[0]?.payload ?? {}).sort()).toEqual(["resident", "threadId"]);
+    expect(Object.keys(releases()[0]?.payload ?? {}).sort()).toEqual([
+      "reason",
+      "resident",
+      "threadId",
+    ]);
   });
 });

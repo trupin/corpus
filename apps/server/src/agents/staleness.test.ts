@@ -302,9 +302,18 @@ describe("a document write and the roster", () => {
     ws.advance(61_000);
 
     const observed = await observe(async () => {
-      expect((await ws.post(`/api/threads/${id}/turns`, { body: "no mention here" })).status).toBe(
-        201,
-      );
+      // "Note only", so this is a turn and nothing else. A designation engages
+      // its thread since SERVER-165, so an *ordinary* plain turn on a designated
+      // conversation now enqueues — and an enqueue is the separate frame this
+      // case is measuring around, exactly as a mention's always was.
+      expect(
+        (
+          await ws.post(`/api/threads/${id}/turns`, {
+            body: "no mention here",
+            requestsAgent: false,
+          })
+        ).status,
+      ).toBe(201);
     });
 
     expect(observed.frames).toEqual([[["docs"], ["docs", id], ["threads", id], ["reflect"]]]);

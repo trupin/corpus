@@ -22,6 +22,20 @@
  * hold", which is the earliest moment "the listener has answered once and gone
  * back to waiting" is true on the record, and it adds no fixed cost to the run.
  *
+ * **What SERVER-165 changed here, and what it did not** (SPEC.md §8's rider
+ * signed 2026-09-06). Designating a conversation now engages it, so this thread
+ * is `agent: engaged` from the moment the Ask created it — the follow-up's
+ * omitted `requestsAgent` no longer depends on the agent having replied first,
+ * which is what used to raise the key. The follow-up is unchanged and the
+ * assertion it makes is now true for a stronger reason.
+ *
+ * The **seed** keeps `--requests-agent true`, and that is SERVER-165's open
+ * question O1 answered: §8's automatic clause is about *"every **later** turn"*,
+ * and the turn a thread arrives with is not one. A creation therefore engages
+ * its thread and still does not enqueue its own first message. Without the flag
+ * this seed would create a conversation nobody was asked to answer, and
+ * `thread.eventId` would be null.
+ *
  * Scored as a judgment (k/N): the subject is whether a model keeps a promise
  * made in prose, which is stochastic, and the ratio is the measurement CLI-078
  * and AGENT-065 are judged on. A run passes only when the corpus records both:
@@ -69,6 +83,10 @@ async function seed(ctx: SeedContext) {
       "create",
       "--title",
       "Herb planter",
+      // Still needed after SERVER-165, and for the reason stated at the top of
+      // this file: the creating turn is not a *later* turn, so the designation
+      // this create makes engages the thread without enqueuing its own first
+      // message. This flag is what asks for the first answer.
       "--requests-agent",
       "true",
       "-m",
@@ -88,7 +106,9 @@ async function followUp(ctx: SeedContext, current: Seed): Promise<Seed> {
   // The composer's request is the person's path for a typed message
   // (`x-corpus-author` defaults to `user`). `requestsAgent` is omitted on
   // purpose: the thread is engaged, so omission enqueues — a person's ordinary
-  // follow-up, not a specially marked one.
+  // follow-up, not a specially marked one. Since SERVER-165 it is engaged from
+  // its own designation rather than from the first reply, so this holds even if
+  // the first answer never landed.
   const response = await ctx.composer(`/api/threads/${threadId}/turns`, {
     body: SECOND_QUESTION,
   });

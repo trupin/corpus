@@ -70,6 +70,29 @@
 // park and nothing else: events sitting in `pending/` or held in `in-progress/`
 // for that lane are still there, unmoved, and are the departing listener's to
 // drain (the converse skill's account of retirement depends on exactly this).
+//
+// ## Designating engages, and releasing reverts nothing
+//
+// SPEC.md §8's rider signed 2026-09-06, cross-referenced from §7 (SERVER-165):
+//
+// > **Designating a conversation engages it.** … the server sets the thread
+// > engaged in the same act that designates it, so a plain message to a
+// > designated conversation reaches its resident without a mention. Releasing
+// > the resident returns the **lane** to ordinary routing and reverts nothing on
+// > the thread … Resolving the thread ends both, exactly as it always has.
+//
+// So {@link writeResident} writes `agent: engaged` in the **same** frontmatter,
+// the same file write and the same commit as the `resident:` key — never as a
+// second call, which would leave a designated thread briefly un-engaged and put
+// two commits in `git log` for one act. The release half deliberately writes no
+// `agent` at all: §8's stickiness already governs it, and "engaged" recorded
+// that the agent is in this conversation, which releasing a resident does not
+// undo.
+//
+// Nothing here ends engagement. **Resolution does, through the cascade that
+// already existed**: `threads/status.ts` writes `status: resolved`, and
+// `participation.ts` reads that status, not this key — so no code path was added
+// for the end of engagement and none is needed.
 
 import {
   ResidentDesignatedPayloadSchema,
@@ -81,6 +104,7 @@ import {
   type DesignateResidentRequest,
   type Resident,
   type ResidentReleaseReason,
+  type ThreadAgent,
   type ThreadSummary,
 } from "@corpus/contract";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
@@ -133,7 +157,8 @@ export interface ResidentChange {
   readonly thread: ThreadSummary;
   /**
    * `null` when nothing was written — a re-designation of the same agent *at the
-   * same weight*, or a release with nothing to release.
+   * same weight* on a thread that is **already engaged** (SERVER-165), or a
+   * release with nothing to release.
    */
   readonly result: MutationResult | null;
   /** The `resident.designated` event; `null` for a release, which enqueues none. */
@@ -436,11 +461,20 @@ export function residentFor(
  * recorded so the next reader does not re-open it by default.
  *
  * **Every call enqueues `resident.designated`, including one that writes
- * nothing.** Designating the resident a thread already has leaves the file
- * untouched — the state asked for is the state that holds, and stamping
- * `updated` for it would report a change nobody made — but the event is still
- * written, because it is how a person asks for a listener that is no longer
- * running to be launched again, and there is no other verb for that.
+ * nothing.** Designating the resident a thread already has *on a thread already
+ * engaged* leaves the file untouched — the state asked for is the state that
+ * holds, and stamping `updated` for it would report a change nobody made — but
+ * the event is still written, because it is how a person asks for a listener
+ * that is no longer running to be launched again, and there is no other verb for
+ * that.
+ *
+ * **The state asked for is two keys, not one** (SERVER-165). §8's rider makes
+ * `agent: engaged` part of what a designation puts in force, so the same
+ * re-designation *does* write when the thread is not engaged — which is the
+ * upgrade path for every thread designated before this behaviour existed, and
+ * the repair for a hand-edit that lowered the key. It is still not a
+ * replacement: no fresh `designationId`, no `resident.released`, no displaced
+ * listener.
  *
  * **A different weight is a different state, so it writes** (SERVER-129). §7's
  * rider makes a resident's weight a property of the designation — a running
@@ -483,7 +517,20 @@ export async function designateResident(
     // another moves both, and the same profile at a new level moves `weight`
     // (SERVER-129).
     const current = fileResident(thread);
-    const unchanged = current !== null && sameResident(current, resident);
+    const sameDesignation = current !== null && sameResident(current, resident);
+    // §8's rider (SERVER-165): a designation engages the thread. So the state a
+    // designation asks for is **two** keys, and "already in force" has to mean
+    // both of them — a thread designated before this behaviour landed, or one
+    // whose `agent` a hand-edit lowered, still needs the engagement written.
+    //
+    // Deliberately a **second** boolean rather than a term folded into
+    // `sameResident`. That comparison decides three other things — whether a
+    // fresh `designationId` is minted, whether the occupant counts as displaced,
+    // and whether `resident.released` is enqueued — and every one of them must
+    // stay false for a request asking for the resident already in force
+    // (SERVER-147's churn guard). Folding engagement in would make a
+    // re-designation of an un-engaged thread displace its own listener.
+    const alreadyEngaged = thread.agent === "engaged";
 
     // **The id changes exactly when the designation changes** (SERVER-147). It
     // is minted here, on the branch that writes, and nowhere else: a
@@ -493,15 +540,16 @@ export async function designateResident(
     // deliberately does not mint one — it is also what `sameResident` compares.
     const designated: Resident = {
       ...resident,
-      designationId: unchanged ? current.designationId : newId(ID_PREFIXES.designation),
+      designationId: sameDesignation ? current.designationId : newId(ID_PREFIXES.designation),
     };
 
     const named = designated.name ?? GENERAL_RESIDENT_SUBJECT;
-    const result = unchanged
-      ? null
-      : await writeResident(workspace, thread, actor, designated, {
-          subject: `resident designate: ${named} on ${thread.title} (${id}) by ${actor}`,
-        });
+    const result =
+      sameDesignation && alreadyEngaged
+        ? null
+        : await writeResident(workspace, thread, actor, designated, {
+            subject: `resident designate: ${named} on ${thread.title} (${id}) by ${actor}`,
+          });
 
     // The displaced occupant's release (SERVER-128), before the newcomer's
     // launch instruction and after the write that displaced it: the lane's old
@@ -514,7 +562,7 @@ export async function designateResident(
     // `current`, so its `docId` is the one every other surface would have shown
     // for it a moment earlier. The two differ only for a parented thread, which
     // `requireStandalone` has already refused.
-    const displaced = current === null || unchanged ? null : thread.resident;
+    const displaced = current === null || sameDesignation ? null : thread.resident;
     const releasedEventId =
       displaced === null
         ? null
@@ -624,6 +672,18 @@ export async function releaseResident(
  * The value written is `core/resident.ts`'s stored shape, the exact inverse of
  * the reader every path asks — which is why a designation that chose no weight
  * writes no `weight:` key rather than a null one (SERVER-129).
+ *
+ * **A designation also writes `agent: engaged`; a release writes no `agent` at
+ * all** (SERVER-165, SPEC.md §8's rider signed 2026-09-06). The two are one
+ * `setFrontmatterFields` call, so they are one file write, one validation, one
+ * auto-commit and one re-projection — "the same act that designates it", in the
+ * rider's words, rather than a designation followed by an engagement somebody
+ * could observe between.
+ *
+ * The engagement is derived from `resident !== null` rather than passed in,
+ * because there is no third case: every call with a resident is a designation
+ * and every call without one is a release. A flag would be a way for a future
+ * caller to designate without engaging, which is exactly what the rider forbids.
  */
 async function writeResident(
   workspace: ThreadsWorkspace,
@@ -635,6 +695,10 @@ async function writeResident(
   const text = serializeDocument(
     setFrontmatterFields(thread.loaded.parsed, {
       resident: resident === null ? undefined : residentToStored(resident),
+      // Releasing leaves the key exactly as it found it: §8 makes engagement
+      // sticky until the thread is resolved, and the rider is explicit that
+      // release "reverts nothing on the thread".
+      ...(resident === null ? {} : { agent: "engaged" satisfies ThreadAgent }),
       updated: formatInstant(workspace.now()),
     }),
   );

@@ -192,7 +192,12 @@ describe("ingest on turn append", () => {
   });
 
   it("never routes on the server's own reference block", async () => {
-    const created = await createThread(ws, { body: "quiet" });
+    // On a document, so the thread is not engaged: a standalone thread
+    // designates a general resident (§7's rider A) and a designation engages it
+    // (§8's rider signed 2026-09-06, SERVER-165), which would enqueue this turn
+    // for a reason that has nothing to do with the reference block.
+    const parent = (await createDoc(ws, { type: "note", title: "Shelf", body: "A body.\n" })).id;
+    const created = await createThread(ws, { parent, body: "quiet" });
     const before = pendingEvents(ws).length;
     const { payload } = await uploadTurn([["files", png("comment.png")]], created.id);
     expect(payload["eventId"]).toBeNull();
