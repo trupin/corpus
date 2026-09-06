@@ -170,6 +170,26 @@ describe("citationsIn", () => {
     );
   });
 
+  /**
+   * CLI-084, TEST-1119. The report that opened that issue blamed the two-token
+   * cap in `corpusInvocations`: `corpus thread digest set <id>` has three words,
+   * so the parser was said to mis-read it. It does not. `set` is a positional
+   * argument of `thread digest`, the cap stops before it on purpose, and this
+   * pins that the real registry resolves the line the report quoted.
+   */
+  it("resolves a verb whose own grammar takes a positional action word", () => {
+    const found = citationsIn(
+      ".claude/skills/converse/SKILL.md",
+      fence(
+        "corpus thread digest set th_4b8e2c --from agent <<'CORPUS_EOF'",
+        "a rolling account of the conversation",
+        "CORPUS_EOF",
+      ),
+      surface,
+    );
+    expect(found).toEqual([]);
+  });
+
   it("reports every citation in a file, in line order", () => {
     const found = citationsIn(
       "SKILL.md",
@@ -225,6 +245,134 @@ describe("staleVerbCitations", () => {
     }
     expect(instructionFiles(root).length).toBeGreaterThan(3);
     expect(staleVerbCitations({ root, registry })).toEqual([]);
+  });
+
+  /**
+   * CLI-084. `corpus upgrade` installs the new package and then syncs from the
+   * process it started in, so the template on disk is the incoming tool's while
+   * the registry in memory is the outgoing tool's. These model that pair
+   * directly: `withoutThreadDigest` is the outgoing build, and the template root
+   * is the incoming one's own skills.
+   */
+  describe("against an incoming tool the running build predates", () => {
+    const withoutThreadDigest: Registry = {
+      ...registry,
+      topics: registry.topics.map((topic) =>
+        topic.name === "thread"
+          ? { ...topic, commands: topic.commands.filter((command) => command.name !== "digest") }
+          : topic,
+      ),
+    };
+
+    /** A template tree, in the layout `planTemplateInstall` walks. */
+    function templateOf(files: Readonly<Record<string, string>>): string {
+      const root = scratch();
+      for (const [relative, content] of Object.entries(files)) write(root, relative, content);
+      return root;
+    }
+
+    it("does not flag a verb the incoming tool's own skills teach", () => {
+      const root = scratch();
+      write(
+        root,
+        ".claude/skills/converse/SKILL.md",
+        fence("corpus thread digest set th_4b8e2c --from agent"),
+      );
+      const templateRoot = templateOf({
+        "claude/skills/converse/SKILL.md": fence("corpus thread digest set th_4b8e2c --from agent"),
+      });
+
+      // The outgoing build alone: the false positive CLI-084 reports.
+      expect(
+        staleVerbCitations({ root, registry: withoutThreadDigest }).map((c) => c.command),
+      ).toEqual(["thread digest"]);
+
+      // Told which tool the template came from, it says nothing.
+      expect(
+        staleVerbCitations({ root, registry: withoutThreadDigest, tool: { templateRoot } }),
+      ).toEqual([]);
+    });
+
+    it("still flags a verb the incoming tool dropped", () => {
+      // CLI-059's purpose, and the half that must survive the fix: the incoming
+      // skills do not teach `skill rollback`, so nothing vouches for it.
+      const root = scratch();
+      write(root, "CLAUDE.md", fence("corpus skill rollback orchestrate"));
+      const templateRoot = templateOf({
+        "claude/skills/converse/SKILL.md": fence("corpus thread digest set th_4b8e2c"),
+        "CLAUDE.md": fence("corpus queue idle"),
+      });
+
+      expect(
+        staleVerbCitations({ root, registry, tool: { templateRoot } }).map((c) => c.command),
+      ).toEqual(["skill rollback"]);
+    });
+
+    it("vouches for the verb the incoming skills name and for no other", () => {
+      const root = scratch();
+      write(root, "CLAUDE.md", fence("corpus thread frobnicate th_1"));
+      const templateRoot = templateOf({
+        "claude/skills/converse/SKILL.md": fence("corpus thread digest set th_4b8e2c"),
+      });
+
+      expect(
+        staleVerbCitations({ root, registry: withoutThreadDigest, tool: { templateRoot } }).map(
+          (c) => c.command,
+        ),
+      ).toEqual(["thread frobnicate"]);
+    });
+
+    it("vouches for a whole name this build knows as neither command nor topic", () => {
+      // A release that adds a topic outright: this build would report every
+      // `corpus plan …` line under the one name, so vouching for the name is
+      // exactly as fine-grained as the finding it replaces.
+      const root = scratch();
+      write(root, "CLAUDE.md", fence("corpus plan review pl_1", "corpus plan draft"));
+      const templateRoot = templateOf({
+        "claude/skills/orchestrate/SKILL.md": fence("corpus plan draft --from agent"),
+      });
+
+      expect(staleVerbCitations({ root, registry, tool: { templateRoot } })).toEqual([]);
+    });
+
+    it("does not vouch from a sentence explaining that the verb is gone", () => {
+      const root = scratch();
+      write(root, "CLAUDE.md", fence("corpus thread digest set th_1"));
+      const templateRoot = templateOf({
+        "claude/skills/converse/SKILL.md": "`corpus thread digest` no longer exists.\n",
+      });
+
+      expect(
+        staleVerbCitations({ root, registry: withoutThreadDigest, tool: { templateRoot } }).map(
+          (c) => c.command,
+        ),
+      ).toEqual(["thread digest"]);
+    });
+
+    it("keeps the registry's own surface when the incoming template cannot be read", () => {
+      const root = scratch();
+      write(root, "CLAUDE.md", fence("corpus thread digest set th_1"));
+
+      expect(
+        staleVerbCitations({
+          root,
+          registry: withoutThreadDigest,
+          tool: { templateRoot: join(scratch(), "gone") },
+        }).map((c) => c.command),
+      ).toEqual(["thread digest"]);
+    });
+
+    it("reads the shipped template as its own vouching, and finds nothing", () => {
+      // The real template against the real registry, through the vouching path:
+      // widening the surface may never turn a clean workspace into a dirty one.
+      const root = scratch();
+      for (const file of collectIncoming()) {
+        const to = join(root, ...file.path.split("/"));
+        mkdirSync(dirname(to), { recursive: true });
+        copyFileSync(file.from, to);
+      }
+      expect(staleVerbCitations({ root, registry, tool: {} })).toEqual([]);
+    });
   });
 
   it("judges against the registry it is handed, not a list of removed verbs", () => {

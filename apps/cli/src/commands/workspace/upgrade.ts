@@ -349,7 +349,14 @@ export async function applyWorkspaceUpgrade(
   const report = await syncTemplate(request, dependencies);
   const registry = request.registry;
   if (registry === undefined) return { ...report, staleCitations: [] };
-  return { ...report, staleCitations: staleVerbCitations({ root: request.root, registry }) };
+  // `tool` is what keeps the scan honest under `corpus upgrade`: that command
+  // installs the new package and syncs from this same process, so `registry` is
+  // the *outgoing* build's while the template is the incoming one's. The
+  // incoming template's own citations widen the surface (CLI-084).
+  return {
+    ...report,
+    staleCitations: staleVerbCitations({ root: request.root, registry, tool: dependencies }),
+  };
 }
 
 async function syncTemplate(
