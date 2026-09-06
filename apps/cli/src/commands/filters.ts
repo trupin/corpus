@@ -86,47 +86,44 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "a,b",
     description:
-      "Comma-separated document types; values OR together. The types the core knows: `note`, " +
-      "`thread`, `view`, `template`, `skill`, `agent-def`. Any other value is sent as given — a " +
-      "document may carry a `type:` this build has never heard of, and it is still listed and " +
-      "still searchable (SPEC.md §5).",
+      "Comma-separated document types, ORed. The core knows `note`, `thread`, `view`, " +
+      "`template`, `skill`, `agent-def`; any other value is sent as given — a document may " +
+      "carry a `type:` this build has never heard of, and it is still listed (SPEC.md §5).",
   },
   {
     name: "title",
     type: "string",
     valueName: "text",
     description:
-      "Match a document's title. Takes glob patterns — `*` for any run of characters, `?` for " +
-      'one — and matches **exactly** without one, so a substring is spelled `"*mortgage*"`. ' +
-      "Case-insensitive. Distinct from `--q`, which ranks whole words across the corpus " +
-      "(SPEC.md §9.2). **Quote the pattern**: an unquoted `*` is expanded by your shell before " +
-      "this command ever sees it.",
+      "Match a document's title. Glob patterns — `*` for any run, `?` for one — and **exact** " +
+      'without one, so a substring is `"*mortgage*"`. Case-insensitive. Distinct from `--q`, ' +
+      "which ranks whole words. **Quote the pattern**: an unquoted `*` is expanded by your " +
+      "shell first.",
   },
   {
     name: "body",
     type: "string",
     valueName: "text",
     description:
-      "Match a document's body text, on the same terms as `--title` — glob with a wildcard, " +
-      "exact without one. A thread carries its turns in its body, so a pattern reaches turn " +
-      'text. Almost every useful body filter wants wildcards: `--body "*rate assumption*"`.',
+      "Match the body text, on `--title`'s terms. Glob with a wildcard, exact without one; a " +
+      "thread carries its turns in its body, so a pattern reaches turn text.",
   },
   {
     name: "tag",
     type: "string",
     valueName: "a,b",
     description:
-      "Comma-separated tags; values OR together. Each value takes glob patterns on the same " +
-      'terms as `--title`, so `--tag "proj-*"` matches a family of tags.',
+      "Comma-separated tags, ORed. Each value takes glob patterns on `--title`'s terms, so " +
+      '`--tag "proj-*"` matches a family of tags.',
   },
   {
     name: "folder",
     type: "string",
     valueName: "path",
     description:
-      "Path prefix under `data/docs/`, matching the folder and its descendants. Threads inherit " +
-      "their parent's folder. Takes glob patterns, which match the stored path rather than the " +
-      'bare name — `--folder "work/*"` — and cannot be combined with `--folder-scope`.',
+      "Path prefix under `data/docs/`. Matches the folder and its descendants; threads " +
+      "inherit their parent's folder. Takes glob patterns, which match the stored path rather " +
+      'than the bare name — `--folder "work/*"` — and cannot be combined with `--folder-scope`.',
   },
   {
     name: "status",
@@ -139,25 +136,23 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "a,b",
     description:
-      "Comma-separated stage values (SPEC.md §5); values OR together like `--type` and `--tag`, " +
-      "and each is an **exact** match. **An empty element selects documents with no stage at " +
-      "all** — the null sentinel — so `--stage ,triage` is one request for a kanban's first " +
-      'column, which holds its first stage _and_ everything unstaged, and `--stage ""` on its ' +
-      "own selects the unstaged. It can never collide with a real stage, because a written stage " +
-      "is a non-empty comma-free string. Not thread-only: any document may carry a stage.",
+      "Comma-separated stage values (SPEC.md §5). Values OR together, each an **exact** " +
+      "match. **An empty element selects documents with no stage at all**: `--stage ,triage` " +
+      "is a kanban's first column in one request — its first stage _and_ everything unstaged " +
+      '— and `--stage ""` alone selects the unstaged. Any document may carry a stage.',
   },
   {
     name: "include-archived",
     type: "boolean",
     description:
-      "Include archived documents **alongside** the rest, rather than excluding them — the " +
-      "board's archived chip. A no-op next to an explicit `--status`.",
+      "Include archived documents too. Widens the default set rather than replacing it — the " +
+      "board's archived chip; a no-op next to an explicit `--status`.",
   },
   {
     name: "needs",
     type: "string",
     valueName: "reason",
-    description: `The Attention filter (SPEC.md §10): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
+    description: `The Attention filter. Reasons (SPEC.md §10): ${NEEDS_FILTERS.join(", ")}; \`me\` is the union of every reason.`,
   },
   {
     name: "parent",
@@ -168,47 +163,47 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
   {
     name: "references",
     type: "string",
-    valueName: "doc-id",
-    description: "Documents whose body contains `[[<doc-id>]]` — the backlinks of that document.",
+    valueName: "id",
+    description: "Bodies containing `[[<doc-id>]]`. The backlinks of that document.",
   },
   {
     name: "agent",
     type: "string",
-    valueName: "state",
-    description: `Agent participation state: ${THREAD_AGENT_STATES.join(", ")}. Thread-only.`,
+    valueName: "st",
+    description: `Agent participation state, thread-only. One of: ${THREAD_AGENT_STATES.join(", ")}.`,
   },
   {
     name: "author",
     type: "string",
-    valueName: "user|agent",
-    description: "Author of the thread's last turn. Thread-only.",
+    valueName: "actor",
+    description: "Author of the thread's last turn. `user` or `agent`; thread-only.",
   },
   {
     name: "unread",
     type: "boolean",
     description:
-      "Only threads whose last turn is newer than your last-seen mark. Thread-only, and it " +
-      "selects the unread side only — there is no flag for the read side.",
+      "Threads with a turn newer than your last-seen mark. Thread-only, and it selects the " +
+      "unread side only — there is no flag for the read side.",
   },
   {
     name: "due",
     type: "string",
-    valueName: "date|keyword",
+    valueName: "when",
     description:
-      "An ISO date (due on or before it) or one of `overdue`, `today`, `week`, resolved against " +
-      "the workspace's clock.",
+      "An ISO date, or `overdue`, `today`, `week`. A date selects due on or before it, " +
+      "resolved against the workspace's clock.",
   },
   {
     name: "since",
     type: "string",
     valueName: "iso",
-    description: "Documents updated strictly after this ISO 8601 instant.",
+    description: "Updated strictly after this ISO 8601 instant.",
   },
   {
     name: "stale",
     type: "string",
     valueName: "tier",
-    description: `Staleness tier (SPEC.md §5) and beyond: ${STALE_TIERS.join(", ")}. Evergreen documents never match.`,
+    description: `Staleness tier and beyond (SPEC.md §5). One of: ${STALE_TIERS.join(", ")}; evergreen documents never match.`,
   },
 ];
 

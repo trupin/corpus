@@ -11,6 +11,11 @@ import {
   type StubServer,
 } from "../../testing/stub-server.js";
 import { idleCommand, runIdle } from "./idle.js";
+import {
+  IDLE_EVENTS_NEXT_STEP,
+  IDLE_HALTED_NEXT_STEP,
+  IDLE_TIMEOUT_NEXT_STEP,
+} from "./next-step.js";
 
 const EVENT = {
   id: "evt_1111",
@@ -87,14 +92,16 @@ describe("corpus queue idle", () => {
     const human = stubContext(stub, { flags: { wait: 5 } });
     await runIdle(human.context, { signals: fakeSignals() });
     expect(human.stdout()).toBe("evt_1111 comment.created\n");
-    // Nothing held: the report adds nothing to the loop's normal iteration.
-    expect(human.stderr()).toBe("");
+    // Nothing held: the report adds nothing to the loop's normal iteration, and
+    // the only thing on stderr is CLI-078's next-step line.
+    expect(human.stderr()).toBe(`${IDLE_EVENTS_NEXT_STEP}\n`);
 
     const machine = stubContext(stub, { flags: { wait: 5 }, json: true });
     await runIdle(machine.context, { signals: fakeSignals() });
     expect(JSON.parse(machine.stdout())).toEqual({
       events: [EVENT],
       inProgress: NO_HELD_EVENTS,
+      nextStep: IDLE_EVENTS_NEXT_STEP,
     });
   });
 
@@ -110,11 +117,16 @@ describe("corpus queue idle", () => {
       "the server still holds 4 events in-progress — not claimed by this call:",
       "  evt_h000  comment.created  held 3h  Re: the rate assumption",
       "  … and 3 more held, not shown (4 in total)",
+      IDLE_EVENTS_NEXT_STEP,
     ]);
 
     const machine = stubContext(stub, { flags: { wait: 5 }, json: true });
     await runIdle(machine.context, { signals: fakeSignals() });
-    expect(JSON.parse(machine.stdout())).toEqual({ events: [EVENT], inProgress: HELD });
+    expect(JSON.parse(machine.stdout())).toEqual({
+      events: [EVENT],
+      inProgress: HELD,
+      nextStep: IDLE_EVENTS_NEXT_STEP,
+    });
     expect(machine.stderr()).toBe("");
   });
 
@@ -134,7 +146,11 @@ describe("corpus queue idle", () => {
 
     release?.();
     await running;
-    expect(JSON.parse(harness.stdout())).toEqual({ events: [EVENT], inProgress: NO_HELD_EVENTS });
+    expect(JSON.parse(harness.stdout())).toEqual({
+      events: [EVENT],
+      inProgress: NO_HELD_EVENTS,
+      nextStep: IDLE_EVENTS_NEXT_STEP,
+    });
   });
 
   it("reports an expired window as a timeout, not an error", async () => {
@@ -273,5 +289,99 @@ describe("corpus queue idle --thread", () => {
     // Nothing was sent: a bad lane costs a usage error, not eight minutes of
     // silence followed by one.
     expect(stub.requests).toEqual([]);
+  });
+});
+
+/**
+ * CLI-078 — the three outcomes that end a pass each name what the loop does
+ * next, and they differ. `queue idle` is the verb a listener re-invokes, and its
+ * output is the last thing read before that choice is made.
+ */
+describe("corpus queue idle names the loop's next step", () => {
+  /**
+   * A non-zero window that expires busy-loops for its whole duration, so the
+   * clock is faked: the deadline is fixed on the first reading and every later
+   * one is past it. Without this a `--wait 5` expiry test spends five real
+   * seconds re-requesting — and `--wait 0` cannot stand in, because a probe is
+   * exactly the case that prints no line.
+   */
+  const expiredWindow = (): { now: () => number } => {
+    let readings = 0;
+    return {
+      now: () => {
+        readings += 1;
+        return readings === 1 ? 0 : 10_000;
+      },
+    };
+  };
+
+  it("names parking again after a window that expired empty", async () => {
+    const stub = await idleStub(() => "expire");
+
+    const human = stubContext(stub, { flags: { wait: 5 } });
+    await runIdle(human.context, { signals: fakeSignals(), ...expiredWindow() });
+
+    expect(human.stdout()).toBe("idle — no events (timeout)\n");
+    expect(human.stderr()).toBe(`${IDLE_TIMEOUT_NEXT_STEP}\n`);
+  });
+
+  it("names parking again after a halted window, in different words", async () => {
+    const stub = await idleStub(() => "expire", true);
+
+    const human = stubContext(stub, { flags: { wait: 5 } });
+    await runIdle(human.context, { signals: fakeSignals(), ...expiredWindow() });
+
+    expect(human.stdout()).toBe("idle — no events (halted)\n");
+    expect(human.stderr()).toBe(`${IDLE_HALTED_NEXT_STEP}\n`);
+    expect(IDLE_HALTED_NEXT_STEP).not.toBe(IDLE_TIMEOUT_NEXT_STEP);
+  });
+
+  it("says the returned events are pending rather than claimed", () => {
+    expect(IDLE_EVENTS_NEXT_STEP).toContain("pending, not claimed");
+    expect(IDLE_EVENTS_NEXT_STEP).toContain("claim-all");
+  });
+
+  it("keeps the two keys the converse loop depends on exactly as they were", async () => {
+    const stub = await idleStub(() => "expire");
+
+    const machine = stubContext(stub, { flags: { wait: 5 }, json: true });
+    await runIdle(machine.context, { signals: fakeSignals(), ...expiredWindow() });
+
+    const payload = JSON.parse(machine.stdout()) as Record<string, unknown>;
+    expect(payload.idle).toBe(true);
+    expect(payload.reason).toBe("timeout");
+    expect(payload.nextStep).toBe(IDLE_TIMEOUT_NEXT_STEP);
+    expect(machine.stdout().startsWith(String.raw`{"idle":true,"reason":"timeout"`)).toBe(true);
+  });
+
+  it("gives a --wait 0 probe no line at all, on either stream", async () => {
+    const stub = await idleStub(() => "expire");
+
+    const human = stubContext(stub, { flags: { wait: 0 } });
+    await runIdle(human.context, { signals: fakeSignals() });
+    expect(human.stdout()).toBe("idle — no events (timeout)\n");
+    expect(human.stderr()).toBe("");
+
+    const machine = stubContext(stub, { flags: { wait: 0 }, json: true });
+    await runIdle(machine.context, { signals: fakeSignals() });
+    expect(JSON.parse(machine.stdout())).toEqual({ idle: true, reason: "timeout" });
+  });
+
+  it("prints no next-step line when a scoped park is refused with 422", async () => {
+    const stub = await startStubServer((request, response) => {
+      if (request.path === "/api/queue/status") return sendJson(response, 200, RUNNING);
+      sendJson(response, 422, {
+        error: { code: "unprocessable", message: "th_4b8e2c designates nobody" },
+      });
+    });
+
+    const harness = stubContext(stub, { flags: { wait: 5, thread: "th_4b8e2c" } });
+    await expect(runIdle(harness.context, { signals: fakeSignals() })).rejects.toThrow();
+
+    // Stopping is correct on the retirement path, so nothing tells the caller
+    // to park again. Asserted as an absence: an exit code alone would pass
+    // while a reminder printed underneath it.
+    expect(harness.stderr()).toBe("");
+    expect(harness.stdout()).toBe("");
   });
 });

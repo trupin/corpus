@@ -249,6 +249,12 @@ describe("projectDocument — threads and turns", () => {
       resident_designation_id: null,
       // No `resident:` block at all, which is not a finding (SERVER-132).
       resident_problem: null,
+      // §6's digest (SERVER-164): no `digest:` block, which the rider calls the
+      // ordinary state and not a fault. All three null together — "has a
+      // digest" and "is it stale" never disagree.
+      digest_body: null,
+      digest_watermark: null,
+      digest_stale: null,
     });
 
     expect(db.prepare("SELECT idx, author, ts, body_md FROM turns ORDER BY idx").all()).toEqual([

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { digestField } from "./digest.js";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { HEADING_PATH_SEPARATOR, RelationSchema, semanticIndexField } from "./retrieval.js";
 import { openapi } from "./openapi-metadata.js";
@@ -219,9 +220,22 @@ const truncatedField = z
       "quote and its immediate surroundings always survive the cut.",
   );
 
-/** The envelope fields every shape carries, spread into all five variants. */
+/**
+ * The envelope fields every shape carries, spread into all five variants.
+ *
+ * **`digest` is here rather than in one variant** (CONTRACT-096) because it is a
+ * fact about the *conversation*, and all five shapes describe the same
+ * conversation seen from different parents. A pack that carried it only where a
+ * parent exists would hide it on exactly the threads that most often have one:
+ * a resident's own standalone thread.
+ */
 const contextPackBase = {
   threadId: ThreadIdSchema.describe("The thread this pack briefs."),
+  // The pack is the rehydration read, and a digest is rehydration's first line
+  // (SPEC.md §6, rider signed 2026-09-05). It is carried **whole**, never cut:
+  // the digest's own `DIGEST_MAX_CHARS` bound is what keeps the pack bounded, so
+  // there is nothing here for `truncated` to describe.
+  digest: digestField,
   excerpts: z
     .array(ContextExcerptSchema)
     .max(CONTEXT_MAX_EXCERPTS)

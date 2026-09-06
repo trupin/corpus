@@ -2,6 +2,7 @@ import type { TopicSpec } from "../../registry/types.js";
 import { contextCommand } from "./context.js";
 import { createCommand } from "./create.js";
 import { designateCommand } from "./designate.js";
+import { digestCommand } from "./digest.js";
 import { releaseCommand } from "./release.js";
 import { replyCommand } from "./reply.js";
 import { scopeCommand } from "./scope.js";
@@ -42,7 +43,9 @@ export const threadTopic: TopicSpec = {
     "or standalone — `show` is the read §7's comment skill starts from (status, anchoring and " +
     "every turn), `context` is the bounded briefing around it (the anchored passage plus the " +
     "excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the " +
-    "conversation, and `resolve`/`reopen` control " +
+    "conversation, `digest` is the resident's rolling account of it — written at reply time, " +
+    "shown at the top of `show --index` and of the context pack, and only ever an orientation, " +
+    "never a source (SPEC.md §6) — and `resolve`/`reopen` control " +
     "whether later turns keep waking it (SPEC.md §8). `designate` and `release` are the user's " +
     "half of SPEC.md §7's residency: they put a long-lived agent in charge of a standalone " +
     "conversation and everything that grows out of it, and take it away again. `scope` lists what " +
@@ -53,6 +56,7 @@ export const threadTopic: TopicSpec = {
     showCommand,
     contextCommand,
     replyCommand,
+    digestCommand,
     resolveCommand,
     reopenCommand,
     designateCommand,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   CORE_DOC_TYPES,
+  DIGEST_MAX_CHARS,
   DOC_STATUSES,
   DocumentIdSchema,
   IsoDateTimeSchema,
@@ -13,6 +14,17 @@ import { describe, expect, it } from "vitest";
 // directories, so importing them is what stops the install contract from drifting
 // away from the implementation it documents.
 import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
+// The instruction CLI-078 prints at every pass's decision point — imported from
+// the CLI's own source so the converse loop's step 8 and the tool can never
+// drift into two wordings of one step (AGENT-065).
+import {
+  IDLE_EVENTS_NEXT_STEP,
+  IDLE_TIMEOUT_NEXT_STEP,
+} from "../apps/cli/src/commands/queue/next-step.js";
+// The digests-orient invariant, imported from the surface that prints it beside
+// every digest (CLI-077), so the skills and the tool keep one spelling of one
+// rule (AGENT-069) — the same anti-drift shape as the next-step lines above.
+import { DIGEST_ORIENTS_HELP } from "../apps/cli/src/commands/thread/digest.js";
 import { planTemplateInstall } from "../apps/cli/src/template/install.js";
 import {
   CLI_COMMANDS_PENDING_CLI_006,
@@ -60,8 +72,18 @@ const EXPECTED_TREE = [
   "claude/skills/comment/references/skill-genesis.md",
   "claude/skills/comment/references/worked-examples.md",
   "claude/skills/converse/SKILL.md",
+  "claude/skills/converse/references/leaving.md",
   "claude/skills/orchestrate/SKILL.md",
+  "claude/skills/orchestrate/references/conventions.md",
+  "claude/skills/orchestrate/references/launching.md",
+  "claude/skills/orchestrate/references/weight.md",
+  "claude/skills/orchestrate/references/worked-example.md",
+  "claude/skills/orchestrate/references/writing.md",
   "claude/skills/profile/SKILL.md",
+  "claude/skills/reflect-corpus/SKILL.md",
+  "claude/skills/reflect-edit/SKILL.md",
+  "claude/skills/reflect-edit/references/reasoning.md",
+  "claude/skills/reflect-edit/references/worked-example.md",
   "data/docs/boards/attention.md",
   "data/docs/boards/by-status.md",
   "data/docs/boards/files.md",
@@ -143,19 +165,34 @@ const installedSkills: readonly InstalledSkill[] = templatePlan
   }));
 
 /**
- * The comment skill's `references/` files (AGENT-047): skill payload read on a
- * directed pointer from `SKILL.md`, installed beside it and excluded from the
- * document rules the way the vendored skill's references are — but authored
- * here, so every sweep that binds a skill body's worked commands binds them
- * too. Drawn from the installer's plan for the same reason `installedSkills`
- * is: a reference added to the template is swept the day it lands.
+ * A skill's `references/` files (AGENT-047): skill payload read on a directed
+ * pointer from `SKILL.md`, installed beside it and excluded from the document
+ * rules the way the vendored skill's references are — but authored here, so
+ * every sweep that binds a skill body's worked commands binds them too. Drawn
+ * from the installer's plan for the same reason `installedSkills` is: a
+ * reference added to the template is swept the day it lands.
  */
-const skillReferences: readonly InstalledSkill[] = templatePlan
-  .filter((file) => file.to.startsWith(".claude/skills/comment/references/"))
-  .map((file) => ({
-    label: `assets/workspace/${file.from}`,
-    body: readTemplateFile(file.from),
-  }));
+const referencesOfSkill = (name: string): readonly InstalledSkill[] =>
+  templatePlan
+    .filter((file) => file.to.startsWith(`.claude/skills/${name}/references/`))
+    .map((file) => ({
+      label: `assets/workspace/${file.from}`,
+      body: readTemplateFile(file.from),
+    }));
+
+const commentReferences = referencesOfSkill("comment");
+/** The converse skill's reference (AGENT-065): the reasoning behind its five endings. */
+const converseReferences = referencesOfSkill("converse");
+/** The orchestrate skill's references (AGENT-067): case law, litigation, procedures. */
+const orchestrateReferences = referencesOfSkill("orchestrate");
+/** The reflect-edit skill's references (AGENT-067): reasoning and the worked example. */
+const reflectEditReferences = referencesOfSkill("reflect-edit");
+const skillReferences: readonly InstalledSkill[] = [
+  ...commentReferences,
+  ...converseReferences,
+  ...orchestrateReferences,
+  ...reflectEditReferences,
+];
 
 /** Every installed skill text — bodies and reference files alike — for the sweeps. */
 const installedSkillTexts: readonly InstalledSkill[] = [...installedSkills, ...skillReferences];
@@ -168,8 +205,41 @@ const installedSkillTexts: readonly InstalledSkill[] = [...installedSkills, ...s
  */
 const commentPackage = [
   documentAt("claude/skills/comment/SKILL.md").body,
-  ...skillReferences.map(({ body }) => body),
+  ...commentReferences.map(({ body }) => body),
 ].join("\n\n");
+
+/**
+ * The converse skill as its listener can read it: the body plus the reference
+ * it points at (AGENT-065), on the same terms as `commentPackage` above.
+ */
+const conversePackage = [
+  documentAt("claude/skills/converse/SKILL.md").body,
+  ...converseReferences.map(({ body }) => body),
+].join("\n\n");
+
+/**
+ * The orchestrate skill as its agent can read it (AGENT-067): the body plus the
+ * five references its sections point at conditionally. A pin asking "does the
+ * orchestrate skill state this?" reads this package; a pin about *where* a rule
+ * sits — the tier table above all — reads the one file.
+ */
+const orchestratePackage = [
+  documentAt("claude/skills/orchestrate/SKILL.md").body,
+  ...orchestrateReferences.map(({ body }) => body),
+].join("\n\n");
+
+/** The reflect-edit skill as its subagent can read it (AGENT-067), same terms. */
+const reflectEditPackage = [
+  documentAt("claude/skills/reflect-edit/SKILL.md").body,
+  ...reflectEditReferences.map(({ body }) => body),
+].join("\n\n");
+
+/** One orchestrate reference file's text, by basename — for placement pins. */
+const orchestrateReference = (name: string): string => {
+  const reference = orchestrateReferences.find(({ label }) => label.endsWith(`/${name}`));
+  if (reference === undefined) throw new Error(`no orchestrate reference named ${name}`);
+  return reference.body;
+};
 
 /**
  * Every worked turn-writing invocation in a skill body: `--from agent` on a
@@ -250,7 +320,7 @@ describe("template tree", () => {
 
 describe("seed documents", () => {
   it("gives every markdown file complete SPEC §5 frontmatter", () => {
-    expect(documents.length).toBe(12);
+    expect(documents.length).toBe(14);
     for (const { relPath, frontmatter } of documents) {
       expect(DocumentIdSchema.safeParse(frontmatter.id).success, `${relPath}: id`).toBe(true);
       expect(typeof frontmatter.type, `${relPath}: type`).toBe("string");
@@ -643,17 +713,19 @@ describe("skills", () => {
     ...skills,
     { name: "converse", relPath: "claude/skills/converse/SKILL.md" },
     { name: "profile", relPath: "claude/skills/profile/SKILL.md" },
+    { name: "reflect-edit", relPath: "claude/skills/reflect-edit/SKILL.md" },
+    { name: "reflect-corpus", relPath: "claude/skills/reflect-corpus/SKILL.md" },
   ];
 
   /**
    * What each doctrine skill *states*, wherever it states it. AGENT-047 moved
    * the comment skill's rare-path accounts — the revert loop above all — into
-   * `references/` files its body points at, so a pin asking "does the comment
-   * skill still teach this?" reads the package; `orchestrate` still carries
-   * everything in its body. Pins about *placement* keep naming one file.
+   * `references/` files its body points at, and AGENT-067 did the same for
+   * `orchestrate`, so a pin asking "does the skill still teach this?" reads the
+   * package. Pins about *placement* keep naming one file.
    */
   const skillDoctrine = [
-    { name: "orchestrate", text: documentAt("claude/skills/orchestrate/SKILL.md").body },
+    { name: "orchestrate", text: orchestratePackage },
     { name: "comment", text: commentPackage },
   ];
 
@@ -664,7 +736,9 @@ describe("skills", () => {
     expect(typeof frontmatter.description).toBe("string");
     expect(frontmatter.description).not.toBe("");
     expect(frontmatter.type).toBe("skill");
-    expect(frontmatter.title).toBe(name[0]?.toUpperCase() + name.slice(1));
+    // The title is the name, first letter raised and hyphens opened into
+    // spaces — `reflect-edit` reads on the board as "Reflect edit".
+    expect(frontmatter.title).toBe((name[0]?.toUpperCase() + name.slice(1)).replaceAll("-", " "));
   });
 
   it.each(coreSkills)("$name states the CLI-only invariant", ({ relPath }) => {
@@ -720,6 +794,9 @@ describe("skills", () => {
       .filter((line) => line.startsWith("## "))
       .map((line) => line.slice(3).toLowerCase());
     const requiredBySkill: Record<string, readonly string[]> = {
+      // AGENT-067: "writing a document" and "worked example" left this list —
+      // both live whole in `orchestrate/references/` now, pinned by the
+      // reference describes; the body keeps a conditional pointer to each.
       orchestrate: [
         "purpose",
         "invariants",
@@ -729,17 +806,13 @@ describe("skills", () => {
         "claiming",
         "routing",
         "delegation",
-        "user edit",
-        "reflecting on the corpus",
         "concurrency",
-        "writing a document",
         "job logs",
         "completing",
         "halt",
         "stewardship",
         "skills",
         "loop breaks",
-        "worked example",
       ],
       comment: [
         // "worked example" left this list with AGENT-047: the four worked
@@ -777,6 +850,11 @@ describe("skills", () => {
         "reporting",
         "worked example",
       ],
+      // AGENT-066: the two event procedures moved out of `orchestrate` whole.
+      // Each skill is its procedure — one section, carried unchanged — plus
+      // the two sections a standalone skill needs.
+      "reflect-edit": ["when this runs", "inherited invariants", "user edit"],
+      "reflect-corpus": ["when this runs", "inherited invariants", "reflecting on the corpus"],
     };
     const required = requiredBySkill[name] ?? [];
     expect(required.length, `${relPath}: no required-heading list for "${name}"`).toBeGreaterThan(
@@ -797,50 +875,47 @@ describe("skills", () => {
    * that changed nothing carries none.
    */
   describe("trace lines", () => {
-    it.each(skills)("$name states the trace grammar", ({ relPath }) => {
-      const body = documentAt(relPath).body;
-      expect(body).toContain("↳ ");
-      expect(body).toMatch(/past-tense/i);
-      expect(body).toMatch(/final line — and only its final line —/);
-      expect(body).toMatch(/changed nothing/i);
+    // Doctrine pins read each skill's package (AGENT-067): orchestrate's worked
+    // turns live in its references now, and the rule's statement stays in the
+    // body's stewardship charter either way.
+    it.each(skillDoctrine)("$name states the trace grammar", ({ text }) => {
+      expect(text).toContain("↳ ");
+      expect(text).toMatch(/past-tense/i);
+      expect(text).toMatch(/final line — and only its final line —/);
+      expect(text).toMatch(/changed nothing/i);
     });
 
-    it.each(skills)("$name puts a trace last, or not at all", ({ relPath }) => {
-      const lines = documentAt(relPath).body.split("\n");
+    it.each(skillDoctrine)("$name puts a trace last, or not at all", ({ name, text }) => {
+      const lines = text.split("\n");
       const traceLines = lines.filter((line) => line.trimStart().startsWith("↳"));
-      expect(traceLines.length, `${relPath}: no worked-example trace`).toBeGreaterThan(0);
+      expect(traceLines.length, `${name}: no worked-example trace`).toBeGreaterThan(0);
       for (const [index, line] of lines.entries()) {
         if (!line.trimStart().startsWith("↳")) continue;
         // Every trace written into an example turn is that turn's last line:
         // the heredoc terminator is what comes next.
-        expect(lines[index + 1]?.trim(), `${relPath}: trace not last in its turn`).toBe(
-          "CORPUS_EOF",
-        );
+        expect(lines[index + 1]?.trim(), `${name}: trace not last in its turn`).toBe("CORPUS_EOF");
       }
     });
 
-    it.each(skills)("$name neither hides the arrow nor dresses it up", ({ relPath }) => {
-      const body = documentAt(relPath).body;
+    it.each(skillDoctrine)("$name neither hides the arrow nor dresses it up", ({ text }) => {
       // The arrow is written into the turn's bytes. The reader's `::before` is
       // an implementation detail the skill must not depend on or contradict.
-      expect(body).not.toMatch(/omit the arrow/i);
-      expect(body).not.toMatch(/::before/);
-      expect(body).not.toMatch(/<span[^>]*>\s*↳/);
+      expect(text).not.toMatch(/omit the arrow/i);
+      expect(text).not.toMatch(/::before/);
+      expect(text).not.toMatch(/<span[^>]*>\s*↳/);
     });
 
     it("keeps traces out of user-authored turns", () => {
       // A user turn never carries one (the composer produces none, and the
       // renderer short-circuits on the author), so no example may show one.
-      for (const { relPath } of skills) {
-        const body = documentAt(relPath).body;
-        const userTurns = body
+      for (const { name, text } of skillDoctrine) {
+        const userTurns = text
           .split("\n")
           .filter((line) => /^(?:user|##\s*user)\b/i.test(line.trimStart()));
-        for (const line of userTurns) expect(line, relPath).not.toContain("↳");
+        for (const line of userTurns) expect(line, name).not.toContain("↳");
       }
       // Both skills' traces live inside `--from agent` reply heredocs only.
-      const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
-      expect(orchestrate).toMatch(/nothing changed, so that reply carries no trace line/);
+      expect(orchestratePackage).toMatch(/nothing changed, so that reply carries no trace line/);
     });
   });
 
@@ -852,15 +927,17 @@ describe("skills", () => {
    * inside a labeled fence, so the button lands on exactly the deliverable.
    */
   describe("deliverable fences", () => {
-    it.each(skills)("$name states the labeled-fence convention", ({ relPath }) => {
-      const body = documentAt(relPath).body;
-      expect(body).toMatch(/info string/);
-      expect(body).toMatch(/copyable canvas/);
-      expect(body).toMatch(/one deliverable per fence/i);
+    // Doctrine pins read the packages (AGENT-047/AGENT-067): the full canvas
+    // and fence statements sit in comment's body and orchestrate's
+    // `references/writing.md`, and the placement pin below reads the one file.
+    it.each(skillDoctrine)("$name states the labeled-fence convention", ({ text }) => {
+      expect(text).toMatch(/info string/);
+      expect(text).toMatch(/copyable canvas/);
+      expect(text).toMatch(/one deliverable per fence/i);
       // The label vocabulary is a convention, shown by example, never a closed
       // list the agent has to match.
-      expect(body).toMatch(/`prompt`/);
-      expect(body).toMatch(/`command`/);
+      expect(text).toMatch(/`prompt`/);
+      expect(text).toMatch(/`command`/);
     });
 
     /**
@@ -872,17 +949,16 @@ describe("skills", () => {
      * every later turn heading is swallowed and the next person's message
      * disappears from the conversation with no error anywhere.
      */
-    it.each(skills)("$name states both halves from one mechanism", ({ relPath }) => {
-      const body = documentAt(relPath).body;
-      expect(body).toMatch(/closes only on a line that is nothing but backticks/i);
-      expect(body).toMatch(/wider than anything inside/i);
-      expect(body).toMatch(/longest backtick run in the payload/i);
-      expect(body).toMatch(/on a line of its own/i);
+    it.each(skillDoctrine)("$name states both halves from one mechanism", ({ text }) => {
+      expect(text).toMatch(/closes only on a line that is nothing but backticks/i);
+      expect(text).toMatch(/wider than anything inside/i);
+      expect(text).toMatch(/longest backtick run in the payload/i);
+      expect(text).toMatch(/on a line of its own/i);
       // The consequence, never the mere fact of malformed markup.
-      expect(body).toMatch(/closes nothing/i);
-      expect(body).toMatch(/heading \*{0,2}inside a fence is (?:deliberately )?not a delimiter/i);
-      expect(body).toMatch(/swallow/i);
-      expect(body).toMatch(/no error anywhere|nothing anywhere reports an error/i);
+      expect(text).toMatch(/closes nothing/i);
+      expect(text).toMatch(/heading \*{0,2}inside a fence is (?:deliberately )?not a delimiter/i);
+      expect(text).toMatch(/swallow/i);
+      expect(text).toMatch(/no error anywhere|nothing anywhere reports an error/i);
     });
 
     it("spells out what an unclosed fence costs the reader", () => {
@@ -929,7 +1005,7 @@ describe("skills", () => {
 
     it("keeps orchestrate's copy deferential rather than a second statement of the rule", () => {
       const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
-      expect(body).toMatch(/The comment skill states the convention/);
+      expect(body).toMatch(wrapped("The comment skill states the convention"));
       // It binds the turns orchestrate posts itself, not only dispatched work.
       expect(body).toMatch(/binds\s+the turns you post yourself/);
     });
@@ -1003,8 +1079,8 @@ describe("skills", () => {
       expect(body).toMatch(/A wrong stamp noticed late goes in the job log — the turn stays\./);
       // The rule reaches orchestrate and converse through their existing
       // pointers at the comment grammar, not through a second account.
-      const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
-      expect(orchestrate).toMatch(/The comment skill states the grammar/);
+      const orchestrate = orchestratePackage;
+      expect(orchestrate).toMatch(wrapped("The comment skill states the grammar"));
       expect(orchestrate).not.toMatch(/never repaired by another turn/);
       expect(documentAt("claude/skills/converse/SKILL.md").body).not.toMatch(
         /never repaired by another turn/,
@@ -1012,7 +1088,7 @@ describe("skills", () => {
     });
 
     it("carries the same rule into dispatch, in the orchestrate skill", () => {
-      const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      const body = orchestratePackage;
       expect(body).toMatch(/\*\*Every turn it posts names the model that wrote it\*\*/);
       expect(body).toMatch(/\*\*record of what ran, never a\s+request for what should run\*\*/);
       expect(body).toMatch(/this turn is the evidence that you did/);
@@ -1227,10 +1303,10 @@ describe("skills", () => {
       }
     });
 
-    it.each(skills)("$name works a body-replacing edit at all", ({ relPath }) => {
+    it.each(skillDoctrine)("$name works a body-replacing edit at all", ({ text }) => {
       // Anti-vacuity: the rule above passes trivially on a skill whose examples
       // never replace a body, which is the state this issue found them in.
-      expect(bodyReplacingEdits(documentAt(relPath).body).length).toBeGreaterThan(0);
+      expect(bodyReplacingEdits(text).length).toBeGreaterThan(0);
     });
 
     it("works at least one full key loop, read through fresh key", () => {
@@ -1246,14 +1322,14 @@ describe("skills", () => {
       expect(body).toMatch(/edited doc_\w+\nkey [0-9a-f]{64}/);
     });
 
-    it.each(skills)("$name teaches the loop rather than a rule to recall", ({ relPath }) => {
-      const body = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name teaches the loop rather than a rule to recall", ({ text }) => {
+      const body = text.replace(/\s+/g, " ");
       expect(body).toMatch(/read → work → write with the key you were given → keep the key/i);
       expect(body).toMatch(/nothing is acquired and nothing is released/i);
     });
 
-    it.each(skills)("$name answers a stale key concretely", ({ relPath }) => {
-      const body = documentAt(relPath).body;
+    it.each(skillDoctrine)("$name answers a stale key concretely", ({ text }) => {
+      const body = text;
       // The two exits an agent branches on, and which of them is a mistake.
       expect(body).toMatch(/exit `2`/i);
       expect(body).toMatch(/exit `9`/i);
@@ -1265,8 +1341,8 @@ describe("skills", () => {
       expect(body).toMatch(/the mechanism working/);
     });
 
-    it.each(skills)("$name treats the editing signal as a courtesy", ({ relPath }) => {
-      const body = documentAt(relPath).body;
+    it.each(skillDoctrine)("$name treats the editing signal as a courtesy", ({ text }) => {
+      const body = text;
       expect(body).toMatch(/someone is editing this/i);
       // The signal must not read as a gate: the write would land, and saying
       // otherwise makes an agent defer where it should write.
@@ -1275,11 +1351,10 @@ describe("skills", () => {
     });
 
     it("keeps the delta verbs free of a key, in both skills", () => {
-      for (const { relPath } of skills) {
-        const body = documentAt(relPath).body;
-        expect(body, `${relPath}: no delta rule`).toMatch(/names its own delta/);
+      for (const { name, text } of skillDoctrine) {
+        expect(text, `${name}: no delta rule`).toMatch(/names its own delta/);
       }
-      expect(documentAt("claude/skills/orchestrate/SKILL.md").body).toMatch(/--add-tag/);
+      expect(orchestratePackage).toMatch(/--add-tag/);
     });
   });
 
@@ -1417,8 +1492,8 @@ describe("skills", () => {
     const workedPatches = (body: string): readonly string[] =>
       patchInvocations(body).filter((invocation) => /--(?:old|new)\b/.test(invocation));
 
-    it.each(skills)("$name states the choice as one rule, with both costs", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name states the choice as one rule, with both costs", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(
         /a change you can quote is a patch; a change you cannot quote is a whole[- ]body/i,
       );
@@ -1427,10 +1502,10 @@ describe("skills", () => {
       expect(flat).toMatch(/patching what should have been a rewrite/i);
     });
 
-    it.each(skills)("$name works a patch, with both halves of it", ({ relPath }) => {
+    it.each(skillDoctrine)("$name works a patch, with both halves of it", ({ text }) => {
       // Anti-vacuity: a rule with no worked example is how AGENT-019's bug
       // survived two rewrites — the example is what gets copied.
-      const invocations = workedPatches(documentAt(relPath).body);
+      const invocations = workedPatches(text);
       expect(invocations.length).toBeGreaterThan(0);
       for (const invocation of invocations) {
         expect(invocation, "a patch with no --old").toMatch(/--old(?:-file)? \S/);
@@ -1439,8 +1514,8 @@ describe("skills", () => {
       }
     });
 
-    it.each(skills)("$name presents no key on a patch, and says why", ({ relPath }) => {
-      const body = documentAt(relPath).body;
+    it.each(skillDoctrine)("$name presents no key on a patch, and says why", ({ text }) => {
+      const body = text;
       for (const invocation of patchInvocations(body)) {
         expect(invocation, "a patch carrying a --key").not.toMatch(/--key\b/);
       }
@@ -1466,8 +1541,8 @@ describe("skills", () => {
      * was, so the patch applies, splices above their text, and reports success.
      * Both skills must state the rule and both halves of its consequence.
      */
-    it.each(skills)("$name says a patch replaces and does not insert", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name says a patch replaces and does not insert", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(/a patch replaces; it does not insert/i);
       // The safe insertion: quote both sides of the gap, so a competing
       // insertion there breaks the quote and is refused.
@@ -1479,16 +1554,16 @@ describe("skills", () => {
       expect(flat).toMatch(/(?:only check that covers|whose key is the only check)/i);
     });
 
-    it.each(skills)("$name matches byte for byte, body only", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name matches byte for byte, body only", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(/byte for byte/i);
       expect(flat).toMatch(/no trimming, no normalisation/i);
       expect(flat).toMatch(/frontmatter block is not part of/i);
       expect(flat).toMatch(/`--new ''` is how a deletion is spelled/);
     });
 
-    it.each(skills)("$name keeps the two refusals apart", ({ relPath }) => {
-      const flat = documentAt(relPath).body.replace(/\s+/g, " ");
+    it.each(skillDoctrine)("$name keeps the two refusals apart", ({ text }) => {
+      const flat = text.replace(/\s+/g, " ");
       expect(flat).toMatch(/exit `10`/);
       expect(flat).toMatch(/matched 0 times/i);
       expect(flat).toMatch(/matched more than once/i);
@@ -1511,7 +1586,8 @@ describe("skills", () => {
     });
 
     it("keeps the changelog append on the keyed whole-body path, and says why", () => {
-      const skill = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      // The append rule rides with the procedure, in reflect-edit (AGENT-066).
+      const skill = reflectEditPackage;
       const flat = skill.replace(/\s+/g, " ");
       // AGENT-024 made this a patch and claimed the quote kept it safe. It did
       // not: the changelog is the last thing in the body, so the append has no
@@ -1539,7 +1615,150 @@ describe("skills", () => {
       const flat = documentAt("claude/skills/comment/SKILL.md").body.replace(/\s+/g, " ");
       expect(flat).toMatch(/\*\*You are about to quote one\.\*\*/);
       expect(flat).toMatch(/briefing rather than a copy of the document's bytes/i);
-      expect(flat).toMatch(/quote from `corpus doc show <id>`, never from the pack/i);
+      // AGENT-068: the byte-exact read is the section read first.
+      expect(flat).toMatch(
+        /quote from a byte-exact read — `corpus doc show <id> --section "<path>"`/i,
+      );
+      expect(flat).toMatch(/never from the pack/i);
+    });
+  });
+
+  /**
+   * AGENT-068 — CLI-055 and CLI-076 built bounded reads (`doc show
+   * --headings`/`--section`, `thread show --index`/`--turn`/`--last`/`--since`)
+   * with measured savings, and no skill ever instructed them. These are wording
+   * guards per CLAUDE.md's standing caveat: they check that the instructions
+   * exist and can never check that an agent actually reads less — the
+   * rehearsal harness (INFRA-033/034) is the behavioural side.
+   */
+  describe("the skills instruct the bounded reads the CLI can make (AGENT-068)", () => {
+    const comment = documentAt("claude/skills/comment/SKILL.md").body;
+    const converse = documentAt("claude/skills/converse/SKILL.md").body;
+    const orchestrate = orchestratePackage;
+
+    it("forks the document read on the write it feeds", () => {
+      // The sliced read is the retrieval invariant's own text, in all three.
+      expect(orchestrate).toMatch(wrapped("`corpus doc show <id> --headings` maps it"));
+      expect(orchestrate).toMatch(wrapped("a hit's `headingPath` is that address"));
+      expect(orchestrate).toMatch(
+        wrapped("The whole body is the read before a whole-body rewrite"),
+      );
+      expect(comment).toMatch(wrapped("`--headings` on `corpus doc show <id>` for the map"));
+      expect(converse).toMatch(
+        wrapped(
+          '`corpus doc show <id> --headings` then `--section "<path>"` slice the one id they returned',
+        ),
+      );
+      // The full-read-before-rewrite rule stays: its deletion is the failure
+      // mode the issue's "what must not change" names.
+      expect(comment).toMatch(
+        wrapped("Rewriting a parent from its section alone deletes the rest of the document"),
+      );
+      // A document with no headings has no map, so the whole read stays right.
+      expect(comment).toMatch(wrapped("A document with no headings has no map"));
+    });
+
+    it("starts the thread read at the index, and says when whole is right", () => {
+      expect(comment).toContain(
+        '[["thread","context","th_4b8e2c"],["thread","show","th_4b8e2c","--index"]]',
+      );
+      expect(comment).toMatch(wrapped("`corpus thread show <threadId> --index`, one row"));
+      expect(comment).toMatch(
+        wrapped("read every turn (the bare verb) only where the reply must square with the"),
+      );
+      expect(converse).toMatch(wrapped("`corpus thread show th_4b8e2c --index` for the map"));
+      expect(converse).toMatch(
+        wrapped(
+          "read the new turns alone, `corpus thread show th_4b8e2c --since <ts of your last read>`",
+        ),
+      );
+    });
+
+    it("keeps the quoting byte-exact from a verbatim fetch", () => {
+      expect(comment).toMatch(
+        wrapped('Quote from a byte-exact read — `corpus doc show <id> --section "<path>"`'),
+      );
+      // The worked patches quote from a section read in both loop skills.
+      expect(comment).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
+      expect(orchestrate).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
+    });
+  });
+
+  /**
+   * AGENT-069 — SPEC.md §6's digest rider (signed 2026-09-05): a thread's
+   * digest is written by its resident at reply time, and the server never
+   * writes one, so the digest exists only if the converse skill instructs the
+   * write. These pins are on the wording, per this file's standing caveat: the
+   * settle-step write, the digest-first rehydration, and the one invariant in
+   * the CLI's own spelling — imported, so the skill and the tool cannot drift
+   * into two versions of one rule.
+   */
+  describe("the resident writes the digest, and every reader only orients by it (AGENT-069)", () => {
+    const comment = documentAt("claude/skills/comment/SKILL.md").body;
+    const converse = documentAt("claude/skills/converse/SKILL.md").body;
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+    it("rewrites the digest as the loop's step 4 — settled, not yet parked", () => {
+      expect(converse).toMatch(
+        /4\. \*\*Rewrite the digest — everything settled, nothing parked yet\.\*\*/,
+      );
+      // The verb, with the body arriving off the command line (CLI-074).
+      expect(converse).toMatch(wrapped("`corpus thread digest set th_4b8e2c`"));
+      expect(converse).toMatch(
+        wrapped("the body from stdin or `--file`, never quoted into the command line"),
+      );
+      // Whole, bounded by the contract's number — formatted as the CLI's own
+      // help formats it, so a changed bound fails here rather than shipping two.
+      expect(converse).toMatch(wrapped("rewritten **whole** each time"));
+      expect(converse).toMatch(
+        wrapped(
+          `at most ${DIGEST_MAX_CHARS.toLocaleString("en-US")} characters — the contract's bound`,
+        ),
+      );
+      // A quiet pass writes nothing, and a refusal is an ending, not a crash.
+      expect(converse).toMatch(wrapped("A pass that settled nothing skips this"));
+      expect(converse).toMatch(wrapped("it is the ending a refused park announces (*Retirement*)"));
+      // The worked example performs the step it teaches, after the settling.
+      const settled = converse.indexOf("corpus queue complete evt_7c1d9a");
+      const digestWrite = converse.indexOf(
+        "corpus thread digest set th_4b8e2c --from agent <<'CORPUS_EOF'",
+      );
+      expect(settled).toBeGreaterThan(-1);
+      expect(digestWrite).toBeGreaterThan(settled);
+    });
+
+    it("rehydrates digest-first, and distrusts a STALE one until it is rewritten", () => {
+      expect(converse).toMatch(wrapped("digest, index, last turns, before any whole read"));
+      expect(converse).toMatch(wrapped("One reading **STALE** is distrusted"));
+      expect(converse).toMatch(
+        wrapped("A **STALE** digest is repaired by this same write, and by nothing else"),
+      );
+      // The handoff reads back through it, which is what the write is for.
+      expect(converse).toMatch(wrapped("the digest you kept rewriting"));
+    });
+
+    it("states the invariant in the CLI's own words, once in full and once per reader", () => {
+      // The full statement, verbatim from the surface that prints it, at the
+      // owner's read site.
+      expect(converse).toMatch(wrapped(DIGEST_ORIENTS_HELP));
+      // Its opening sentence is the shared spelling — assert the link so the
+      // three-skill pin below cannot drift away from the constant.
+      const invariant = "**Summaries orient, they never act.**";
+      expect(DIGEST_ORIENTS_HELP.startsWith(invariant)).toBe(true);
+      for (const [name, body] of [
+        ["converse", converse],
+        ["comment", comment],
+        ["orchestrate", orchestrate],
+      ] as const) {
+        expect(body, `${name} drops the invariant sentence`).toContain(invariant);
+      }
+    });
+
+    it("keeps the write out of the skills that hold no designation", () => {
+      // The single-owner registry carries the pointer sentences; this is the
+      // outcome each consumer states beside them.
+      expect(comment).toMatch(wrapped("never write or clear one"));
+      expect(orchestrate).toMatch(wrapped("Neither you nor a dispatch writes or clears one"));
     });
   });
 
@@ -1581,7 +1800,7 @@ describe("skills", () => {
    * the failure it can see into the one it cannot.
    */
   describe("a person's words never reach the shell as a literal", () => {
-    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+    const orchestrate = orchestratePackage;
 
     it("states what the shell does, in outcomes an agent can recognise", () => {
       const flat = orchestrate.replace(/\s+/g, " ");
@@ -2019,7 +2238,15 @@ describe("skills", () => {
 });
 
 describe("orchestrate skill body", () => {
-  const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  // The package (AGENT-067): doctrine that moved into `references/` is still
+  // this skill's doctrine. Pins about the file's own structure read
+  // `skillFile`; section-scoped pins read the section plus the reference its
+  // pointers name, since that pair is what a pass on that section can read.
+  const body = orchestratePackage;
+  const skillFile = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  const launchingReference = orchestrateReference("launching.md");
+  const conventionsReference = orchestrateReference("conventions.md");
+  const workedExampleReference = orchestrateReference("worked-example.md");
 
   it("carries no skeleton remnants and no dev-harness references", () => {
     for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
@@ -2040,7 +2267,7 @@ describe("orchestrate skill body", () => {
     // `## Changelog` line inside one is that document's content, not a section
     // of this skill. Counting it would make showing the format impossible.
     let inFence = false;
-    for (const line of body.split("\n")) {
+    for (const line of skillFile.split("\n")) {
       if (line.trimStart().startsWith("```")) inFence = !inFence;
       if (!inFence && line.startsWith("## ")) {
         current = line.slice(3);
@@ -2049,11 +2276,9 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    // 19 since AGENT-051 added *Several commands in one invocation*, beside
-    // *Reading a command's help*: both are conventions for talking to the CLI
-    // at all rather than rules about one verb, and both are single-owner rules
-    // the other skills point at.
-    expect(sections.size).toBe(19);
+    // 15 since AGENT-067 moved *Writing a document* and the worked example into
+    // `references/` whole. Was 17 since AGENT-066, 19 since AGENT-051.
+    expect(sections.size).toBe(15);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -2334,12 +2559,16 @@ describe("orchestrate skill body", () => {
     it("subsumes the reflection's ad-hoc tier rule into the general test", () => {
       // It read "at the **Sonnet** tier by default and **Opus 5** when step 4 is
       // going to write another document" — a second, competing rule beside the
-      // one in Delegation. It is an instance of the two passes now.
-      expect(body).toMatch(
+      // one in Delegation. It is an instance of the two passes now. The
+      // procedure lives in the reflect-edit skill since AGENT-066, and the
+      // sentence still defers to *Delegation* — the orchestrate skill's — by
+      // that skill's own cross-reference rule in "When this runs".
+      const procedure = reflectEditPackage;
+      expect(procedure).toMatch(
         /weighed by the two\s+passes in Delegation like any other work and by no rule of its own/,
       );
-      expect(body).toMatch(/reflecting answers the\s+first pass \*\*no\*\*/);
-      expect(body).not.toMatch(/at the \*\*Sonnet\*\* tier\s+by default/);
+      expect(procedure).toMatch(/reflecting answers the\s+first pass \*\*no\*\*/);
+      expect(procedure).not.toMatch(/at the \*\*Sonnet\*\* tier\s+by default/);
     });
   });
 
@@ -2627,7 +2856,9 @@ describe("orchestrate skill body", () => {
       );
       expect(body).toMatch(wrapped("the third exists only if you write it"));
       expect(body).toMatch(
-        wrapped("the level is the word a reader can hold against the table above"),
+        // AGENT-067: the sentence lives in `references/weight.md`, which names
+        // the tier table instead of pointing "above" at it.
+        wrapped("the level is the word a reader can hold against the tier table"),
       );
       // The reply example names its substitute as a declared level, not only a
       // model — and the text says that is what the naming is.
@@ -2690,11 +2921,23 @@ describe("orchestrate skill body", () => {
    * quietly turn the feature into comment spam or into silence.
    */
   describe("doc.edited", () => {
-    it("routes the event and names the procedure that handles it", () => {
-      expect(body).toContain("`doc.edited`");
-      expect(body).toMatch(/\*\*Reflecting on a user edit\*\* below/);
+    /**
+     * AGENT-066: the procedure moved whole into the reflect-edit skill, so the
+     * pins below read that skill's body. The routing row, the ordering rule and
+     * the stewardship charter stayed in `orchestrate` and keep reading `body`.
+     */
+    const procedure = reflectEditPackage;
+
+    it("routes the event to the reflect-edit skill", () => {
+      const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+      expect(routing).toContain("`doc.edited`");
+      expect(routing).toMatch(/applying the \*\*reflect-edit\*\* skill/);
+      expect(routing).toMatch(/carries the payload verbatim, both shas included/);
       // It touches the payload's document, so it orders against thread work.
       expect(body).toMatch(/`doc\.edited`: the payload's `docId`/);
+      // And the procedure's own file carries the section the row used to point
+      // into this skill for.
+      expect(procedure).toContain("## Reflecting on a user edit");
     });
 
     /**
@@ -2718,7 +2961,7 @@ describe("orchestrate skill body", () => {
      * history but whoever else's document was saved in the same window.
      */
     it("teaches the empty-tree base as the ordinary shape of a first change", () => {
-      const flat = body.replace(/\s+/g, " ");
+      const flat = procedure.replace(/\s+/g, " ");
       // Matched to `packages/contract/src/schemas/edit.ts` rather than phrased
       // a fifth time: any document's first change, not the repository's.
       expect(flat).toMatch(/empty-tree sha an event carries for a document's \*\*first\*\* change/);
@@ -2753,47 +2996,49 @@ describe("orchestrate skill body", () => {
     );
 
     it("fetches the diff with the event's range, passed through unchanged", () => {
-      expect(body).toMatch(
+      expect(procedure).toMatch(
         /corpus doc diff doc_a1b2c3 --from-rev [0-9a-f]{40} --to-rev [0-9a-f]{40}/,
       );
-      expect(body).toMatch(/`--from-rev` and `--to-rev` unchanged/);
-      expect(body).toMatch(/empty-tree sha/);
+      expect(procedure).toMatch(/`--from-rev` and `--to-rev` unchanged/);
+      expect(procedure).toMatch(/empty-tree sha/);
       // The stats size the read; they never stand in for it.
-      expect(body).toMatch(/The stats do not decide whether to make that call/);
-      expect(body).toMatch(/`will` becomes `will not` at `\+1 -1`/);
+      expect(procedure).toMatch(/The stats do not decide whether to make that call/);
+      expect(procedure).toMatch(/`will` becomes `will not` at `\+1 -1`/);
     });
 
     it("decides triviality from the claims a diff changes, not from its size", () => {
-      expect(body).toMatch(/\*\*trivial\*\* when every changed line says what it said before/);
-      expect(body).toMatch(/\*\*substantive\*\* when any changed line adds, removes or reverses/);
-      expect(body).toMatch(/Length is never the test/);
+      expect(procedure).toMatch(/\*\*trivial\*\* when every changed line says what it said before/);
+      expect(procedure).toMatch(
+        /\*\*substantive\*\* when any changed line adds, removes or reverses/,
+      );
+      expect(procedure).toMatch(/Length is never the test/);
       // Under-reacting is the tie-break, and a trivial edit writes nothing.
-      expect(body).toMatch(
+      expect(procedure).toMatch(
         /\*\*A trivial edit is completed in silence\*\* — no thread, no reply, no write/,
       );
-      expect(body).toContain(
+      expect(procedure).toContain(
         'corpus job log evt_7c1d9a "doc.edited on [[doc_a1b2c3]] — rewrapped a paragraph, no claim changed"',
       );
     });
 
     it("checks the ripple by retrieving, within a stated bound", () => {
-      expect(body).toMatch(/corpus doc related doc_a1b2c3 --limit 5/);
-      expect(body).toMatch(/at most three claims/);
-      expect(body).toContain("--references doc_a1b2c3");
-      expect(body).toMatch(/open at most three/);
+      expect(procedure).toMatch(/corpus doc related doc_a1b2c3 --limit 5/);
+      expect(procedure).toMatch(/at most three claims/);
+      expect(procedure).toContain("--references doc_a1b2c3");
+      expect(procedure).toMatch(/open at most three/);
       // Logging is the default now (AGENT-020); updating stays the
       // entailed-correction case, and asking is the only one that is a thread.
-      expect(body).toMatch(/lean to logging/i);
-      expect(body).toMatch(/mechanical and entailed/);
-      expect(body).toMatch(/Stop at three documents/);
+      expect(procedure).toMatch(/lean to logging/i);
+      expect(procedure).toMatch(/mechanical and entailed/);
+      expect(procedure).toMatch(/Stop at three documents/);
     });
 
     it("restates the actor guarantee so the reflection cannot cascade or self-suppress", () => {
-      expect(body).toMatch(/\*\*Your own edits never wake you\.\*\*/);
-      expect(body).toMatch(/The payload's actor is always `user`/);
-      expect(body).toMatch(/nothing here feeds itself/);
+      expect(procedure).toMatch(/\*\*Your own edits never wake you\.\*\*/);
+      expect(procedure).toMatch(/The payload's actor is always `user`/);
+      expect(procedure).toMatch(/nothing here feeds itself/);
       // The dedupe key is named, and dropping a repeat is a completion.
-      expect(body).toMatch(/at most one event exists per `sessionId`/);
+      expect(procedure).toMatch(/at most one event exists per `sessionId`/);
     });
 
     /**
@@ -2810,28 +3055,32 @@ describe("orchestrate skill body", () => {
      * because that is the one a careful model would otherwise walk into.
      */
     it("names both obligations, and the quoting hazard that reaches past them", () => {
-      expect(body).toMatch(/no `--requests-agent`\s*\n?\s*and no `@agent` in the body/);
-      expect(body).toMatch(/checks the turn's \*body\* before it checks the author/);
-      expect(body).toMatch(/quotes a user's line/);
+      expect(procedure).toMatch(/no `--requests-agent`\s*\n?\s*and no `@agent` in the body/);
+      expect(procedure).toMatch(/checks the turn's \*body\* before it checks the author/);
+      expect(procedure).toMatch(/quotes a user's line/);
       // And it must not tell the model the loop is impossible.
-      expect(body).not.toMatch(/a loop that cannot happen/);
+      expect(procedure).not.toMatch(/a loop that cannot happen/);
     });
 
     it("refuses to reason about a cut diff as a whole one", () => {
-      expect(body).toMatch(/\*\*A cut diff is never reasoned about as if it were whole\.\*\*/);
-      expect(body).toContain("showing 16000 of 61200 characters");
-      expect(body).toMatch(/never update another document off it/);
-      expect(body).toMatch(
+      expect(procedure).toMatch(/\*\*A cut diff is never reasoned about as if it were whole\.\*\*/);
+      expect(procedure).toContain("showing 16000 of 61200 characters");
+      expect(procedure).toMatch(/never update another document off it/);
+      expect(procedure).toMatch(
         /corpus doc diff doc_a1b2c3` with no range reads its newest commit whole/,
       );
-      expect(body).toMatch(/corpus doc show doc_a1b2c3` gives the document\s+as it now stands/);
+      expect(procedure).toMatch(
+        /corpus doc show doc_a1b2c3` gives the document\s+as it now stands/,
+      );
     });
 
     it("works the whole procedure once, ending in a settled event", () => {
-      expect(body).toMatch(/\*\*Worked, end to end\.\*\*/);
-      expect(body).toMatch(/corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/);
-      expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
-      expect(body).toMatch(
+      expect(procedure).toMatch(/\*\*Worked, end to end\.\*\*/);
+      expect(procedure).toMatch(
+        /corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/,
+      );
+      expect(procedure).toMatch(/^\+The working rate assumption is 6\.4%/m);
+      expect(procedure).toMatch(
         /corpus doc edit doc_7e3a91 --key [0-9a-f]{64} --from agent <<'CORPUS_EOF'/,
       );
       // It ends in an entry, not in a thread: the read that makes an append
@@ -2841,7 +3090,7 @@ describe("orchestrate skill body", () => {
       // key would teach the one mistake AGENT-022 exists to prevent.
       const append =
         /corpus doc show doc_a1b2c3\nkey ([0-9a-f]{64})\ncorpus doc edit doc_a1b2c3 --key ([0-9a-f]{64}) --from agent <<'CORPUS_EOF'\n([\s\S]*?)\nCORPUS_EOF/.exec(
-          body,
+          procedure,
         );
       expect(append, "no worked append in the reflection example").not.toBeNull();
       expect(append?.[2], "the append presents a key its read never printed").toBe(append?.[1]);
@@ -2850,7 +3099,7 @@ describe("orchestrate skill body", () => {
       const sent = append?.[3] ?? "";
       expect(sent).toContain("## Changelog");
       expect(sent.indexOf("**2026-07-14**")).toBeLessThan(sent.indexOf("**2026-07-28**"));
-      expect(body).toContain(
+      expect(procedure).toContain(
         'corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"',
       );
     });
@@ -2865,38 +3114,38 @@ describe("orchestrate skill body", () => {
      */
     describe("the changelog", () => {
       it("writes the observation into the document and opens no thread", () => {
-        expect(body).toMatch(/\*\*5 — Write the entry, and open no thread\.\*\*/);
-        expect(body).toMatch(/\*\*Noticing is written\s+down, not asked about\.\*\*/);
-        expect(body).toMatch(/A thread means _I need something from you_/);
-        expect(body).toMatch(/a changelog entry means\s+_I noticed_/);
-        expect(body).toMatch(/One entry per session, never a second/);
-        expect(body).toMatch(/A trivial edit gets none of this/);
+        expect(procedure).toMatch(/\*\*5 — Write the entry, and open no thread\.\*\*/);
+        expect(procedure).toMatch(/\*\*Noticing is written\s+down, not asked about\.\*\*/);
+        expect(procedure).toMatch(/A thread means _I need something from you_/);
+        expect(procedure).toMatch(/a changelog entry means\s+_I noticed_/);
+        expect(procedure).toMatch(/One entry per session, never a second/);
+        expect(procedure).toMatch(/A trivial edit gets none of this/);
         // The reflection's own acknowledgment thread is gone, in every form.
-        expect(body).not.toMatch(/corpus thread create --parent doc_a1b2c3/);
+        expect(procedure).not.toMatch(/corpus thread create --parent doc_a1b2c3/);
       });
 
       it("leaves no escape hatch for an observation that merely looks serious", () => {
         // The rejected middle option: "but open a thread if it seems
         // consequential". A worrying observation is an entry like any other.
-        expect(body).toMatch(
+        expect(procedure).toMatch(
           /the routine ones and the\s+ones that look worrying, on the same terms/,
         );
-        expect(body).toMatch(/still an entry and nothing more/);
+        expect(procedure).toMatch(/still an entry and nothing more/);
         // A thread needs a question the agent cannot proceed without, asked
         // with a form — the one door, named where the door is.
-        expect(body).toMatch(/a question you cannot\s+proceed without/);
-        expect(body).toMatch(/on one thread, with a form/);
+        expect(procedure).toMatch(/a question you cannot\s+proceed without/);
+        expect(procedure).toMatch(/on one thread, with a form/);
         // And the accepted cost is written down rather than quietly dropped.
-        expect(body).toMatch(/an observation nobody reads\s+is an observation nobody sees/);
+        expect(procedure).toMatch(/an observation nobody reads\s+is an observation nobody sees/);
       });
 
       it("pins one spelling for the heading and says what a second one costs", () => {
-        expect(body).toContain("`## Changelog`");
-        expect(body).toMatch(/spelled `## Changelog` and nothing else/);
-        expect(body).toMatch(/a second spelling\s+is a second section/);
+        expect(procedure).toContain("`## Changelog`");
+        expect(procedure).toMatch(/spelled `## Changelog` and nothing else/);
+        expect(procedure).toMatch(/a second spelling\s+is a second section/);
         // Both worked heredocs write that exact heading, so the format the
         // skill describes is the format its example produces.
-        const changelogFences = fencedBlocks(body).filter((block) =>
+        const changelogFences = fencedBlocks(procedure).filter((block) =>
           block.content.includes("## Changelog"),
         );
         expect(changelogFences.length).toBeGreaterThanOrEqual(2);
@@ -2907,41 +3156,43 @@ describe("orchestrate skill body", () => {
       });
 
       it("appends by reading first, and forbids rewriting the section", () => {
-        expect(body).toMatch(/\*\*Append; never rewrite the section\.\*\*/);
-        expect(body).toMatch(/There is no append verb/);
+        expect(procedure).toMatch(/\*\*Append; never rewrite the section\.\*\*/);
+        expect(procedure).toMatch(/There is no append verb/);
         // The read is what makes the write an append rather than a replacement.
-        expect(body).toMatch(/corpus doc show doc_a1b2c3` for the body as it now stands/);
-        expect(body).toMatch(/every other byte reproduced\s+exactly/);
+        expect(procedure).toMatch(/corpus doc show doc_a1b2c3` for the body as it now stands/);
+        expect(procedure).toMatch(/every other byte reproduced\s+exactly/);
         // Sending the body back is not licence to improve the person's wording
         // on the way through — the failure the rewrite ban exists for.
-        expect(body).toMatch(/not a licence to tidy it on the way\s+through/);
+        expect(procedure).toMatch(/not a licence to tidy it on the way\s+through/);
         // The same read hands over the key the append presents (AGENT-022).
-        expect(body).toMatch(/corpus doc edit doc_a1b2c3 --key <the key that read printed>/);
+        expect(procedure).toMatch(/corpus doc edit doc_a1b2c3 --key <the key that read printed>/);
         // The reason, not only the rule: the person writes in here too, and a
         // rewrite orphans every thread anchored into what it replaced —
         // measured against a running server, which reports it only afterwards.
-        expect(body).toMatch(/The person writes in this section too/);
-        expect(body).toMatch(/how their\s+writing disappears/);
-        expect(body).toMatch(/comes loose, which\s+the edit reports as an orphan after the fact/);
-        expect(body).toMatch(/Entries run oldest first/);
+        expect(procedure).toMatch(/The person writes in this section too/);
+        expect(procedure).toMatch(/how their\s+writing disappears/);
+        expect(procedure).toMatch(
+          /comes loose, which\s+the edit reports as an orphan after the fact/,
+        );
+        expect(procedure).toMatch(/Entries run oldest first/);
       });
 
       it("states the shared ownership the format depends on", () => {
-        expect(body).toMatch(
+        expect(procedure).toMatch(
           /\*\*The changelog is yours to maintain and theirs to edit; neither of\s+you owns it\.\*\*/,
         );
         // Ordinary body content: remarking on an entry needs no new machinery.
-        expect(body).toMatch(/commentable, anchorable, searchable/);
-        expect(body).toMatch(/an ordinary anchored comment and needs\s+nothing special/);
+        expect(procedure).toMatch(/commentable, anchorable, searchable/);
+        expect(procedure).toMatch(/an ordinary anchored comment and needs\s+nothing special/);
       });
 
       it("makes the entry a judgement rather than a restatement of the diff", () => {
-        expect(body).toMatch(/\*\*Say what you made of it, not what the diff said\.\*\*/);
-        expect(body).toMatch(/Git holds every diff already/);
-        expect(body).toMatch(/worth less than the room it takes/);
-        expect(body).toMatch(/what you deliberately left alone/);
+        expect(procedure).toMatch(/\*\*Say what you made of it, not what the diff said\.\*\*/);
+        expect(procedure).toMatch(/Git holds every diff already/);
+        expect(procedure).toMatch(/worth less than the room it takes/);
+        expect(procedure).toMatch(/what you deliberately left alone/);
         // An entry is body text, so the turn-only trace arrow has no place in it.
-        expect(body).toMatch(/carries no trace arrow/);
+        expect(procedure).toMatch(/carries no trace arrow/);
       });
 
       it("checks the append against the anchor report, and never prunes", () => {
@@ -2950,16 +3201,18 @@ describe("orchestrate skill body", () => {
         // context the new section rewrote. Telling the agent to expect a clean
         // report would have it re-doing a correct append forever, so `orphaned`
         // is named as the signal and `remapped` is disarmed by name.
-        expect(body).toMatch(/\*\*The word to read in the anchor report is `orphaned`\.\*\*/);
-        expect(body).toMatch(/an honest append orphans nothing/);
-        expect(body).toMatch(/what you sent was not what you read/);
-        expect(body).toMatch(/A \*\*remap\*\* is a different thing and\s+not a warning/);
-        expect(body).toMatch(/reported as remapped while staying exactly where it was/);
-        expect(body).toMatch(/Later appends land past the section\s+and report nothing at all/);
+        expect(procedure).toMatch(/\*\*The word to read in the anchor report is `orphaned`\.\*\*/);
+        expect(procedure).toMatch(/an honest append orphans nothing/);
+        expect(procedure).toMatch(/what you sent was not what you read/);
+        expect(procedure).toMatch(/A \*\*remap\*\* is a different thing and\s+not a warning/);
+        expect(procedure).toMatch(/reported as remapped while staying exactly where it was/);
+        expect(procedure).toMatch(
+          /Later appends land past the section\s+and report nothing at all/,
+        );
         // Growth is the reader's problem, not a licence to drop history.
-        expect(body).toMatch(/\*\*Length is never a reason to prune\.\*\*/);
-        expect(body).toMatch(/how many entries sit behind the control/);
-        expect(body).toMatch(/never fold two into one/);
+        expect(procedure).toMatch(/\*\*Length is never a reason to prune\.\*\*/);
+        expect(procedure).toMatch(/how many entries sit behind the control/);
+        expect(procedure).toMatch(/never fold two into one/);
       });
 
       it("checks the append with a key, and reaches every recovery", () => {
@@ -2967,17 +3220,20 @@ describe("orchestrate skill body", () => {
         // a quote covers the text it replaces, and an append's correctness
         // depends on text it does not name. Both ways the write can come back
         // have to be reachable from here or the entry is lost (AGENT-022).
-        expect(body).toMatch(
+        expect(procedure).toMatch(
           /\*\*This write replaces the body, so it presents a key — where a thread post would have\s+needed\s+none\.\*\*/,
         );
-        expect(body).toMatch(/refused at exit `9` carrying the current text and a\s+fresh key/);
-        expect(body).toMatch(/somebody appended their own entry/);
-        expect(body).toMatch(/append your entry to \*that\* body/);
-        expect(body).toMatch(/defer with `--blocked-on` naming it/);
-        expect(body).toMatch(/never drop\s+the entry because the document was busy/i);
+        expect(procedure).toMatch(
+          /refused at exit `9` carrying the current text and a\s+fresh key/,
+        );
+        expect(procedure).toMatch(/somebody appended their own entry/);
+        expect(procedure).toMatch(/append your entry to \*that\* body/);
+        expect(procedure).toMatch(/defer with `--blocked-on` naming it/);
+        expect(procedure).toMatch(/never drop\s+the entry because the document was busy/i);
       });
 
       it("puts the rule in the stewardship charter, scoped to noticing alone", () => {
+        // The charter is `orchestrate`'s and did not move with the procedure.
         expect(body).toMatch(/\*\*Noticing a change is written down, not asked about\.\*\*/);
         expect(body).toMatch(/no thread is opened for it/);
         expect(body).toMatch(/ask for that decision with a form/);
@@ -3159,13 +3415,16 @@ describe("orchestrate skill body", () => {
     });
 
     it("keeps the empty-batch pass a two-command pass as well", () => {
-      const claiming = body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing"));
+      const claiming =
+        body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing")) +
+        "\n\n" +
+        conventionsReference;
       expect(claiming).toMatch(/park\s+with a separate `corpus queue idle`/);
       expect(claiming).toMatch(/still two commands rather than one/);
     });
 
     it("dispatches between the claim and the park in the worked example too", () => {
-      const example = body.slice(body.indexOf("## Worked example"));
+      const example = workedExampleReference;
       expect(example).toMatch(/\*\*Then the step that no command performs\.\*\*/);
       expect(example).toMatch(/Only once\s+it is out does the next command run/);
       expect(example).toMatch(/`corpus queue idle`, alone,\s+never appended to the claim above/);
@@ -3203,8 +3462,16 @@ describe("orchestrate skill body", () => {
    *   CLI-043's help carry: a restated 16m drifts from the verdict it explains.
    */
   describe("sharing the queue", () => {
-    const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
-    const claiming = body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing"));
+    const routing =
+      body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation")) +
+      "\n\n" +
+      launchingReference;
+    const claiming =
+      body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing")) +
+      "\n\n" +
+      launchingReference +
+      "\n\n" +
+      conventionsReference;
 
     it("owns one lane and spells it with the absent flag", () => {
       expect(body).toMatch(
@@ -3616,10 +3883,8 @@ describe("orchestrate skill body", () => {
     });
 
     it("says which lane a quoted mention wakes, rather than assuming its own", () => {
-      const reflecting = body.slice(
-        body.indexOf("## Reflecting on a user edit"),
-        body.indexOf("## Concurrency"),
-      );
+      // The procedure moved into the reflect-edit skill whole (AGENT-066).
+      const reflecting = reflectEditPackage;
       // Measured: an agent turn quoting `@agent` in a designated conversation
       // wakes that conversation's resident and never reaches this claim. A
       // skill claiming otherwise would have the orchestrator watching for
@@ -3646,7 +3911,10 @@ describe("orchestrate skill body", () => {
     });
 
     it("tells the operator how a broken converse skill looks, and how to put it back", () => {
-      const recovery = body.slice(body.indexOf("## If the loop breaks"));
+      const recovery =
+        body.slice(body.indexOf("## If the loop breaks"), body.indexOf("\n# Launching")) +
+        "\n\n" +
+        launchingReference;
       expect(recovery).toMatch(/use `comment` or `converse` in place of `orchestrate`/);
       // The symptom, which is nothing like a broken loop: the queue is fine and
       // one conversation is not.
@@ -3750,16 +4018,23 @@ describe("orchestrate skill body", () => {
    *   silent reflection is indistinguishable from one that never ran.
    */
   describe("reflection is an act over the whole corpus", () => {
-    const flat = body.replace(/\s+/g, " ");
-    const section = body.slice(
-      body.indexOf("## Reflecting on the corpus"),
-      body.indexOf("## Concurrency and ordering"),
-    );
+    /**
+     * AGENT-066: the procedure moved whole into the reflect-corpus skill, so
+     * `section` is that skill's procedure — sliced at its own heading, so the
+     * skill's opening sections do not leak into counts over worked commands.
+     */
+    const reflectCorpus = documentAt("claude/skills/reflect-corpus/SKILL.md").body;
+    const section = reflectCorpus.slice(reflectCorpus.indexOf("## Reflecting on the corpus"));
+    const flat = section.replace(/\s+/g, " ");
 
-    it("routes the event to a subagent like every other", () => {
-      const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+    it("routes the event to the reflect-corpus skill", () => {
+      const routing =
+        body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation")) +
+        "\n\n" +
+        launchingReference;
       expect(routing).toContain("`workspace.reflect`");
-      expect(routing).toMatch(/Reflecting on the corpus/);
+      expect(routing).toMatch(/applying the \*\*reflect-corpus\*\* skill/);
+      expect(routing).toMatch(/falls in no scope and is always yours/);
       expect(section.length, "no reflection section").toBeGreaterThan(400);
     });
 
@@ -3870,7 +4145,10 @@ describe("orchestrate skill body", () => {
   });
 
   describe("an event type with no row", () => {
-    const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
+    const routing =
+      body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation")) +
+      "\n\n" +
+      conventionsReference;
 
     it("dispatches on a named type, never on the shape of one", () => {
       const rows = routing.split("\n").filter((line) => line.startsWith("| "));
@@ -4483,9 +4761,9 @@ describe("comment skill body", () => {
  *   from the document loader, never projected (a skill root admits only
  *   `SKILL.md`), and told to the subagent as such so the retrieval doctrine
  *   does not read the directed read as a forbidden disk read.
- * - **One copy of the invariants per dispatch** — the skill's own section for
- *   the two comment routing rows, the prompt for the two reflections, never
- *   both.
+ * - **One copy of the invariants per dispatch** — every routed event names a
+ *   skill (since AGENT-066 the reflections included), and that skill's own
+ *   *Inherited invariants* section is the copy; the prompt carries none.
  */
 describe("progressive disclosure in the comment skill (AGENT-047)", () => {
   const body = documentAt("claude/skills/comment/SKILL.md").body;
@@ -4518,7 +4796,7 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
   });
 
   it("points at every reference it ships, and ships every reference it points at", () => {
-    const shipped = skillReferences
+    const shipped = commentReferences
       .map(({ label }) => label.replace("assets/workspace/claude/skills/comment/", ""))
       .sort();
     expect(shipped, "the reference tree is empty — the plan no longer sees it").not.toEqual([]);
@@ -4530,11 +4808,13 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
     const directed = body.match(
       /read\s+`references\/[a-z-]+\.md`|`references\/[a-z-]+\.md`[^.]{0,60}\bread\b|are in `references\/worked-examples\.md`/gi,
     );
-    expect(directed?.length ?? 0).toBeGreaterThanOrEqual(skillReferences.length);
+    expect(directed?.length ?? 0).toBeGreaterThanOrEqual(commentReferences.length);
   });
 
   it("gives no reference frontmatter, and excludes each for that reason", () => {
-    expect(skillReferences).toHaveLength(7);
+    // 7 comment references (AGENT-047), converse's leaving.md (AGENT-065),
+    // orchestrate's five and reflect-edit's two (AGENT-067).
+    expect(skillReferences).toHaveLength(15);
     for (const { label, body: text } of skillReferences) {
       expect(text.startsWith("---"), `${label} grew frontmatter`).toBe(false);
       expect(text.startsWith("# "), `${label} opens with no title`).toBe(true);
@@ -4558,23 +4838,144 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
     expect(body).toMatch(wrapped("read it directly, at the path this text names"));
   });
 
-  it("states the invariants to a comment subagent exactly once — in the skill", () => {
-    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  it("states the invariants to a dispatched subagent exactly once — in its skill", () => {
+    const orchestrate = orchestratePackage;
     expect(orchestrate).toMatch(wrapped("exactly one document states them to it"));
     expect(orchestrate).toMatch(
-      wrapped(
-        "A dispatch that names a skill — the comment skill's two routing rows — restates nothing",
-      ),
+      wrapped("Every dispatch names a skill, and the dispatch restates nothing"),
     );
     expect(orchestrate).toMatch(wrapped("Name the skill and let it speak"));
-    // The reflections still get the rules in their prompts — they read no skill.
-    expect(orchestrate).toMatch(
-      wrapped("reads no skill of its own, so its prompt is the only road the rules have into it"),
-    );
+    // AGENT-066 moved the two reflections into skills of their own, so the
+    // carve-out that pasted the rules into their prompts is gone — a dispatch
+    // that restated them would be the second copy the rule above forbids.
+    expect(orchestrate).not.toMatch(/reads no skill of its own/);
+    expect(orchestrate).not.toMatch(/rather than a\s+skill of its own/);
     // The worked example practices the deletion rather than contradicting it.
     expect(orchestrate).toMatch(wrapped("no restatement of the binding rules"));
     // And the comment skill's own section says the prompt carries no copy.
     expect(body).toMatch(/there is no second copy in the prompt/);
+  });
+});
+
+/**
+ * AGENT-066 — the two event procedures moved out of `orchestrate` into skills
+ * of their own. `orchestrate` measured 167,737 bytes before the move and every
+ * orchestrator run read all of it, while `doc.edited` and `workspace.reflect`
+ * are a minority of events the orchestrator never works itself — INFRA-038's
+ * split rule: move only what a minority of runs reads. The guards here are the
+ * move's, not the procedures' — the procedure pins travelled with the text and
+ * now read the new skills' bodies.
+ */
+describe("the event procedures live in skills of their own (AGENT-066)", () => {
+  const orchestrate = readTemplateFile("claude/skills/orchestrate/SKILL.md");
+
+  it("ships both procedure skills, installed like the others", () => {
+    const installed = templatePlan.map((file) => file.to);
+    expect(installed).toContain(".claude/skills/reflect-edit/SKILL.md");
+    expect(installed).toContain(".claude/skills/reflect-corpus/SKILL.md");
+    expect(documentAt("claude/skills/reflect-edit/SKILL.md").frontmatter.id).toBe(
+      "doc_skillreflectedit",
+    );
+    expect(documentAt("claude/skills/reflect-corpus/SKILL.md").frontmatter.id).toBe(
+      "doc_skillreflectcorpus",
+    );
+  });
+
+  it("keeps the procedures out of orchestrate", () => {
+    expect(orchestrate).not.toContain("## Reflecting on a user edit");
+    expect(orchestrate).not.toContain("## Reflecting on the corpus");
+    // The two routing rows dispatch the way every other row does, and the old
+    // anomaly note — "one of the two events whose procedure lives in this
+    // skill" — is gone with the anomaly.
+    expect(orchestrate).not.toMatch(/whose procedure lives in this skill/);
+    expect(orchestrate).not.toMatch(/A subagent working \*\*Reflecting/);
+  });
+
+  it("records the drop in bytes, so the text cannot quietly move back", () => {
+    // 167,737 bytes before AGENT-066, 139,824 after it, and ~50,000 after
+    // AGENT-067's split. The cap leaves headroom for ordinary editing and none
+    // for reinstating a moved procedure or section: the smallest moved piece
+    // (the worked example) alone is about 4,800 bytes.
+    expect(Buffer.byteLength(orchestrate, "utf8")).toBeLessThan(51_500);
+  });
+});
+
+/**
+ * AGENT-067 — the orchestrate split, and reflect-edit's shrink (AGENT-066's
+ * recorded debt). The body keeps what an ordinary dispatch-only pass reads —
+ * the loop, claiming, the routing table and its decisions, the two passes and
+ * the tier table, the log grammar, settlement — and five `references/` files
+ * carry what a minority of passes reads, each reachable through a conditional
+ * pointer. The guards here are the split's own: the files exist, the pointers
+ * and files pair up, the tier table stays in the one file the composer and the
+ * CLI parse, and the sizes cannot quietly regrow.
+ */
+describe("the orchestrate split (AGENT-067)", () => {
+  const skillFile = readTemplateFile("claude/skills/orchestrate/SKILL.md");
+  const reflectEditFile = readTemplateFile("claude/skills/reflect-edit/SKILL.md");
+  const basenames = (references: readonly InstalledSkill[]): string[] =>
+    references.map(({ label }) => label.split("/").at(-1) ?? "").sort();
+
+  it("ships orchestrate's five references and reflect-edit's two", () => {
+    expect(basenames(orchestrateReferences)).toEqual([
+      "conventions.md",
+      "launching.md",
+      "weight.md",
+      "worked-example.md",
+      "writing.md",
+    ]);
+    expect(basenames(reflectEditReferences)).toEqual(["reasoning.md", "worked-example.md"]);
+  });
+
+  it("pairs every pointer with a file and every file with a pointer", () => {
+    for (const [file, references] of [
+      [skillFile, orchestrateReferences],
+      [reflectEditFile, reflectEditReferences],
+    ] as const) {
+      const named = new Set(
+        [...file.matchAll(/references\/([a-z-]+\.md)/g)].map((match) => match[1] ?? ""),
+      );
+      for (const name of basenames(references)) {
+        expect(named, `no pointer in the body names references/${name}`).toContain(name);
+      }
+      for (const name of named) {
+        // A body may point across at another skill's reference by that skill's
+        // name — reflect-edit names orchestrate's writing.md and the comment
+        // skill's forms.md — so a named file may ship with any skill.
+        expect(
+          [
+            ...basenames(references),
+            ...basenames(orchestrateReferences),
+            ...basenames(commentReferences),
+          ],
+          `the body points at references/${name}, which does not ship`,
+        ).toContain(name);
+      }
+    }
+  });
+
+  it("keeps the tier table in SKILL.md and declares it nowhere else", () => {
+    expect(readWeightLevels(skillFile).map(({ key }) => key)).toEqual([
+      "light",
+      "standard",
+      "heavy",
+    ]);
+    for (const { label, body } of [...orchestrateReferences, ...reflectEditReferences]) {
+      expect(readWeightLevels(body), `${label} declares a second tier table`).toEqual([]);
+    }
+  });
+
+  it("keeps the moved sections out of the body", () => {
+    expect(skillFile).not.toContain("\n## Writing a document");
+    expect(skillFile).not.toContain("\n## Worked example");
+    expect(reflectEditFile).not.toMatch(/\*\*Worked, end to end\.\*\*/);
+  });
+
+  it("caps both bodies so the shrink cannot quietly regrow", () => {
+    // Whole file, INFRA-038's own count (bytes ÷ 4 ≈ tokens). The reflect-edit
+    // cap is the 4,000-token error line the AGENT-066 debt named.
+    expect(Buffer.byteLength(skillFile, "utf8")).toBeLessThan(51_000);
+    expect(Buffer.byteLength(reflectEditFile, "utf8")).toBeLessThanOrEqual(16_000);
   });
 });
 
@@ -4590,7 +4991,7 @@ describe("progressive disclosure in the comment skill (AGENT-047)", () => {
  */
 describe("folder acts are bounded by who named the folder (AGENT-046)", () => {
   const comment = documentAt("claude/skills/comment/SKILL.md").body;
-  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  const orchestrate = orchestratePackage;
 
   it("teaches the verbs at the point a request arrives, as a rule", () => {
     expect(comment).toMatch(
@@ -4655,6 +5056,8 @@ describe("folder acts are bounded by who named the folder (AGENT-046)", () => {
  */
 describe("converse skill body", () => {
   const body = documentAt("claude/skills/converse/SKILL.md").body;
+  /** The reasoning behind the five endings (AGENT-065) — pins on moved text read this. */
+  const leaving = readTemplateFile("claude/skills/converse/references/leaving.md");
 
   it("carries no skeleton remnants and no dev-harness references", () => {
     for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
@@ -4813,7 +5216,10 @@ describe("converse skill body", () => {
       expect(body).toMatch(wrapped("take the earliest turn you are holding first"));
       // And where that order is read, so the instruction is executable rather
       // than an intention.
-      expect(body).toMatch(wrapped("You read that order in `corpus thread show th_4b8e2c`"));
+      // AGENT-068: the order is read off the index, not the whole conversation.
+      expect(body).toMatch(
+        wrapped("You read that order in `corpus thread show th_4b8e2c --index`"),
+      );
       expect(body).toMatch(wrapped("each event's payload names the turn it belongs to"));
       expect(body).toMatch(
         wrapped("There is no overlap set to compute here and nothing to run in parallel"),
@@ -4934,10 +5340,11 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         wrapped("**Compare `resident.designationId` on your row with the one your launch named.**"),
       );
-      // The trap: the row comes back looking identical.
+      // The trap: the row comes back looking identical. The rule stays in the
+      // body; the release-window explanation moved to the reference (AGENT-065).
       expect(body).toMatch(wrapped("Your row being **present** proves nothing"));
-      expect(body).toMatch(
-        wrapped("every\nother field on that row can come back reading exactly as it did"),
+      expect(leaving).toMatch(
+        wrapped("every other field on that row can come back reading exactly as it did"),
       );
     });
 
@@ -4990,12 +5397,13 @@ describe("converse skill body", () => {
        * the sentence that explains why a listener stops rather than adjusts is
        * not (CONTRACT-071's decision 4).
        */
-      expect(body).toMatch(
+      // The reason moved to the reference whole (AGENT-065); the acts stay below.
+      expect(leaving).toMatch(
         wrapped(
           "**no running agent becomes another one without discarding the conversation it is holding.**",
         ),
       );
-      expect(body).toMatch(
+      expect(leaving).toMatch(
         wrapped(
           "Somebody has asked for this conversation to be worked at a weight this session cannot become",
         ),
@@ -5306,9 +5714,15 @@ describe("converse skill body", () => {
       );
       expect(body).toMatch(/\*\*One such id is the whole of the evidence\. Exit\.\*\*/);
       // Why the orchestrator is not a candidate — the half a reader cannot
-      // rederive, and the half the whole rule rests on.
+      // rederive. It moved to the reference whole (AGENT-065), and the body
+      // points there instead of restating it.
+      expect(leaving).toMatch(
+        wrapped(
+          "your park released moments ago, the lane therefore reads live for the whole grace window that follows, and an unscoped claim never sees a live lane's events",
+        ),
+      );
       expect(body).toMatch(
-        /your park released moments ago, the lane\s+therefore reads live for the whole grace window that follows, and an unscoped claim never sees\s+a live lane's events/,
+        wrapped("why the orchestrator cannot be that caller is `references/leaving.md`'s to show"),
       );
       // Structural: the firing sentence must not condition on emptiness at all.
       // A rewrite that re-adds "and the events array is empty" lands in this
@@ -5323,13 +5737,18 @@ describe("converse skill body", () => {
     it("says a second message does not suppress it, which is how it shipped", () => {
       expect(body).toMatch(/\*\*Judge it on that id, and never on the claim being empty\.\*\*/);
       expect(body).toMatch(
-        /a person who has just written one\s+message writing a second is the ordinary case, not a rare one/,
+        wrapped(
+          "A person who has just written one message writing a second is the ordinary case, not a rare one",
+        ),
       );
       expect(body).toMatch(/so your `events` comes back \*\*non-empty\*\*/);
-      // The exact failure the conjunction produced, named as what it is.
+      // The exact failure the conjunction produced, named as what it is — the
+      // full story lives in the reference (AGENT-065).
       expect(body).toMatch(/the peer's held row reads as merely \*not yours\*/);
-      expect(body).toMatch(
-        /Two agents, one\s+conversation, alternate messages, neither able to see what the other said/,
+      expect(leaving).toMatch(
+        wrapped(
+          "two agents, one conversation, alternate messages, neither able to see what the other said",
+        ),
       );
       expect(body).toMatch(/present in exactly the same way whether the batch was empty or not/);
     });
@@ -5345,7 +5764,8 @@ describe("converse skill body", () => {
       expect(body).toMatch(/Do not work it, do not settle it, do not\s+reply to it/);
       expect(body).toMatch(/returns it to `pending\/` \*\*on the lane it was claimed from\*\*/);
       expect(body).toMatch(/the listener that stays claims it as an ordinary row/);
-      expect(body).toMatch(/A late answer costs the person a wait/);
+      // The trade that makes declining cheap moved to the reference (AGENT-065).
+      expect(leaving).toMatch(wrapped("a late answer costs the person a wait"));
       // Post nothing to the thread — but the job log is now reachable, and it is
       // the only account of why the event sat.
       expect(body).toMatch(/Post nothing to the thread/);
@@ -5415,7 +5835,9 @@ describe("converse skill body", () => {
       expect(example).toMatch(
         /had something been, this being the\s+session's first claim it would have been somebody else's and left where it was/,
       );
-      expect(example).toMatch(/this example is exactly the case it turns on:\s+a first park/);
+      // AGENT-069 rewrapped the bridge sentence while displacing prose for the
+      // digest step; the two answers themselves stay pinned below, unweakened.
+      expect(example).toMatch(/One case\s+turns that answer around/);
       // The counterfactual is written on the example's own ids, so it is read
       // against a payload the reader has just seen rather than in the abstract.
       expect(example).toMatch(
@@ -5428,12 +5850,18 @@ describe("converse skill body", () => {
     });
 
     it("says why the check belongs at the claim and forbids every earlier probe", () => {
-      expect(body).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
-      expect(body).toMatch(/before the person has been answered twice or in two\s+voices/);
+      // The cost argument moved to the reference whole (AGENT-065); the body
+      // keeps the prohibition and points at the reasoning.
+      expect(leaving).toMatch(/\*\*Two parked listeners cost nothing until a message arrives\*\*/);
+      expect(leaving).toMatch(
+        wrapped("before the person has been answered twice or in two voices"),
+      );
       expect(body).toMatch(/there is no probe for this/);
-      expect(body).toMatch(/a shortened park to "check" is the keep-alive this skill forbids/);
+      expect(body).toMatch(
+        wrapped('a shortened park to "check" is the keep-alive this skill forbids'),
+      );
       // The tie-break is deliberately not arbitrated, and the reason it can be.
-      expect(body).toMatch(/Which of you loses the race is not worth arbitrating/);
+      expect(leaving).toMatch(/Which of you loses the race is not worth arbitrating/);
     });
 
     it("names a long turn as the cause, without proposing a way to look present", () => {
@@ -5689,10 +6117,11 @@ describe("converse skill body", () => {
 
     it("sends the listener into retirement rather than out of the shell", () => {
       expect(body).toMatch(/\*\*Retire on it; do not die on it\.\*\*/);
-      // The consequence of the missing instruction, named as what it is.
-      expect(body).toMatch(/exits at the shell/);
-      expect(body).toMatch(/holding its last event/);
-      expect(body).toMatch(/owing the conversation a goodbye nobody posts/);
+      // The consequence of the missing instruction, named as what it is — in
+      // the reference since AGENT-065, with the body pointing at it.
+      expect(leaving).toMatch(/exits at the shell/);
+      expect(leaving).toMatch(wrapped("holding its last event"));
+      expect(leaving).toMatch(wrapped("owing the conversation a goodbye nobody posts"));
       expect(body).toMatch(/run the steps below from the first/);
       // And the steps are entered from either discovery, not only the roster.
       expect(body).toMatch(/When your row is gone from the roster, or your park was refused:/);
@@ -5716,10 +6145,13 @@ describe("converse skill body", () => {
         /still answers on a lane whose resident was just\s+released, and hands back/,
       );
       // Why refusing it too would be worse: nobody could reach those events.
-      expect(body).toMatch(
-        /the orchestrator's unscoped claim cannot see this lane\s+until it has lapsed out of presence/,
+      // The server's reasoning moved to the reference whole (AGENT-065).
+      expect(leaving).toMatch(
+        wrapped(
+          "the orchestrator's unscoped claim cannot see this lane until it has lapsed out of presence",
+        ),
       );
-      expect(body).toMatch(/strand them for a whole grace\s+window/);
+      expect(leaving).toMatch(wrapped("strand them for a whole grace window"));
       // So the drain is an instruction, not a fact about the server.
       expect(body).toMatch(/Draining them is therefore the departing listener's job/);
       expect(body).toMatch(/make \*\*one\*\* last/);
@@ -5783,15 +6215,18 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         /\*\*Unless the conversation has been designated again — and then the drain is not yours to\s+make\.\*\*/,
       );
-      // Why the paragraph above it no longer settles the question on its own.
-      expect(body).toMatch(/the argument above\s+turns over on its own premise/);
+      // Why the paragraph above it no longer settles the question on its own —
+      // moved to the reference whole (AGENT-065).
+      expect(leaving).toMatch(wrapped("the argument above turns over on its own premise"));
       expect(body).toMatch(/they are the\s+successor's ordinary pending work/);
       // What it costs, in the successor's own terms — this is the part a
       // rewrite cannot rederive, and the reason the drain is not merely rude.
-      expect(body).toMatch(
-        /the row says nothing about who holds it or that they are leaving, so it\s+cannot read your departure as anything but a peer/,
+      expect(leaving).toMatch(
+        wrapped(
+          "the row says nothing about who holds it or that they are leaving, so it cannot read your departure as anything but a peer",
+        ),
       );
-      expect(body).toMatch(/evict the healthy\s+listener that replaced you/);
+      expect(leaving).toMatch(wrapped("evict the healthy listener that replaced you"));
       // The instrument, and its ordering — a roster read minutes old is no test.
       expect(body).toMatch(/\*\*read the roster immediately before you drain\*\*/);
       expect(body).toMatch(/a designation that is not yours/);
@@ -5841,13 +6276,109 @@ describe("converse skill body", () => {
   });
 
   it("hands a successor the corpus, never a transcript", () => {
-    expect(body).toMatch(/A degraded listener holding a lane is worse\s+than no listener at all/);
-    expect(body).toMatch(/presence is what tells a person somebody is here/);
+    // The argument that earns the exit lives in the reference (AGENT-065); the
+    // body keeps the bar, the record, and the steps.
+    expect(leaving).toMatch(
+      wrapped("A degraded listener holding a lane is worse than no listener at all"),
+    );
+    expect(leaving).toMatch(wrapped("presence is what tells a person somebody is here"));
     expect(body).toMatch(/\*\*Do not park again\.\*\*/);
     expect(body).toMatch(/There is no transcript handoff and you must not attempt one/);
     expect(body).toMatch(/The thread and its artifacts are the memory/);
     // Which is what makes stewardship machinery rather than good manners here.
     expect(body).toMatch(/\*\*Stewardship is how you remember\.\*\*/);
+  });
+
+  /**
+   * AGENT-065 — reported from live use: listeners kept stopping although the
+   * skill was meant to keep them alive. The skill documented five ways to
+   * stop, each with an essay, against four trailing words of continue. The
+   * essays moved to `references/leaving.md`; continuing became step 8 of the
+   * loop, in the same words CLI-078's next-step lines print at the decision
+   * point — one instruction, one wording, or the two drift apart.
+   */
+  describe("the loop argues for continuing, not only for stopping (AGENT-065)", () => {
+    it("numbers continuing as step 8, in the CLI's own next-step words", () => {
+      expect(body).toMatch(
+        /8\. \*\*Go again from step 1 — the pass ends by starting the next one\.\*\*/,
+      );
+      // Verbatim: the constants the CLI prints, imported from its source, so a
+      // rewording of either side fails here rather than shipping two versions.
+      expect(body).toContain(IDLE_EVENTS_NEXT_STEP);
+      expect(body).toContain(IDLE_TIMEOUT_NEXT_STEP);
+      expect(body).toMatch(
+        wrapped(
+          "a listener is present exactly while it keeps parking, so one that stops parking stops existing",
+        ),
+      );
+    });
+
+    it("keeps all five endings, each with its rule in the body", () => {
+      // 1. the contested claim
+      expect(body).toMatch(/\*\*One such id is the whole of the evidence\. Exit\.\*\*/);
+      // 2. a designation that is not yours
+      expect(body).toMatch(
+        wrapped("**Compare `resident.designationId` on your row with the one your launch named.**"),
+      );
+      // 3. the refused park
+      expect(body).toMatch(/\*\*Retire on it; do not die on it\.\*\*/);
+      // 4. a resolved thread, which releases the resident with it
+      expect(body).toMatch(/\*\*If it is resolved, post nothing\*\*/);
+      // 5. context running heavy — the one exit with no external signal, so it
+      // alone carries a bar and a required record.
+      expect(body).toMatch(
+        wrapped('**The bar is a named casualty, and "this is getting long" does not meet it.**'),
+      );
+      expect(body).toMatch(wrapped("**Record the reason while you still hold an event.**"));
+      expect(body).toMatch(wrapped("you have not met the bar — park again and keep working"));
+    });
+
+    it("moves the reasoning to references/leaving.md and points at it by name", () => {
+      expect(templateFiles).toContain("claude/skills/converse/references/leaving.md");
+      expect(leaving).toMatch(/^# Leaving a lane/);
+      // Directed pointers: the body sends its reader there by path, per exit.
+      expect((body.match(/`references\/leaving\.md`/g) ?? []).length).toBeGreaterThanOrEqual(5);
+      // And the reference adds no rule of its own — the body's rules govern.
+      expect(leaving).toMatch(wrapped("the rule you act on is always the body's"));
+    });
+
+    /**
+     * The ratio criterion, as a wording guard. This counts signal phrases and
+     * claims nothing about behaviour — this file checks wording and can never
+     * check truth; INFRA-039's scenario is what answers whether a listener
+     * actually stays up. What the count stops is the balance silently
+     * drifting back: AGENT-065 measured 24 stop-signals against 9
+     * continue-signals (2.67:1) under these patterns before the rebalance,
+     * 23 against 14 (1.64:1) after, and the criterion is at or below 2:1.
+     */
+    it("keeps the stop-to-continue signal ratio at or below 2:1", () => {
+      const flat = body.replace(/\s+/g, " ");
+      const count = (patterns: readonly RegExp[]): number =>
+        patterns.reduce((sum, pattern) => sum + (flat.match(pattern) ?? []).length, 0);
+      const stopSignals = count([
+        /\bexit\b(?!s\b)(?! `)(?! code| status)/gi,
+        /do not park again/gi,
+        /\bst(?:and|ands|anding|ood) down\b/gi,
+        /stop cleanly/gi,
+        /retire on it/gi,
+        /\bjust go\b/gi,
+        /\band go\b/gi,
+        /\bgo without finishing\b/gi,
+      ]);
+      const continueSignals = count([
+        /(?<!do not )park again/gi,
+        /park anyway/gi,
+        /loop again/gi,
+        /keep looping/gi,
+        /carry on/gi,
+        /\bfrom step 1\b/gi,
+        /\byou work on\b/gi,
+        /next step in the loop/gi,
+        /keep working/gi,
+      ]);
+      expect(continueSignals).toBeGreaterThan(0);
+      expect(stopSignals / continueSignals).toBeLessThanOrEqual(2);
+    });
   });
 
   it("runs the loop as discrete steps and never chains the claim to the park", () => {
@@ -5925,7 +6456,7 @@ describe("converse skill body", () => {
  */
 describe("a resident with no persona to bind", () => {
   const converse = documentAt("claude/skills/converse/SKILL.md").body;
-  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  const orchestrate = orchestratePackage;
 
   /** The `## Starting up` step that reads the launch's `resident`, and only it. */
   const binding = converse.slice(
@@ -6148,23 +6679,29 @@ describe("a resident with no persona to bind", () => {
  *   two writes splits them, and the split-pair pins below are that issue's.
  */
 describe("a listener launched at its designation's weight", () => {
-  const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
-  const routing = body.slice(body.indexOf("## Routing"), body.indexOf("## Delegation"));
-  const launch = routing.slice(
-    routing.indexOf("- **Launching a listener.**"),
-    routing.indexOf("- **Losing a listener.**"),
+  const body = orchestratePackage;
+  const skillFile = documentAt("claude/skills/orchestrate/SKILL.md").body;
+  // The Routing decisions plus the launch procedure they point at (AGENT-067).
+  const routing =
+    skillFile.slice(skillFile.indexOf("## Routing"), skillFile.indexOf("## Delegation")) +
+    "\n\n" +
+    orchestrateReference("launching.md");
+  const procedure = orchestrateReference("launching.md");
+  const launch = procedure.slice(
+    procedure.indexOf("- **Launching a listener.**"),
+    procedure.indexOf("- **Losing a listener.**"),
   );
-  const losing = routing.slice(
-    routing.indexOf("- **Losing a listener.**"),
-    routing.indexOf("- **A lane that already has a listener"),
+  const losing = procedure.slice(
+    procedure.indexOf("- **Losing a listener.**"),
+    procedure.indexOf("- **A lane that already has a listener"),
   );
-  const occupied = routing.slice(
-    routing.indexOf("- **A lane that already has a listener"),
-    routing.indexOf("- **A lane with work waiting and nobody on it gets a listener"),
+  const occupied = procedure.slice(
+    procedure.indexOf("- **A lane that already has a listener"),
+    procedure.indexOf("- **A lane with work waiting and nobody on it gets a listener"),
   );
-  const roster = routing.slice(
-    routing.indexOf("- **A lane with work waiting and nobody on it gets a listener"),
-    routing.indexOf("- **A row that does not read `live`"),
+  const roster = procedure.slice(
+    procedure.indexOf("- **A lane with work waiting and nobody on it gets a listener"),
+    procedure.indexOf("- **A row that does not read `live`"),
   );
 
   /** The models this workspace's own table declares, read off the table itself. */
@@ -6179,7 +6716,9 @@ describe("a listener launched at its designation's weight", () => {
         "**Find the row whose Key cell holds it, and launch the listener at that row's model.**",
       ),
     );
-    expect(launch).toMatch(/carries a \*\*Key\*\* from the tier table in Delegation below/);
+    expect(launch).toMatch(
+      /carries a \*\*Key\*\* from the tier table in the skill body's Delegation/,
+    );
     // The routing row says the same thing where a reader meets it first.
     const designation = routing.split("\n").find((line) => line.includes("`resident.designated`"));
     expect(designation ?? "").toMatch(/at the model that `resident`'s `weight` names/);
@@ -6240,7 +6779,7 @@ describe("a listener launched at its designation's weight", () => {
     // The scoping, stated at the owner: the two passes are for jobs.
     expect(launch).toMatch(
       wrapped(
-        "Delegation's two passes govern **dispatching a job**, and they do not govern **launching a listener**.",
+        "the two passes in the skill body's Delegation govern **dispatching a job**, and they do not govern **launching a listener**.",
       ),
     );
     // The judgment's question, in the skill's own terms.
@@ -6340,7 +6879,7 @@ describe("a listener launched at its designation's weight", () => {
       ),
     );
     // One rule, not a second copy of it: Delegation states the causes.
-    expect(launch).toMatch(/Delegation below gives the three causes and the rule/);
+    expect(launch).toMatch(/`references\/weight\.md` gives the three causes and the rule/);
     expect(launch).toMatch(/Launch anyway, at what your own judgment gives you/);
     // The three facts, and why the prompt has to carry them: a listener has no
     // reply of its own to put them in.
@@ -7302,7 +7841,7 @@ describe("a run of commands as one invocation (AGENT-051)", () => {
   });
 
   it("says a batch is not a transaction, where the rule lives", () => {
-    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+    const orchestrate = orchestratePackage;
     expect(orchestrate).toMatch(
       /\*\*A batch is not a transaction, and nothing in it rolls back\.\*\*/,
     );
@@ -7370,11 +7909,15 @@ describe("a run of commands as one invocation (AGENT-051)", () => {
  *   an entry behind a claim fails, rather than only warning that it can.
  */
 describe("the claim goes back in the batch (AGENT-052)", () => {
-  const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
-  const section = orchestrate.slice(
-    orchestrate.indexOf("## Several commands in one invocation"),
-    orchestrate.indexOf("## The loop"),
-  );
+  const orchestrate = orchestratePackage;
+  const conventionsReference = orchestrateReference("conventions.md");
+  const section =
+    conventionsReference +
+    "\n\n" +
+    orchestrate.slice(
+      orchestrate.indexOf("## Several commands in one invocation"),
+      orchestrate.indexOf("## The loop"),
+    );
   const loop = orchestrate.slice(
     orchestrate.indexOf("## The loop"),
     orchestrate.indexOf("## Claiming"),
@@ -7514,11 +8057,11 @@ describe("one rule, one skill", () => {
   type SkillName = (typeof SKILLS)[number];
 
   const skillBody: Record<SkillName, string> = {
-    orchestrate: documentAt("claude/skills/orchestrate/SKILL.md").body,
-    converse: documentAt("claude/skills/converse/SKILL.md").body,
-    // The package, not the body: text AGENT-047 moved into `references/` is
-    // still the comment skill's text, and a rule restated there would drift
-    // exactly as one restated in the body would.
+    orchestrate: orchestratePackage,
+    converse: conversePackage,
+    // The packages, not the bodies: text AGENT-047 and AGENT-065 moved into
+    // `references/` is still each skill's text, and a rule restated there
+    // would drift exactly as one restated in the body would.
     comment: commentPackage,
     profile: documentAt("claude/skills/profile/SKILL.md").body,
   };
@@ -7677,8 +8220,11 @@ describe("one rule, one skill", () => {
       ],
     },
     {
-      why: "the pointer formula itself. AGENT-035 is the first single-owner rule whose consumers are the other three skills rather than `orchestrate`, so the closing clause of a pointer now occurs in four files. It is identical on purpose: it is what marks a sentence as a pointer rather than a second account, and the registry below matches it. Only the clause is shared — each pointer names a different thing about the rule it defers",
-      passages: ["is the orchestrate skill's to state, and it is stated there alone."],
+      why: "the pointer formula itself. AGENT-035 is the first single-owner rule whose consumers are the other three skills rather than `orchestrate`, so the closing clause of a pointer now occurs in four files. It is identical on purpose: it is what marks a sentence as a pointer rather than a second account, and the registry below matches it. Only the clause is shared — each pointer names a different thing about the rule it defers. AGENT-069's digest rule is the first converse-owned rule with two consumers, so the converse variant of the clause now occurs in `comment` and `orchestrate` the same way",
+      passages: [
+        "is the orchestrate skill's to state, and it is stated there alone.",
+        "is the converse skill's to state, and it is stated there alone.",
+      ],
     },
     {
       why: "stewardship, which binds whoever does the work — `orchestrate` states the charter and `comment` states the parts a turn carries",
@@ -8046,6 +8592,40 @@ describe("one rule, one skill", () => {
           skill: "comment",
           carries: wrapped(
             "**What a batch is, and when a run may go as one, is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
+    {
+      // AGENT-069. A thread's digest is written by its resident at reply time
+      // and by nobody else (SPEC.md §6, rider signed 2026-09-05) — the server
+      // never generates one, so `converse`'s settle step is the only place the
+      // write exists. The other skills meet digests on every thread read, and
+      // what a consumer carries is the outcome it relies on — orient by it,
+      // never write or clear it — plus the invariant sentence every digest-
+      // printing surface already quotes, in the CLI's spelling.
+      //
+      // The detector is the verb itself: naming `thread digest set` (or
+      // `clear`) is stating the procedure, and only the skill that performs it
+      // may. Net, not proof, in the same sense as the rules above: prose that
+      // paraphrases the write without naming the verb — *"replace the summary
+      // through the CLI before you park"* — states the rule and matches
+      // nothing here. The invariant sentence is deliberately not in the
+      // detector: every reader is supposed to carry it.
+      rule: "who writes a thread's digest, and when",
+      owner: "converse",
+      restatements: (body) => body.match(/[^\n]*thread digest (?:set|clear)[^\n]*/g) ?? [],
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**when a digest is written, and by whom, is the converse skill's to state, and it is stated there alone.**",
+          ),
+        },
+        {
+          skill: "orchestrate",
+          carries: wrapped(
+            "**who writes a digest, and when, is the converse skill's to state, and it is stated there alone.**",
           ),
         },
       ],

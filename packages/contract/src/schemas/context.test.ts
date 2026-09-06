@@ -23,7 +23,9 @@ const excerpt = {
   relation: "linked" as const,
 };
 
-const base = { threadId: "th_x9y8", excerpts: [excerpt] };
+// `digest` is on every shape, because it is a fact about the conversation and
+// not about whichever parent it hangs off (CONTRACT-096).
+const base = { threadId: "th_x9y8", excerpts: [excerpt], digest: null };
 
 const ANCHORED = {
   shape: "anchored" as const,

@@ -3,6 +3,11 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
 import { abortOnInterrupt, type SignalTarget } from "../../signals.js";
 import { reportInProgress } from "./in-progress.js";
 import { IDLE_LANE_FLAG, resolveLaneScope } from "./lane.js";
+import {
+  IDLE_EVENTS_NEXT_STEP,
+  IDLE_HALTED_NEXT_STEP,
+  IDLE_TIMEOUT_NEXT_STEP,
+} from "./next-step.js";
 import { pollWindow } from "./poll.js";
 
 /**
@@ -26,6 +31,15 @@ import { pollWindow } from "./poll.js";
  * presence, a `--thread` naming no lane is refused with the server's `422`
  * rather than parked, so this verb's lane can fail where `claim-all`'s cannot.
  * `lane.ts` carries the rule and the reason the two verbs differ.
+ *
+ * **Every outcome that ends a pass names the loop's next step** (CLI-078), on
+ * **stderr** in human mode and as one additive `nextStep` key under `--json`.
+ * The three lines differ, because the three outcomes want different next steps
+ * — and the events one carries the fact this verb is most often misread on:
+ * what it listed is _pending, not claimed_. The two keys the converse loop
+ * depends on, `idle` and `reason`, are untouched. A `--wait 0` probe gets no
+ * line at all: a single non-blocking question is a script's, not a park, and
+ * its caller is not in this loop.
  */
 
 /** Why a window ended with no events. Halted is a state the server owns, so it is asked. */
@@ -74,6 +88,10 @@ export async function runIdle(
     // value would be worse than silence for whoever is parsing stdout.
     if (outcome.kind === "interrupted") return;
 
+    // `--wait 0` is a script's non-blocking probe rather than a park, so it
+    // reaches none of the three next-step lines (CLI-078).
+    const parked = waitSeconds > 0;
+
     // A window that returned work carries the in-progress set too (SPEC.md §7),
     // and it is passed through as its own key rather than folded into `events`:
     // one list is what is waiting to be claimed, the other is what the server
@@ -81,9 +99,14 @@ export async function runIdle(
     // settled work or claim nothing. Human mode keeps them in different streams
     // for the same reason — pending ids on stdout, the report on stderr.
     if (outcome.kind === "events") {
-      out.emit({ events: outcome.events, inProgress: outcome.inProgress });
+      out.emit({
+        events: outcome.events,
+        inProgress: outcome.inProgress,
+        ...(parked ? { nextStep: IDLE_EVENTS_NEXT_STEP } : {}),
+      });
       for (const event of outcome.events) out.line(`${event.id} ${event.type}`);
       reportInProgress(out, outcome.inProgress);
+      if (parked) out.note(IDLE_EVENTS_NEXT_STEP);
       return;
     }
 
@@ -92,8 +115,10 @@ export async function runIdle(
     const status = await client.request((api) => api.GET("/api/queue/status"));
     const reason: IdleReason = status.halted ? "halted" : "timeout";
     const timeout: IdleTimeout = { idle: true, reason };
-    out.emit(timeout);
+    const nextStep = reason === "halted" ? IDLE_HALTED_NEXT_STEP : IDLE_TIMEOUT_NEXT_STEP;
+    out.emit({ ...timeout, ...(parked ? { nextStep } : {}) });
     out.line(`idle — no events (${reason})`);
+    if (parked) out.note(nextStep);
   } finally {
     dispose();
   }
@@ -130,7 +155,15 @@ export const idleCommand: WorkspaceCommandSpec = {
     "`--thread` below for the three ways on. Everything else about an accepted park is unchanged " +
     "by the lane: the same `--wait`, the same output shapes, the same held report, and the same " +
     '`{"idle":true,"reason":"timeout"}` on expiry — a scoped window that ends empty prints ' +
-    "exactly what an unscoped one does.",
+    "exactly what an unscoped one does.\n\n" +
+    "**Every outcome names the loop's next step** (CLI-078). A listener stays alive only because " +
+    "it decides to park again, and this verb's output is what it reads at that moment — so the " +
+    "timeout, the halted window and the returned-work case each print one line saying what the " +
+    "loop does next, on **stderr** in human mode and as an additive `nextStep` key under " +
+    "`--json`. The events line says the events are _pending, not claimed_, because acting on " +
+    "them without `corpus queue claim-all` settles work that was never held. Nothing on stdout " +
+    "changed, `idle` and `reason` are the keys they always were, and `--wait 0` prints no such " +
+    "line: a probe is not a park.",
   args: [],
   flags: [
     {
@@ -153,11 +186,13 @@ export const idleCommand: WorkspaceCommandSpec = {
     {
       command: "corpus queue idle --json",
       description:
-        'The agent loop\'s form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.',
+        'The agent loop\'s form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false},"nextStep":"next step in the loop …"}` on work, `{"idle":true,"reason":"timeout","nextStep":"…"}` or `{"idle":true,"reason":"halted","nextStep":"…"}` on expiry. `nextStep` is additive — every other key is what it always was.',
     },
     {
       command: "corpus queue idle --wait 0 --json",
-      description: "Probe the queue without blocking, for a script that must not park.",
+      description:
+        "Probe the queue without blocking, for a script that must not park. It carries no " +
+        "`nextStep`: a probe is not a park, and its caller is not in the loop.",
     },
     {
       command: "corpus queue idle --thread th_4b8e2c --json",

@@ -1,4 +1,5 @@
 import { countWords, gloss, MAX_GLOSS_WORDS } from "../gloss.js";
+import { HELP_MODES, renderCommandHelp, renderTopicHelp, type HelpMode } from "../help.js";
 import { GLOBAL_FLAGS, GLOBAL_FLAG_ALIASES, GLOBAL_FLAG_NAMES } from "./globals.js";
 import type { ArgSpec, CommandSpec, FlagSpec, Registry, TopicSpec } from "./types.js";
 
@@ -31,6 +32,33 @@ export class RegistryValidationError extends Error {
 const NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 /**
+ * What one help page may cost the reader, in bytes of rendered output
+ * (CLI-080). The gloss rule above bounds a single line; nothing bounded the
+ * page, and by 2026-09 the fifteen hot verbs' full help totalled ~134KB — a
+ * second orchestrate-sized document read through `--help`. These caps gate the
+ * build the way a malformed gloss does, so the surface cannot regrow past them
+ * one honest-looking paragraph at a time.
+ *
+ * The budget measures the **rendered register**, through the same renderer the
+ * dispatcher calls (`help.ts`, `color: false`), not the source literals: what a
+ * reader pays is the output, layout and global flags included. Brief gets
+ * ~400 tokens — it answers "what is the flag called?" and every flag must still
+ * appear (its line is the first sentence of the full text, CLI-056), so the fix
+ * for a breach is shorter opening sentences, never fewer flags. Full gets
+ * ~2,000 tokens — room for every stated behaviour and consequence, not for the
+ * same rule told three times.
+ *
+ * Topic pages (`corpus doc --help`) are held to the same caps: they are read
+ * through the same hole, and a topic page is one summary line per verb plus an
+ * optional description, so a breach means the topic has outgrown a single
+ * listing.
+ */
+export const HELP_BUDGET_BYTES: Readonly<Record<HelpMode, number>> = {
+  brief: 1_600,
+  full: 8_000,
+};
+
+/**
  * The one-line form `--help=brief` will print for this declaration, checked for
  * length. A non-empty description always yields a non-empty gloss — the first
  * sentence of a string with no terminator is the whole string — so the failure
@@ -48,6 +76,28 @@ function glossProblems(declaration: ArgSpec | FlagSpec, label: string): readonly
 
 function flagGlossProblems(flag: FlagSpec, label: string): readonly string[] {
   return glossProblems(flag, `${label} flag "--${flag.name}"`);
+}
+
+/**
+ * Both registers of one help page measured against {@link HELP_BUDGET_BYTES},
+ * rendered exactly as the dispatcher would render them (`color: false` — escape
+ * codes are terminal dressing, not content a reader pays for).
+ */
+function helpBudgetProblems(render: (mode: HelpMode) => string, label: string): readonly string[] {
+  const problems: string[] = [];
+  for (const mode of HELP_MODES) {
+    const budget = HELP_BUDGET_BYTES[mode];
+    const size = Buffer.byteLength(render(mode), "utf8");
+    if (size > budget) {
+      const register = mode === "brief" ? "--help=brief" : "--help";
+      problems.push(
+        `${label} renders ${String(size)} bytes of ${mode} help (\`${register}\`), over its ` +
+          `${String(budget)}-byte budget — compress the descriptions; the budget counts the ` +
+          `bytes a reader pays`,
+      );
+    }
+  }
+  return problems;
 }
 
 export function collectRegistryProblems(registry: Registry): readonly string[] {
@@ -95,6 +145,9 @@ function topicProblems(topic: TopicSpec): readonly string[] {
   }
   if (topic.summary.trim() === "") problems.push(`${label} has no summary`);
   if (topic.commands.length === 0) problems.push(`${label} declares no verbs`);
+  problems.push(
+    ...helpBudgetProblems((mode) => renderTopicHelp(topic, { color: false, mode }), label),
+  );
 
   const seen = new Set<string>();
   for (const command of topic.commands) {
@@ -102,12 +155,12 @@ function topicProblems(topic: TopicSpec): readonly string[] {
       problems.push(`${label} declares "${command.name}" twice`);
     }
     seen.add(command.name);
-    problems.push(...commandProblems(command, `${label} ${command.name}`));
+    problems.push(...commandProblems(command, `${label} ${command.name}`, topic.name));
   }
   return problems;
 }
 
-function commandProblems(command: CommandSpec, label: string): readonly string[] {
+function commandProblems(command: CommandSpec, label: string, topic?: string): readonly string[] {
   const problems: string[] = [];
 
   if (!NAME_PATTERN.test(command.name)) {
@@ -115,6 +168,17 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
   }
   if (command.summary.trim() === "") problems.push(`${label} has no summary`);
   if (command.examples.length === 0) problems.push(`${label} has no examples`);
+  problems.push(
+    ...helpBudgetProblems(
+      (mode) =>
+        renderCommandHelp(command, {
+          color: false,
+          mode,
+          ...(topic === undefined ? {} : { topic }),
+        }),
+      label,
+    ),
+  );
 
   command.examples.forEach((example, index) => {
     if (!example.command.startsWith("corpus ")) {

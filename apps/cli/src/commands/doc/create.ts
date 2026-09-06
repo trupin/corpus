@@ -98,45 +98,25 @@ export const createCommand: WorkspaceCommandSpec = {
   name: "create",
   summary: "Create a document.",
   description:
-    "A type and a title are the whole requirement (SPEC.md §10's zero-form creation); everything " +
-    "else the server fills in, including the id, which is immutable thereafter. The body comes " +
-    "from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and " +
-    "omitting all three is legal: the server pre-fills from the type's `template` document when " +
-    "one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. " +
-    "An omitted `--folder` files the document in the root its `--type` declares: `data/docs/inbox/` " +
-    "for every ordinary type (creation is inbox-first), and `.claude/agents/` for `--type " +
-    "agent-def`, which SPEC.md §7 gives its own document root — so a persona takes no extra flag. " +
-    "**An explicit `--folder` wins over that default**, which is what keeps a document _about_ a " +
-    "persona expressible: `--type agent-def --folder inbox` still files under `data/docs/`. " +
-    "**What that costs is addressability, and it costs all of it**: a persona is loaded and " +
-    "resolved from `.claude/agents/` alone, so an `agent-def` written anywhere else answers to " +
-    "neither `@<name>` nor `corpus thread designate --agent`, under its filename stem or its " +
-    "title alike — it is a note about a persona rather than one. A root " +
-    "of its own may also be named outright, by its exact declared path (`--folder .claude/agents`) " +
-    "and never a folder beneath it; a root named that way must hold the type asked for, so `--type " +
-    "note --folder .claude/agents` is a `400` rather than a note the corpus would index as a " +
-    "persona. **`--type thread` is placed by neither rule**: a thread is flat at " +
-    "`data/threads/<id>.md`, named by its id (SPEC.md §4), so an omitted `--folder` is not the " +
-    "inbox and an explicit one is still checked but never changes where it lands — and a thread is " +
-    "normally created by `corpus thread create`. `--type skill` is the one type whose own root is " +
-    "out of reach here: `.claude/skills` indexes `SKILL.md` files alone, as does the archived root " +
-    "beside it, so naming either as a `--folder` is a `400` and a skill created with no `--folder` " +
-    "lands in the inbox like anything else — `corpus skill create` owns genesis at " +
-    "`<name>/SKILL.md`, while `--type skill --folder finance` files an ordinary document in " +
-    "`data/docs/finance/`. A folder the server rejects is reported verbatim rather than " +
-    "pre-validated here. " +
-    "`--columns`, `--kanban`, `--default-open`, `--order`, `--query` and `--stage` write the " +
-    "SPEC.md §10 **board and view keys** at creation, so `--type board --columns a,b " +
-    "--default-open true` is a whole board in one command and `--type board --kanban '…'` is a " +
-    "whole kanban — the board bar picks either up over SSE with no reload. A `type: view` " +
-    "document is a saved query and nothing more: what puts it on a board is that board's " +
-    "`--columns`, never a key on the view. A column the board's own “＋ New list” would have " +
-    "written carries `--folder views --evergreen true`, which is what the seed columns look like " +
-    "and what keeps a column out of the staleness ramp (SPEC.md §5); the flags are explicit " +
-    "rather than implied by `--type view`, because this verb defaults nothing per type. Prints " +
-    "the new id and path, then the **key** for the bytes it just wrote — so a create-then-edit turn needs no read in between — and prints on its own line any second effect the write had — a stage " +
-    "that decided a status (§5's coupling), a `default-open` taken off another board. `--json` " +
-    "emits the server's `{doc, warnings}` response unchanged.\n\n" +
+    "A type and a title are the whole requirement (SPEC.md §10's zero-form creation); " +
+    "everything else the server fills in, including the id, immutable thereafter. Omitting " +
+    "every body source is legal: the server pre-fills from the type's `template` document when " +
+    "one exists. Bytes are passed through untouched — no markdown processing in the CLI.\n\n" +
+    "An omitted `--folder` files the document in the root its `--type` declares: " +
+    "`data/docs/inbox/` for ordinary types, `.claude/agents/` for `agent-def`. An explicit " +
+    "`--folder` wins over that default, but **an `agent-def` outside `.claude/agents/` answers " +
+    "to neither `@<name>` nor `corpus thread designate --agent`** — it is a note about a " +
+    "persona rather than one. A declared root may be named outright by its exact path " +
+    "(`--folder .claude/agents`), and must hold the type asked for. `--type skill` cannot " +
+    "reach its own root here — `corpus skill create` owns genesis at `<name>/SKILL.md` — and " +
+    "with no `--folder` lands in the inbox.\n\n" +
+    "The six board flags write SPEC.md §10's **board and view keys** at creation, so `--type " +
+    "board --columns a,b` is a whole board in one command and `--kanban '…'` a whole kanban — " +
+    "the board bar picks either up over SSE. A `type: view` document is a saved query and " +
+    "nothing more; a board's `--columns` is what puts it on a board. This verb defaults " +
+    "nothing per type. Prints the new id and path, then the **key** for the bytes it wrote (a " +
+    "create-then-edit needs no read in between), and any second effect on its own line. " +
+    "`--json` emits the server's `{doc, warnings}` unchanged.\n\n" +
     BODY_SOURCES_HELP,
   args: [],
   flags: [
@@ -145,7 +125,8 @@ export const createCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "type",
       description:
-        "Document type: `note`, `view`, `board`, `template`, `skill`, `agent-def`, or any other value this workspace uses (SPEC.md §5 — the field is an open string). Required.",
+        "Document type: `note`, `view`, `board`, `template`, `skill`, `agent-def`, or any " +
+        "other value this workspace uses (SPEC.md §5 — an open string). Required.",
     },
     {
       name: "title",
@@ -159,12 +140,10 @@ export const createCommand: WorkspaceCommandSpec = {
       valueName: "path",
       description:
         "Folder under `data/docs/`, as a bare name (`finance`) or the full prefix " +
-        "(`data/docs/finance`). A type SPEC.md §7 gives its own document root may instead name " +
-        "that root by its exact declared path (`.claude/agents`). Defaults to the root `--type` " +
-        "declares — `inbox` for ordinary types, `.claude/agents` for `agent-def` — and an " +
-        "explicit folder wins over that default. **`--type thread` is the exception at both " +
-        "ends**: a thread is placed flat at `data/threads/<id>.md` before this flag is consulted " +
-        "(SPEC.md §4), so a folder sent with one is validated and then has no effect.",
+        "(`data/docs/finance`); a type with a root of its own may name it by exact path " +
+        "(SPEC.md §7). **`--type thread` is the exception at both ends**: a thread is placed " +
+        "flat at `data/threads/<id>.md` before this flag is consulted (SPEC.md §4), so a " +
+        "folder sent with one is validated and then has no effect.",
     },
     {
       name: "tags",
@@ -181,28 +160,16 @@ export const createCommand: WorkspaceCommandSpec = {
     {
       name: "evergreen",
       type: "string",
-      valueName: "true|false",
+      valueName: "bool",
       description:
-        "Opt the document out of staleness from the start. Defaults to `false`; a board column " +
-        "is created with `true`, because a column is configuration rather than content and a " +
-        "six-month-old Inbox column is not something to review.",
+        "Opt the document out of staleness from the start. Defaults to `false`; a board " +
+        "column is created with `true`, configuration not being content.",
     },
     ...BOARD_KEY_FLAGS,
     ...bodyFlags("The document body"),
     JOB_FLAG,
   ],
   examples: [
-    {
-      command: 'corpus doc create --type note --title "Mortgage options" --folder finance',
-      description:
-        "Create a note in `data/docs/finance/`, with the body pre-filled from the `note` template.",
-    },
-    {
-      command:
-        "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'CORPUS_EOF'\nYou read the corpus and answer with evidence.\nCORPUS_EOF",
-      description:
-        "A persona, in one command: no `--folder`, because `agent-def` has its own document root — one copy of the file, read by Claude Code and by Corpus, with no sync (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it in the very next comment (SPEC.md §8), and Claude Code lists it as a subagent, because the server writes both discovery keys with the document: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123). That default is thin on purpose — `corpus doc edit <id> --extra description=…` is how it comes to say _when_ to reach for this one.",
-    },
     {
       command:
         "corpus doc create --type note --title \"Mortgage options\" --tags finance,housing --from agent <<'CORPUS_EOF'\n30-year fixed at 6.1%.\nCORPUS_EOF",
@@ -211,26 +178,25 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --query type=thread --query status=open --query tag=finance --from agent',
+        "corpus doc create --type agent-def --title \"Analyst\" --from agent <<'CORPUS_EOF'\nYou read the corpus and answer with evidence.\nCORPUS_EOF",
       description:
-        "SPEC.md §10's “give me a view of unresolved finance threads”: the view document lands in `data/docs/views/` and `git log` records the agent as its author. It is a saved query and nothing more — it appears on a board when a board names its id in `--columns`, which is the next command.",
+        "A persona, in one command: no `--folder`, because `agent-def` has its own root (SPEC.md §7). It lands at `.claude/agents/analyst.md`, `@analyst` resolves to it, and Claude Code lists it as a subagent — the server writes both discovery keys: `name`, derived from the filename, and `description`, defaulted to the title (SERVER-123).",
+    },
+    {
+      command:
+        'corpus doc create --type view --title "Unresolved finance" --folder views --evergreen true --query type=thread --query status=open --query tag=finance --from agent',
+      description: "A saved query, put on a board by that board's `--columns`.",
     },
     {
       command:
         'corpus doc create --type board --title "Attention" --folder views --evergreen true --columns doc_v1e2w3,doc_v4e5w6 --order 1 --default-open true --from agent',
-      description:
-        "A board, in one command (rider 2): its columns are the ids of two view documents, in that order, and `--default-open true` makes it the board a browser opens onto — clearing the flag from whichever board held it, which the output names on its own line.",
+      description: "A whole board in one command (rider 2).",
     },
     {
       command:
-        'corpus doc create --type board --title "Triage" --folder views --evergreen true --kanban \'{"field":"stage","stages":["triage","doing","done"],"transitions":{"triage":["doing"],"doing":["done","triage"]},"status":{"done":"resolved"}}\' --query type=note --from agent',
+        'corpus doc create --type board --title "Triage" --folder views --evergreen true --kanban \'{"field":"stage","stages":["triage","doing","done"],"status":{"done":"resolved"}}\' --query type=note --from agent',
       description:
-        "A kanban (rider 6): one derived column per stage, drawn from the `--query` scope, with a drag following the graph and `done` deciding `status: resolved` through the explicit map. It carries no `--columns` — a kanban's columns are its stages, not view documents.",
-    },
-    {
-      command: 'corpus doc create --type note --title "Notes" --file notes.md --json',
-      description:
-        'Body from a file; one JSON value — `{"doc":{…},"warnings":[]}` — for a caller that needs the id.',
+        "A kanban (rider 6): one derived column per stage, drawn from the `--query` scope.",
     },
   ],
   handler: (context) => runDocCreate(context),

@@ -107,6 +107,14 @@ export interface RunMeta {
   readonly cutShort: boolean;
   readonly endedBy: RunEnd;
   readonly runnerExitCode: number | null;
+  /**
+   * How many follow-up acts the driver performed mid-run (INFRA-039). The
+   * authorship invariant reads it: each follow-up is one deliberate `user`
+   * write through the server, so exactly that many post-seed `user` commits
+   * are the product doing its job rather than a hand edit. Zero for every
+   * scenario without a {@link Scenario.followUp}.
+   */
+  readonly followUps: number;
 }
 
 export interface RunRecord {
@@ -140,6 +148,21 @@ export interface Scenario {
   readonly budgetMs: number;
   /** Build the workspace state, through the `corpus` CLI only. */
   seed(ctx: SeedContext): Promise<Seed>;
+  /**
+   * Optional second act (INFRA-039). The driver invokes it at most once, the
+   * first time the queue has read quiet for the full quiescence hold — the
+   * moment the run would otherwise have ended. The gap is thereby derived
+   * from the settle itself, never from a fixed sleep: by then the first
+   * event has settled and the listener has had the hold to re-park.
+   *
+   * It acts through the same product-only context as `seed` — a person doing
+   * a second thing mid-session is exactly what it models — and the refs it
+   * returns are merged over the seed's for the scorer. After it runs, the run
+   * continues until quiescence holds again, the budget expires, or the runner
+   * exits. A runner that exits before the act fires simply never receives it;
+   * the scorer sees the missing refs and judges that shape on the corpus.
+   */
+  followUp?(ctx: SeedContext, seed: Seed): Promise<Seed>;
   /** Pure. Reads the record, asserts nothing about prose or transcripts. */
   score(record: RunRecord): ScenarioRunScore;
 }

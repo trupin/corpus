@@ -268,7 +268,13 @@ describe("the five thread shapes", () => {
     expect(result.shape).toBe("standalone");
     expect("parent" in result).toBe(false);
     expect("deletedParent" in result).toBe(false);
-    expect(Object.keys(result).sort()).toEqual(["excerpts", "semanticIndex", "shape", "threadId"]);
+    expect(Object.keys(result).sort()).toEqual([
+      "digest",
+      "excerpts",
+      "semanticIndex",
+      "shape",
+      "threadId",
+    ]);
   });
 
   it("TEST-958/959 — an anchor that no longer resolves verbatim reads as orphaned", async () => {

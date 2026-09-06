@@ -41,6 +41,7 @@ import {
   type DocumentMutex,
   type MutationResult,
 } from "../docs/index.js";
+import { digestCovers, stalenessPatch } from "../core/digest.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { forbidden, notFound } from "../errors.js";
 import { loadThread, type LoadedThread } from "./read.js";
@@ -104,6 +105,24 @@ export async function deleteThreadTurn(
     const text = serializeDocument(
       setFrontmatterFields(setBody(thread.loaded.parsed, body), {
         updated: formatInstant(workspace.now()),
+        // SPEC.md §6's rider, signed 2026-09-05: deleting a turn at or before
+        // the digest's watermark marks the digest stale, and *"the server
+        // records the staleness and changes nothing else"*. In this write, so
+        // the file is never a commit in which a digest claims coverage of a turn
+        // that is already gone.
+        //
+        // Asked with `digestCovers` rather than by diffing two bodies, because
+        // this is the one trigger that already knows exactly which turn went.
+        // A turn deleted *after* the watermark writes nothing: it was never
+        // covered, which the rider is explicit is not staleness.
+        //
+        // Nothing is needed in the branch above, where deleting the thread's
+        // last turn takes the whole thread with it: there is no file left to
+        // record anything on.
+        ...stalenessPatch(
+          thread.digest,
+          thread.digest !== null && digestCovers(thread.digest, turn.ts),
+        ),
         // The turn's model record goes with the turn, in the same bytes and the
         // same commit (SPEC.md §6, CONTRACT-043). This is not housekeeping:
         // `nextTurnTs` derives the next stamp from the stamps currently in the

@@ -288,12 +288,14 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "thread/create.ts",
       "thread/declared-models.ts",
       "thread/designate.ts",
+      "thread/digest.ts",
       "thread/index.ts",
       "thread/release.ts",
       "thread/reply.ts",
       "thread/scope.ts",
       "thread/show.ts",
       "thread/status.ts",
+      "thread/turns.ts",
     ]);
   });
 
@@ -412,6 +414,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "queue/in-progress.ts",
       "queue/index.ts",
       "queue/lane.ts",
+      "queue/next-step.ts",
       "queue/poll.ts",
       "queue/transitions.ts",
       "reflect.ts",
@@ -431,12 +434,14 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "thread/create.ts",
       "thread/declared-models.ts",
       "thread/designate.ts",
+      "thread/digest.ts",
       "thread/index.ts",
       "thread/release.ts",
       "thread/reply.ts",
       "thread/scope.ts",
       "thread/show.ts",
       "thread/status.ts",
+      "thread/turns.ts",
       "tree.ts",
       "upgrade/index.ts",
       "upgrade/install.ts",
@@ -514,6 +519,9 @@ describe("every command that reads the output mode is inventoried", () => {
       // Refuses `--follow` under `--json` (it never returns), and prints the
       // log verbatim in human mode only.
       "commands/server/logs.ts",
+      // An addressed turn's body is written raw in human mode, so the addressed
+      // path stops after `emit` under `--json` (CLI-076).
+      "commands/thread/show.ts",
     ]);
   });
 

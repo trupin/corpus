@@ -353,51 +353,21 @@ export const editCommand: WorkspaceCommandSpec = {
   summary: "Edit a document's body and frontmatter.",
   description:
     "The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only " +
-    "edit** and the body is left exactly as it is — the CLI never sends an empty body it was not " +
-    "given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: " +
-    "remapped anchors moved with the text, orphaned ones name the threads that just became " +
-    "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
-    "is deliberately not an edit (SPEC.md §5). **`--add-tag`/`--remove-tag` send the change, not " +
-    "the resulting list**, so the server merges them against the document while it holds it: two " +
-    "tag edits racing on one document both land, and neither needs a key or a read first " +
-    "(SPEC.md §7 — a write that names its own delta merges with whatever else happened). Only " +
-    "`--status` costs an extra request, and only to phrase the archived refusal below from a " +
-    "one-round-trip-old snapshot; the server re-checks it regardless. " +
-    "**`--status` refuses to move an archived document off `archived`** and names " +
-    "`corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter " +
-    "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
-    "name stayed blocked, and for every other type because un-archiving is its own operation. " +
-    "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
-    "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
-    "write non-core frontmatter keys — the " +
-    "column `width` of SPEC.md §10 among them — as a merge patch: named keys replace, `null` " +
-    "removes, unnamed keys are untouched. `--stage`, `--order`, `--query`, `--columns`, " +
-    "`--kanban` and `--default-open` write the **board and view keys** of SPEC.md §10, which are " +
-    "core fields rather than `extra` ones: a board IS a `type: board` document listing its " +
-    "columns, so adding, removing or reordering a column is `--columns` on the **board**, and " +
-    "the board bar follows over SSE with no reload. **`--stage` may write a `status` too** — " +
-    "while a document is in a kanban its stage decides its status through that board's explicit " +
-    "map (§5's coupling) — and when it does, this verb prints the server's own sentence about it " +
-    "on a line of its own, naming the board that decided. `--unset <key>` removes a frontmatter " +
-    "key outright, named as the file writes it, which is how SPEC.md §2.4's data migrations drop " +
-    "a key the tool has stopped reading (`--unset pinned`). An edit that " +
-    "names no change at all is a usage error, not an empty request.\n\n" +
-    "**Replacing the body means presenting the document's `--key`** (SPEC.md §7). Read the " +
-    "document with `corpus doc show <id>`, which prints the key, and present that key here: a " +
-    "body edit without one is refused before anything is sent (exit 2), because a write that " +
-    "replaces a block says nothing about what it changes and is the one that can destroy " +
-    "silently. If the document moved on between that read and this write, the key is stale and " +
-    "the write is **refused with exit 9** — carrying the document as it now stands and a fresh " +
-    "key, so no second read is needed: reconcile against what is printed and run the same command " +
-    "again with the fresh key. **That retry is the mechanism working, not a failure.** Every " +
-    "write that lands prints the fresh key on the line after the confirmation, so a chain of " +
-    "edits costs one read at the start rather than one between every pair.\n\n" +
-    "**A write that names its own delta needs no key**, and none of them started asking for one: " +
-    "`--add-tag`, `--remove-tag`, `--status`, `--due`, `--reviewed`, `--evergreen`, `--extra`, " +
-    "`--extra-json`, `--unset` and the board keys all merge with whatever else happened rather than " +
-    "overwriting it, as do `corpus doc move|archive|unarchive`. Presenting `--key` alongside them " +
-    "anyway is welcome and is still checked, so a caller that always sends what it read needs no " +
-    "rule about which fields are which.\n\n" +
+    "edit** and the body is left exactly as it is — the CLI never sends an empty body it was " +
+    "not given. Every save runs anchor reconciliation (SPEC.md §6), and the report names " +
+    "remapped anchors and the threads that orphaned ones detached. An edit naming no change " +
+    "is a usage error.\n\n" +
+    "**Replacing the body means presenting the document's `--key`** (SPEC.md §7). " +
+    "`corpus doc show <id>` prints the key; a body edit without one is refused before " +
+    "anything is sent (exit 2). A key the document has moved past is **refused with exit " +
+    "9**, carrying the current document and a fresh key — rerun with it. Every write that " +
+    "lands prints the fresh key.\n\n" +
+    "**A write that names its own delta needs no key** — every frontmatter flag below does, " +
+    "and each merges with whatever else happened rather than overwriting it (tag flags send " +
+    "the change, not the resulting list, so racing tag edits both land). `--key` alongside " +
+    "them is welcome and still " +
+    "checked. The six board flags write SPEC.md §10's **board and view keys** — core fields, " +
+    "not `extra` ones — and the board bar follows every write over SSE.\n\n" +
     BODY_SOURCES_HELP,
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [
@@ -406,13 +376,9 @@ export const editCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "key",
       description:
-        "The document's **key**, exactly as `corpus doc show <id>` printed it — the version this " +
-        "edit is written against (SPEC.md §7). **Required when the edit replaces the body**; " +
-        "accepted, and still checked, on every other write. A key the document has moved past is " +
-        "refused with exit 9, and the refusal carries the document as it now stands with a fresh " +
-        "key, so the retry needs no extra read. It is opaque: echo it back exactly, and never " +
-        "construct, shorten, split or order one. There is nothing to acquire and nothing to " +
-        "release — reading gives you a key, not a claim on the document.",
+        "The **key** `corpus doc show` printed. Present it exactly as printed — it names " +
+        "the version this edit is written against (SPEC.md §7). **Required when the edit " +
+        "replaces the body**; accepted, and still checked, on every other write.",
     },
     { name: "title", type: "string", valueName: "text", description: "Replace the title." },
     {
@@ -420,7 +386,7 @@ export const editCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "tag",
       repeated: true,
-      description: "Add a tag, keeping the existing ones.",
+      description: "Add a tag.",
     },
     {
       name: "remove-tag",
@@ -434,11 +400,10 @@ export const editCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "status",
       description:
-        "Set the lifecycle status: `open`, `resolved` or `archived`. On an **archived " +
-        "document** anything but `archived` is refused, naming `corpus doc unarchive <id>` — " +
-        "the verb that un-archives, and for a `type: skill` document also moves the folder back " +
-        "and frees the name, which frontmatter alone cannot do. Re-archiving an archived " +
-        "document is still allowed.",
+        "`open`, `resolved` or `archived`. On an **archived " +
+        "document** anything but `archived` is refused — `corpus doc unarchive <id>` is how a " +
+        "document comes back, and for a `type: skill` it also restores the folder and frees " +
+        "the name. Re-archiving is still allowed.",
     },
     {
       name: "due",
@@ -450,16 +415,15 @@ export const editCommand: WorkspaceCommandSpec = {
       name: "reviewed",
       type: "boolean",
       description:
-        'Record "still current" as of now. Staleness runs from max(updated, reviewed), so this ' +
-        "does not stamp `updated`.",
+        'Record "still current" as of now. Staleness runs from max(updated, reviewed); ' +
+        "`updated` is not stamped.",
     },
     {
       name: "evergreen",
       type: "string",
-      valueName: "true|false",
+      valueName: "bool",
       description:
-        "Opt the document out of staleness, or back into it. Takes an explicit value: omitting " +
-        "the flag leaves the field alone.",
+        "Opt out of staleness, or back in. Explicit value; omitted, the field is left alone.",
     },
     {
       name: "extra",
@@ -467,44 +431,30 @@ export const editCommand: WorkspaceCommandSpec = {
       valueName: "key=value",
       repeated: true,
       description:
-        "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
-        "`width` (SPEC.md §10) or any other key the core does not define. **The value grammar is " +
-        "total over scalars** — " +
-        "every input maps to exactly one JSON scalar, and `--extra-json` is the flag for an " +
-        "object or an array: `null` deletes " +
-        "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
-        "(`520`, `-1.5`) is a number, a JSON string literal is its contents " +
-        "(`--extra note='\"520\"'` stores the characters), and **everything else is the string " +
-        'exactly as typed** — so `007` stays `"007"`, and so does an overflowing literal like ' +
-        "`1e400`, which is stored rather than being turned into the deletion `null` would mean. " +
-        "A finite integer past `2^53` is taken as a number and rounds the way JSON does " +
-        "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
-        "digits. Only the keys named are sent: the rest of `extra` is untouched " +
-        "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
-        "`due`, `tags`, `stage`, `order`, `query`, `columns`, `kanban`, `default-open`, `id`, …) is a usage error before " +
-        "any request, pointing at the real flag where there is one.",
+        "Set one non-core frontmatter key. A column's `width` (SPEC.md §10), or " +
+        "any key the core does not define. **The value grammar is total over scalars**: " +
+        "`null` deletes the key, `true`/`false` are booleans, a canonical **finite** JSON " +
+        "number is a number, a JSON string literal is its contents, and **everything else is " +
+        "the string exactly as typed** (an overflowing `1e400` is stored, not deleted). " +
+        "Integers past `2^53` round; quote them to keep the digits. Objects and arrays belong " +
+        "to `--extra-json`. Only named keys are sent; the rest of `extra` is untouched. A " +
+        "**core** key is refused, naming the real flag.",
     },
     {
       name: "extra-json",
       type: "string",
-      valueName: "key=json",
+      valueName: "k=json",
       repeated: true,
       description:
-        "Set one non-core frontmatter key to a **JSON value**, repeatably — the escape hatch " +
-        "`--extra`'s scalar grammar deliberately does not have. The value is parsed as JSON, so " +
-        "an object or an array reaches the file as YAML structure: " +
-        '`--extra-json publish=\'{"target":"blog","draft":true}\'`, or ' +
-        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a key whose value is a ' +
-        "list of objects. Same merge-patch semantics as `--extra` — named keys replace, " +
-        "`null` deletes, unnamed keys are untouched — and the same core-key refusal. Depth and " +
-        "size are the contract's (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), checked server-side " +
-        "over the whole object; the CLI only insists the text is JSON, so a shell-quoting slip " +
-        "is a usage error rather than a key that stores a string that looks like an object. A " +
-        "key named by both flags is refused rather than silently resolved.",
+        "Set one non-core key to a **JSON value**. The object-or-array escape " +
+        "hatch `--extra` lacks: the value is parsed as JSON and reaches the file as YAML " +
+        "structure. Same merge-patch semantics and core-key refusal as `--extra`; depth and " +
+        "size are checked server-side; non-JSON text is a usage error. A key named by both " +
+        "flags is refused.",
     },
     ...BOARD_KEY_FLAGS,
     UNSET_FLAG,
-    ...bodyFlags("The replacement document body"),
+    ...bodyFlags("The replacement body"),
     JOB_FLAG,
   ],
   examples: [
@@ -514,67 +464,7 @@ export const editCommand: WorkspaceCommandSpec = {
         "corpus doc edit doc_a1b2c3 --key <the key that read printed> --from agent <<'CORPUS_EOF'\n" +
         "The revised body.\nCORPUS_EOF",
       description:
-        "The whole loop: read the document — which is both how you see what you are revising and where its key comes from — then replace the body presenting that key. The anchor report names any thread that came loose, and the write prints the fresh key for the next edit.",
-    },
-    {
-      command: 'corpus doc edit doc_a1b2c3 --title "Mortgage options (2026)"',
-      description:
-        "A frontmatter-only edit: the title changes, the body is not touched, and no key is needed — a title names its own delta.",
-    },
-    {
-      command: "corpus doc edit doc_a1b2c3 --add-tag housing --remove-tag draft --reviewed",
-      description: 'Retag and mark the document "still current".',
-    },
-    {
-      command: "corpus doc edit doc_v1e2w3 --extra width=520 --from agent",
-      description:
-        "Widen a board column: the width lives in its `type: view` document's frontmatter, so the board picks it up over SSE with no reload.",
-    },
-    {
-      command: "corpus doc edit doc_v1e2w3 --extra width=null",
-      description:
-        "Remove the stored width and let the column render at the default; every other `extra` key is left alone.",
-    },
-    {
-      command:
-        "corpus doc edit doc_v1e2w3 --query type=thread --query status=open --query tag=finance --from agent",
-      description:
-        "Reconfigure a column's query: naming any key replaces the whole map, so this is the view's query in full — the board re-renders the column's rows over SSE.",
-    },
-    {
-      command: "corpus doc edit doc_b0a1r2d3 --columns doc_v1e2w3,doc_v4e5w6 --from agent",
-      description:
-        "Reorder a board's columns, or drop one: the list is the board's, in display order, and it replaces the whole of it. The column leaves the board live over SSE and the view document stays exactly where it is, ready to be named by another board.",
-    },
-    {
-      command: "corpus doc edit doc_b0a1r2d3 --order 1.5 --from agent",
-      description:
-        "Reorder the board bar: a midpoint lands this board between the first and second without renumbering the rest.",
-    },
-    {
-      command: "corpus doc edit doc_a1b2c3 --stage doing --from agent",
-      description:
-        "Move a document along a kanban. If the board's `kanban.status` map couples that stage to a status, the status is written in the same commit and the second line of the output says so, naming the board that decided.",
-    },
-    {
-      command: "corpus doc edit doc_v1e2w3 --unset pinned --unset order --from agent",
-      description:
-        "The SPEC.md §2.4 migration `corpus upgrade` names for a view written before rider 2: drop the two keys the tool has stopped reading. Keys are named as the file writes them, and removing one the document does not carry is a no-op.",
-    },
-    {
-      command: 'corpus doc edit doc_a1b2c3 --extra-json publish=\'{"target":"blog"}\'',
-      description:
-        "Store a non-core key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
-    },
-    {
-      command: 'corpus doc edit doc_a1b2c3 --file revised.md --key "$key" --json',
-      description:
-        "One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them — `doc.key` is the fresh key.",
-    },
-    {
-      command: "corpus doc edit doc_a1b2c3 --key \"$stale\" -m 'New text' ; echo $?",
-      description:
-        "A key the document has moved past: exit **9**, nothing written, and the refusal prints the document as it now stands with its fresh key — reconcile against that and run the same command again with it.",
+        "Read the document (which prints its key), then replace the body presenting that key. The write reports the anchors and prints the fresh key.",
     },
   ],
   handler: (context) => runDocEdit(context),

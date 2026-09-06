@@ -168,36 +168,27 @@ export const createCommand: WorkspaceCommandSpec = {
     "the heredoc form the agent's skills use — and is mandatory: a thread with no first turn is " +
     "not a thread (exit 2, no request).\n\n" +
     "**Bytes are passed through untouched**, but two shapes are refused at write time (`400`, " +
-    "exit 5, nothing written) — the same two `corpus thread reply` refuses, since both write a " +
-    "turn. A first turn that leaves a code fence open would swallow every later turn in the " +
-    "thread; one carrying a bare `## user · <ts>` line reads as §6's turn delimiter and would " +
-    "split the message into turns signed by someone who never wrote them. Both refusals name the " +
-    "offending line. A fence that is properly closed, and a turn heading quoted inside a fence, " +
-    "an inline code span or a block quote, are ordinary content and are accepted.\n\n" +
-    "**The quote is not resolved here.** The CLI never reads the parent document and never " +
-    "computes the surrounding context: it sends the text you quoted, and the server locates it " +
-    "(SPEC.md §6). A quote the document **does not contain** is not a refusal — the thread is " +
-    "created and comes back with the `orphaned_anchor` warning appended to the printed line, " +
-    "because an orphaned anchor is a normal state of a living corpus. A quote the document " +
-    "contains **more than once** is a different matter and **is refused**, `400` (exit 5), " +
-    "nothing written: the request names several passages and there is nothing to choose between " +
-    "them, so an error you can see beats a conversation silently anchored to the wrong one. " +
-    "Disambiguate with `--prefix`/`--suffix` — the text immediately before and after the " +
-    "occurrence you mean, copied from the document — so that prefix, quote and suffix together " +
-    "occur exactly once; framing that is itself repeated is refused the same way. The framing " +
-    "only picks the occurrence and is **not** stored: the server reads the anchor's context off " +
-    "the document's own bytes. An unknown `--parent` is a `404` (exit 5). Anchoring rewrites the " +
-    "parent's frontmatter, but it **names its own delta** — one anchor added — so this verb " +
-    "presents no key and is never refused for a document someone else is writing (SPEC.md §7); " +
-    "an anchor whose quote has moved is refused on its own terms, above. Prints the new thread's " +
-    "id, where it landed, and any enqueued event; `--json` emits the server's " +
-    "`{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
+    "exit 5, nothing written), exactly as on `corpus thread reply`: a first turn that leaves a " +
+    "code fence open would swallow every later turn, and a bare `## user · <ts>` line reads as " +
+    "§6's turn delimiter — both refusals name the offending line. A properly closed fence, or " +
+    "a turn heading quoted inside a fence, a code span or a block quote, is ordinary " +
+    "content.\n\n" +
+    "**The quote is not resolved here**: the CLI sends the text you quoted and the server " +
+    "locates it (SPEC.md §6). A quote the document **does not contain** is not a refusal — " +
+    "the thread is created with the `orphaned_anchor` warning on the printed line, an orphaned " +
+    "anchor being a normal state of a living corpus. A quote the document contains more than " +
+    "once **is refused** (`400`, exit 5, nothing written): disambiguate with " +
+    "`--prefix`/`--suffix`, copied from the document, so that prefix, quote and suffix " +
+    "together occur exactly once. The framing only picks the occurrence and is **not** stored. " +
+    "An unknown `--parent` is a `404` (exit 5). Anchoring rewrites the parent's frontmatter " +
+    "but **names its own delta** — one anchor added — so this verb presents no key (SPEC.md " +
+    "§7). Prints the new thread's id, where it landed, and any enqueued event; `--json` emits " +
+    "the server's `{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
     "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +
-    "(SPEC.md §10) — the same flag `corpus thread reply` takes, since both write a turn. It " +
-    "records what ran; it asks for nothing to run. The value must be a model name the " +
-    "workspace's own tier table declares; any other spelling is a usage error (exit 2) that " +
-    "lists the declared names, with nothing sent (AGENT-061). Omit it and the turn carries no " +
-    "model at all, which reads as nothing rather than as a guess.\n\n" +
+    "(SPEC.md §10) — the same flag `corpus thread reply` takes. It records what ran, never " +
+    "asks for anything to run; a name outside the workspace's tier table is a usage error " +
+    "listing the declared names (exit 2, nothing sent). Omitted, the turn carries no model at " +
+    "all — nothing rather than a guess.\n\n" +
     BODY_SOURCES_HELP,
   args: [],
   flags: [
@@ -245,7 +236,7 @@ export const createCommand: WorkspaceCommandSpec = {
     {
       name: "requests-agent",
       type: "string",
-      valueName: "true|false",
+      valueName: "bool",
       description:
         "The composer's _ask agent_ toggle (SPEC.md §8). Omitted, the agent is woken only when the " +
         "body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a " +

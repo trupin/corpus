@@ -77,6 +77,20 @@ else
   echo "pre-commit ▷ nothing staged"
 fi
 
+# Skill/profile size ratchet (INFRA-038): a stat and a read over the staged
+# list only — the whole-tree run is CI's. The bash pre-filter exists so a
+# commit touching no skill or agent profile never pays the node+tsx startup;
+# it mirrors the scope in scripts/skill-budget.ts (`isSubjectPath`), and the
+# runner re-filters, so drift here can only cause a skip or a harmless
+# re-check, never a wrong verdict.
+staged_skills="$(printf '%s\n' "$staged" | /usr/bin/grep -E '(^|/)skills/[^/]+/SKILL\.md$|(^|/)agents/[^/]+\.md$' | tr '\n' ' ')"
+if [ -n "${staged_skills// /}" ]; then
+  # shellcheck disable=SC2086
+  step "skills:check (staged)" node --import tsx scripts/check-skill-budget.ts --staged $staged_skills
+else
+  echo "pre-commit ▷ skills:check skipped (no skill or agent profile staged)"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "pre-commit: blocked. Nothing was committed."
   exit 1

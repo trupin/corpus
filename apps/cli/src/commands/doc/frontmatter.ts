@@ -635,78 +635,60 @@ export const BOARD_KEY_FLAGS: readonly FlagSpec[] = [
     type: "string",
     valueName: "value",
     description:
-      "**Where the document sits in a workflow** (SPEC.md §5) — free-form, named by the kanban " +
-      "boards that use it, and filterable with `corpus doc list --stage`. It is not `--status`: " +
-      "`status` says whether work remains, `stage` says where in a workflow the document is, and " +
-      "a document in any stage is ordinarily `open`. **While a document is in a kanban, its " +
-      "stage decides its status**: entering a stage the board's `kanban.status` map names writes " +
-      "that status in the same commit, and entering a stage with no mapping writes `open` — the " +
-      "response reports it as a `stage_status` warning and this verb prints it on its own line, " +
-      "because a caller who asked for one field and got two has to be told. Writing `--status` " +
-      "never moves a stage. Two kanbans over the same documents share this one value, so they " +
-      "should share a vocabulary. A comma is refused at the write boundary, because `--stage` on " +
-      "`doc list` is a comma-separated OR list and a stage with one could never be filtered for. " +
-      'To remove the key, `--unset stage` — `--stage ""` is a usage error, not a clear.',
+      "**Where the document sits in a workflow.** Free-form (SPEC.md §5); commas are refused. " +
+      "**While a document is in a kanban, its stage decides its status**: entering a stage " +
+      "the board's `kanban.status` map names writes that status in the same commit, and " +
+      "entering a stage with no mapping writes `open` — reported as a `stage_status` warning " +
+      "on its own line. Writing `--status` never moves a stage. Clear with `--unset stage`, " +
+      'not `--stage ""`.',
   },
   {
     name: "order",
     type: "string",
-    valueName: "number|null",
+    valueName: "n|null",
     description:
-      "**A board's position among boards**, ascending — the order the board bar lists them in " +
-      "(SPEC.md §10, rider 7). Any **finite** number: `--order 1.5` lands a board between its " +
-      "neighbours without renumbering them, which is what the shipped tiebreak (`order` with " +
-      "nulls last, then title, then id) exists for. `--order null` drops the key. It reaches the " +
-      "file as a YAML number, so a value that is not one is a usage error here rather than a tab " +
-      "in the wrong place. **It is a board's position and nothing else**: a `type: view` document " +
-      "is a saved query with no position of its own, the same view may sit on two boards, and a " +
-      "column's place is its index in that board's `--columns`.",
+      "**A board's position among boards.** The board bar's ascending order (SPEC.md §10, " +
+      "rider 7). Any **finite** number — `--order 1.5` lands a board between its neighbours " +
+      "without renumbering them (ties: `order` nulls-last, then title, then id) — and " +
+      "`--order null` drops the key. A view has no position; a column's place is its index " +
+      "in `--columns`.",
   },
   {
     name: "columns",
     type: "string",
     valueName: "id,id",
     description:
-      "**The columns of a `type: board` document**: the ids of the `type: view` documents that " +
-      "render them, in display order (SPEC.md §10, rider 2). Comma-separated rather than " +
-      "repeatable because the order _is_ the value. Adding, removing or reordering a column is " +
-      "this flag on the board, never a flag on the view — and the same view may sit on two " +
-      'boards. `--columns ""` sets an **empty list**, which is what the Files board is; ' +
-      "`--unset columns` removes the key altogether, which is what a kanban board has, since a " +
-      "kanban's columns are derived one per stage from `--kanban` and are not view documents at " +
-      "all.",
+      "**The columns of a `type: board` document.** The ids of the `type: view` documents " +
+      "that render them, in display order (SPEC.md §10, rider 2) — one comma-separated list " +
+      "that **replaces the whole value**, set on the board and never on the view (the same " +
+      'view may sit on two boards). `--columns ""` sets an **empty list**; `--unset columns` ' +
+      "removes the key altogether, which is what a kanban board has, its columns being " +
+      "derived from `--kanban`.",
   },
   {
     name: "kanban",
     type: "string",
     valueName: "json",
     description:
-      "**Draw this board as a kanban over one field** (SPEC.md §10, rider 6), as a JSON object: " +
-      '`{"field":"stage"|"status", "stages":[…], "transitions":{…}, "status":{…}}`. ' +
-      "JSON because the shape is nested. A complete example: `--kanban " +
-      '\'{"field":"stage","stages":["triage","doing","done"],"transitions":' +
-      '{"triage":["doing"],"doing":["done","triage"]},"status":{"done":"resolved"}}\'`. ' +
-      "`stages` is the display order, one column each, and a document in scope with no value for " +
-      "the field sits in the first. **`transitions` omitted is the linear funnel** — each stage " +
-      "leads to its neighbours, both ways — while `{}` is a graph nothing may be dragged along; " +
-      "the server enforces the **status map**, never the transitions, so anything the graph " +
-      "forbids is still done by setting the field. `status` is §5's coupling: entering a stage " +
-      "named here writes that status, and entering one not named here writes `open`. The block " +
-      "is checked here against the contract's own schema, so a `transitionz` typo, a stage " +
-      "leading to itself or a status mapped for an undrawn stage is refused before anything is " +
-      "sent. `--kanban null` removes the block.",
+      "**Draw this board as a kanban.** A JSON object (SPEC.md §10, rider 6) " +
+      "with `field` (`stage` or `status`), `stages`, `transitions` and `status`, " +
+      "schema-checked before sending. `stages` is the display order, one derived column " +
+      "each; a document with no value for the field sits in the first. **`transitions` " +
+      "omitted is the linear funnel**, while `{}` lets nothing be dragged; the server " +
+      "enforces the **status map**, never the transitions, so setting the field still does " +
+      "what the graph forbids. `status` is the §5 coupling `--stage` applies. `--kanban " +
+      "null` removes it.",
   },
   {
     name: "default-open",
     type: "string",
-    valueName: "true|false",
+    valueName: "bool",
     description:
-      "**The board a browser opens onto, and the board that receives an open naming no board** " +
-      "(SPEC.md §10, rider 2). Takes an explicit value, like `--evergreen`: omitting the flag " +
-      "leaves the field alone. **At most one board carries it** — setting it `true` clears the " +
-      "flag from every other board in the same commit, and the response reports each one as a " +
-      "`default_open_cleared` warning. With none set, the first board in `--order` receives " +
-      "those opens. The frontmatter key is `default-open`, which is also how `--unset` names it.",
+      "**The board a browser opens onto.** It also receives an open naming no board " +
+      "(SPEC.md §10, rider 2). Takes an explicit `true`/`false`; omitted, the field is left " +
+      "alone. **At most one board carries it** — setting it `true` clears every other board " +
+      "in the same commit. With none set, the first board in `--order` receives those opens. " +
+      "`--unset default-open` names the file's key.",
   },
   {
     name: "query",
@@ -714,18 +696,12 @@ export const BOARD_KEY_FLAGS: readonly FlagSpec[] = [
     valueName: "key=value",
     repeated: true,
     description:
-      "**A view's stored query, or a kanban board's scope.** Repeatable `key=value` pairs — a " +
-      "**flat** map from `GET /api/docs` parameter names (`type`, `status`, `tag`, `stage`, " +
-      "`folder`, `needs`, `q`, `sort`, …) to a value. A comma is an OR (`--query type=note,view` " +
-      "≡ `type=note,view` on the wire); quote a value to keep a comma in it (`--query " +
-      "q='\"salt, pepper\"'`). Values follow `--extra`'s grammar minus `null`: `true`/`false` are " +
-      "booleans, a canonical finite number is a number, everything else is the string as typed. " +
-      "**The whole map may be given as one JSON object instead** — `--query " +
-      '\'{"type":"thread","tag":["finance","housing"]}\'` — which is the form to reach ' +
-      "for when the map is already JSON; the two forms cannot be mixed in one command. **Naming " +
-      "any key replaces the whole query** — `query` is one core field, not a merge patch — and " +
-      "`--query null` clears it. On a kanban board this is the scope every derived stage column " +
-      "is drawn from, narrowed per column by that column's own stage.",
+      "**A view's query, or a kanban's scope.** Repeatable `key=value` pairs — " +
+      "a **flat** map of `GET /api/docs` parameters. A comma is an OR; quote a value to keep " +
+      "one. Values follow `--extra`'s grammar minus `null`. The whole map may instead be one " +
+      "JSON object — the two forms cannot be mixed. **Naming any key replaces the whole " +
+      "query**, and `--query null` clears it. On a kanban board this is the scope every " +
+      "derived stage column draws from.",
   },
 ];
 
@@ -740,13 +716,8 @@ export const UNSET_FLAG: FlagSpec = {
   valueName: "key",
   repeated: true,
   description:
-    "**Remove a frontmatter key from the file**, repeatably — the general form behind SPEC.md " +
-    "§2.4's data migrations, and the only way to reach a key the core has _stopped_ defining. " +
-    "Keys are named **exactly as the file writes them**, not as this CLI's flags spell them: " +
-    "`--unset pinned` and `--unset column` drop the keys rider 2 and SHARED-066 removed, and " +
-    "where a core key's two spellings differ the file's is the one that works — `--unset " +
-    "default-open`, never `defaultOpen`. Removing a key the document does not carry is a no-op " +
-    "rather than a failure. **`id`, `type` and `created` are refused**, naming the key: they are " +
-    "the document's identity, its behaviour and its birth. It names its own delta, so it needs " +
-    "no `--key`.",
+    "**Remove a frontmatter key from the file.** SPEC.md §2.4's migration tool, " +
+    "and the only way to reach a key the core stopped defining. Keys are named **exactly as " +
+    "the file writes them** (`--unset default-open`, never `defaultOpen`); removing a key the " +
+    "document does not carry is a no-op; `id`, `type` and `created` are refused.",
 };

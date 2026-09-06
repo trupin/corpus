@@ -16,6 +16,7 @@ import {
   type Resident,
   type Thread,
   type ThreadAgent,
+  type ThreadDigest,
   type ThreadStatus,
   type ThreadSummary,
   type Turn,
@@ -29,6 +30,7 @@ import {
   turnModelsOf,
   withTurnModels,
 } from "../core/index.js";
+import { storedDigest } from "../core/digest.js";
 import { storedResident } from "../core/resident.js";
 import { loadDocument, type LoadedDocument } from "../docs/index.js";
 import { notFound } from "../errors.js";
@@ -66,6 +68,20 @@ export interface LoadedThread {
   readonly agent: ThreadAgent;
   /** §7's resident, its `docId` re-resolved from the name (see {@link currentResident}). */
   readonly resident: Resident | null;
+  /**
+   * §6's digest (rider signed 2026-09-05), exactly as the file records it —
+   * `null` for the great majority of threads, which is the ordinary state.
+   *
+   * **Not filtered by `parent` the way {@link resident} is.** §7 allows a
+   * designation only on a standalone thread, so a `resident:` key anywhere else
+   * is read as nothing; the rider puts no such limit on a digest. The *write* is
+   * refused on a thread with no resident, and a resident implies standalone, so
+   * every digest this server writes is on a standalone thread anyway — but a
+   * hand-written one on a parented thread is a person's account of that
+   * conversation, and dropping it would be the server deciding a summary
+   * somebody wrote does not exist.
+   */
+  readonly digest: ThreadDigest | null;
   readonly turns: Turn[];
 }
 
@@ -195,6 +211,7 @@ export function readThread(workspace: ThreadReader, loaded: LoadedDocument): Loa
     anchor: asId(data["anchor"], isAnchorId),
     agent: agent.success ? agent.data : "none",
     resident: currentResident(workspace.projection, storedResident(data["resident"], parent)),
+    digest: storedDigest(data["digest"]),
     turns,
   };
 }
@@ -223,6 +240,7 @@ export function toWireThread(reader: MarkReader, thread: LoadedThread): Thread {
     anchor: thread.anchor,
     agent: thread.agent,
     resident: thread.resident === null ? null : { ...thread.resident },
+    digest: thread.digest === null ? null : { ...thread.digest },
     unread: threadUnread(reader, thread.id),
     turns: thread.turns.map((turn) => ({ ...turn })),
   };

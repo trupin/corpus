@@ -387,7 +387,7 @@ describe("corpus doc list", () => {
     expect(harness.stdout()).toBe("no documents on this page.\n");
   });
 
-  it("emits the server's envelope unchanged under --json, page meta and extra included", async () => {
+  it("emits every non-null key under --json, page meta and extra included", async () => {
     const body = page([row({ extra: { "todo.items": [{ text: "call the broker" }] } })], {
       total: 137,
     });
@@ -396,10 +396,16 @@ describe("corpus doc list", () => {
 
     await runDocList(harness.context);
 
-    expect(JSON.parse(harness.stdout())).toEqual(body);
+    const emitted = JSON.parse(harness.stdout()) as DocList;
+    // Every key the server sent with a value is here, byte-identical (CLI-079
+    // removes keys and changes nothing else).
+    const expected = Object.fromEntries(
+      Object.entries(body.items[0] ?? {}).filter(([, value]) => value !== null),
+    );
+    expect(emitted.items[0]).toEqual(expected);
     // The truncation stays visible to a machine caller too: `page` is the only
     // thing that says 137 matched and 1 was returned.
-    expect(JSON.parse(harness.stdout())).toMatchObject({ page: { total: 137 } });
+    expect(emitted).toMatchObject({ page: { total: 137 } });
   });
 
   it("emits an empty result under --json without a human line", async () => {
@@ -522,7 +528,7 @@ describe("the doc list command spec", () => {
     it("takes a value, so absent and false stay distinguishable", () => {
       const flag = listCommand.flags.find((candidate) => candidate.name === "is-parent");
       expect(flag?.type).toBe("string");
-      expect(flag?.valueName).toBe("true|false");
+      expect(flag?.valueName).toBe("bool");
     });
 
     /**
@@ -646,14 +652,35 @@ describe("corpus doc list --fields (CLI-065)", () => {
     expect(item?.id).toBe(DOC_ROW.id);
   });
 
-  it("leaves the full --json object exactly as it was when --fields is absent", async () => {
+  it("leaves every non-null key of the --json object in place when --fields is absent", async () => {
     const body = page([DOC_ROW]);
     const stub = await startStubServer(jsonResponder(200, body));
     const harness = stubContext(stub, { json: true, flags: { json: true } });
 
     await runDocList(harness.context);
 
-    expect(JSON.parse(harness.stdout())).toEqual(body);
+    expect(JSON.parse(harness.stdout())).toEqual({
+      items: [Object.fromEntries(Object.entries(DOC_ROW).filter(([, value]) => value !== null))],
+      page: body.page,
+    });
+  });
+
+  it("keeps a named field that is null on the row, unlike the default rows", async () => {
+    // CLI-079 drops null keys from a *default* row. A field asked for by name is
+    // a question, and it is answered even when the answer is null.
+    const stub = await startStubServer(jsonResponder(200, page([DOC_ROW])));
+    const harness = stubContext(stub, {
+      json: true,
+      flags: { json: true, fields: "id,parent,stage" },
+    });
+
+    await runDocList(harness.context);
+
+    expect((JSON.parse(harness.stdout()) as { items: unknown[] }).items[0]).toEqual({
+      id: DOC_ROW.id,
+      parent: null,
+      stage: null,
+    });
   });
 
   it("documents the reflection read and validates against the contract's own field list", () => {
@@ -661,5 +688,139 @@ describe("corpus doc list --fields (CLI-065)", () => {
     expect(flag?.description).toContain("lastActor");
     const reflection = listCommand.examples.find((example) => example.command.includes("--fields"));
     expect(reflection?.command).toContain("lastActor");
+  });
+});
+
+describe("corpus doc list --json drops null-valued keys (CLI-079)", () => {
+  /** Emits one page under `--json` and hands back the parsed envelope and its bytes. */
+  const emit = async (body: DocList): Promise<{ envelope: DocList; bytes: number }> => {
+    const stub = await startStubServer(jsonResponder(200, body));
+    const harness = stubContext(stub, { json: true });
+    await runDocList(harness.context);
+    return { envelope: JSON.parse(harness.stdout()) as DocList, bytes: harness.stdout().length };
+  };
+
+  it("carries no key whose value is null, on a row of any type", async () => {
+    const { envelope } = await emit(
+      page([
+        DOC_ROW,
+        row({
+          id: "th_x9y8",
+          type: "thread",
+          parent: "doc_a1b2c3",
+          turnCount: 3,
+          lastAuthor: "user",
+          unread: true,
+        }),
+        row({ id: "doc_bd", type: "board", query: { type: "note" }, columns: ["triage"] }),
+      ]),
+    );
+
+    for (const item of envelope.items) {
+      expect(Object.values(item)).not.toContain(null);
+    }
+  });
+
+  it("emits no `:null` anywhere in the payload", async () => {
+    const stub = await startStubServer(jsonResponder(200, page([DOC_ROW])));
+    const harness = stubContext(stub, { json: true });
+
+    await runDocList(harness.context);
+
+    expect(harness.stdout()).not.toContain(":null");
+  });
+
+  it("keeps exactly the keys a note genuinely answers", async () => {
+    const { envelope } = await emit(page([DOC_ROW]));
+
+    expect(Object.keys(envelope.items[0] ?? {})).toEqual([
+      "id",
+      "type",
+      "title",
+      "path",
+      "status",
+      "tags",
+      "created",
+      "updated",
+      "evergreen",
+      "lastActor",
+      "excerpt",
+      "defaultOpen",
+      "extra",
+      "unreadThreads",
+      "unansweredForms",
+      "attention",
+      "snippets",
+    ]);
+  });
+
+  it("keeps an empty array, an empty string, a false and a zero — those are values", async () => {
+    const { envelope } = await emit(page([row({ tags: [], title: "", evergreen: false })]));
+    const item = envelope.items[0] ?? ({} as Record<string, unknown>);
+
+    expect(item.tags).toEqual([]);
+    expect(item.title).toBe("");
+    expect(item.evergreen).toBe(false);
+    expect(item.unreadThreads).toBe(0);
+    expect(item.extra).toEqual({});
+  });
+
+  it("prints a row whose every nullable key is null", async () => {
+    // The contract keeps `status` and `path` non-null, so "all null" means every
+    // key that *can* be: what survives is the row's identity and nothing else.
+    const kept = ["id", "type", "title", "status", "path"];
+    const bare = Object.fromEntries(
+      Object.entries(DOC_ROW).map(([key, value]) =>
+        kept.includes(key) ? [key, value] : [key, null],
+      ),
+    ) as unknown as DocList["items"][number];
+    const { envelope } = await emit(page([bare]));
+
+    expect(envelope.items[0]).toEqual({
+      id: DOC_ROW.id,
+      type: DOC_ROW.type,
+      title: DOC_ROW.title,
+      status: DOC_ROW.status,
+      path: DOC_ROW.path,
+    });
+  });
+
+  it("leaves a null the workspace itself wrote inside `extra` alone", async () => {
+    // `extra` is the author's frontmatter (SPEC.md §5). A null in there is data,
+    // not this verb's verbosity, so the cut does not recurse.
+    const { envelope } = await emit(page([row({ extra: { assignee: null } })]));
+
+    expect((envelope.items[0] ?? {}).extra).toEqual({ assignee: null });
+  });
+
+  it("leaves the page envelope untouched", async () => {
+    const { envelope } = await emit(page([DOC_ROW], { total: 137, limit: 50, offset: 100 }));
+
+    expect(envelope.page).toEqual({ total: 137, limit: 50, offset: 100 });
+  });
+
+  it("changes nothing a human reader sees", async () => {
+    const stub = await startStubServer(jsonResponder(200, page([DOC_ROW])));
+    const harness = stubContext(stub);
+
+    await runDocList(harness.context);
+
+    expect(harness.stdout()).toBe(
+      "doc_a1b2c3  note  open  Mortgage options  data/docs/finance/mortgage-options.md\n" +
+        "showing 1–1 of 1 document\n",
+    );
+  });
+
+  it("cuts a measurable share of a mixed page", async () => {
+    const rows = Array.from({ length: 23 }, (_, index) => row({ id: `doc_${String(index)}` }));
+    const before = JSON.stringify(page(rows)).length;
+    const { bytes } = await emit(page(rows));
+
+    expect(bytes).toBeLessThan(before * 0.8);
+  });
+
+  it("says in its help that absent means null, and that --fields is exempt", () => {
+    expect(listCommand.description).toContain("absent means null");
+    expect(listCommand.description).toContain("`--fields` is exempt");
   });
 });

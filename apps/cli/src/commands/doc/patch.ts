@@ -542,7 +542,7 @@ export const patchCommand: WorkspaceCommandSpec = {
       command:
         "corpus doc patch doc_a1b2c3 --from agent --old 'the Rate Sheet' --new 'the rate sheet' --all",
       description:
-        "Every occurrence, when replacing them all is genuinely what you meant. Without --all, an excerpt occurring more than once is refused with the count.",
+        "Every occurrence, when replacing them all is genuinely what you meant. Without --all, an excerpt occurring more than once is refused with the count (exit **10**).",
     },
     {
       command:
@@ -557,11 +557,6 @@ export const patchCommand: WorkspaceCommandSpec = {
         "corpus doc patch doc_a1b2c3 --from agent --old-file /tmp/old.md --new-file /tmp/new.md",
       description:
         "Two files, read byte for byte: no shell quoting and no JSON escaping anywhere. Each file's trailing newline is part of its text.",
-    },
-    {
-      command: "corpus doc patch doc_a1b2c3 --old 'a line that occurs twice' --new 'x' ; echo $?",
-      description:
-        "A refused patch: exit **10**, nothing written, and the message names how many times the excerpt matched — 0 means re-read the document, more than one means quote more context or pass --all.",
     },
     {
       command: "corpus doc patch doc_a1b2c3 --from agent --old 'old text' --new 'new text' --json",

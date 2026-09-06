@@ -73,19 +73,16 @@ type DocsListQuery = NonNullable<paths["/api/docs"]["get"]["parameters"]["query"
 const IS_PARENT_FLAG: FlagSpec = {
   name: "is-parent",
   type: "string",
-  valueName: "true|false",
+  valueName: "bool",
   description:
-    "Whether the document is a **child of something** (SPEC.md §9.2). `true` selects **roots** — " +
-    "documents with **no parent** — which is the board's _top-level only_; `false` selects the " +
-    "documents that **are** a child of something, its _children only_. It does **not** mean " +
-    "_has children_: a standalone note that nothing hangs off still matches `true`, because the " +
-    "filter asks what a document is _under_, never what is under it. Omitting the flag filters " +
-    "nothing — absent is not `false`, and the two are different questions. Not thread-only: a " +
-    "non-thread document has no parent at all, so `true` genuinely keeps it and `false` " +
-    "genuinely drops it, and a mixed top-level list of notes and standalone threads is the " +
-    "point. `--parent <id>` alongside `--is-parent true` is a contradiction the server refuses " +
-    "(`400`, exit 5) rather than answering with an empty set; `--parent <id> --is-parent false` " +
-    "is merely redundant and is accepted.",
+    "Whether the document is a **child of something**. `true` selects **roots** (SPEC.md " +
+    "§9.2) — documents with **no parent**, the board's _top-level only_ — and `false` its _children " +
+    "only_. It does **not** mean _has children_: the filter asks what a document is _under_, " +
+    "never what is under it. Omitting the flag filters nothing — absent is not `false`. Not " +
+    "thread-only: a note " +
+    "genuinely has no parent, so `true` keeps it and `false` drops it. `--parent <id>` " +
+    "alongside `--is-parent true` is a contradiction the server refuses (`400`, exit 5); with " +
+    "`false` it is merely redundant.",
 };
 
 /**
@@ -112,12 +109,11 @@ const EXTRA_FLAG: FlagSpec = {
   repeated: true,
   valueName: "key=value",
   description:
-    "Filter on a frontmatter field this workspace invented (SPEC.md §5): `--extra assignee=theo`. " +
-    "Repeatable, and keys AND together like every other filter. A key must be an identifier — " +
-    "letters, digits, `_`, `-` — and the value takes glob patterns on the same terms as " +
-    "`--title`. A document that does not carry the key never matches, and there is no way to ask " +
-    "for one that lacks it. Where the field holds a list, the filter matches if any entry does. " +
-    "The same key twice: last one wins.",
+    "Filter on a frontmatter field the workspace invented. " +
+    "`--extra assignee=theo` (SPEC.md §5); keys AND together, and values take globs on " +
+    "`--title`'s terms. A " +
+    "document that does not carry the key never matches — there is no way to ask for one that " +
+    "lacks it. A list field matches if any entry does. The same key twice: last one wins.",
 };
 
 /**
@@ -177,7 +173,9 @@ export async function runDocList(context: WorkspaceCommandContext): Promise<void
     api.GET("/api/docs", Object.keys(wire).length === 0 ? {} : { params: { query: wire } }),
   );
 
-  context.out.emit(fields === undefined ? result : projectFields(result, fields));
+  context.out.emit(
+    fields === undefined ? withoutNullFields(result) : projectFields(result, fields),
+  );
 
   if (result.items.length === 0) {
     context.out.line(
@@ -309,6 +307,47 @@ function projectFields(
   };
 }
 
+/**
+ * The default `--json` rows with their **null-valued keys dropped** (CLI-079).
+ *
+ * Measured on a 23-document scratch workspace: 382 null-valued keys across the
+ * page, 23% of 1,066 bytes a row. A `note` carries 35 keys and most of them are
+ * another type's schema — the thread affordances (`parent`, `turnCount`,
+ * `unread`, …), the board keys (`query`, `columns`, `kanban`, …) and the
+ * sometimes keys (`due`, `stage`, `origin`, `stale`). Every row paid for every
+ * other type's shape, on SPEC.md §7's hot path: the reflection window read and
+ * every scripted list.
+ *
+ * **Absent already means null on this surface.** CLI-065's `--fields`
+ * projection shipped with the rule that _a field absent on a row stays absent
+ * rather than becoming `null`_, so a caller written against this verb's JSON
+ * cannot have been assuming a null-keyed row. That is what makes this a lossless
+ * cut rather than a contract change, and it is why the semantics are stated in
+ * the help rather than left to be discovered.
+ *
+ * **Only `null` goes, and only at the top of a row.** `[]`, `""`, `false` and
+ * `0` are values a caller filters on — `tags: []` and `unreadThreads: 0` say
+ * something — and are kept. Nothing recurses into `extra` or `kanban` either:
+ * those hold the workspace's own frontmatter, where a null the author wrote is
+ * the author's data and not this verb's verbosity.
+ *
+ * `--fields` is untouched. A field **explicitly named** that is null on a row
+ * keeps exactly the behaviour CLI-065 shipped and tested, because a caller that
+ * asked for a key by name is asking a question, and dropping the key would
+ * answer it with silence.
+ */
+function withoutNullFields(result: DocList): {
+  items: readonly Record<string, unknown>[];
+  page: DocList["page"];
+} {
+  return {
+    items: result.items.map((item) =>
+      Object.fromEntries(Object.entries(item).filter(([, value]) => value !== null)),
+    ),
+    page: result.page,
+  };
+}
+
 /** One row per document, columns padded to the widest value in the page. */
 function renderRows(items: readonly DocRow[]): readonly string[] {
   return renderColumns(
@@ -336,33 +375,30 @@ function renderTally(result: DocList): string {
 
 export const listCommand: WorkspaceCommandSpec = {
   name: "list",
-  summary: "Query the document collection: what is in the corpus, and what needs attention.",
+  summary: "Query the document collection.",
   description:
     "Reads `GET /api/docs`, the single collection query behind every list (SPEC.md §9.2) — the " +
-    "same one the board's columns and the search overlay compose. Values OR within a " +
-    "comma-separated flag and AND across flags, so `--type note,view --tag finance` reads " +
-    '"notes or views tagged finance". Threads are documents too: `--type thread` lists them, and ' +
-    "the thread-only filters (`--parent`, `--agent`, `--author`, `--unread`) no-op for other " +
-    "types rather than erroring. `--is-parent` is **not** one of them despite reading like one: " +
-    "no document of any type carries a parent column, so a note's parent is null by genuinely " +
-    "having none, and `--is-parent true` keeps it while `--is-parent false` drops it — an " +
-    "answer, not a no-op.\n\n" +
+    "same one the board's columns compose. Values OR within a comma-separated flag and AND " +
+    'across flags, so `--type note,view --tag finance` reads "notes or views tagged finance". ' +
+    "Threads are documents too: `--type thread` lists them, and the thread-only filters " +
+    "(`--parent`, `--agent`, `--author`, `--unread`) no-op for other types rather than " +
+    "erroring. `--is-parent` is **not** one of them: a note genuinely has no parent, so it " +
+    "answers for every type.\n\n" +
     "Archived documents are **excluded by default** (SPEC.md §10). `--status archived` selects " +
     "them alone; `--include-archived` widens the default set to the union.\n\n" +
-    "**The list is paginated and says so.** The server applies its own page limit, and the last " +
-    "line always states the range shown out of the total that matched, naming the `--offset` " +
-    "that fetches the next page when there is one. Under `--json` the server's `{items, page}` " +
-    "envelope is emitted unchanged — `page` is what makes the truncation visible to a caller " +
-    "that is not reading the human line, and every row carries its `extra` frontmatter, its " +
-    "Attention reasons and its thread affordances, so a skill parses one response instead of " +
-    "issuing a read per row. That full row is wide — ~293 tokens in an agent's context — so a " +
-    "caller that wants a few fields per row names them with `--fields` and pays only for " +
-    "those.\n\n" +
-    "A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, " +
-    "`--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request " +
-    "is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through " +
-    "verbatim, since the CLI does not know the workspace's tags, its folders, or every `type:` " +
-    "its documents carry.",
+    "**The list is paginated and says so.** The last line states the range shown out of the " +
+    "total that matched, naming the `--offset` that fetches the next page. Under `--json` the " +
+    "server's `{items, page}` envelope arrives with `page` untouched, and every row carries " +
+    "its `extra` frontmatter, its Attention reasons and its thread affordances — one response " +
+    "instead of a read per row.\n\n" +
+    "**A key whose value is null is left out of a row**: a note carries no `parent` and no " +
+    '`kanban`, so **absent means null** — test `row.parent == null` or `"parent" in row`, ' +
+    'never `=== null`. Only `null` is dropped, and only at a row\'s top level: `[]`, `""`, ' +
+    "`false` and `0` stay, and nothing inside `extra` or `kanban` is touched. A field " +
+    "**named** in `--fields` is exempt and is answered even when null.\n\n" +
+    "A misspelled enumerated value (`--status`, `--sort`, `--needs`, `--stale`, `--agent`, " +
+    "`--author`) is a usage error before any request; the open ones (`--type`, `--tag`, " +
+    "`--folder`, `--due`) are passed through verbatim.",
   args: [],
   flags: [
     {
@@ -370,7 +406,7 @@ export const listCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "text",
       description:
-        "Full-text query across titles, bodies and turn bodies. Matching rows carry `snippets`, " +
+        "Full-text query over titles, bodies and turns. Matching rows carry `snippets`, " +
         "which `--json` includes; `--sort relevance` needs this flag and is refused without it.",
     },
     // The structured filters, from the one definition `corpus search` shares,
@@ -384,7 +420,7 @@ export const listCommand: WorkspaceCommandSpec = {
       name: "sort",
       type: "string",
       valueName: "key",
-      description: `Sort key: ${DOC_SORTS.join(", ")}. Defaults to \`-updated\` (newest first).`,
+      description: `Sort key. One of: ${DOC_SORTS.join(", ")}; defaults to \`-updated\` (newest first).`,
     },
     {
       name: "limit",
@@ -396,21 +432,19 @@ export const listCommand: WorkspaceCommandSpec = {
       name: "offset",
       type: "number",
       valueName: "n",
-      description: "Rows to skip — how the tally line's next page is fetched.",
+      description: "Rows to skip. How the tally line's next page is fetched.",
     },
     {
       name: "fields",
       type: "string",
       valueName: "a,b,c",
       description:
-        "Under `--json`, cut each item to exactly these comma-separated fields. The full row is " +
-        "~293 tokens in an agent's context — `excerpt`, `lastTurn`, `kanban` and ~22 more — " +
-        "against ~34 for `id,title,lastActor,updated`, so a loop that wants a few fields per " +
-        "row should name them (the reflection window read wants `lastActor` and little else). " +
-        "The `page` envelope is kept whole either way, so truncation stays visible. A field no " +
-        "row carries is a usage error naming the known ones (exit 2), before any request; " +
-        "without `--json` the flag itself is one, because the human rows are not a parsing " +
-        "surface. Omitted, `--json` is the full object it has always been.",
+        "Under `--json`, keep only these fields per item. The full row " +
+        "is ~293 tokens in an agent's context against ~34 for `id,title,lastActor,updated`, so " +
+        "a loop that wants a few fields names them. The `page` envelope is kept whole. A field " +
+        "no row carries is a usage error naming the known ones (exit 2), before any request; " +
+        "without `--json` the flag itself is one. A named field that is null is **kept**, " +
+        "unlike the default rows. Omitted, `--json` is every non-null key of every row.",
     },
   ],
   // Both sides of `--is-parent` get an example, deliberately. A reader who skims
@@ -423,40 +457,18 @@ export const listCommand: WorkspaceCommandSpec = {
         "One padded line per document — id, type, status, title, path — then the tally of what was shown out of what matched.",
     },
     {
-      command: "corpus doc list --type skill",
-      description:
-        "Every installed skill, which is how the agent sees what it already knows how to do before writing a new one (SPEC.md §7).",
-    },
-    {
       command: "corpus doc list --needs me --folder finance",
       description: "What wants attention inside one folder — the board's Attention view, filtered.",
     },
     {
-      command: "corpus doc list --extra assignee=theo --status open",
-      description:
-        "Everything assigned to one person, where `assignee:` is a frontmatter field this " +
-        "workspace invented and no schema change was needed to start filtering on it " +
-        "(SPEC.md §5).",
-    },
-    {
-      command: "corpus doc list --title 'Catch-Up*' --sort -updated",
-      description:
-        "Glob matching on a field (SPEC.md §9.2), newest first. **Quote the pattern** — an " +
-        "unquoted `*` is expanded by the shell before this command sees it.",
-    },
-    {
       command: 'corpus doc list --stage ",triage" --type note',
       description:
-        "A kanban's first column in one request (SPEC.md §10): the empty element is the null " +
-        "sentinel, so this is every note in `triage` **and** every note carrying no stage at " +
-        'all. `--stage ""` on its own selects only the unstaged.',
+        "A kanban's first column in one request (SPEC.md §10): every note in `triage` **and** every note carrying no stage at all.",
     },
     {
       command: "corpus doc list --is-parent true",
       description:
-        "Top-level only: every document that hangs off nothing, threads on documents excluded. " +
-        "A note nobody has commented on is in this list — the flag asks what a document is " +
-        "_under_, not what is under it.",
+        "Top-level only: every document that hangs off nothing — a note nobody has commented on included.",
     },
     {
       command: "corpus doc list --is-parent false --type thread",
@@ -466,17 +478,13 @@ export const listCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc list --type thread --unread --json",
       description:
-        'One JSON value: `{"items":[{"id":"th_x9y8","type":"thread","title":"Rate assumptions",' +
-        '"parent":"doc_a1b2c3","unread":true,"attention":["unread-reply"],"extra":{},…}],' +
-        '"page":{"total":3,"limit":50,"offset":0}}`.',
+        'One JSON value: `{"items":[{"id":"th_x9y8",…}],"page":{"total":3,"limit":50,"offset":0}}` — every non-null key of every row.',
     },
     {
       command:
         "corpus doc list --since 2026-08-21T09:00:00Z --json --fields id,title,lastActor,updated",
       description:
-        "The reflection window read (SPEC.md §7) at ~34 tokens a row instead of ~293: enough to " +
-        "skip the agent's own writes (`lastActor`) and pick the rows worth a real read, without " +
-        "paying for every excerpt and turn body in the window.",
+        "The reflection window read (SPEC.md §7) at ~34 tokens a row instead of ~293: enough to skip the agent's own writes and pick the rows worth a real read.",
     },
   ],
   handler: (context) => runDocList(context),

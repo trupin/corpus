@@ -24,6 +24,7 @@ import {
   setBody,
   setFrontmatterFields,
 } from "../core/index.js";
+import { bodyEditStalenessPatch } from "../core/digest.js";
 import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { readStage } from "../core/board-frontmatter.js";
@@ -657,6 +658,17 @@ export async function updateDocumentLocked(
     ...fields,
     ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
     ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
+    // SPEC.md §6's digest rider, signed 2026-09-05. This route is a whole-body
+    // save of *any* document, and a thread is a document — so a save that
+    // rewrites a thread's body can delete or revise a turn a digest covers,
+    // which is the rider's trigger whatever verb produced it. Recorded in this
+    // write for the reason `cascade.ts` records it in its own: staleness that
+    // arrives one commit later is a commit in which the file lies.
+    //
+    // Free for everything else. `bodyEditStalenessPatch` reads one frontmatter
+    // key and returns before parsing a body, so the autosave path pays a
+    // property lookup and no more.
+    ...(bodyChanged ? bodyEditStalenessPatch(parsed.data, parsed.body, nextBody) : {}),
   });
 
   // SPEC.md §5's coupling: **while a document is in a kanban, its stage decides

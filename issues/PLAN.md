@@ -2293,3 +2293,158 @@ replies, and a listener-specific judgment rule needs a vocabulary for weighing a
 standing conversation that does not exist yet. A fourth option, making the
 designation surfaces refuse `null`, is rejected outright: §7 says in terms that
 stating no weight is permitted and means the orchestrator decides.
+
+## Phase 57 — What a conversation costs to read (2026-09-03, token measurements)
+
+Three findings from a measurement session against the `cos` workspace on corpus
+0.32.0, all counted at 1 token ≈ 4 bytes. `CLI-065` came from the same session
+and shipped in v0.22.0.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| CLI-076 | A thread is read whole or not at all, so every reply pays for the whole conversation | done | P0 | opus | — |
+| CLI-077 | Nothing carries a conversation forward, so every restart re-reads it from the top | done | P0 | fable | CLI-076, SHARED rider |
+| INFRA-038 | A skill has no size budget, so the instructions grow faster than anything measures | done | P0 | fable | — |
+| CLI-078 | The verbs that end a pass read as endings, so the loop stops there | done | P0 | opus | — |
+| AGENT-065 | `converse` argues for stopping five ways and for continuing once | done | P0 | fable | CLI-078 |
+| INFRA-039 | Nothing measures whether a listener stays alive | done | P0 | fable | CLI-078, AGENT-065 |
+| AGENT-066 | Two event procedures live inside `orchestrate` instead of in skills of their own | done | P0 | fable | — |
+| AGENT-067 | `orchestrate` costs 42K tokens before it does anything | done | P0 | fable | AGENT-066 |
+| CLI-079 | A default `--json` row is a quarter nulls | done | P0 | opus | — |
+| CLI-080 | The help is 33K tokens and nothing budgets it | done | P0 | fable | — |
+| AGENT-068 | The skills read whole documents the CLI can slice | done | P0 | fable | CLI-076 |
+| SHARED-077 | A conversation carries its own digest — the §6 rider and the decomposition | done | P0 | fable | — |
+| CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
+| SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
+| AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
+| SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | todo | P1 | fable | — |
+
+**`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
+thread file" means thread frontmatter gains a field, and the server is the sole
+writer — so it needs a signed **SPEC §6 rider** plus CONTRACT, SERVER and AGENT
+issues that are **not filed**. The closest precedent is the per-turn model
+record, which §6 carries under a rider signed 2026-08-08 for the same reason:
+derived data, about turns, recorded outside them.
+
+**One premise in the report is not true of the built system**, and the issue
+corrects it rather than building on it. The report reasons that a digest can
+never go stale retroactively because turns are immutable. §6 permits a person to
+**delete an individual turn**, and permits the agent to **revise its own last
+turn in place**. So a digest must carry a watermark, and a change at or before it
+must print as stale — never be silently regenerated, because a summary the server
+wrote is the one thing this design exists to avoid.
+
+**`INFRA-038` is `infra`, and it is a repository check rather than a product
+feature.** The user decided both the same day, and confirmed the second on being
+shown the filing: *"I want it to be a pre-commit check in this repo, as well as a
+CI check"*, then *"I don't want it to be a `corpus doc check` command."* The
+finding was drafted as a validator rule with a warning at `corpus skill create`,
+which would have been a CONTRACT `CHECK_CODES` addition plus a SERVER validator —
+`doc check` runs no rules of its own, it renders `POST /api/check`. As a check on
+this repository's own files it is repo tooling, it lands on the easy side of
+INFRA-025's rule (a byte count is diff-scopable and near-free), and it needs no
+spec change and no CLI surface at all. The issue carries an **Out of scope**
+section naming each thing not to build, so the cheaper framing cannot be
+reintroduced by an implementing agent trying to be helpful.
+
+**Every skill and profile fails on day one**, which is the point rather than an
+objection: orchestrate is 167,737 bytes (~41,900 tokens), converse 64,952
+(~16,200), comment 41,132 (~10,300), and five more sit above any proposed
+threshold. The gating decision is the issue's one real question, and its
+recommendation is a ratchet — error on growth, warn while over — because
+`bytes ÷ 4` is deterministic and so this check, unlike `test:slow`, can gate
+honestly.
+
+### Phase 57 addendum — the loop stops because the text says stop (2026-09-05, user report)
+
+*"Subagents keep stopping although the skill is meant to keep the agent alive. Maybe we make the
+CLI idle command always prompt the agent to repark it once it's done working, so that the skill's
+instructions always stay fresh."*
+
+**The mechanism.** A Claude Code Task subagent lives exactly as long as it keeps calling tools.
+Nothing loops it. So a resident survives one more pass only because it chooses to call
+`corpus queue idle --thread <id>` again — and the line it reads immediately before choosing is
+`event evt_7c1d9a is complete.` The instruction meant to override that sits at line 325 of a
+1,600-line skill, roughly 13K tokens back by then.
+
+**The proposal was right and landed one verb short.** `idle` is not what runs last. The decision
+point is straight after settling, so `CLI-078` puts the next step on all five verbs that can end a
+pass — `complete`, `fail`, `defer`, and `idle` on both its outcomes. On stderr in human mode and as
+an additive field under `--json`, because the loop parses stdout. Never on the `422` retirement
+path, where stopping is correct.
+
+**The text half is `AGENT-065`.** `converse` documents five ways to stop, each with a paragraph
+arguing why stopping is right, against one four-word sentence to continue — 25 stop-signals to 7.
+The softest of the five asks a model to assess its own context with no external signal, and it is
+available on every pass. All five exits stay. The weight changes.
+
+**`orchestrate`'s recovery section documents this symptom under the wrong cause**, and `AGENT-065`
+fixes that too. *If the loop breaks* attributes a listener that will not stay up to a corrupted
+`converse` file. The operator is seeing it with an intact one, so the only recovery section in the
+workspace sends them to restore a file that is not broken.
+
+**Neither half can be proved by a unit test**, because what they change is a model's choice.
+`INFRA-039` adds the tenth rehearsal scenario — a listener answers a **second** message without
+being relaunched — and scores it `k/N` with a pre-fix baseline. None of the existing nine tests
+liveness, and `03-one-question-one-answer` is a single pass. A relaunch produces the same reply and
+hides the defect entirely, which is why the operator had to notice it by hand.
+
+**The rewrite is in this phase, on the user's instruction.** `AGENT-066` takes the two event
+procedures that `orchestrate`'s own routing table calls anomalies — *"one of the two events whose
+procedure lives in this skill instead of in a skill of its own"* — and makes them skills, which is
+6,448 tokens and needs no rewriting. `AGENT-067` splits the rest against a stated budget: three
+sections are half the file, and `Writing a document` is 7,525 tokens of guidance for an agent whose
+first delegation rule is that it never writes anything. The rehearsal suite is the gate, run before
+and after each section, because a broken `orchestrate` has no agent left to repair it.
+
+**Thresholds signed the same day**: warn 2K, error 4K, ratchet. The distribution chose them — 2K is
+the median of the 28 tracked files and 4K is about 3× it, naming eight outliers rather than half the
+repository. 1K stays an aspiration and is not encoded, because it fails 78% on day one. `orchestrate`
+is not exempted to make the check pass.
+
+### Phase 57 — the token ledger and the sequence (2026-09-05, user directive)
+
+*"Do a deep analysis of how to optimize the CLI for token consumption and file everything you find
+as P0. Do not stop until you have a complete plan sequenced."*
+
+**Measured against the built 0.32.0 CLI on a seeded scratch workspace** (port 8971, 23 documents,
+a 19-turn thread mirroring the `cos` measurement, server stopped after). The ledger, by channel:
+
+| Channel | Measured | Verdict |
+| --- | --- | --- |
+| Skill files, read at session start | orchestrate 41,934 tok · converse 16,238 · comment 10,283 | the largest fixed cost — AGENT-066/067, INFRA-038 |
+| One `comment.created`, skill sequence as written | ~6,300 tok fixture, ~10K on the real `cos` thread | CLI-076/077 build the bounded reads, AGENT-068 makes the skills use them: ~2,500 tok measured |
+| `doc show` in the skills | 41 sites, `--section`/`--headings` used **0** times | CLI-055's 175× saving shipped two weeks ago and was never adopted — AGENT-068 |
+| `doc list --json` default row | 1,066 B/row, **23% null keys**, 24% excerpt, 8% extra | CLI-079 drops the nulls, lossless, `--fields` covers the rest |
+| Help | 33,700 tok of description literals; brief 300–900 tok a lookup; `doc edit --help` 5,209 tok | CLI-080: budget in `validateRegistry` + rewrite the five outliers |
+| Loop head (agents + reap + claim, batched) | ~430 B a pass | already cheap — no issue |
+| Write verbs, settle verbs, errors | echo ≤ 425 B, errors 2 lines and actionable | already cheap — no issue |
+| `thread context` | 3,272 B, bounded by contract | working as designed — the model for everything else |
+| `corpus batch` report framing | ~77 B an entry | negligible — noted, not filed |
+
+**Two corrections to the record.** CLI-065's number still holds (266 tok/row measured against 293
+filed) — the default row did not worsen, and no correction to that issue is needed. And batching
+*costs* tokens while saving time (~77 B/entry of report framing against 585 ms of process starts) —
+the two economies point opposite ways at the loop head and the framing is noise at real payload
+sizes.
+
+**The sequence.** Four waves, ordered by dependency and by what each unlocks:
+
+1. **Wave 1 — independent CLI work, all parallelizable**: `CLI-076` (thread index/slicing — unblocks
+   the largest adoption), `CLI-079` (null keys), `CLI-080` (help budget), `CLI-078` (next-step
+   lines), `INFRA-038` (the size check, landed first so its ratchet holds while the skills are
+   rewritten).
+2. **Wave 2 — adoption and measurement**: `AGENT-068` (skills adopt the bounded reads — where the
+   Wave 1 savings are actually collected; sequenced against AGENT-067 explicitly), `AGENT-065`
+   (continue outweighs stop), `INFRA-039` (the liveness scenario, baseline before AGENT-065 lands).
+3. **Wave 3 — the fixed cost**: `AGENT-066` (extract the two inlined procedures, 6,448 tok, a move
+   not a rewrite) then `AGENT-067` (the split against a stated budget, rehearsal suite as the gate,
+   one section per commit).
+4. **Wave 4 — the digest chain, gated on a signature**: draft the SPEC §6 rider for the per-thread
+   digest, read it back, and on signing file the CONTRACT/SERVER/AGENT trio that `CLI-077` names —
+   then implement. Last because it is the only wave that changes the spec, and its saving (32 KB →
+   7.5 KB per listener rehydration) is real but smaller than Waves 1–3 combined.
+
+Liveness (CLI-078/AGENT-065/INFRA-039) rides in the token plan on purpose: every listener that dies
+is a relaunch that re-reads the skill and rehydrates the conversation from the top, so the leak the
+user reported is also the most expensive single event in the ledger.

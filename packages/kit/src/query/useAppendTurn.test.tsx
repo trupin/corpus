@@ -23,6 +23,7 @@ const SERVER_THREAD = {
   agent: "none",
   resident: null,
   unread: false,
+  digest: null,
   turns: [{ author: "agent", ts: "2026-07-27T09:00:00Z", body: "First.", model: null }],
 } satisfies Thread;
 

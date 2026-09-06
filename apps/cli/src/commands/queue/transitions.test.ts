@@ -10,6 +10,7 @@ import {
   stubContext,
 } from "../../testing/stub-server.js";
 import { queueTopic } from "./index.js";
+import { SETTLED_NEXT_STEP } from "./next-step.js";
 import {
   abandonCommand,
   completeCommand,
@@ -85,13 +86,18 @@ describe("queue transitions", () => {
     expect(harness.stdout()).toBe("");
   });
 
-  it("emits the event verbatim under --json", async () => {
+  it("emits the event verbatim under --json, plus the additive next-step key", async () => {
     const stub = await startStubServer(jsonResponder(200, EVENT));
 
     const harness = stubContext(stub, { args: ARGS, json: true });
     await runComplete(harness.context);
 
-    expect(JSON.parse(harness.stdout())).toEqual(EVENT);
+    // CLI-078 adds one key and changes none: every key the event carried is
+    // still there with the same value, and `nextStep` comes last.
+    expect(JSON.parse(harness.stdout())).toEqual({ ...EVENT, nextStep: SETTLED_NEXT_STEP });
+    expect(harness.stdout().startsWith(JSON.stringify(EVENT).slice(0, -1))).toBe(true);
+    // stderr under --json is reserved for the error envelope.
+    expect(harness.stderr()).toBe("");
   });
 
   it("sends the reason when one is given", async () => {
@@ -268,5 +274,51 @@ describe("the help these verbs publish matches what the server now does", () => 
     const topic = renderTopicHelp(queueTopic, { color: false });
     expect(topic).toContain("a settle is only ever accepted from the agent that claimed the work");
     expect(topic).toContain("conflict (exit 5)");
+  });
+});
+
+/**
+ * CLI-078 — the three settling verbs name the loop's next step. A listener stays
+ * alive only because it decides to park again, and `event evt_… is complete.`
+ * was the most terminal string this CLI printed, arriving exactly at that
+ * decision point.
+ */
+describe("the settling verbs name the loop's next step", () => {
+  const settles = [
+    ["complete", runComplete, "event evt_1111 is complete.\n", {}],
+    ["fail", runFail, "event evt_1111 is failed.\n", { reason: "hook rejected" }],
+    ["abandon", runAbandon, "event evt_1111 is abandoned.\n", {}],
+  ] as const;
+
+  it.each(settles)(
+    "queue %s puts the line on stderr and leaves stdout as it was",
+    async (_name, run, expected, flags) => {
+      const stub = await startStubServer(jsonResponder(200, EVENT));
+      const harness = stubContext(stub, { args: ARGS, flags });
+
+      await run(harness.context);
+
+      expect(harness.stdout()).toBe(expected);
+      expect(harness.stderr()).toBe(`${SETTLED_NEXT_STEP}\n`);
+    },
+  );
+
+  it("says nothing about a next step when the settle is refused", async () => {
+    const stub = await startStubServer((_request, response) => {
+      sendJson(response, 409, { error: { code: "conflict", message: "already processed" } });
+    });
+    const harness = stubContext(stub, { args: ARGS });
+
+    await expect(runComplete(harness.context)).rejects.toBeInstanceOf(ServerResponseError);
+    expect(harness.stderr()).toBe("");
+    expect(harness.stdout()).toBe("");
+  });
+
+  it("says nothing about a next step when the usage error fires first", async () => {
+    const stub = await startStubServer(jsonResponder(200, EVENT));
+    const harness = stubContext(stub, { args: ARGS });
+
+    await expect(runFail(harness.context)).rejects.toBeInstanceOf(UsageError);
+    expect(harness.stderr()).toBe("");
   });
 });

@@ -124,6 +124,7 @@ const thread = {
   anchor: "anc_k4f7",
   agent: "engaged" as const,
   resident: null,
+  digest: null,
   unread: false,
   turns: [turn],
 };
@@ -641,7 +642,14 @@ function createStubApp() {
   // union answer is the one shape a single stub reply would not exercise.
   app.openapi(contractRoutes.getThreadContext, (c) => {
     const { id } = c.req.valid("param");
-    const base = { threadId: id, excerpts: [contextExcerpt], semanticIndex: "current" as const };
+    const base = {
+      threadId: id,
+      excerpts: [contextExcerpt],
+      semanticIndex: "current" as const,
+      // Carried by every shape, because it is a fact about the conversation and
+      // not about whichever parent it hangs off (CONTRACT-096).
+      digest: { body: "Comparing 30-year fixed quotes.", watermark: turn.ts, stale: false },
+    };
     if (id === "th_standalone") return c.json({ shape: "standalone" as const, ...base }, 200);
     if (id === "th_gone") {
       return c.json(
@@ -838,6 +846,55 @@ function createStubApp() {
       200,
     ),
   );
+
+  /**
+   * The digest (CONTRACT-096). The stub stamps the watermark itself, because
+   * that is the shape's whole point — the request carries no watermark field,
+   * so a mounted route is the only place the stamping can be seen happening —
+   * and it produces both of the write's `422`s, which are told apart at `code`.
+   */
+  app.openapi(contractRoutes.writeThreadDigest, (c) => {
+    const { id } = c.req.valid("param");
+    const { body } = c.req.valid("json");
+    if (id === "th_undesignated") {
+      return c.json(
+        {
+          code: "unknown_recipient" as const,
+          message: "that thread holds no resident, so it can hold no digest",
+          recipient: id,
+        },
+        422,
+      );
+    }
+    if (body.trim() === "") {
+      return c.json(
+        {
+          code: "bad_request" as const,
+          message: "a blank digest is not a clear: DELETE the digest instead",
+          issues: [{ path: "body.body", message: "must not be blank" }],
+        },
+        422,
+      );
+    }
+    return c.json(
+      { threadId: id, digest: { body, watermark: turn.ts, stale: false }, warnings: [] },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.clearThreadDigest, (c) => {
+    const { id } = c.req.valid("param");
+    if (id === "th_undesignated") {
+      return c.json(
+        {
+          code: "unknown_recipient" as const,
+          message: "that thread holds no resident, so it has no digest to clear",
+          recipient: id,
+        },
+        422,
+      );
+    }
+    return c.json({ threadId: id, digest: null, warnings: [] }, 200);
+  });
 
   // The roster always carries the orchestrator's row, whatever else is
   // designated (SPEC.md §7), so the stub carries it beside a resident lane.
@@ -2167,6 +2224,71 @@ describe("routes mounted on a Hono app", () => {
   it("serves the SSE route as an event stream, not as JSON", async () => {
     const response = await createStubApp().request("/events?token=t");
     expect(response.headers.get("content-type")).toContain("text/event-stream");
+  });
+
+  /**
+   * The digest through the mounted definitions (CONTRACT-096), which is where
+   * the enforcement lives: `@hono/zod-openapi` validates the body before any
+   * handler runs, so a writer that tried to state its own coverage is refused by
+   * the **contract** rather than by a server that remembered to check.
+   */
+  describe("the digest write", () => {
+    const put = (body: unknown, id = "th_x9y8") =>
+      createStubApp().request(`/api/threads/${id}/digest`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    it("stamps a watermark the caller never sent", async () => {
+      const response = await put({ body: "Comparing 30-year fixed quotes." });
+      expect(response.status).toBe(200);
+      const written = (await response.json()) as {
+        threadId: string;
+        digest: { body: string; watermark: string; stale: boolean };
+      };
+      expect(written.threadId).toBe("th_x9y8");
+      expect(written.digest.watermark).toBe(turn.ts);
+      expect(written.digest.stale).toBe(false);
+    });
+
+    it("refuses a watermark by name before the handler ever runs", async () => {
+      const response = await put({ body: "A short account.", watermark: turn.ts });
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(await response.json())).toContain("watermark");
+    });
+
+    it("refuses a blank body with the 422 that names the other verb", async () => {
+      const response = await put({ body: "   " });
+      expect(response.status).toBe(422);
+      const refusal = (await response.json()) as { code: string };
+      expect(refusal.code).toBe("bad_request");
+    });
+
+    it("refuses a thread with no resident, on both verbs, at the same code", async () => {
+      const write = await put({ body: "Nobody lives here." }, "th_undesignated");
+      expect(write.status).toBe(422);
+      expect((await write.json()) as { code: string; recipient: string }).toMatchObject({
+        code: "unknown_recipient",
+        recipient: "th_undesignated",
+      });
+
+      const clear = await createStubApp().request("/api/threads/th_undesignated/digest", {
+        method: "DELETE",
+      });
+      expect(clear.status).toBe(422);
+      expect((await clear.json()) as { code: string }).toMatchObject({
+        code: "unknown_recipient",
+      });
+    });
+
+    it("clears to null through the verb that means it", async () => {
+      const response = await createStubApp().request("/api/threads/th_x9y8/digest", {
+        method: "DELETE",
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()) as { digest: null }).toMatchObject({ digest: null });
+    });
   });
 
   it("serves attachment bytes as an opaque stream", async () => {

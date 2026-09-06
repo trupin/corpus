@@ -178,6 +178,23 @@
  * three above, **§9.2 does not list it yet**: it joins the pending amendments
  * rather than the undocumented, and the bullet is the orchestrator's to draft.
  *
+ * `PUT /api/threads/{id}/digest` and `DELETE /api/threads/{id}/digest`
+ * (CONTRACT-096) are derived from SPEC.md §6's digest rider, signed 2026-09-05,
+ * and **§9.2 does not list them** — they join the resident pair above as pending
+ * amendments rather than as undocumented routes. The derivation is two of the
+ * rider's own sentences. A digest is "written by the agent resident on the
+ * thread at reply time, **through the CLI**", and the CLI is a thin HTTP client
+ * that performs no direct file writes (Architecture Decision 2), so writing one
+ * is a server endpoint by construction; §9.3 makes it a route declared here
+ * rather than invented in the server. Clearing is the second route because the
+ * rider makes the absence of a digest a state a thread can be in — "a thread
+ * with no digest is the ordinary state, not a fault" — and an empty write
+ * cannot express it without making "nothing" mean "remove" on the one field
+ * where nothing already means something else. They sit immediately after the
+ * resident pair because a digest is that resident's own account. No §9.2 bullet
+ * has been drafted for them here: this package never edits SPEC.md, and the
+ * amendment is the orchestrator's to take to the user.
+ *
  * The four **folder acts** (CONTRACT-075) are §9.2's own, in its own bullet:
  * "`POST /api/folders/rename` (`{ from, to }`), `POST /api/folders/archive`,
  * `POST /api/folders/unarchive`, `POST /api/folders/delete` (each `{ path }`)"
@@ -281,6 +298,8 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/threads/{id}/reattach",
   "POST /api/threads/{id}/resident",
   "DELETE /api/threads/{id}/resident",
+  "PUT /api/threads/{id}/digest",
+  "DELETE /api/threads/{id}/digest",
 
   "GET /api/agents",
 

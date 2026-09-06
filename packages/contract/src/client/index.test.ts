@@ -440,7 +440,10 @@ function createServer() {
       },
     ];
     if (id === "th_alone") {
-      return c.json({ shape: "standalone" as const, threadId: id, excerpts: [] }, 200);
+      return c.json(
+        { shape: "standalone" as const, threadId: id, excerpts: [], digest: null },
+        200,
+      );
     }
     if (id === "th_gone") {
       return c.json(
@@ -448,6 +451,7 @@ function createServer() {
           shape: "parent-deleted" as const,
           threadId: id,
           excerpts,
+          digest: null,
           deletedParent: frontmatter.id,
         },
         200,
@@ -461,6 +465,15 @@ function createServer() {
         shape: "anchored" as const,
         threadId: id,
         excerpts,
+        // The pack is the rehydration read, so it carries the digest whole —
+        // `stale` included, since a briefing that hid it would be the one
+        // surface showing a digest without saying it cannot be trusted
+        // (CONTRACT-096).
+        digest: {
+          body: "The user is comparing 30-year fixed quotes and doubts the 6.1% figure.",
+          watermark: "2026-07-19T10:05:00Z",
+          stale: true,
+        },
         // The degrade word is the shared one: a pack cannot report `current`
         // while search reports `stale` for the same workspace.
         semanticIndex: "stale" as const,
@@ -531,6 +544,37 @@ function createServer() {
       200,
     );
   });
+
+  /**
+   * The digest (CONTRACT-096). The stub stamps the watermark, because that is
+   * the shape's point — the request has no watermark field — and produces the
+   * refusal a thread with no resident makes, which the typed call below narrows.
+   */
+  app.openapi(contractRoutes.writeThreadDigest, (c) => {
+    const { id } = c.req.valid("param");
+    const { body } = c.req.valid("json");
+    if (id === "th_undesignated") {
+      return c.json(
+        {
+          code: "unknown_recipient" as const,
+          message: "that thread holds no resident, so it can hold no digest",
+          recipient: id,
+        },
+        422,
+      );
+    }
+    return c.json(
+      {
+        threadId: id,
+        digest: { body, watermark: "2026-07-19T10:07:12Z", stale: false },
+        warnings: [],
+      },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.clearThreadDigest, (c) =>
+    c.json({ threadId: c.req.valid("param").id, digest: null, warnings: [] }, 200),
+  );
 
   app.openapi(contractRoutes.getIndexStatus, (c) =>
     c.json(
@@ -1158,6 +1202,48 @@ describe("the typed scope call", () => {
     expect(data).toBeUndefined();
     if (error?.code !== "conflict") throw new Error("expected a declared conflict");
     expect(error.message).toContain("not a scope");
+  });
+});
+
+/**
+ * The digest over the real typed client (CONTRACT-096). Three things only a
+ * typed call can show: the two verbs exist at
+ * `paths["/api/threads/{id}/digest"]`, the write's response carries a watermark
+ * the caller never sent, and the `422` is a **declared** error the client can
+ * narrow — written as a narrowing rather than an optional-chained read, since
+ * an optional read compiles whether or not the response is declared.
+ */
+describe("the typed digest calls", () => {
+  it("writes prose and reads back the watermark the server stamped", async () => {
+    const { data, error } = await createTestClient().api.PUT("/api/threads/{id}/digest", {
+      params: { path: { id: "th_x9y8" } },
+      body: { body: "The user doubts the 6.1% assumption." },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.threadId).toBe("th_x9y8");
+    expect(data?.digest?.body).toBe("The user doubts the 6.1% assumption.");
+    expect(data?.digest?.watermark).toBe("2026-07-19T10:07:12Z");
+    expect(data?.digest?.stale).toBe(false);
+    expect(data?.warnings).toEqual([]);
+  });
+
+  it("clears a digest to null through the verb that means it", async () => {
+    const { data, error } = await createTestClient().api.DELETE("/api/threads/{id}/digest", {
+      params: { path: { id: "th_x9y8" } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.digest).toBeNull();
+  });
+
+  it("reads the 422 a thread with no resident answers with", async () => {
+    const { data, error, response } = await createTestClient().api.PUT("/api/threads/{id}/digest", {
+      params: { path: { id: "th_undesignated" } },
+      body: { body: "Nobody lives here." },
+    });
+    expect(response.status).toBe(422);
+    expect(data).toBeUndefined();
+    if (error?.code !== "unknown_recipient") throw new Error("expected a declared refusal");
+    expect(error.recipient).toBe("th_undesignated");
   });
 });
 

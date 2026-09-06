@@ -13,6 +13,7 @@ import { midTurnNoSecondListener } from "./06-mid-turn-no-second-listener.js";
 import { hostileTranscript } from "./07-hostile-transcript.js";
 import { unmeetableWeight } from "./08-unmeetable-weight.js";
 import { retieredTable } from "./09-retiered-table.js";
+import { aListenerAnswersTwice } from "./10-a-listener-answers-twice.js";
 
 export const SCENARIOS: readonly Scenario[] = [
   statedWeight,
@@ -24,4 +25,5 @@ export const SCENARIOS: readonly Scenario[] = [
   hostileTranscript,
   unmeetableWeight,
   retieredTable,
+  aListenerAnswersTwice,
 ];

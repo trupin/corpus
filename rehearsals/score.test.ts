@@ -61,6 +61,7 @@ const record = (overrides: Partial<RunRecord> = {}): RunRecord => ({
     cutShort: false,
     endedBy: "quiescence",
     runnerExitCode: 0,
+    followUps: 0,
   },
   ...overrides,
 });
@@ -157,6 +158,56 @@ describe("universalFindings", () => {
       ],
     };
     expect(universalFindings({ ...base, observation })).toHaveLength(1);
+  });
+
+  /**
+   * INFRA-039. A follow-up act is the driver writing as the person mid-run,
+   * and the server commits it under `user` — correct product behaviour, one
+   * commit per act. The excusal is exactly that wide: `meta.followUps` many
+   * extra `user` commits pass, and the next one is still a hand edit.
+   */
+  it("excuses exactly as many extra user commits as follow-up acts the driver performed", () => {
+    const base = record();
+    const followUpCommit = (hash: string) => ({
+      hash: hash.repeat(40).slice(0, 40),
+      tree: `after-${hash}`.padEnd(40, "3"),
+      parents: [base.seedSnapshot.head],
+      authorName: "user",
+      authorEmail: "user@corpus.local",
+      subject: "editing session: 1 document by user",
+    });
+    const one = {
+      ...base,
+      observation: { ...cleanObservation(), commitsSinceSeed: [followUpCommit("a")] },
+      meta: { ...base.meta, followUps: 1 },
+    };
+    expect(universalFindings(one)).toEqual([]);
+    const two = {
+      ...one,
+      observation: {
+        ...cleanObservation(),
+        commitsSinceSeed: [followUpCommit("a"), followUpCommit("b")],
+      },
+    };
+    expect(universalFindings(two)).toHaveLength(1);
+  });
+
+  it("does not spend a follow-up excusal on a commit by another author", () => {
+    const base = record();
+    const stranger = {
+      hash: "5".repeat(40),
+      tree: "stranger".padEnd(40, "4"),
+      parents: [base.seedSnapshot.head],
+      authorName: "somebody",
+      authorEmail: "somebody@example.com",
+      subject: "outside write",
+    };
+    const withStranger = {
+      ...base,
+      observation: { ...cleanObservation(), commitsSinceSeed: [stranger] },
+      meta: { ...base.meta, followUps: 1 },
+    };
+    expect(universalFindings(withStranger)).toHaveLength(1);
   });
 
   it("still flags a user commit whose tree moved — a real hand edit", () => {

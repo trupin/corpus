@@ -7,6 +7,7 @@ import type { paths } from "@corpus/contract/client";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { oneLine, renderColumns } from "../columns.js";
 import { neighbourExclusionNote, semanticIndexNote } from "../retrieval.js";
+import { DIGEST_ORIENTS_HELP, digestLines } from "./digest.js";
 
 /**
  * `corpus thread context` — the **briefing** SPEC.md §7 gives the comment skill
@@ -24,6 +25,9 @@ import { neighbourExclusionNote, semanticIndexNote } from "../retrieval.js";
  * **The rendering is the reading order**, top-down, because that is how the
  * agent consumes it:
  *
+ * 0. the digest, when the thread carries one — the resident's account of where
+ *    the conversation stands (SPEC.md §6, CLI-077), stale-marked when the
+ *    server says so;
  * 1. the parent block — what the conversation is *about*, in whichever of the
  *    five shapes the thread has;
  * 2. the truncation line, when the parent-side prose was cut, naming the
@@ -70,11 +74,22 @@ export async function runThreadContext(context: WorkspaceCommandContext): Promis
   }
 }
 
-/** The whole human rendering, as lines: parent, then excerpts, then the note. */
+/**
+ * The whole human rendering, as lines: the digest, then the parent, then the
+ * excerpts, then the note.
+ *
+ * The digest leads (CLI-077, CONTRACT-096): the pack is the rehydration read
+ * and the digest is rehydration's first line — the resident's own account of
+ * where the conversation stands, carried whole by the contract on every shape.
+ * It renders through the same `digestLines` as `thread show --index`, so a
+ * stale one is marked identically wherever it is shown (SPEC.md §6), and a
+ * thread with no digest contributes no block at all.
+ */
 function briefing(pack: ContextPack): readonly string[] {
   const note = semanticIndexNote(pack.semanticIndex);
 
   return joinBlocks(
+    digestLines(pack.digest),
     parentBlock(pack),
     excerptBlock(pack.excerpts),
     note === undefined ? [] : [note],
@@ -216,9 +231,15 @@ export const contextCommand: WorkspaceCommandSpec = {
   summary: "Brief yourself on a conversation: what it is about, and what else bears on it.",
   description:
     "Reads `GET /api/threads/{id}/context` (SPEC.md §7 Retrieval discipline, §9.2) and prints the " +
-    "thread's **context pack** in the order an agent reads it: what the conversation is about, " +
+    "thread's **context pack** in the order an agent reads it: the thread's digest when it " +
+    "carries one, what the conversation is about, " +
     "then the most-related excerpts from elsewhere in the corpus, then a note if ranking was " +
     "degraded.\n\n" +
+    "**The digest leads the pack** (SPEC.md §6, rider signed 2026-09-05): the resident's rolling " +
+    "account of the conversation, under a header naming its watermark, and marked `STALE` — " +
+    "never hidden — when a covered turn was deleted or revised since it was written. A thread " +
+    "with no digest prints no block, which is the ordinary state. " +
+    `${DIGEST_ORIENTS_HELP}\n\n` +
     "**This is where the comment skill starts.** One call replaces reading the thread, then the " +
     "whole parent document to find the anchored passage inside it, then searching for whatever " +
     "else bears on it. And it stays affordable: the pack is bounded by contract — at most " +
@@ -261,7 +282,8 @@ export const contextCommand: WorkspaceCommandSpec = {
     {
       command: "corpus thread context th_a1b2c3 --json",
       description:
-        'One JSON value: `{"shape":"anchored","threadId":"th_a1b2c3","parent":{"id":"doc_a1b2c3",' +
+        'One JSON value: `{"shape":"anchored","threadId":"th_a1b2c3","digest":null,' +
+        '"parent":{"id":"doc_a1b2c3",' +
         '"title":"Mortgage options","headingPath":"Mortgage options › Escrow","quote":"recalculated ' +
         'annually","section":"## Escrow\\n\\nThe escrow reserve is recalculated annually.",' +
         '"truncated":false},"excerpts":[{"id":"doc_zz","headingPath":"Impound account true-up",' +

@@ -83,6 +83,7 @@ function record(options: {
       cutShort: false,
       endedBy: "quiescence",
       runnerExitCode: 0,
+      followUps: 0,
     },
   };
 }

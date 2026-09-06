@@ -179,17 +179,20 @@ describe("--help=brief", () => {
     expect(command).toContain("(repeatable)");
   });
 
-  it("keeps the global flags, glossed", () => {
+  it("carries no global flags at all — they are identical on every verb (CLI-080)", () => {
     for (const flag of GLOBAL_FLAGS) {
-      expect(command).toContain(`--${flag.name}`);
-      expect(command).toContain(gloss(flag.description));
+      expect(command).not.toContain(gloss(flag.description));
     }
-    // The `--json` paragraph is four sentences; only the first survives.
-    expect(command).not.toContain("so absence never has to be guessed at");
+    expect(command).not.toContain("Global flags");
+    // Full keeps their names on one line, and only the root page glosses them.
+    expect(full).toContain("Global flags: --from,");
+    for (const flag of GLOBAL_FLAGS) {
+      expect(full).not.toContain(gloss(flag.description));
+    }
   });
 
   it("points at the full text", () => {
-    expect(command).toContain("Run `corpus expound --help` for the full text and examples.");
+    expect(command).toContain("Full text and examples: `corpus expound --help`.");
   });
 
   it("costs a fraction of the full text", () => {

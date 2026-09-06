@@ -60,14 +60,11 @@ export const JOB_FLAG: FlagSpec = {
   type: "string",
   valueName: "evt_…",
   description:
-    "The queue event this write is doing the work of (SPEC.md §9.2). The server resolves it to " +
-    "the thread that work came from and records it as the created document's `origin`, which is " +
-    `what makes a conversation's artifacts findable. Set \`${JOB_ENV_VAR}=evt_…\` once when you ` +
-    "claim an event and every write in that session carries it; this flag still wins over the " +
-    "variable. **Omitting it is not an error** — the write lands and records no origin, so " +
-    "forgetting costs provenance and never correctness. **Naming an event that does not exist, " +
-    "or one already settled, is refused** (exit 5, the server's `422`): a caller that mistyped a " +
-    "job id wanted the attribution, and quietly dropping it would leave it believing it had one.",
+    "The queue event this write serves (SPEC.md §9.2). The server records it as the created " +
+    `document's \`origin\`. Set \`${JOB_ENV_VAR}=evt_…\` once at claim and every write in ` +
+    "that session carries it; the flag wins over the variable. **Omitting it is not an " +
+    "error** — the write lands with no origin, costing provenance and never correctness. An " +
+    "unknown or settled event is refused (exit 5).",
 };
 
 /**
@@ -386,13 +383,11 @@ const BODY_REPAIR =
  * five verbs cannot describe the same three sources five ways.
  */
 export const BODY_SOURCES_HELP =
-  '**The body comes from one of three places**, in precedence order: `-m "…"`, `--file <path>`, ' +
-  "or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin is not one of them — " +
-  "`spawn`, `exec` and `spawnSync({ input })` all hand a child one, and so does an agent harness, " +
-  "whose socket never ends and would hang a read forever. So a run whose stdin is a socket and " +
-  "which named no `-m`/`--file` is **refused** (exit 2, nothing sent) instead of being given the " +
-  "empty body: a document written without the body you sent is worse than one not written. " +
-  "Redirect `< /dev/null` when you mean to send none.";
+  '**Body sources**, in precedence order: `-m "…"`, `--file ' +
+  "<path>`, or a stdin that is a **heredoc** or a **pipe**. A **socket** on stdin (what " +
+  "`spawn`, `exec` and an agent harness hand a child) never ends and is not read: with no " +
+  "`-m`/`--file` the run is **refused** (exit 2, nothing sent) rather than given an empty " +
+  "body. Redirect `< /dev/null` to send none.";
 
 export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promise<string> {
   const chunks: string[] = [];

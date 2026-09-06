@@ -159,7 +159,18 @@ export async function threadContextPack(
   const side = parent === null ? null : parentSide(db, thread, parent);
   const seeds = parent === null ? [thread.id] : [thread.id, parent.row.id];
   const related = await relatedExcerpts(db, deps, seeds, rankingText(thread, side?.quote));
-  const base = { threadId: thread.id, excerpts: related.excerpts, semanticIndex: related.state };
+  // §6's digest (rider signed 2026-09-05) rides on the base rather than on one
+  // shape, because CONTRACT-096 put it there for a reason this assembly has to
+  // honour: the pack is the rehydration read, and a digest is a fact about the
+  // *conversation* rather than about whichever parent the thread hangs off. It
+  // is carried whole and unread — `DIGEST_MAX_CHARS` is what bounds it, so
+  // nothing here truncates it and there is no `truncated` flag to set.
+  const base = {
+    threadId: thread.id,
+    digest: thread.digest === null ? null : { ...thread.digest },
+    excerpts: related.excerpts,
+    semanticIndex: related.state,
+  };
 
   if (thread.parent !== null && parent === null) {
     return { shape: "parent-deleted", ...base, deletedParent: thread.parent };

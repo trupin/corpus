@@ -20,6 +20,7 @@ const THREAD = {
   agent: "requested",
   resident: null,
   unread: false,
+  digest: null,
   turns: [],
 } satisfies Thread;
 
