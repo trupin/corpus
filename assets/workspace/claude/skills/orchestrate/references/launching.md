@@ -160,7 +160,9 @@ ordinary dispatch-only pass never needs this file.
   and dispatch nothing. Log who left and the reason, complete the event, and go on. You never
   tell that listener and you never stand it down. It finds out on its own, and the converse
   skill says how. What the lane becomes wants no rule of its own: a conversation with nobody
-  resident is worked on your lane again, under the routing every other thread gets.
+  resident is worked on your lane again, under the routing every other thread gets. It stays
+  **engaged** — designating it engaged it, and only resolving ends that — so its plain turns
+  keep arriving as ordinary `comment.created` events of yours, mention or none.
 
   ```bash
   corpus queue claim-all

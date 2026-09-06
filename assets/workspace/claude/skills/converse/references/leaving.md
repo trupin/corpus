@@ -55,14 +55,14 @@ event, which then sits in `in-progress/` until somebody reaps it, and owing the 
 a goodbye nobody posts. Retiring on the refusal instead is what the body's steps exist for.
 
 The claim staying answerable after the release is the server's deliberate asymmetry, made for
-the leaver: you are refused at the park, and the orchestrator's unscoped claim cannot see this
-lane until it has lapsed out of presence, so a guarded claim would strand them for a whole
-grace window in order to tidy a parameter. The departing listener is the only caller that can
-still drain what was stamped before the release, which is why the drain is its job.
+the leaver: you are refused at the park, while the claim still answers. The release does hand
+those events to the orchestrator, so you are not the only caller that can reach them — but it
+reaches them on a pass that has the whole workspace in front of it, while you are here, in
+this conversation, now. That is why the drain is the leaver's job and not merely its right.
 
 Unless the thread has been designated again — then the argument above turns over on its own
-premise: those events *can* be reached by somebody else now, and your claim would take them
-out from under a listener that has just parked on them. What that costs is not a late answer.
+premise: those events belong to a listener that has just parked on them, and your claim would
+take them out from under it. What that costs is not a late answer.
 An id its own park named, coming back held by a caller it cannot identify, is the one thing a
 listener stands down on — and the row says nothing about who holds it or that they are
 leaving, so it cannot read your departure as anything but a peer. Your last act would be to

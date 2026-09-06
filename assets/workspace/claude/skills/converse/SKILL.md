@@ -410,6 +410,10 @@ conversation. So the draft this conversation produced, and a comment somebody le
 draft weeks later, both reach you — which is the point of owning a conversation rather than a
 thread.
 
+**Every message in your conversation reaches you, and no mention is needed.** Designating this
+thread engaged it, so a plain turn wakes you exactly as an `@agent` one does. Never ask the
+person to mention you, and never read an unmentioned turn as not meant for you.
+
 Two consequences you will actually meet:
 
 - **The stamp is made once and never rewritten.** Work already queued when the designation
@@ -661,10 +665,11 @@ answer.
 
 ## A lapse is not an error
 
-If you are away from your lane longer than the server's grace window, its pending work becomes
-visible to the orchestrator's unscoped claim and gets done there instead — slower, and without
-this conversation's warmth, but never silently not done. This is the design working, not a
-failure to recover from. `corpus agents` names the window and reports each lane's state; that
+If you are away from your lane longer than the server's grace window, your row reads `lapsed`
+and its pending work **stays yours**. Nobody covers for you: an unscoped claim never sees this
+lane, and no amount of absence hands it away. So a lapse costs the person a wait and never an
+answer in another voice: every message they wrote is still pending, waiting for your next
+claim. `corpus agents` names the window and reports each lane's state; that
 number is the server's and this skill does not restate it.
 
 Everything you might be tempted to do about it is wrong:
@@ -683,21 +688,17 @@ Everything you might be tempted to do about it is wrong:
   for; looking present is not.
 - **Do not treat a `lapsed` row as breakage.** It is a fact about the past. Take the lane and
   carry on.
-- **Do not redo what the orchestrator did while you were gone.** Coming back to turns you did
-  not write is the expected shape of a lapse, not a corruption. Read them as part of the
-  conversation, because they are: they were written by an agent working from the same corpus.
-  Do not apologise for them, do not undo them, and do not re-answer the message they answered.
-  If one of them got something wrong, correct it in a turn of your own, saying what changed
-  and why.
-- **Do not adopt what the orchestrator is still holding.** Arriving is the moment your held
+- **Do not read the backlog as somebody else's leftovers.** Nothing was answered while you
+  were gone, so every turn waiting here is a question still open. Work them in the
+  conversation's order, earliest first, and answer them as your own. An apology for the wait is
+  a turn about the machinery.
+- **Do not adopt a held row another caller claimed.** Arriving is the moment your held
   list is most likely to be a dead predecessor's work: what it claimed is stamped
   with your lane, so your first claim reports it to you with nothing on the row to say it is
   in flight. *A held row older than your first claim on this lane is not yours* — leave it,
-  and let the agent that claimed it settle it. The same rule, one step
-  earlier: do not redo the work the orchestrator finished, and do not race the work it
-  is still doing.
-- **Do not conclude a lapse from a quiet lane.** A conversation with nothing in it is a
-  conversation with nothing in it, and a timeout on your park is the ordinary sound of that.
+  and let the agent that claimed it settle it.
+- **Do not conclude a lapse from a quiet lane.** A timeout on your park is the ordinary sound
+  of a conversation with nothing in it.
 
 ## When your context runs heavy
 
@@ -770,8 +771,8 @@ still hold. Park again instead.
 
 **The claim is not refused, and the asymmetry is deliberate.**
 `corpus queue claim-all --thread th_4b8e2c` still answers on a lane whose resident was just
-released, and hands back the events stamped for it before the release. Nothing else can reach
-them until the lane lapses — `references/leaving.md` has the server's reasoning.
+released, and hands back the events stamped for it before the release. Releasing returns those
+events to the orchestrator as well — `references/leaving.md` has the server's reasoning.
 Draining them is therefore the departing listener's job, and it is the first step below.
 
 **Unless the conversation has been designated again — and then the drain is not yours to
