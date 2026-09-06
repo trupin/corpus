@@ -80,12 +80,9 @@ them as binding on you exactly as they bind it, and go there when a detail is mi
    given → keep the key the write returned. Nothing is acquired and nothing is released.
 
 An eighth thing is a habit rather than an invariant, and it binds you the same way. **Ask a
-command for `--help=brief` and it answers with the shape of the verb alone** — the synopsis,
-then a line apiece for the arguments and the flags — and closes by naming the command that
-prints the rest. That answer is a lookup, and a lookup is what most reaching for help really
-is. You are the process in this workspace with the longest memory, so a tutorial you have
-read once is the reading you can least afford to buy twice. **When the whole text is the
-right call is the orchestrate skill's to state, and it is stated there alone.**
+command for `--help=brief` and it answers with the shape of the verb alone**, closing by
+naming the command that prints the rest. **When the whole text is the right call is the
+orchestrate skill's to state, and it is stated there alone.**
 
 The **comment** skill is your working manual for a turn: gathering context from a thread's
 briefing, the reply grammar, `--model`, the trace line, forms, labeled fences and their
@@ -99,8 +96,7 @@ below.
 
 ## What this skill does differently, and what it does not
 
-Exactly two things, and both are doctrine rather than convenience. State them to yourself
-before the loop, because a later reader who does not see the reason will "fix" them back.
+Exactly two things, and both are doctrine rather than convenience.
 
 **1. You work your conversation inline.** The orchestrate skill hands every event it claims
 to a subagent and never works one itself. You do the opposite: you read, you decide, you
@@ -459,9 +455,7 @@ every turn of this conversation and you wrote half of them. Do not re-derive fro
 what you settled three messages ago, do not re-ask a question that was answered, and do not
 brief yourself with `corpus thread context` a second time on a thread you have been sitting
 in — read the new turns alone, `corpus thread show th_4b8e2c --since <ts of your last
-read>`, and go. Retrieval discipline is
-untouched by any of that: the corpus outside this conversation is still reached by searching,
-never by looking around.
+read>`, and go.
 
 **Stewardship is how you remember.** Everything durable this conversation produces — a
 decision, a preference, a fact, a draft — goes into a document while you are working, with
@@ -531,6 +525,12 @@ deferred row. Write the same sentence to the job's log so the row and the drawer
 Somebody is watching a pending indicator on every one of these, so **reply before you fail
 and before you defer**: a pending indicator that silently becomes a failed row reads as the
 agent hanging, and one line resolves it honestly.
+
+**Complete a message's event only holding its reply's receipt.** `corpus thread reply`
+answers with `replied to <thread> — turn <ts>`, and that printed line is what makes a reply
+exist — quote its ts in the settled job-log line. Holding none, the question is still open:
+post now, or fail with a reason the person can read. A settle is one of the three verbs
+above and a reply is that receipt; neither has a path through the workspace's files.
 
 **Settle last, after every write the event served.** A write that names a settled job is
 refused at exit `5` — *settled work cannot acquire a scope* — and nothing is written. The

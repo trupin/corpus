@@ -2397,6 +2397,35 @@ describe("orchestrate skill body", () => {
   });
 
   /**
+   * AGENT-064. The v0.32.0 pre-release pass (story 1, run 3) drained the queue
+   * with a `comment.created` "settled" by a hand `mv` into `processed/` — its
+   * JSON body still said `pending` — and its "reply" hand-written into the
+   * thread file as a `## resident · <ts>` heading, which is not a §6 turn and
+   * so was filed as bytes inside the person's own turn, watcher-committed as
+   * `user`. §7 rules the silent settle out, so `complete` on an answering
+   * event is tied to the turn the subagent's report names. The boundary
+   * (sprint-024 TEST-1161) is the two event types a person is waiting on:
+   * "these two" binds the rule to the paragraph above it, and the reflection
+   * side is held by *A trivial edit is completed in silence* in the doc.edited
+   * describe — a reflection completes with no turn, as ever.
+   */
+  it("completes an answering event only against the turn the report names (AGENT-064)", () => {
+    expect(body).toMatch(
+      wrapped("**And complete these two only against the turn the report names**"),
+    );
+    expect(body).toMatch(wrapped("a report naming none did not answer"));
+    expect(body).toMatch(
+      wrapped("fail the event with a readable reason rather than complete it on trust"),
+    );
+    // The scope: "these two" is the pair the previous paragraph names, so the
+    // rule sits after that sentence and reaches nothing else.
+    const scope = body.indexOf("For `comment.created` and `form.respond`, a person is watching");
+    const rule = body.indexOf("**And complete these two only against the turn the report names**");
+    expect(scope).toBeGreaterThan(-1);
+    expect(rule).toBeGreaterThan(scope);
+  });
+
+  /**
    * AGENT-018, SPEC.md §7's rider signed 2026-08-06. Consequence was already in
    * this skill — as one factor of three, averaged in — so what these pin is the
    * **ordering**: the two-pass shape, the veto, and above all the *negative*
@@ -4465,6 +4494,26 @@ describe("comment skill body", () => {
     expect(body).toMatch(/Length follows the work/i);
   });
 
+  /**
+   * AGENT-064. The hand-edit ban predates the breach, so what changed is the
+   * consequence beside it: the run that hand-wrote `## resident · <ts>` into a
+   * thread file produced not a wrongly-attributed turn but **no turn** — §6's
+   * author set is closed, so the bytes were filed inside the person's own turn
+   * and the watcher committed them as `user`. The bullet now says what the
+   * bytes actually become, because "a corrupted conversation" understated it
+   * into something a light model could discount.
+   */
+  it("says what a hand-written heading actually becomes (AGENT-064)", () => {
+    expect(body).toMatch(wrapped("The turn grammar admits only authors the server writes"));
+    expect(body).toMatch(wrapped("a hand-written heading is not a turn at all"));
+    expect(body).toMatch(
+      wrapped("inside the person's own turn, under their name, invisible to every reader"),
+    );
+    expect(body).toMatch(wrapped("and no event fires"));
+    // The understatement stays gone.
+    expect(body).not.toMatch(/a hand-written turn is a corrupted conversation/);
+  });
+
   it("files the inbox concretely and names its convention", () => {
     // AGENT-047: the body keeps recognition, the pointer, and the two rules
     // that bind before the read; the procedure lives in the filing reference.
@@ -5877,6 +5926,37 @@ describe("converse skill body", () => {
         /do not shorten the turn, do not break it up to re-park in the\s+middle, and do not park while you are holding work/,
       );
     });
+  });
+
+  /**
+   * AGENT-064 (sprint-024 TEST-1160). The breached run answered by writing
+   * bytes into the thread file and "settled" by moving the queue file — no
+   * claim, no reply, no verb, queue drained, question dropped. The gate is the
+   * receipt: `corpus thread reply` prints `replied to <id> — turn <ts>`, and
+   * completing a message's event means holding that line. The closing clause
+   * names the workspace's files as a path to neither, which is exactly the
+   * pair of hand-moves the run made.
+   */
+  it("gates complete on the reply's printed receipt (AGENT-064)", () => {
+    expect(body).toMatch(
+      wrapped("**Complete a message's event only holding its reply's receipt.**"),
+    );
+    expect(body).toMatch(wrapped("answers with `replied to <thread> — turn <ts>`"));
+    expect(body).toMatch(wrapped("that printed line is what makes a reply exist"));
+    expect(body).toMatch(wrapped("quote its ts in the settled job-log line"));
+    expect(body).toMatch(
+      wrapped("Holding none, the question is still open: post now, or fail with a reason"),
+    );
+    expect(body).toMatch(
+      wrapped(
+        "A settle is one of the three verbs above and a reply is that receipt; neither has a path through the workspace's files.",
+      ),
+    );
+    // After the verbs it gates, inside *Settling your own lane*.
+    const verbs = body.indexOf("corpus queue complete evt_7c1d9a");
+    const rule = body.indexOf("**Complete a message's event only holding its reply's receipt.**");
+    expect(verbs).toBeGreaterThan(-1);
+    expect(rule).toBeGreaterThan(verbs);
   });
 
   it("orders the settling call after the writes, with the exit that proves it", () => {

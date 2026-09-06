@@ -260,8 +260,7 @@ Pick the smallest shape that actually answers the request.
 - **Patch the parent** with
   `corpus doc patch <id> --from agent --old '<what it says>' --new '<what it should say>'`
   when the change is one you can quote — a figure that moved, a sentence that is now wrong, a
-  paragraph that should go. It is the ordinary way to change a document that is mostly right,
-  and it sends the change rather than the document.
+  paragraph that should go. It sends the change rather than the document.
 - **Edit the parent** with `corpus doc edit <id> --key <the key that read printed> --from agent`
   and a heredoc body when there is nothing to quote because the whole shape is changing. The
   heredoc *is* the document's whole new body, so this is the escalation of *Gather context*:
@@ -451,8 +450,10 @@ Rules:
 - **A stamp is never repaired by another turn.** The record is frontmatter the server keeps,
   not text to amend: a reply posted only to fix one puts a second agent turn where one
   answer was asked. A wrong stamp noticed late goes in the job log — the turn stays.
-- **Never post a reply by editing the thread file.** The format, the timestamps and the
-  events a turn triggers are the server's — a hand-written turn is a corrupted conversation.
+- **Never post a reply by editing the thread file.** The turn grammar admits only authors
+  the server writes, so a hand-written heading is not a turn at all: your answer lands as
+  stray bytes inside the person's own turn, under their name, invisible to every reader,
+  and no event fires.
 - **Always reply**, even when the outcome is "nothing to do" — a person is watching a pending
   indicator, and a silent event reads as a hang. "I checked; that figure is still current, so
   I changed nothing" is a complete reply.
@@ -485,8 +486,7 @@ Rules:
   `↳ filed [[doc_5c8b2f]] into finance/, tagged insurance`. It is an action report, not
   conversation: no question, no next step, no second line, and never anywhere but last. **A
   turn whose work changed nothing carries no trace** — answering is not acting. Write the
-  arrow into the turn body exactly as it is written here; how the board renders that line is
-  not your concern.
+  arrow into the turn body exactly as it is written here.
 - **Length follows the work.** Two or three sentences for a normal exchange; a short list when
   you touched several documents. Lead with the answer, then what changed. No preamble, no
   restating the question, no apologising.
@@ -496,7 +496,7 @@ Rules:
 **The reply is the last of a run, so send the run as one invocation.** The write, the job-log
 line recording it and the reply are all settled before any of them goes: you wrote the reply
 out of what you had already read, not out of what the write prints. So they are one batch
-rather than three — about a second saved for the waiting person.
+rather than three.
 
 ```bash
 corpus batch --from agent <<'CORPUS_EOF'

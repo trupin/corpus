@@ -90,12 +90,10 @@ These bind every step below — and every subagent you dispatch, without dilutio
 
 **Ask for `--help=brief` first.** `--help=brief` is a lookup — the synopsis, one line
 per flag — and the whole text bare `--help` prints is a lesson, five times the words.
-Brief answers most reads: a name, a spelling, which flag carries a value you already
-hold. Go on to the whole text **when a wrong value would write something you cannot
+Go on to the whole text **when a wrong value would write something you cannot
 see is wrong** — `--stage`, `--folder` and `--columns` all have silent edges brief
-stops short of, and `references/conventions.md` names them. Read neither when this
-skill already spells the command. Start brief, and go on when the brief line does not
-answer you — never the other way round.
+stops short of, and `references/conventions.md` names them. Read neither when this skill
+already spells the command.
 
 ## Several commands in one invocation
 
@@ -242,8 +240,7 @@ Scope membership is a **walk** the server makes when the event is enqueued,
 following a thread's parents and a
 document's `origin` — you cannot reproduce it and nothing asks you to. The event arrived on
 your claim, so it is yours to work. That is the whole test. **Never apologise for a
-resident and never announce that one is missing** — you are not in that conversation,
-and the person sees the lane's state on the board. The fix is a launch, not an
+resident and never announce that one is missing** — the fix is a launch, not an
 explanation (`references/launching.md`).
 
 **A held row can leave your list while you are still working it.** The held list is
@@ -629,7 +626,11 @@ the work is waiting on, then settle the event. A pending indicator that silently
 becomes a failed job reads as the agent hanging; a one-line reply resolves it
 honestly.
 
-The invariant, restated: every claimed event ends settled — including when your own
+**And complete these two only against the turn the report names** — `corpus thread reply`
+prints the turn it posted, and a report naming none did not answer: fail the event with a
+readable reason rather than complete it on trust.
+
+Every claimed event ends settled — including when your own
 handling throws: catch, log, reply if a thread waits, fail with a reason, move on.
 Failed events are retried with `corpus job retry` or written off with
 `corpus job abandon`.
