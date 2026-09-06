@@ -978,6 +978,9 @@ describe("the workspace upgrade command spec", () => {
     expect(workspaceTopic.commands.map((command) => command.name)).toEqual([
       "upgrade",
       "diff",
+      "merge",
+      "keep",
+      "unkeep",
       "maintain",
     ]);
   });

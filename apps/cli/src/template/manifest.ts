@@ -12,8 +12,10 @@ import { InternalError } from "../errors.js";
  * the same run (sprint-003 Open Conflict 10). It records a workspace-relative
  * **post-rename** path and the sha-256 of the bytes that were installed.
  *
- * It is deliberately the only thing under `.corpus/` an upgrade may write: the
- * rest of that directory is runtime state the server owns.
+ * Under `.corpus/` the template machinery writes only its own state — this
+ * manifest, the queue skeleton's markers, and the baseline store beside it
+ * (`commands/workspace/baseline.ts`, CLI-082) — never the runtime state the
+ * server owns.
  */
 
 export interface ManifestEntry {
@@ -36,6 +38,22 @@ export interface ManifestEntry {
    * honestly reads `keep-modified`.
    */
   readonly normalizedSha256?: string;
+  /**
+   * The workspace marked this file **deliberately diverged** (`corpus workspace
+   * keep`, CLI-081): upgrades stop reporting it as a conflict and never write
+   * it, while its baseline goes on advancing to each incoming copy — so
+   * `corpus workspace unkeep` resumes reporting against the *current* template,
+   * not the one in force when the file was kept.
+   *
+   * It lives on the manifest entry rather than in a file beside it because it
+   * is per-template-file state with the entry's own lifecycle: `corpus
+   * workspace upgrade` carries it forward when it advances the entry, and a
+   * `retired` entry takes its mark with it — a side file would keep marks for
+   * paths the manifest no longer knows. Optional and read only when literally
+   * `true`, so both manifest generations parse under `version: 1` in both
+   * directions, exactly as {@link normalizedSha256}.
+   */
+  readonly kept?: true;
 }
 
 export interface TemplateManifest {
@@ -109,7 +127,9 @@ function isManifest(value: unknown): value is TemplateManifest {
  * `normalizedSha256` is read when it is a string and treated as absent for any
  * other shape, rather than failing the manifest: a malformed optional field
  * degrades to the raw comparison, which is exactly the pre-CLI-083 behaviour
- * and overwrites nothing.
+ * and overwrites nothing. `kept` is read only when it is literally `true`, and
+ * a malformed value degrades the same way — to "not kept", which reports more
+ * rather than hiding anything.
  */
 function isEntry(value: unknown): value is ManifestEntry {
   if (typeof value !== "object" || value === null) return false;

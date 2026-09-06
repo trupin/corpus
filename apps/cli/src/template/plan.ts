@@ -162,6 +162,14 @@ export function decide(input: UpgradeInput): UpgradeAction {
 
 export interface UpgradeDecision extends UpgradeInput {
   readonly action: UpgradeAction;
+  /**
+   * The manifest marked this path **deliberately diverged** (`corpus workspace
+   * keep`, CLI-081). The verdict itself is unchanged — kept is a reporting and
+   * writing fact, not a comparison fact: the upgrade neither reports nor writes
+   * a kept path, and {@link nextManifestFiles} advances its baseline to the
+   * incoming copy so an un-keep compares against the current template.
+   */
+  readonly kept: boolean;
 }
 
 /**
@@ -194,7 +202,7 @@ export function planUpgrade(
       incoming: source?.sha256 ?? null,
       incomingNormalized: source?.normalizedSha256 ?? null,
     };
-    return { ...input, action: decide(input) };
+    return { ...input, action: decide(input), kept: entry?.kept === true };
   });
 }
 
@@ -237,6 +245,12 @@ export interface IncomingFile extends ContentShas {
  * A kept baseline carries its recorded normalized sha forward when it has one,
  * and stays raw-only when it does not — a legacy entry never gains a normalized
  * sha it cannot prove (sprint-024 P4: never guess a baseline).
+ *
+ * One deliberate exception to "a path with a known baseline keeps it": an entry
+ * marked **kept** (CLI-081) advances to the incoming copy's shas instead. Those
+ * are the tool's own bytes, never the workspace's, so the safety property
+ * holds — the modified file still reads modified — while an un-keep compares
+ * against the template as it stands now.
  */
 export function nextManifestFiles(
   decisions: readonly UpgradeDecision[],
@@ -245,6 +259,24 @@ export function nextManifestFiles(
   const files: ManifestEntry[] = [];
   for (const decision of decisions) {
     if (decision.action === "retired" || decision.incoming === null) continue;
+
+    // A kept path advances to the **incoming copy's** shas (CLI-081): keeping
+    // is not merging, so the file on disk is never written, but the recorded
+    // baseline follows the template — an un-keep then compares against the
+    // current template rather than the one in force when the file was kept.
+    // This never trips the safety property above: the incoming shas are the
+    // tool's own bytes, so a modified workspace copy still reads modified.
+    if (decision.kept) {
+      files.push({
+        path: decision.path,
+        sha256: decision.incoming,
+        ...(decision.incomingNormalized === null
+          ? {}
+          : { normalizedSha256: decision.incomingNormalized }),
+        kept: true,
+      });
+      continue;
+    }
 
     const wrote = written.get(decision.path);
     if (wrote !== undefined) {

@@ -255,7 +255,21 @@ function locate(
   cwd: string,
   decisions: readonly UpgradeDecision[],
 ): string {
-  const known = new Set(decisions.map((decision) => decision.path));
+  return locateTemplatePath(requested, root, cwd, new Set(decisions.map((d) => d.path)));
+}
+
+/**
+ * The same resolution, over any set of known template paths — exported because
+ * `corpus workspace keep`, `unkeep` and `merge` accept a path exactly the way
+ * this verb does, and two resolutions that can disagree would send an agent
+ * pasting the upgrade's own output to a "not template-tracked" refusal.
+ */
+export function locateTemplatePath(
+  requested: string,
+  root: string,
+  cwd: string,
+  known: ReadonlySet<string>,
+): string {
   const direct = requested.replace(/^\.\//, "");
   if (known.has(direct)) return direct;
 
