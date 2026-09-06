@@ -37,6 +37,12 @@ mismatch is visible to nobody.
 
 ## What to build
 
+Scope extended at PR #75's review (finding 4): alongside the folder-body
+mismatch check below, consider a verb-level guard — `queue complete` on a
+`comment.created`/`form.respond` whose thread gained no agent turn is refused
+or demands an explicit failure reason. Decide both together: they are the
+mechanical halves of AGENT-064's prose rule.
+
 The server refuses to regard a settled-folder file whose body disagrees with
 its folder — either `corpus db doctor` reports it, or `reap-stale` requeues
 it, or both. Decide which reader owns the check and record the decision. A

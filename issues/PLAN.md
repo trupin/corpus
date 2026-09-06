@@ -2480,8 +2480,8 @@ The token-accounting chain: every CLI invocation weighs what the agent wrote and
 the house estimate), reports it fire-and-forget, the server keeps it as runtime state beside the
 queue, and a document's own view shows its cost over time beside its size — flat cost against a
 growing document is Phase 57's bounded reads visibly working. Placement reading recorded in
-SHARED-079: the panel lives with the document, not in the console. The §9 rider is drafted in
-SHARED-079 and signs at the next release proposal before anything lands.
+SHARED-079: the panel lives with the document, not in the console. The §9 rider was signed by the user 2026-09-06
+(quoted verbatim in the release goal) and applied to SPEC.md as §9.4 before any behaviour.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |

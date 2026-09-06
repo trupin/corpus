@@ -93,12 +93,13 @@ export const NO_DESIGNATIONS_NOTE = `No conversation has a resident yet. Open a 
  * It has no scope to list — scope is defined for a designated thread, and
  * everything outside every scope falls here — so the tab states the lane's
  * meaning rather than rendering an empty list, which would read as *this agent
- * owns nothing* about the lane that owns everything else. The second clause is
- * §7's fallback: past the grace window a lapsed lane's pending events become
- * visible to this lane's unscoped claim.
+ * owns nothing* about the lane that owns everything else. There is no second
+ * clause about lapse: v0.23.0 removed §7's fallback, so a lapsed lane's
+ * pending work stays on that lane — release is the one act that returns it
+ * here (PR #75 review, finding 2).
  */
 export const ORCHESTRATOR_SCOPE_NOTE =
-  "This lane has no scope. Every event that falls in no resident's scope is enqueued here, and a lapsed lane's pending work becomes claimable here too.";
+  "This lane has no scope. Every event that falls in no resident's scope is enqueued here, and releasing a resident returns its lane's pending work here.";
 
 /**
  * Said when the server cut the page (SPEC.md §7; `SCOPE_PAGE_SIZE`).

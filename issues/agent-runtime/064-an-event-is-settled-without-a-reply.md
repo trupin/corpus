@@ -192,3 +192,14 @@ release-gate regression check.
 ## Completion Checklist (orchestrator)
 
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+## PR #75 review, finding 4 — adjudicated (orchestrator, 2026-09-06)
+
+The reviewer read the second criterion as verb-level enforcement: `corpus
+queue complete` still accepts a reply-less settle for a `comment.created`.
+Waived for this release with the reasoning recorded: the reproduced incident
+bypassed the verbs entirely (a hand `mv`), so the verb guard would not have
+stopped it, and the prose gate is what reaches the party that erred. The
+mechanical backstop is SERVER-170's scope, extended by this adjudication to
+consider the verb-level guard (refusing to complete an answering event whose
+thread gained no agent turn) beside the folder-body mismatch check.

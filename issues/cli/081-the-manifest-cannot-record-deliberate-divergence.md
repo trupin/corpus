@@ -94,6 +94,29 @@ and clearable from the CLI (shape to decide: a `corpus workspace keep <path>`
   without that, `corpus workspace merge` on a kept file was unrecoverable the
   moment the template moved again (found live in E2E, below).
 
+## The §2.4 rider, drafted for signature (PR #75 review, finding 1)
+
+The review found the upgrade strand shipped behaviour §2.4 does not describe.
+The report-naming half was fixed in code (kept files are named, not counted).
+The spec half is this rider, for the user's signature:
+
+> **The comparison reads edits, and a person can retire a file from the
+> report.** A file differing from its baseline only in keys the server stamps
+> (`created`, `updated`) or keys that carry presentation state (`width`) is
+> not an edit: the comparison reads through them, and the upgrade's write
+> carries them forward, so a resize or a restamp neither blocks an update nor
+> is destroyed by one. A person may mark a customized file **kept** —
+> deliberately diverged, no longer a conflict — and the upgrade then names it
+> in one quiet line instead of reporting it: named, not nagged, because a
+> silence that hides a growing list is the failure this mark must not create.
+> Keeping is not merging: the baseline still advances, so un-keeping compares
+> against the current template. And a dual-owned file can be **merged**: a
+> three-way of baseline, workspace, and incoming copies, written through the
+> server when clean, reported and left untouched when conflicted, with the
+> one undecidable hunk shape — present in baseline and workspace, absent from
+> the incoming copy — named as undecidable rather than silently resolved.
+> _(Rider signed — date to be filled at signature.)_
+
 ## E2E Verification Log
 
 **Model: Fable (claude-fable-5), 2026-09-06.** Real built CLI
