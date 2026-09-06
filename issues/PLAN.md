@@ -2501,3 +2501,5 @@ INFRA-025-clean by construction — with exemptions as config paths, never inlin
 | --- | --- | --- | --- | --- | --- |
 | UI-191 | One button, one dropdown, everywhere | todo | P0 | fable | — |
 | INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
+| UI-193 | Overlays correct by construction, and a battery that proves it | todo | P0 | fable | UI-191, INFRA-040 |
+| UI-192 | The designation popover is broken four ways | todo | P0 | fable | UI-191, UI-193 |
