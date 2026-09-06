@@ -193,3 +193,75 @@ PUT, trap warning, store-carried second merge, kept-merge mark survival,
 frontmatter finding and stamp exemption, wrong-document and not-a-document
 refusals, every nothing-to-merge verdict, JSON report). Full `apps/cli` suite:
 118 files, 2451 tests, green.
+
+### PR #75 review fixes (2026-09-06, opus)
+
+**Finding (MINOR).** `merge.ts` refused with `nothing_to_merge` (exit 7) when
+the clean three-way result equalled the workspace copy byte-for-byte, and
+advanced nothing. That left the path unresolvable: `corpus workspace upgrade`
+went on reporting the same `keep-modified` conflict forever, `corpus workspace
+merge` refused it every time, and only `corpus workspace keep` silenced it —
+a different claim than "resolved".
+
+**Change.** That case now **advances the baseline to the tool's copy** (the
+same `advanceBaseline` the written merge uses, so the bytes land in the
+baseline store too) and says what it did. The justification is the module's
+own: the workspace copy already contains everything the incoming copy adds,
+which is exactly what the advance records. The report gains a third
+`outcome`, `advanced`, so `--json` consumers can tell "wrote a document" from
+"wrote only the manifest".
+
+**Exit-code decision: 0**, not 7. The run did what it was asked — the conflict
+is resolved and recorded — and 7 is left for the cases where there genuinely is
+nothing to merge and nothing to record (`current`, `keep-silent`, `update`,
+`install`, `restore-candidate`, `retired`, unrecoverable baseline), which are
+unchanged. The verb's help now reads: `Exit codes: **0** — merged and written,
+or nothing to write and the baseline advanced.` `docs/cli.md` regenerated.
+
+E2E, real built CLI (`apps/cli/dist/bin/corpus.js`), real `corpus init`
+workspace at `scratchpad/e2e-merge`, template = this worktree's
+`assets/workspace` (restored afterwards). No server needed on this path —
+there is no document write to make. Fixture: `data/docs/templates/note.md`,
+where the tool inserts `TOOL LINE` after `## Context` and the workspace had
+already made that same insertion **plus** appended `LOCAL LINE` — one
+`agreement` chunk and one `ours` chunk, so the merge is clean and lands on the
+workspace's own bytes.
+
+Pre-fix (dist patched back to the old branch to reproduce against the real
+binary):
+
+```
+$ corpus workspace upgrade --dry-run --from user
+  keep    data/docs/templates/note.md — modified here — 2 lines only here, 0 lines only in the new copy
+          unresolved — corpus workspace diff data/docs/templates/note.md
+$ corpus workspace merge data/docs/templates/note.md --from user
+corpus: data/docs/templates/note.md already contains everything the tool's copy adds — there is nothing to merge.
+EXIT=7
+$ corpus workspace upgrade --dry-run --from user
+  keep    data/docs/templates/note.md — modified here — 2 lines only here, 0 lines only in the new copy
+          unresolved — corpus workspace diff data/docs/templates/note.md
+```
+
+Post-fix, same workspace:
+
+```
+$ corpus workspace merge data/docs/templates/note.md --from user
+data/docs/templates/note.md already contains everything corpus 0.33.0 adds — nothing to write. The manifest baseline advanced to the tool's copy, so the next `corpus workspace upgrade` stops reporting this conflict.
+EXIT=0
+$ corpus workspace upgrade --dry-run --from user
+already up to date.
+$ tail -1 data/docs/templates/note.md
+LOCAL LINE                      # the file was never written
+$ corpus workspace merge data/docs/templates/note.md --from user
+corpus: data/docs/templates/note.md diverges, but the tool's copy has not moved since the baseline — your edits are the only side, and they are already in place.
+EXIT=7                          # the true nothing-to-merge case is unchanged
+```
+
+New unit coverage in `merge.test.ts` — a `describe` block for the advancing
+half (no PUT, file byte-identical, baseline sha equals the incoming copy's,
+exit 0; a real `runWorkspaceUpgrade` before and after proving the conflict
+stops being reported; `outcome: "advanced"` under `--json`; the keep-mark
+survives and is still announced) — plus one test for the other half: a
+`keep-silent` path still exits 7 **and leaves the baseline sha exactly where
+it was**, since advancing there would silently retire an unreviewed
+divergence.

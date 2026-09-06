@@ -73,6 +73,14 @@ import { unifiedDiff } from "./unified-diff.js";
  * holds. Without the advance the very next upgrade would re-report the
  * conflict this merge just resolved. A keep-mark (CLI-081) is untouched:
  * merging and keeping are separate acts on the same per-path state.
+ *
+ * The advance is what the merge *records*, and the document write is only what
+ * it *applies* — so a clean merge that lands byte-for-byte on the workspace's
+ * own copy still advances. The workspace already carries everything the tool
+ * adds, which is the same justification, and it is the whole of the answer:
+ * there is simply no write to make. Refusing that case instead (as this verb
+ * once did) left the path unresolvable, because the upgrade went on reporting
+ * a conflict no verb would clear.
  */
 
 const NOTHING_TO_MERGE = "nothing_to_merge";
@@ -93,8 +101,13 @@ interface WorkspaceMergeReport {
   readonly root: string;
   readonly path: string;
   readonly toolVersion: string;
-  /** `merged` wrote through the server; `unresolved` wrote nothing at all. */
-  readonly outcome: "merged" | "unresolved";
+  /**
+   * `merged` wrote through the server. `advanced` wrote no document — the
+   * merge landed byte-for-byte on the workspace's own copy — and moved the
+   * manifest baseline to the tool's copy so the conflict stops re-reporting.
+   * `unresolved` wrote nothing at all, neither file nor manifest.
+   */
+  readonly outcome: "merged" | "advanced" | "unresolved";
   readonly docId: string | null;
   /** Chunks where the tool's copy decided the lines. */
   readonly incoming: number;
@@ -232,10 +245,29 @@ export async function runWorkspaceMerge(
     throw new InternalError(`${path}: a clean merge produced no result.`);
   }
   if (mergedBody === ours.body) {
-    throw new RefusedError(
-      `${path} already contains everything the tool's copy adds — there is nothing to merge.`,
-      { code: NOTHING_TO_MERGE, hint: DIFF_HINT },
+    // The merge is clean and it lands exactly on the workspace's own bytes:
+    // this copy already carries everything the tool's copy adds. That is the
+    // module's own justification for advancing (see "After a clean merge"
+    // above), so the baseline advances here too — the only difference from a
+    // written merge is that there is no document write to make.
+    //
+    // This used to refuse with `nothing_to_merge` and advance nothing, which
+    // left the path stuck: `upgrade` re-reported the same `keep-modified`
+    // conflict on every run, and no verb in the surface could clear it —
+    // `merge` refused, and only `keep` (a different claim) silenced it. It
+    // exits **0** rather than 7 because the run did what it was asked: the
+    // conflict is resolved and recorded. 7 is left for the cases where there
+    // genuinely is nothing to merge and nothing to record (PR #75 review).
+    advanceBaseline(root, path, source);
+    const advanced: WorkspaceMergeReport = { ...report, outcome: "advanced" };
+    context.out.emit(advanced);
+    context.out.line(
+      `${path} already contains everything corpus ${context.version} adds — nothing to write. ` +
+        "The manifest baseline advanced to the tool's copy, so the next `corpus workspace " +
+        "upgrade` stops reporting this conflict.",
     );
+    if (advanced.kept) renderStillKept(context, path);
+    return;
   }
 
   const docId = report.docId;
@@ -272,12 +304,20 @@ export async function runWorkspaceMerge(
       `${plural(merge.local, "local change", "local changes")}, written through the server as ` +
       `${context.actor} in one commit.`,
   );
-  if (report.kept) {
-    context.out.line(
-      "  still kept: upgrades keep skipping it — `corpus workspace unkeep " +
-        `${path}\` is a separate act.`,
-    );
-  }
+  if (report.kept) renderStillKept(context, path);
+}
+
+/**
+ * Merging and keeping are separate acts on the same per-path state (CLI-081),
+ * so a merge never clears the mark — and never lets the operator assume it
+ * did. Shared by both writing outcomes: the fact is the same whether a
+ * document was written or only the baseline moved.
+ */
+function renderStillKept(context: WorkspaceCommandContext, path: string): void {
+  context.out.line(
+    "  still kept: upgrades keep skipping it — `corpus workspace unkeep " +
+      `${path}\` is a separate act.`,
+  );
 }
 
 /**
@@ -537,9 +577,11 @@ export const workspaceMergeCommand: WorkspaceCommandSpec = {
     "and the copy the installed tool ships.\n\n" +
     "**A clean merge is written through the server** — the sole writer — as one attributed " +
     "commit, and the manifest baseline then advances to the tool's copy so the next upgrade " +
-    "does not re-report the conflict this merge just resolved. **Conflicting hunks are " +
-    "reported, never written**: the file stays byte-identical, and each hunk prints with " +
-    "context and all three sides.\n\n" +
+    "does not re-report the conflict this merge just resolved. When the merge lands " +
+    "byte-for-byte on your own copy there is nothing to write, and the baseline advances all " +
+    "the same: your copy already carries everything the tool adds, so the conflict is resolved " +
+    "and stops being reported. **Conflicting hunks are reported, never written**: the file " +
+    "stays byte-identical, and each hunk prints with context and all three sides.\n\n" +
     "**One hunk shape is never auto-resolved, and it is a trap worth naming**: a block present " +
     "in the baseline and in your copy but **absent from the tool's copy** is either an " +
     "upstream deletion or a local edit older than the recorded baseline — the baseline of a " +
@@ -553,9 +595,10 @@ export const workspaceMergeCommand: WorkspaceCommandSpec = {
     "only template files that are documents (a frontmatter `id:`) can be written at all. A " +
     "kept file (`corpus workspace keep`) merges on request, and merging does not clear the " +
     "mark.\n\n" +
-    "Exit codes: **0** — merged and written. **6** — unresolved hunks reported, nothing " +
-    "written. **7** — nothing to merge (already current, never edited here, no incoming copy), " +
-    "or a baseline whose bytes cannot be recovered.",
+    "Exit codes: **0** — merged and written, or nothing to write and the baseline advanced. " +
+    "**6** — unresolved hunks reported, nothing written. **7** — nothing to merge at all " +
+    "(already current, never edited here, no incoming copy), or a baseline whose bytes cannot " +
+    "be recovered.",
   args: [
     {
       name: "path",

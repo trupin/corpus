@@ -19,6 +19,7 @@ import { commitAll, initRepository } from "../init/git.js";
 import { generateToken, scaffoldWorkspace } from "../init/scaffold.js";
 import { runWorkspaceMerge } from "./merge.js";
 import { ensureMaintenanceSettings } from "./maintenance.js";
+import { runWorkspaceUpgrade } from "./upgrade.js";
 
 /**
  * The merge verb end to end: a real scaffolded workspace with a real git
@@ -137,6 +138,26 @@ function merge(harness: Harness, template: string): Promise<void> {
   return runWorkspaceMerge(harness.context, { templateRoot: template });
 }
 
+/**
+ * A real `corpus workspace upgrade` over the same workspace and template — the
+ * only honest way to assert that a merge stopped a conflict re-reporting,
+ * since "re-reported" is a fact about the *upgrade's* output, not the merge's.
+ */
+function upgrade(root: string, stub: StubServer, template: string): Promise<Harness> {
+  const workspace = { ...stub.workspace, root, configPath: join(root, ".corpus/config.json") };
+  const base = createTestContext({ flags: {}, version: "0.2.0", registry });
+  const harness: Harness = {
+    stdout: () => base.stdout(),
+    context: { ...base.context, workspace, client: createClient({ workspace }), actor: "user" },
+  };
+  return runWorkspaceUpgrade(harness.context, { templateRoot: template }).then(() => harness);
+}
+
+function baselineSha(root: string, path: string): string | undefined {
+  return readTemplateManifest(templateManifestPath(root))?.files.find((file) => file.path === path)
+    ?.sha256;
+}
+
 async function failure(promise: Promise<void>): Promise<unknown> {
   return promise.then(
     () => undefined,
@@ -215,6 +236,114 @@ describe("corpus workspace merge", () => {
     expect(putBody.body).toBe(
       "\n# Comment\n\nv2 line\nv3 line\nask a question\nthen wait\nsay thanks\nlocal\n",
     );
+  });
+
+  /**
+   * The workspace made the tool's change already, and one more of its own:
+   * the merge is clean and lands byte-for-byte on the workspace's copy. There
+   * is nothing to write, but there is something to *record* — and until the
+   * PR #75 review this refused (exit 7) and recorded nothing, so
+   * `corpus workspace upgrade` re-reported the same conflict forever and no
+   * verb in the surface resolved it.
+   */
+  describe("when the merge lands on the workspace's own copy", () => {
+    const AGREED = "\n# Comment\n\nask a question first\nthen wait\nsay thanks\n";
+    const OURS = "\n# Comment\n\nask a question first\nthen wait\nsay thanks\nlocal note\n";
+
+    async function stage(): Promise<{
+      readonly template: string;
+      readonly root: string;
+      readonly stub: StubServer;
+      readonly puts: string[];
+    }> {
+      const template = makeTemplate();
+      const root = await makeWorkspace(template);
+      const puts: string[] = [];
+      const stub = await startStubServer(docResponder({ puts }));
+      // Ours carries the tool's line *and* a local one; theirs carries only
+      // the tool's. Diff3 reads one `agreement` chunk and one `ours` chunk.
+      write(root, SKILL, `${HEADER}${OURS}`);
+      write(template, "claude/skills/comment/SKILL.md", `${HEADER}${AGREED}`);
+      return { template, root, stub, puts };
+    }
+
+    it("writes no document, advances the baseline, and exits 0", async () => {
+      const { template, root, stub, puts } = await stage();
+      const before = read(root, SKILL);
+
+      const harness = harnessFor(root, stub, SKILL);
+      await merge(harness, template);
+
+      expect(puts).toHaveLength(0);
+      expect(read(root, SKILL)).toBe(before);
+      expect(harness.stdout()).toContain("already contains everything corpus 0.2.0 adds");
+      expect(harness.stdout()).toContain("The manifest baseline advanced to the tool's copy");
+      expect(baselineSha(root, SKILL)).toBe(sha256(Buffer.from(`${HEADER}${AGREED}`, "utf8")));
+    });
+
+    it("stops the next upgrade re-reporting the conflict", async () => {
+      const { template, root, stub } = await stage();
+
+      const first = await upgrade(root, stub, template);
+      expect(first.stdout()).toContain(`keep    ${SKILL}`);
+
+      await merge(harnessFor(root, stub, SKILL), template);
+
+      const second = await upgrade(root, stub, template);
+      expect(second.stdout()).not.toContain(`keep    ${SKILL}`);
+      expect(second.stdout()).toContain("already up to date.");
+      // Still the workspace's own bytes: nothing was written to resolve it.
+      expect(read(root, SKILL)).toBe(`${HEADER}${OURS}`);
+    });
+
+    it("reports outcome `advanced` under --json", async () => {
+      const { template, root, stub } = await stage();
+      const harness = harnessFor(root, stub, SKILL, { json: true });
+      await merge(harness, template);
+      const report = JSON.parse(harness.stdout()) as { outcome: string; local: number };
+      expect(report.outcome).toBe("advanced");
+      expect(report.local).toBe(1);
+    });
+
+    it("keeps the mark, and says so, when the file is kept", async () => {
+      const { template, root, stub } = await stage();
+      const manifestPath = templateManifestPath(root);
+      const manifest = readTemplateManifest(manifestPath);
+      writeFileSync(
+        manifestPath,
+        serializeManifest({
+          ...(manifest as NonNullable<typeof manifest>),
+          files: (manifest as NonNullable<typeof manifest>).files.map((entry) =>
+            entry.path === SKILL ? { ...entry, kept: true as const } : entry,
+          ),
+        }),
+        "utf8",
+      );
+
+      const harness = harnessFor(root, stub, SKILL);
+      await merge(harness, template);
+      expect(harness.stdout()).toContain("still kept:");
+      expect(readTemplateManifest(manifestPath)?.files.find((f) => f.path === SKILL)?.kept).toBe(
+        true,
+      );
+    });
+  });
+
+  it("still refuses, and records nothing, when there is genuinely nothing to merge", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const stub = await startStubServer(docResponder({ puts: [] }));
+
+    // keep-silent: edited here, and the tool's copy has not moved. There is no
+    // incoming change to record, so the baseline must stay exactly where it is
+    // — advancing here would silently retire an unreviewed divergence.
+    write(root, SKILL, `${SKILL_V1}local\n`);
+    const before = baselineSha(root, SKILL);
+
+    const error = await failure(merge(harnessFor(root, stub, SKILL), template));
+    expect(isCliError(error) && error.exitCode).toBe(ExitCode.refused);
+    expect(isCliError(error) && error.code).toBe("nothing_to_merge");
+    expect(baselineSha(root, SKILL)).toBe(before);
   });
 
   it("writes nothing at all when hunks conflict: byte-identical file, no PUT, exit 6", async () => {
