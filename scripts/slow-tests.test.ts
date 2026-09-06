@@ -153,9 +153,11 @@ describe("readDeclaredBudget against the repository's own files", () => {
   const cases: readonly (readonly [string, number, number | "default"])[] = [
     // The model answer this whole rule is written around.
     ["apps/server/src/docs/bulk.test.ts", 141, 20_000],
-    // The two INFRA-020 gave a measured budget to.
-    ["apps/server/src/attachments/serve.real-listener.test.ts", 139, 15_000],
-    ["apps/server/src/events/sse.test.ts", 306, 15_000],
+    // The two INFRA-020 gave a measured budget to, until SERVER-150 diagnosed
+    // the wait as the product's own shutdown defect and removed it — both now
+    // sit on the default, and this pin holds them there.
+    ["apps/server/src/attachments/serve.real-listener.test.ts", 139, "default"],
+    ["apps/server/src/events/sse.test.ts", 306, "default"],
   ];
 
   it.each(cases)("reads the budget declared in %s at line %i", (file, line, expected) => {
