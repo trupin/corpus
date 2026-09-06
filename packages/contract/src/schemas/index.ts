@@ -57,6 +57,7 @@ export * from "./extra.js";
 export * from "./form-answer.js";
 export * from "./folders.js";
 export * from "./form.js";
+export * from "./frontmatter-keys.js";
 export * from "./health.js";
 export * from "./id.js";
 export * from "./index-maintenance.js";

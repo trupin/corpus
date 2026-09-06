@@ -924,8 +924,10 @@ describe("a hand-authored profile keeps working after the requirement lands", ()
  * SPEC.md §5 and §9.2, SERVER-096: `updated` is *when the content changed*, not
  * *when the bytes moved*. The ramp reads it (`max(updated, reviewed)`) and every
  * default list orders by it, so a write about how a document is drawn must
- * leave it where it was. See `PRESENTATION_KEYS` in `update.ts` for the class
- * and the rule for joining it.
+ * leave it where it was. See `PRESENTATION_FRONTMATTER_KEYS` in
+ * `@corpus/contract` for the class and the rule for joining it, and
+ * `frontmatter-key-classes.test.ts` for the guard that keeps this route reading
+ * that declaration rather than a copy of it.
  */
 describe("PUT /api/docs/{id} — `updated` is when the content changed", () => {
   /** A `type: view` with a stored width, as `useColumnWidth` writes it. */
