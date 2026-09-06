@@ -541,25 +541,32 @@ describe("turnRequestBody", () => {
 });
 
 describe("the §8 enqueue matrix", () => {
+  // **Every case in this matrix comments on a document** (SERVER-165). §7's
+  // rider A designates a general resident on every *standalone* thread, and §8's
+  // rider signed 2026-09-06 makes that designation engage it — so a standalone
+  // thread is engaged from its first byte and §8's automatic clause, which is
+  // what this matrix is about, no longer has a `none` cell to exercise there.
+  // A thread on a document designates nothing and is where the matrix still
+  // lives. The designated counterpart is `resident.test.ts`'s own block.
   it("enqueues nothing for a plain comment with the flag omitted", async () => {
-    const created = await createThread(ws, { body: "first" });
+    const parent = await seedParent();
+    const created = await createThread(ws, { parent, body: "first" });
+    const before = pendingEvents(ws).length;
     const appended = await appendTurn(ws, created.id, { body: "just a note" });
     expect(appended.eventId).toBeNull();
-    expect(pendingEvents(ws)).toEqual([]);
+    expect(pendingEvents(ws)).toHaveLength(before);
     expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("none");
   });
 
   it("enqueues exactly one event for an explicit true, and flips none → requested", async () => {
-    const created = await createThread(ws, { body: "first" });
+    const parent = await seedParent();
+    const created = await createThread(ws, { parent, body: "first" });
     const appended = await appendTurn(ws, created.id, {
       body: "no mention at all",
       requestsAgent: true,
     });
 
     expect(appended.eventId).toMatch(/^evt_/);
-    // One *comment* event. The thread is standalone and designated, so the turn
-    // also announced its unattended lane (SERVER-161) — a launch instruction,
-    // and not one of §8's enqueues, which is what this matrix is about.
     expect(commentEvents(ws)).toHaveLength(1);
     expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("requested");
     expect(ws.db.prepare("SELECT agent FROM threads WHERE id = ?").get(created.id)).toEqual({
@@ -568,7 +575,8 @@ describe("the §8 enqueue matrix", () => {
   });
 
   it("writes the turn and the `agent` flip in one commit", async () => {
-    const created = await createThread(ws, { body: "first" });
+    const parent = await seedParent();
+    const created = await createThread(ws, { parent, body: "first" });
     // A different actor, so the squash window cannot fold this into the create.
     const before = ws.log("%H").length;
     await appendTurn(ws, created.id, { body: "ask", requestsAgent: true }, "agent");
@@ -691,7 +699,11 @@ describe("§8's reopen", () => {
   });
 
   it("reopens a resolved thread the agent was never engaged in", async () => {
-    const created = await createThread(ws, { body: "a note to myself" });
+    // On a document: a standalone thread is designated, and a designation
+    // engages it (SERVER-165), so "never engaged" is no longer constructible
+    // there.
+    const parent = await seedParent();
+    const created = await createThread(ws, { parent, body: "a note to myself" });
     expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
 
     const appended = await appendTurn(ws, created.id, { body: "picking this back up" });

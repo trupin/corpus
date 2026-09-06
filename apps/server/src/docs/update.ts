@@ -29,7 +29,7 @@ import { badRequest, forbidden } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { readStage } from "../core/board-frontmatter.js";
 import { withSpeculativeDocumentRow } from "../projection/index.js";
-import { UNSETTABLE_EXCLUSIONS } from "@corpus/contract";
+import { isPresentationFrontmatterKey, UNSETTABLE_EXCLUSIONS } from "@corpus/contract";
 import {
   clearOperations,
   clearWarnings,
@@ -137,42 +137,15 @@ export const CLEARABLE_FRONTMATTER_KEYS = [
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**
- * **Presentation keys — how a document is *shown*, never what it holds.**
+ * Whether writing `key` is an edit of the document's content, and so stamps
+ * `updated` (SPEC.md §5).
  *
  * `updated` is "when this document's content last changed", not "when its bytes
  * last moved" (SERVER-096). The distinction is not a convenience: §5 runs the
  * staleness ramp off `max(updated, reviewed)` and §9.2 orders every default
- * result set newest-updated first, so `updated` is the answer to "when was this
- * last worked on" on two surfaces at once. A write that changes nothing a
- * reader could read must not move it — dragging a board column wider is a `PUT`
- * carrying `{ extra: { width } }` and nothing else
- * (`apps/ui/src/board/useColumnWidth.ts`), and it used to put that view
- * document at the head of every list, ahead of documents someone had written
- * in.
- *
- * **The rule for membership**: a key belongs here when changing it changes no
- * answer to any question about the document — not what it says, not what is
- * being asked of it, not where it sits in the corpus. `width` (§10: "the chosen
- * width lives in the view document's frontmatter") is the whole class today,
- * and one member is the honest count rather than a placeholder: `status`,
- * `tags`, `due`, `stage`, a board's `columns` and a view's `query` all change
- * such an answer, and a title change plainly does. If the class stays a
- * singleton it costs a `Set` lookup, and if a second view-state field is ever
- * written to a document it has a named home instead of a second special case.
- *
- * Deliberately **not** SERVER-095's line, which is `body || title` and decides
- * whether the agent is woken to reflect. That line is drawn at what the
- * document *says*, because only prose ripples into other documents. This one is
- * drawn at what the document *is*, because `updated` is read by the ramp and by
- * every list. They are neighbours and they differ: renaming a document, moving
- * it, tagging it or resolving it all move `updated` while only the rename
- * reflects — and both agree that a column's width is neither.
- */
-const PRESENTATION_KEYS: ReadonlySet<string> = new Set(["width"]);
-
-/**
- * Whether writing `key` is an edit of the document's content, and so stamps
- * `updated` (SPEC.md §5).
+ * result set newest-updated first, so `updated` answers "when was this last
+ * worked on" on two surfaces at once. A write that changes nothing a reader
+ * could read must not move it.
  *
  * Two exemptions, for two unrelated reasons, in one predicate so no caller can
  * apply one and forget the other:
@@ -180,10 +153,18 @@ const PRESENTATION_KEYS: ReadonlySet<string> = new Set(["width"]);
  * - **`reviewed`** — marking a document "still current" is a committed act that
  *   is deliberately *not* an edit. Staleness runs from `max(updated, reviewed)`,
  *   so stamping `updated` here would make review indistinguishable from editing
- *   and reset the very clock the act is about.
- * - **{@link PRESENTATION_KEYS}** — a write about how the document is shown.
+ *   and reset the very clock the act is about. It is this route's alone, which
+ *   is why it stays a literal here.
+ * - **{@link isPresentationFrontmatterKey}** — a write about how the document is
+ *   shown, such as the `PUT { extra: { width } }` a column drag sends
+ *   (`apps/ui/src/board/useColumnWidth.ts`). The class is declared in
+ *   `@corpus/contract` (CONTRACT-098) because the CLI's template comparison
+ *   asks the same question of the same keys, and one meaning restated in two
+ *   workspaces is two answers waiting to disagree. The membership rule, and why
+ *   `width` is the whole class today, live beside the declaration.
  */
-const isContentEdit = (key: string): boolean => key !== "reviewed" && !PRESENTATION_KEYS.has(key);
+const isContentEdit = (key: string): boolean =>
+  key !== "reviewed" && !isPresentationFrontmatterKey(key);
 
 /**
  * The frontmatter fields the request actually changes. A `PUT` names only what

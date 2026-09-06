@@ -5,6 +5,14 @@ import type { Job, JobLogLine } from "@corpus/contract";
  * (SPEC.md §7's *"a dispatch says what weight it went out at, and where that
  * weight came from"*; AGENT-059, shipped v0.31.0).
  *
+ * ## Two absences, and they are not the same absence
+ *
+ * A lane with no record may be one nothing has ever launched, or one whose
+ * record the queue no longer holds (SERVER-163). {@link LaunchAbsence} keeps
+ * them apart, because the first is an accurate account of a quiet conversation
+ * and the second is a gap — and a pane that said *"unknown"* for both was
+ * honest and unhelpful, which is the complaint UI-186's drill filed.
+ *
  * ## Why this has to be read rather than derived
  *
  * A designation may state no level, and `Resident.weight` then reads `null` —
@@ -84,6 +92,41 @@ export interface LaunchRecord {
 export const DESIGNATION_EVENT_TYPE = "resident.designated";
 
 /**
+ * The other event a launch is recorded on (SPEC.md §7's rider signed
+ * 2026-08-27) — *"a lane that cannot be worked says so"*.
+ *
+ * **This is the only one a plainly created conversation ever gets**
+ * (SERVER-163). §7's rider A designates a general resident on every new
+ * standalone thread, and the server deliberately announces **no**
+ * `resident.designated` for a creation with nothing waiting on its lane: that
+ * event is a launch instruction, and one per created thread would start one
+ * background agent per conversation, which the same rider refuses in its own
+ * words. The lane's account of itself arrives instead with the first work — a
+ * `lane.waiting` on the orchestrator's lane, which is what the orchestrate skill
+ * launches from and logs its launch on.
+ *
+ * So a reader that looked only at designations reported *"unknown"* for the
+ * commonest lane in the workspace while the record sat on the queue beside it.
+ */
+export const LANE_WAITING_EVENT_TYPE = "lane.waiting";
+
+/**
+ * Which absence this is, when there is no record (SERVER-163).
+ *
+ * The two mean different things to the person reading, and reporting both as
+ * *"unknown"* is the defect UI-186's drill surfaced:
+ *
+ * - **`never-prompted`** — the queue holds no event that would have launched
+ *   this lane, so nothing has ever run here. That is not a missing record, it is
+ *   an accurate account of a conversation whose resident has never been needed.
+ * - **`unrecorded`** — the queue holds such an event and its log names no
+ *   launch. The log is runtime state reaped with its event (§7), and a workspace
+ *   whose guidance predates AGENT-059 never wrote one, so this is the honest
+ *   *"the record is not there"*.
+ */
+export type LaunchAbsence = "never-prompted" | "unrecorded";
+
+/**
  * The clause AGENT-059 declares: parentheses around text carrying one of the two
  * provenance words.
  *
@@ -93,22 +136,35 @@ export const DESIGNATION_EVENT_TYPE = "resident.designated";
 const LAUNCH_CLAUSE = /\(([^()]*\b(stated at designation|judged|defaulted)\b[^()]*)\)/g;
 
 /**
- * The designation's own job, or `null` when this lane has none the queue still
- * holds.
+ * The event that would have launched this lane's listener, or `null` when the
+ * queue holds none.
  *
- * The **most recent** one, because a re-designation writes a new event and the
- * question is what the resident in force went out at. `GET /api/jobs` orders
- * most recently active first and an `originId` answer is complete rather than
- * windowed (SPEC.md §9.2's rider), so the first match is that one.
+ * The **most recent** one, because a re-designation writes a new event and a
+ * relaunch writes another notice — the question is what the listener in force
+ * went out at. `GET /api/jobs` orders most recently active first and an
+ * `originId` answer is complete rather than windowed (SPEC.md §9.2's rider), so
+ * the first match is that one.
  *
- * `null` covers two states that read alike from here and are both *no record*: a
- * lane designated before AGENT-059, and a lane whose designation event has been
- * reaped. Neither is distinguishable without an event the queue no longer holds,
- * and neither licenses a guess.
+ * **Two types, because §7 records a launch on whichever event prompted it**
+ * (SERVER-163). A designated conversation with work waiting on it announces
+ * itself twice — `resident.designated` *and* `lane.waiting` — and the
+ * orchestrator's launch rule is once per pass per lane, so the pair collapses to
+ * one launch logged on one of them. A plainly created conversation announces
+ * only the second. Looking at one type was how the commonest lane in a workspace
+ * came to read *"unknown"*.
+ *
+ * `null` is a real answer and is reported as {@link LaunchAbsence}'s
+ * `never-prompted`: nothing has ever launched here.
  */
-export function designationJob(jobs: readonly Job[] | undefined, lane: string): Job | null {
+export function launchPromptingJob(jobs: readonly Job[] | undefined, lane: string): Job | null {
   if (jobs === undefined) return null;
-  return jobs.find((job) => job.type === DESIGNATION_EVENT_TYPE && job.originId === lane) ?? null;
+  return (
+    jobs.find(
+      (job) =>
+        (job.type === DESIGNATION_EVENT_TYPE || job.type === LANE_WAITING_EVENT_TYPE) &&
+        job.originId === lane,
+    ) ?? null
+  );
 }
 
 /**

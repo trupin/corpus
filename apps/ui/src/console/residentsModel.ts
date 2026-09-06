@@ -93,12 +93,13 @@ export const NO_DESIGNATIONS_NOTE = `No conversation has a resident yet. Open a 
  * It has no scope to list — scope is defined for a designated thread, and
  * everything outside every scope falls here — so the tab states the lane's
  * meaning rather than rendering an empty list, which would read as *this agent
- * owns nothing* about the lane that owns everything else. The second clause is
- * §7's fallback: past the grace window a lapsed lane's pending events become
- * visible to this lane's unscoped claim.
+ * owns nothing* about the lane that owns everything else. There is no second
+ * clause about lapse: v0.23.0 removed §7's fallback, so a lapsed lane's
+ * pending work stays on that lane — release is the one act that returns it
+ * here (PR #75 review, finding 2).
  */
 export const ORCHESTRATOR_SCOPE_NOTE =
-  "This lane has no scope. Every event that falls in no resident's scope is enqueued here, and a lapsed lane's pending work becomes claimable here too.";
+  "This lane has no scope. Every event that falls in no resident's scope is enqueued here, and releasing a resident returns its lane's pending work here.";
 
 /**
  * Said when the server cut the page (SPEC.md §7; `SCOPE_PAGE_SIZE`).
@@ -245,6 +246,24 @@ export const LAUNCH_UNRECORDED_NOTE =
   "No launch record for this designation is on the queue — a job's log is runtime state, " +
   "reaped with its event — so what it went out at is unknown here. Nothing is guessed in its place.";
 
+/**
+ * …and the **other** absence, which is not the same absence (SERVER-163).
+ *
+ * The queue holds no event that would have launched this lane at all — no
+ * designation, no waiting notice — so there is no record to be missing. That is
+ * the ordinary state of a conversation created plainly: §7's rider A gives it a
+ * general resident, and the same rider makes the listener start when the lane
+ * *"has something pending and none is running, not when the thread is
+ * created"*. Nothing has run, so nothing has been recorded.
+ *
+ * Reporting this as *"unknown"* was the complaint UI-186's drill filed: it reads
+ * as a gap in the record where there is no gap, and it hides the one fact a
+ * person can act on — that this conversation has never needed its resident.
+ */
+export const LAUNCH_NEVER_PROMPTED_NOTE =
+  "This lane has not been launched: nothing that launches a listener has been queued on it, " +
+  "so there is no launch to record. A listener starts when the conversation has work waiting.";
+
 /** …and while the two reads behind that answer are still in flight (UI-098's rule). */
 export const LAUNCH_READING_NOTE = "Reading what the launch went out at…";
 
@@ -290,6 +309,18 @@ export function residentWeightNote(
   if (reading.record !== null) {
     return `${lead} ${LAUNCH_RECORDED_LEAD}: ${reading.record.clause}.`;
   }
+  /*
+   * **Two absences, two sentences** (SERVER-163). A lane nothing has ever
+   * launched is not a lane whose record was reaped, and the first is said even
+   * where a level *was* stated — because "the level this would go out at" and
+   * "nothing has gone out" are different answers, and the second is the one a
+   * person watching a quiet conversation needs.
+   *
+   * The reaped case keeps its old rule and is said only where the designation
+   * stated nothing: there, the stated level already answers the question this
+   * line is asked, and the absence of a record adds nothing.
+   */
+  if (reading.absence === "never-prompted") return `${lead} ${LAUNCH_NEVER_PROMPTED_NOTE}`;
   return stated ? lead : `${lead} ${LAUNCH_UNRECORDED_NOTE}`;
 }
 
@@ -401,3 +432,63 @@ export function scopeFailure(error: unknown): string | null {
   if (typeof error === "string" && error !== "") return `${SCOPE_FAILED_LEAD}: ${error}`;
   return SCOPE_FAILED_LEAD;
 }
+
+/**
+ * **Stopping a resident where the pane shows it** (UI-195; user directive
+ * 2026-09-06: *"I want to be able to stop a resident agent from the console
+ * pannel."*).
+ *
+ * The act is **release** and nothing else. §9.2's `DELETE
+ * /api/threads/{id}/resident` is the one stop this product has with an
+ * observable end — SERVER-128 made it immediate, so a person who presses it
+ * watches the lane go rather than requesting that it go — and there is no second
+ * mechanism for halting one agent. So the control is named for the act the
+ * server performs, not for the wish a person arrives with.
+ */
+export const RELEASE_LABEL = "Release the resident";
+
+/** …the press that performs it, once the consequence has been stated. */
+export const RELEASE_CONFIRM_LABEL = "Confirm release";
+
+/**
+ * …and the way out, named for what it preserves rather than as "cancel".
+ *
+ * A person who armed the control and read the consequence is choosing between
+ * two outcomes, and "cancel" names neither of them.
+ */
+export const RELEASE_CANCEL_LABEL = "Keep the resident";
+
+/**
+ * **What releasing does, said before it is done** (SPEC.md §8's rider signed
+ * 2026-09-06, cross-referenced from §7).
+ *
+ * The rider is the whole of this sentence, and its two halves are both needed:
+ *
+ * > Releasing the resident returns the **lane** to ordinary routing and reverts
+ * > nothing on the thread: engagement is already sticky under this section's own
+ * > rule … so the conversation keeps being answered, by the ordinary agent now.
+ *
+ * A control that said only *"the agent stops"* would be read as *"the
+ * conversation goes quiet"*, which is what release used to mean and is no longer
+ * what it does. So the stop and what survives it are stated in one breath —
+ * `WEIGHT_CHANGE_COST`'s rule at this grain, that a person told only the price
+ * reads it as the conversation.
+ *
+ * **Two sentences and no third**, because the pane it appears in is measured:
+ * the console drawer is 210 px by default and the weight section above already
+ * spends a paragraph of it. A clause saying release *"removes the owner, never
+ * the conversation"* was drafted and cut — it restates *stays open and engaged*
+ * in other words, and it cost the panel a line it does not have.
+ *
+ * **What is deliberately not claimed** is where the lane's already-queued events
+ * go. §7's rider of 2026-08-25 and `apps/server/src/threads/resident.ts` do not
+ * read alike on that point, and a control must not settle a question its own
+ * spec has left open — the conversation's menu says its own piece about the
+ * queue (`RELEASE_META`), and this says the piece the 2026-09-06 rider settled.
+ */
+export const RELEASE_CONSEQUENCE =
+  "Releasing stops this lane's agent. The conversation stays open and engaged, so the ordinary " +
+  "agent answers it from now on.";
+
+/** …and the lead for a release that did not land, in the server's own words. */
+export const RELEASE_FAILED_LEAD = "The resident could not be released";

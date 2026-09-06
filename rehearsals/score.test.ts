@@ -261,6 +261,39 @@ describe("universalFindings", () => {
     ).toBe(true);
   });
 
+  /**
+   * INFRA-037, both halves of the cut-short clause. A run the harness cut
+   * short is mid-flight — commit windows may be open, so a `user` commit
+   * there can be the product's own lazy close, not a hand-edit — and it
+   * contributes no universal findings, for the same reason it contributes no
+   * score. The clause is exactly that narrow: the same commit on a completed
+   * run is still a finding, because only a completed run is evidence.
+   */
+  it("contributes no universal findings from a run the harness cut short", () => {
+    const base = record();
+    const handEdit = {
+      ...cleanObservation(),
+      commitsSinceSeed: [
+        {
+          hash: "b".repeat(40),
+          tree: "moved".padEnd(40, "1"),
+          parents: [base.seedSnapshot.head],
+          authorName: "user",
+          authorEmail: "user@corpus.local",
+          subject: "editing session: 1 document by user",
+        },
+      ],
+      gitStatus: [" M data/docs/x.md"],
+    };
+    const cutShort = record({
+      observation: handEdit,
+      meta: { ...base.meta, cutShort: true, endedBy: "exit" },
+    });
+    expect(universalFindings(cutShort)).toEqual([]);
+    const completed = record({ observation: handEdit });
+    expect(universalFindings(completed).length).toBeGreaterThan(0);
+  });
+
   it("flags a dirty work tree, a failed doc check, and an unparseable thread", () => {
     const observation: Observation = {
       ...cleanObservation(),
@@ -404,6 +437,39 @@ describe("scoreScenario — the two grades are different tests", () => {
     const result = scoreScenario(scenario, [cutShort]);
     expect(result.outcomes[0]?.score).toBeNull();
     expect(result.grade).not.toBe("fail");
+  });
+
+  /**
+   * INFRA-037 at the scenario grade. Story 4 of the v0.32.0 pass graded
+   * `fail` on a universal finding from a run that was cut short — a scenario
+   * that measured nothing about the product read as a product breach. A
+   * cut-short run's universal findings no longer reach the grade; the same
+   * finding on a completed run still fails the scenario outright.
+   */
+  it("does not fail a scenario on universal findings from cut-short runs alone", () => {
+    const scenario = scenarioWith("invariant", 1, () => ({ kind: "invariant", findings: [] }));
+    const base = record();
+    const userCommit = {
+      ...cleanObservation(),
+      commitsSinceSeed: [
+        {
+          hash: "b".repeat(40),
+          tree: "moved".padEnd(40, "1"),
+          parents: [base.seedSnapshot.head],
+          authorName: "user",
+          authorEmail: "user@corpus.local",
+          subject: "editing session: 1 document by user",
+        },
+      ],
+    };
+    const cutShort = record({
+      observation: userCommit,
+      meta: { ...base.meta, cutShort: true, endedBy: "exit" },
+    });
+    const result = scoreScenario(scenario, [cutShort]);
+    expect(result.outcomes[0]?.universalFindings).toEqual([]);
+    expect(result.grade).toBe("over-budget");
+    expect(scoreScenario(scenario, [record({ observation: userCommit })]).grade).toBe("fail");
   });
 
   it("still scores a run that ended by exit on a drained queue, so a real breach fails", () => {

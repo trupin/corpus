@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveTemplateRoot } from "../paths.js";
+import { normalizedSha256 } from "./ignored-keys.js";
 import { planTemplateInstall } from "./install.js";
 import { sha256 } from "./manifest.js";
-import type { IncomingFile } from "./plan.js";
+import type { ContentShas, IncomingFile } from "./plan.js";
 
 /**
  * "What would the installed tool put in a workspace today, and what does the
@@ -38,7 +39,7 @@ export function collectIncoming(roots: ToolRoots = {}): readonly IncomingFile[] 
   const templateRoot = roots.templateRoot ?? resolveTemplateRoot();
   return planTemplateInstall(templateRoot).map((file) => {
     const from = join(templateRoot, ...file.from.split("/"));
-    return { path: file.to, from, sha256: sha256(readFileSync(from)) };
+    return { path: file.to, from, ...contentShas(readFileSync(from)) };
   });
 }
 
@@ -47,8 +48,17 @@ export function workspaceFilePath(root: string, path: string): string {
   return join(root, ...path.split("/"));
 }
 
-/** The sha of the workspace's copy, or `null` when it is not there. */
-export function shaOnDisk(root: string, path: string): string | null {
+/** Both identities of the workspace's copy, or `null` when it is not there. */
+export function shasOnDisk(root: string, path: string): ContentShas | null {
   const absolute = workspaceFilePath(root, path);
-  return existsSync(absolute) ? sha256(readFileSync(absolute)) : null;
+  return existsSync(absolute) ? contentShas(readFileSync(absolute)) : null;
+}
+
+/**
+ * The raw sha and the ignored-keys-normalized sha of one file, always computed
+ * together: every consumer of one side of the compare needs both, and a copy
+ * hashed one way but not the other is how the two comparisons would drift.
+ */
+function contentShas(contents: Buffer): ContentShas {
+  return { sha256: sha256(contents), normalizedSha256: normalizedSha256(contents) };
 }

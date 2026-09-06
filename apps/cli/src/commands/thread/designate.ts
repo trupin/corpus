@@ -169,6 +169,11 @@ export const designateCommand: WorkspaceCommandSpec = {
     "--thread <id>` and `corpus queue claim-all --thread <id>`. Scope membership is a walk, not a " +
     "label: nothing carries a scope marker, and the server works out at enqueue time whether an " +
     "event falls inside by following a thread's parents and a document's `origin`.\n\n" +
+    "**Designating also engages the thread** (SPEC.md §7, §8 — rider signed 2026-09-06): the " +
+    "same write sets `agent: engaged`, because handing a conversation over is the opt-in. From " +
+    "then on a plain turn reaches the resident with no `@agent` mention. Releasing the resident " +
+    "reverts nothing on the thread — it stays engaged and keeps being answered, by the ordinary " +
+    "agent now. Resolving the thread is what ends both.\n\n" +
     "**`--agent` is optional, and which you want is a one-line question**: leave it out when the " +
     "workspace's ordinary agent should own the conversation, and name a profile when it should be " +
     "owned by an agent that behaves differently from the default. Designating without it gives " +

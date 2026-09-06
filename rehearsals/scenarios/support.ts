@@ -8,7 +8,12 @@
  */
 
 import { z } from "zod";
-import { readWeightTable, type WeightTableRow } from "../weight-table.js";
+import {
+  modelFamilyOf,
+  readWeightTable,
+  recordedModelMatches,
+  type WeightTableRow,
+} from "../weight-table.js";
 import type { ObservedEvent, ObservedThread } from "../observe.js";
 import type { CorpusResult, RunRecord, SeedContext } from "../scenario.js";
 
@@ -193,6 +198,96 @@ export function turnsBy(
   author: string,
 ): readonly ObservedThread["turns"][number][] {
   return thread.turns.filter((turn) => turn.author === author);
+}
+
+/**
+ * One lane's launch, read the way story 2 established for a weightless
+ * designation (AGENT-063) and shared with story 11, which reads two lanes and
+ * compares them. All of it comes off the record: the launch-prompting events'
+ * job logs (`resident.designated`, `lane.waiting`), and the thread's own
+ * recorded turn models.
+ */
+export interface LaneLaunch {
+  /**
+   * The provenance word the launch log carries. `defaulted` is dead
+   * vocabulary (AGENT-063), kept detectable so a revert to the fixed rule
+   * shows up in a label rather than as a mute `unrecorded`.
+   */
+  readonly provenance: "judged" | "defaulted" | "stated" | "unrecorded";
+  /**
+   * The weight the launch *logged*: a declared row named on a judged line —
+   * matched by model family, case-insensitively, the same tolerance
+   * {@link recordedModelMatches} gives a turn's recorded model.
+   */
+  readonly loggedRow: WeightTableRow | null;
+  /** The declared row the reply's recorded model matches, when it does. */
+  readonly matchedRow: WeightTableRow | null;
+  /**
+   * What ran, for a label: the matched row's Model cell, or a parenthesised
+   * description of why no row matched — no reply, several, an alien model.
+   */
+  readonly tier: string;
+}
+
+export function readLaneLaunch(
+  record: RunRecord,
+  threadId: string,
+  rows: readonly WeightTableRow[],
+): LaneLaunch {
+  const launchEventIds = [
+    ...eventsOfType(record, "resident.designated", threadId).map((event) => event.id),
+    ...eventsOfType(record, "lane.waiting", threadId).map((event) => event.id),
+  ];
+  const lines = launchEventIds.flatMap((eventId) => jobLogLines(record, eventId));
+  const provenance = lines.some((entry) => entry.line.includes("judged"))
+    ? "judged"
+    : lines.some((entry) => entry.line.includes("defaulted"))
+      ? "defaulted"
+      : lines.some((entry) => entry.line.includes("stated"))
+        ? "stated"
+        : "unrecorded";
+
+  const loggedRow =
+    rows.find((row) =>
+      lines.some(
+        (entry) =>
+          entry.line.includes("judged") &&
+          entry.line.toLowerCase().includes(modelFamilyOf(row.model)),
+      ),
+    ) ?? null;
+
+  const thread = threadById(record, threadId);
+  const replies = thread === undefined ? [] : turnsBy(thread, "agent");
+  const reply = replies.length === 1 ? (replies[0] ?? null) : null;
+  const matchedRow =
+    reply === null
+      ? null
+      : (rows.find((row) => recordedModelMatches(row.model, reply.model)) ?? null);
+
+  const tier =
+    reply === null
+      ? replies.length === 0
+        ? "(no reply)"
+        : `(${String(replies.length)} replies)`
+      : matchedRow === null
+        ? `unmatched model "${reply.model ?? "(none)"}"`
+        : matchedRow.model;
+  return { provenance, loggedRow, matchedRow, tier };
+}
+
+/**
+ * Whether the lane's launch was a judgment whose log told the truth: a
+ * `judged` provenance, a logged row, and a reply whose recorded model matches
+ * exactly that row. Which row it is stays deliberately unexamined — pinning a
+ * tier would re-impose a default through the test (AGENT-063).
+ */
+export function laneJudgedTruthfully(lane: LaneLaunch): boolean {
+  return (
+    lane.provenance === "judged" &&
+    lane.loggedRow !== null &&
+    lane.matchedRow !== null &&
+    lane.loggedRow.key === lane.matchedRow.key
+  );
 }
 
 /** A finding sentence for an event that should have settled `processed`. */

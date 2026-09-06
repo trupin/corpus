@@ -76,14 +76,16 @@ from the default — `/profile` writes those, and `corpus agents` then reads
 The orchestrator starts a listener either way — the `converse` skill in `.claude/skills/` —
 and `corpus agents` shows who is running where. `corpus thread release`
 hands the conversation back, and resolving the thread does the same. While nobody is
-listening on a designated conversation its messages are answered by the general loop instead:
-slower, and without the conversation's context, but never not at all.
+listening on a designated conversation its messages wait for it — nobody else takes them, so
+the cure for a quiet conversation is a listener, which the orchestrator starts.
 
 **3. Talk to it.** In the board, select a passage and comment on it, or open the composer
 (`c`) and Ask or Capture. A comment reaches the agent when it mentions `@agent`, names a
 subagent (`@researcher`), invokes a skill (`/publish`), or has the composer's agent toggle
-on. Plain comments are notes to yourself and never wake it. Once the agent has replied in a
-thread, your later replies re-trigger it automatically until you resolve the thread.
+on. Plain comments elsewhere are notes to yourself and never wake it. Designating a
+conversation is the other way in: it engages the thread, so every message there reaches its
+resident with no mention. Once the agent has replied in a thread, or you have designated one,
+your later replies re-trigger it automatically until you resolve the thread.
 
 ## Stopping it
 

@@ -33,8 +33,21 @@ export const UNKNOWN_EVENT_TYPE = "unknown";
  * Payload keys that can name the document or thread a job came from, in the
  * order the console prefers them: a `comment.created` event names its thread,
  * and the thread is where "open in its home column" should land.
+ *
+ * **`lane` is last, and it is there for `lane.waiting`** (SERVER-163; SPEC.md
+ * §7's rider signed 2026-08-27). That notice carries the lane and nothing else
+ * (`LaneWaitingPayloadSchema`), so without this key it resolved to no origin at
+ * all — and it is one of the two events the orchestrate skill records a launch
+ * on, the only one a **plainly created** conversation ever gets. A lane's
+ * account of itself was therefore on the queue and reachable by nobody.
+ *
+ * Last on purpose. A lane is *where the work goes*, not *what the work is
+ * about*, and the two coincide only for this notice: every other event carries
+ * one of the three keys above and never reaches this one. The value still has
+ * to parse as a document id and resolve in the projection, so the orchestrator's
+ * lane — spelled `"orchestrator"` — answers null exactly as it should.
  */
-const ORIGIN_KEYS = ["threadId", "parentId", "docId"] as const;
+const ORIGIN_KEYS = ["threadId", "parentId", "docId", "lane"] as const;
 
 interface JobJoinRow {
   readonly event_id: string;

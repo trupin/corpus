@@ -80,12 +80,9 @@ them as binding on you exactly as they bind it, and go there when a detail is mi
    given → keep the key the write returned. Nothing is acquired and nothing is released.
 
 An eighth thing is a habit rather than an invariant, and it binds you the same way. **Ask a
-command for `--help=brief` and it answers with the shape of the verb alone** — the synopsis,
-then a line apiece for the arguments and the flags — and closes by naming the command that
-prints the rest. That answer is a lookup, and a lookup is what most reaching for help really
-is. You are the process in this workspace with the longest memory, so a tutorial you have
-read once is the reading you can least afford to buy twice. **When the whole text is the
-right call is the orchestrate skill's to state, and it is stated there alone.**
+command for `--help=brief` and it answers with the shape of the verb alone**, closing by
+naming the command that prints the rest. **When the whole text is the right call is the
+orchestrate skill's to state, and it is stated there alone.**
 
 The **comment** skill is your working manual for a turn: gathering context from a thread's
 briefing, the reply grammar, `--model`, the trace line, forms, labeled fences and their
@@ -99,8 +96,7 @@ below.
 
 ## What this skill does differently, and what it does not
 
-Exactly two things, and both are doctrine rather than convenience. State them to yourself
-before the loop, because a later reader who does not see the reason will "fix" them back.
+Exactly two things, and both are doctrine rather than convenience.
 
 **1. You work your conversation inline.** The orchestrate skill hands every event it claims
 to a subagent and never works one itself. You do the opposite: you read, you decide, you
@@ -414,6 +410,10 @@ conversation. So the draft this conversation produced, and a comment somebody le
 draft weeks later, both reach you — which is the point of owning a conversation rather than a
 thread.
 
+**Every message in your conversation reaches you, and no mention is needed.** Designating this
+thread engaged it, so a plain turn wakes you exactly as an `@agent` one does. Never ask the
+person to mention you, and never read an unmentioned turn as not meant for you.
+
 Two consequences you will actually meet:
 
 - **The stamp is made once and never rewritten.** Work already queued when the designation
@@ -454,14 +454,11 @@ written to a file and named with `--flag-file`, never quoted into the command. *
 shell does to a value you quote into a flag is the orchestrate skill's to state, and it is
 stated there alone.**
 
-What being resident adds is context you already have and must actually use. You have read
-every turn of this conversation and you wrote half of them. Do not re-derive from scratch
-what you settled three messages ago, do not re-ask a question that was answered, and do not
-brief yourself with `corpus thread context` a second time on a thread you have been sitting
-in — read the new turns alone, `corpus thread show th_4b8e2c --since <ts of your last
-read>`, and go. Retrieval discipline is
-untouched by any of that: the corpus outside this conversation is still reached by searching,
-never by looking around.
+What being resident adds is context you already have and must use. You have read every turn
+of this conversation and you wrote half of them. Do not re-derive what you settled three
+messages ago, do not re-ask a question that was answered, and do not brief yourself with
+`corpus thread context` a second time on a thread you have been sitting in — read the new
+turns alone, `corpus thread show th_4b8e2c --since <ts of your last read>`, and go.
 
 **Stewardship is how you remember.** Everything durable this conversation produces — a
 decision, a preference, a fact, a draft — goes into a document while you are working, with
@@ -471,20 +468,20 @@ on this lane rehydrates from the thread and the artifacts and nothing else. Know
 left only in your own head is knowledge the conversation loses when you exit.
 
 **Your own weight is your designation's, and no message changes it.** Somebody chose it when
-they designated this lane. Your launch tells you what was chosen and what you are running
-at. You are one session on one model, and becoming another one would mean discarding this
-conversation, which is the thing you are here to hold. So a `weight` on an event that reaches
-your lane governs what you **hand off** and never your own turn. There is nothing in it for
-you to honour or to fail on your own account. **Where the designation carries no weight, the
-launcher chose one and said which** — its prompt names what it launched you at, and that is
-your answer rather than a choice to make again.
+they designated this lane. **Where the designation carries no weight, the launcher chose one
+and said which** — either way your launch prompt names what you run at, and that is your
+answer rather than a choice to make again. You are one session on one model, and what this
+lane runs at changes only by re-designation: it releases you and launches a successor, which
+reads this conversation off disk. What does not survive is your working context. So a
+`weight` on an event that reaches your lane governs what you **hand off** and never your own
+turn. There is nothing in it for you to honour or to fail on your own account.
 
 **A weight stated on a message is a directive over what you hand off.** Where the event's
 payload carries a `weight`, the stage you delegate runs at it. You honour it rather than
 weighing it again, in either direction. Where a hand-off cannot be made at it, do the work
 anyway and say so twice: in the job's log while it runs, and in the reply the person
-receives. The levels and the model each names are declared in the orchestrate skill's table,
-which is the one place that declares them — do not restate the table here.
+receives. The levels and the model each names are declared in the orchestrate skill's
+table, and nowhere else — do not restate the table here.
 
 **A weight your launch reports it could not meet is stated once, in your first reply.** That
 is a fact about this whole designation rather than about one turn. So it goes in one plain
@@ -531,6 +528,12 @@ deferred row. Write the same sentence to the job's log so the row and the drawer
 Somebody is watching a pending indicator on every one of these, so **reply before you fail
 and before you defer**: a pending indicator that silently becomes a failed row reads as the
 agent hanging, and one line resolves it honestly.
+
+**Complete a message's event only holding its reply's receipt.** `corpus thread reply`
+answers with `replied to <thread> — turn <ts>`, and that printed line is what makes a reply
+exist — quote its ts in the settled job-log line. Holding none, the question is still open:
+post now, or fail with a reason the person can read. A settle is one of the three verbs
+above and a reply is that receipt; neither has a path through the workspace's files.
 
 **Settle last, after every write the event served.** A write that names a settled job is
 refused at exit `5` — *settled work cannot acquire a scope* — and nothing is written. The
@@ -661,10 +664,11 @@ answer.
 
 ## A lapse is not an error
 
-If you are away from your lane longer than the server's grace window, its pending work becomes
-visible to the orchestrator's unscoped claim and gets done there instead — slower, and without
-this conversation's warmth, but never silently not done. This is the design working, not a
-failure to recover from. `corpus agents` names the window and reports each lane's state; that
+If you are away from your lane longer than the server's grace window, your row reads `lapsed`
+and its pending work **stays yours**. Nobody covers for you: an unscoped claim never sees this
+lane, and no amount of absence hands it away. So a lapse costs the person a wait and never an
+answer in another voice: every message they wrote is still pending, waiting for your next
+claim. `corpus agents` names the window and reports each lane's state; that
 number is the server's and this skill does not restate it.
 
 Everything you might be tempted to do about it is wrong:
@@ -683,21 +687,17 @@ Everything you might be tempted to do about it is wrong:
   for; looking present is not.
 - **Do not treat a `lapsed` row as breakage.** It is a fact about the past. Take the lane and
   carry on.
-- **Do not redo what the orchestrator did while you were gone.** Coming back to turns you did
-  not write is the expected shape of a lapse, not a corruption. Read them as part of the
-  conversation, because they are: they were written by an agent working from the same corpus.
-  Do not apologise for them, do not undo them, and do not re-answer the message they answered.
-  If one of them got something wrong, correct it in a turn of your own, saying what changed
-  and why.
-- **Do not adopt what the orchestrator is still holding.** Arriving is the moment your held
+- **Do not read the backlog as somebody else's leftovers.** Nothing was answered while you
+  were gone, so every turn waiting here is a question still open. Work them in the
+  conversation's order, earliest first, and answer them as your own. An apology for the wait is
+  a turn about the machinery.
+- **Do not adopt a held row another caller claimed.** Arriving is the moment your held
   list is most likely to be a dead predecessor's work: what it claimed is stamped
   with your lane, so your first claim reports it to you with nothing on the row to say it is
   in flight. *A held row older than your first claim on this lane is not yours* — leave it,
-  and let the agent that claimed it settle it. The same rule, one step
-  earlier: do not redo the work the orchestrator finished, and do not race the work it
-  is still doing.
-- **Do not conclude a lapse from a quiet lane.** A conversation with nothing in it is a
-  conversation with nothing in it, and a timeout on your park is the ordinary sound of that.
+  and let the agent that claimed it settle it.
+- **Do not conclude a lapse from a quiet lane.** A timeout on your park is the ordinary sound
+  of a conversation with nothing in it.
 
 ## When your context runs heavy
 
@@ -770,8 +770,8 @@ still hold. Park again instead.
 
 **The claim is not refused, and the asymmetry is deliberate.**
 `corpus queue claim-all --thread th_4b8e2c` still answers on a lane whose resident was just
-released, and hands back the events stamped for it before the release. Nothing else can reach
-them until the lane lapses — `references/leaving.md` has the server's reasoning.
+released, and hands back the events stamped for it before the release. Releasing returns those
+events to the orchestrator as well — `references/leaving.md` has the server's reasoning.
 Draining them is therefore the departing listener's job, and it is the first step below.
 
 **Unless the conversation has been designated again — and then the drain is not yours to

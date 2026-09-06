@@ -84,7 +84,10 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus thread show`](#corpus-thread-show)
 - [`corpus workspace`](#corpus-workspace)
   - [`corpus workspace diff`](#corpus-workspace-diff)
+  - [`corpus workspace keep`](#corpus-workspace-keep)
   - [`corpus workspace maintain`](#corpus-workspace-maintain)
+  - [`corpus workspace merge`](#corpus-workspace-merge)
+  - [`corpus workspace unkeep`](#corpus-workspace-unkeep)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
 
@@ -2420,6 +2423,8 @@ Make an agent resident in a standalone conversation (user-only).
 
 Gives a **standalone** thread a resident: a long-lived agent that owns that conversation and everything that grows out of it, rather than being dispatched to one message at a time (SPEC.md §7). Work falling in the thread's **scope** is then enqueued on that scope's lane instead of the orchestrator's, and the resident consumes it with `corpus queue idle --thread <id>` and `corpus queue claim-all --thread <id>`. Scope membership is a walk, not a label: nothing carries a scope marker, and the server works out at enqueue time whether an event falls inside by following a thread's parents and a document's `origin`.
 
+**Designating also engages the thread** (SPEC.md §7, §8 — rider signed 2026-09-06): the same write sets `agent: engaged`, because handing a conversation over is the opt-in. From then on a plain turn reaches the resident with no `@agent` mention. Releasing the resident reverts nothing on the thread — it stays engaged and keeps being answered, by the ordinary agent now. Resolving the thread is what ends both.
+
 **`--agent` is optional, and which you want is a one-line question**: leave it out when the workspace's ordinary agent should own the conversation, and name a profile when it should be owned by an agent that behaves differently from the default. Designating without it gives the thread a _general resident_ — an agent with no profile document — which needs nothing to exist in the workspace first, so a workspace with no `agent-def` documents can designate on its first day. Everything else is identical either way: the lane, the scope, presence, the lapse fallback, and release.
 
 **`--agent` names the agent, not a document** — the same name `@<subagent>` mentions resolve — and the printed line reports the `{name, docId}` the server resolved it to, so nothing has to repeat the lookup. A name that resolves to no agent-def is the server's `404`: a typo is refused rather than quietly downgraded to a general resident. A **blank** name (`--agent ""`) is a usage error and nothing is sent — dropping a name by accident is a mistake, while asking for no profile is a decision. Where a profile has since been renamed, deleted, or moved out of `.claude/agents/`, the residency stands, and the printed line reports `name (profile missing)` rather than substituting anything for it. **Archiving is not one of those**: an archived `agent-def` still under that root resolves exactly as before, and is still designatable, so the line keeps printing its id.
@@ -2815,6 +2820,8 @@ Maintain the workspace's own scaffolding.
 
 Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4). What it refuses to overwrite it reports as a **conflict** — unresolved work, not a notice (§2.4) — and `diff` is what shows the difference the resolver has to act on. Neither of those two needs the server running: a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them.
 
+A conflict then goes one of two ways. `merge` performs the three-way the report points at — baseline, your copy, the tool's — writing clean merges through the server and printing unresolved hunks instead of writing anything. `keep` records the divergence as deliberate, so upgrades stop reporting the file, while still naming every kept path on one quiet line each run. `unkeep` resumes reporting against the current template.
+
 `maintain` is about the workspace's git repository rather than its files. Corpus disables git's own background maintenance in every workspace — a detached repack racing the server's commits can leave the object store permanently corrupt, and that store is the audit trail SPEC.md §4 makes the only recovery for a deletion — and packs the repository itself instead, at `corpus server start` and through this verb.
 
 ### `corpus workspace diff`
@@ -2829,7 +2836,7 @@ Show what the tool changed under a template file this workspace edited.
 
 **The baseline is an identity, not bytes.** The manifest records its sha256 and no older template ships inside the tool, so what is reachable here is _which sides moved_ — stated per side as `matchesBaseline` — rather than a three-way text merge. That is the fact a merge decision actually turns on: a `+` line that the baseline also lacked is the tool's new work, and a workspace copy that still matches the baseline needs no merge at all.
 
-**Nothing normal here is a failure.** A file with no conflict says which of the harmless cases it is and exits 0 — identical to the tool's, edited here but unchanged upstream, untouched here so the upgrade will simply update it. A file the tool has **retired** says so and shows no diff, because there is nothing on the other side to compare against, which is not the same as an empty file. A file this workspace deleted is shown as a whole-file addition. Only a path the tool does not install at all is refused (exit 2), with the reason — an empty diff there would read as _no difference_ when the truth is _nobody looked_.
+**Nothing normal here is a failure.** A file with no conflict says which of the harmless cases it is and exits 0 — identical to the tool's, edited here but unchanged upstream, untouched here so the upgrade will simply update it. A file differing from the tool's copy only in server-stamped or presentation frontmatter (`created`, `updated`, `width`) is not an edit: it says so in one line naming the keys, and shows no diff. A file the tool has **retired** says so and shows no diff, because there is nothing on the other side to compare against, which is not the same as an empty file. A file this workspace deleted is shown as a whole-file addition. Only a path the tool does not install at all is refused (exit 2), with the reason — an empty diff there would read as _no difference_ when the truth is _nobody looked_.
 
 It writes nothing, and it needs no running server: it reads two files and one manifest entry. Merging is yours to do — Corpus never merges a skill automatically, because a skill is prose that instructs the agent and a plausible-looking auto-merge would corrupt the instructions the loop runs on.
 
@@ -2861,6 +2868,48 @@ One JSON value: `{"root":"/home/me/notes","toolVersion":"0.3.0","baselineRecorde
 
 ```
 corpus workspace diff .claude/skills/comment/SKILL.md --json
+```
+
+### `corpus workspace keep`
+
+Mark a customized template file as deliberate, so upgrades stop reporting it.
+
+The workspace is invited to customize its template files — and `corpus workspace upgrade` cannot tell a chosen divergence from an accidental one, so it re-reports the same conflict on every run, forever. This verb records the third state: **deliberately diverged, stop reporting.**
+
+A kept file is skipped by the upgrade's conflict report and is **never written** by an upgrade — not by an update, not by `--restore`. The report never goes silent about it, though: every upgrade that runs while kept files exist names each kept path on one quiet line, because a list that grows in silence is the failure this verb must not trade the noise for.
+
+**Keeping is not merging.** While a file is kept its manifest baseline keeps advancing to each new template copy, so `corpus workspace unkeep` resumes reporting against the **current** template — not the one in force when the file was kept. And kept is "stop nagging", never "stop being mergeable": `corpus workspace merge` merges a kept file on request, and merging does not clear the mark.
+
+With no path it lists the kept files. A path the manifest does not track is refused (exit 2) with nothing written. The mark lives in `.corpus/template-manifest.json` and survives upgrades; no server is needed.
+
+```
+corpus workspace keep [path] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                                            |
+| -------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `path`   | no       | The template file to keep, workspace-relative as `corpus workspace upgrade` prints it. Omit it to list the kept files. |
+
+**Examples**
+
+A board customized on purpose: upgrades stop reporting it, and its baseline still follows the template.
+
+```
+corpus workspace keep data/docs/boards/attention.md
+```
+
+List every kept file, one path per line.
+
+```
+corpus workspace keep
+```
+
+One JSON value: `{"root":"/home/me/notes","kept":["data/docs/boards/attention.md"],"path":null,"changed":false}` — `path` names the file acted on, or null for a listing.
+
+```
+corpus workspace keep --json
 ```
 
 ### `corpus workspace maintain`
@@ -2904,11 +2953,77 @@ Machine-readable form: counts before and after, and whether anything packed.
 corpus workspace maintain --json
 ```
 
+### `corpus workspace merge`
+
+Three-way merge a conflicted template file: baseline, your copy, the tool's copy.
+
+A skill is owned twice by design — the workspace evolves it as the agent's memory, and the template ships improved versions of the same file — so collision is guaranteed, and `corpus workspace upgrade` reports it as a conflict it will not resolve. This verb is the resolution: a three-way merge of the manifest's recorded baseline, the workspace's copy, and the copy the installed tool ships.
+
+**A clean merge is written through the server** — the sole writer — as one attributed commit, and the manifest baseline then advances to the tool's copy so the next upgrade does not re-report the conflict this merge just resolved. When the merge lands byte-for-byte on your own copy there is nothing to write, and the baseline advances all the same: your copy already carries everything the tool adds, so the conflict is resolved and stops being reported. **Conflicting hunks are reported, never written**: the file stays byte-identical, and each hunk prints with context and all three sides.
+
+**One hunk shape is never auto-resolved, and it is a trap worth naming**: a block present in the baseline and in your copy but **absent from the tool's copy** is either an upstream deletion or a local edit older than the recorded baseline — the baseline of a modified file can itself be post-modification — and the tool cannot tell which. A plain `git merge-file` silently deletes such a block; this verb reports it, picks no side, and leaves the decision to you.
+
+The base **bytes** are recovered from the workspace's own git history (the manifest records only a hash, and the tool ships no previous templates), accepted only on an exact hash match — an unrecoverable baseline is a refusal, never a guess. The merge covers the document **body**; a tool-side frontmatter change is reported for `corpus doc edit`, and only template files that are documents (a frontmatter `id:`) can be written at all. A kept file (`corpus workspace keep`) merges on request, and merging does not clear the mark.
+
+Exit codes: **0** — merged and written, or nothing to write and the baseline advanced. **6** — unresolved hunks reported, nothing written. **7** — nothing to merge at all (already current, never edited here, no incoming copy), or a baseline whose bytes cannot be recovered.
+
+```
+corpus workspace merge <path> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                                          |
+| -------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `path`   | yes      | The conflicted template file, workspace-relative as `corpus workspace upgrade` and `corpus workspace diff` print it. |
+
+**Examples**
+
+Merge the tool's improvements into an evolved skill: clean hunks are written through the server, conflicts print with all three sides.
+
+```
+corpus workspace merge .claude/skills/comment/SKILL.md
+```
+
+One JSON value: `{"root":"/home/me/notes","path":".claude/skills/comment/SKILL.md","toolVersion":"0.34.0","outcome":"merged","docId":"doc_skillcomment","incoming":2,"local":3,"conflicts":[],"ambiguous":[],"frontmatter":null,"kept":false}` — `conflicts` and `ambiguous` carry each unresolved hunk with its line and sides.
+
+```
+corpus workspace merge .claude/skills/comment/SKILL.md --json
+```
+
+### `corpus workspace unkeep`
+
+Clear a keep-mark, so upgrades report the file against the current template.
+
+The reverse of `corpus workspace keep`: the file stops being deliberately diverged and `corpus workspace upgrade` reports it again. Because the baseline kept advancing while the file was kept, the comparison is against the **current** template — un-keeping never resurrects a conflict with a template version that is gone. A path the manifest does not track is refused with nothing written; un-keeping a file that is not kept changes nothing and says so.
+
+```
+corpus workspace unkeep <path> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                            |
+| -------- | -------- | ---------------------------------------------------------------------- |
+| `path`   | yes      | The kept file, workspace-relative as `corpus workspace keep` lists it. |
+
+**Examples**
+
+Resume reporting: the next upgrade compares it against the current template.
+
+```
+corpus workspace unkeep data/docs/boards/attention.md
+```
+
 ### `corpus workspace upgrade`
 
 Refresh the workspace's template files after a tool update, without clobbering edits.
 
 `corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in the workspace with git. A run with nothing to do prints `already up to date.` and makes no commit.
+
+Two frontmatter key classes never count as an edit: the server's stamps (`created`, `updated`) and presentation state (`width`, written by resizing a board column). A file differing only in them reads as untouched, and an update takes the tool's content while keeping this workspace's values for those keys — a resize or a restamp is not a conflict, and an upgrade never moves `updated` backwards.
+
+A file marked **kept** (`corpus workspace keep`) is deliberately diverged: it is skipped by the conflict report and never written, every run that has any names each kept path on one quiet line, and its baseline still advances — so `corpus workspace unkeep` resumes reporting against the current template.
 
 Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore`, the seed documents under `data/docs/` the template installs — and nothing under `.corpus/` except the manifest itself and a missing queue status directory.
 

@@ -43,10 +43,12 @@ every other field on that row can come back reading exactly as it did. Only the 
 own id says whether the designation is still the one you were launched for.
 
 The reason a replaced listener stops rather than adapts: **no running agent becomes another
-one without discarding the conversation it is holding.** Somebody has asked for this
-conversation to be worked at a weight this session cannot become — or by a persona this
-session was never bound to — and the only way to give them that is to stop and let the
-successor have the lane.
+one — the change is made by replacing it.** Somebody has asked for this conversation to be
+worked at a weight this session cannot become — or by a persona this session was never bound
+to — and the only way to give them that is to stop and let the successor have the lane. What
+that costs is your own working context, and never the conversation: a conversation is a
+document, and your successor rehydrates from it and the artifacts exactly as the survivor of
+the race above does.
 
 ## Retirement: the refused park, and why the drain is guarded
 
@@ -55,14 +57,14 @@ event, which then sits in `in-progress/` until somebody reaps it, and owing the 
 a goodbye nobody posts. Retiring on the refusal instead is what the body's steps exist for.
 
 The claim staying answerable after the release is the server's deliberate asymmetry, made for
-the leaver: you are refused at the park, and the orchestrator's unscoped claim cannot see this
-lane until it has lapsed out of presence, so a guarded claim would strand them for a whole
-grace window in order to tidy a parameter. The departing listener is the only caller that can
-still drain what was stamped before the release, which is why the drain is its job.
+the leaver: you are refused at the park, while the claim still answers. The release does hand
+those events to the orchestrator, so you are not the only caller that can reach them — but it
+reaches them on a pass that has the whole workspace in front of it, while you are here, in
+this conversation, now. That is why the drain is the leaver's job and not merely its right.
 
 Unless the thread has been designated again — then the argument above turns over on its own
-premise: those events *can* be reached by somebody else now, and your claim would take them
-out from under a listener that has just parked on them. What that costs is not a late answer.
+premise: those events belong to a listener that has just parked on them, and your claim would
+take them out from under it. What that costs is not a late answer.
 An id its own park named, coming back held by a caller it cannot identify, is the one thing a
 listener stands down on — and the row says nothing about who holds it or that they are
 leaving, so it cannot read your departure as anything but a peer. Your last act would be to
@@ -82,9 +84,8 @@ refusal, no roster row, no held id. That makes it the exit a session reaches for
 continuing merely feels expensive, which is why the body puts a bar on it — a casualty you can
 name — and a record behind it — the job log line and the last reply. Stopping here must be an
 act with a visible cause, or lanes lose their listeners to moods nobody can audit. As for the
-handover: a summary you write for your successor is a fourth account of the conversation
-nobody asked for and nobody will trust; a document you wrote while the work was fresh is one
-they can read. The corpus is the handoff, never a transcript.
+handover: write no summary. A fourth account of the conversation is one nobody asked for and
+nobody will trust, and the corpus is the handoff, never a transcript.
 
 ## A resolved thread
 

@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { resolveTemplateRoot } from "../paths.js";
 import { GLOBAL_FLAGS } from "../registry/globals.js";
 import type { Registry } from "../registry/types.js";
+import type { ToolRoots } from "./incoming.js";
+import { planTemplateInstall } from "./install.js";
 
 /**
  * Skills that teach a command this tool does not have (CLI-059).
@@ -38,6 +41,34 @@ import type { Registry } from "../registry/types.js";
  * removed", "there is no") is not read as an instruction. It is a heuristic and
  * it errs toward silence — a real stale citation in a sentence about removals is
  * missed, which costs one turn, where a false one costs trust in the report.
+ *
+ * ## Which tool's surface the scan judges against (CLI-084)
+ *
+ * The scan must judge the **incoming** tool's template against the **incoming**
+ * tool's surface, and one command makes those two different things. `corpus
+ * upgrade` installs the new package and then syncs the template *from the same
+ * process it started in*: the template is re-read off disk, so it is the new
+ * one, but the registry is a value this process loaded at startup, so it is the
+ * old one. The result is the exact false positive CLI-084 reports — a 0.32.0
+ * binary writing 0.33.0's `converse/SKILL.md` and then flagging `corpus thread
+ * digest`, a verb 0.33.0 ships and 0.32.0 never had. Left alone, every release
+ * that adds a verb its own skills teach would false-positive the same way.
+ *
+ * The new surface cannot be read directly: a released package carries no
+ * machine-readable command list, and importing its bundle would run the new
+ * tool's entry point inside the old process. What the upgrade *does* hold is the
+ * new tool's own instructions, and those are written by whoever wrote its
+ * registry. **So the incoming template vouches for the commands it invokes**: a
+ * `corpus …` line in a file the tool itself ships is evidence the tool that
+ * ships it has that command. Passing `tool` turns those citations into
+ * additional surface, on top of the registry this build has.
+ *
+ * The purpose survives, because a release that drops a verb also stops teaching
+ * it: a workspace file citing a verb the incoming template never invokes is
+ * still reported, which is CLI-059's whole case. What is given up is narrow and
+ * named — a verb the incoming tool has but its own skills never mention is still
+ * flagged, and a verb the incoming tool ships broken instructions for is not.
+ * Both err toward silence, which is this module's standing bias.
  */
 
 /** One citation of a command the installed tool does not have. */
@@ -113,6 +144,87 @@ export function commandSurface(registry: Registry): CommandSurface {
 export interface StaleVerbScan {
   readonly root: string;
   readonly registry: Registry;
+  /**
+   * Where the **incoming** tool's template lives, when the caller is an upgrade
+   * (CLI-084). Its own instructions vouch for the commands they invoke, which is
+   * how `corpus upgrade` stops judging the package it just installed against the
+   * registry the running process started with. Omitted, the scan judges against
+   * `registry` alone — right for every caller whose tool did not move under it.
+   */
+  readonly tool?: ToolRoots;
+}
+
+/**
+ * The registry's surface, widened by whatever the incoming template vouches for.
+ *
+ * Forgiving in the same way the scan is: a template root that cannot be resolved
+ * or read leaves the base surface in place, because an upgrade that failed to
+ * read the tool's own files has bigger news than a citation report.
+ */
+function scanSurface(scan: StaleVerbScan): CommandSurface {
+  const base = commandSurface(scan.registry);
+  return scan.tool === undefined ? base : vouchedSurface(base, scan.tool);
+}
+
+/**
+ * `base`, plus every command the incoming tool's own markdown invokes.
+ *
+ * Three cases, and the difference between them is what stops the vouching from
+ * swallowing the report whole:
+ *
+ * - a first token this build already has as a command — nothing to add;
+ * - a first token it has as a **topic** — only the named verb is vouched for, so
+ *   `corpus thread digest` in the new skills never excuses `corpus thread
+ *   frobnicate` in the workspace's;
+ * - a first token it knows as neither — the incoming tool grew something whole,
+ *   and the name is vouched for outright. Nothing is lost: this build would
+ *   report every `corpus <that name> …` line under one finding anyway.
+ */
+function vouchedSurface(base: CommandSurface, tool: ToolRoots): CommandSurface {
+  const commands = new Set(base.commands);
+  const verbsByTopic = new Map<string, Set<string>>(
+    [...base.verbsByTopic].map(([topic, verbs]): [string, Set<string>] => [topic, new Set(verbs)]),
+  );
+
+  for (const source of incomingInstructions(tool)) {
+    for (const { tokens } of invocationsIn(source)) {
+      const [first, second] = tokens;
+      if (first === undefined || !NAME_PATTERN.test(first)) continue;
+      if (commands.has(first)) continue;
+      const verbs = verbsByTopic.get(first);
+      if (verbs === undefined) {
+        commands.add(first);
+        continue;
+      }
+      if (second === undefined || !NAME_PATTERN.test(second)) continue;
+      verbs.add(second);
+    }
+  }
+  return { commands, verbsByTopic };
+}
+
+/**
+ * The text of every markdown file the incoming tool would install, or none when
+ * the template cannot be read. Only `.md`: the rest of the template is a
+ * gitignore, a config skeleton and seed data, none of which instructs anybody.
+ */
+function incomingInstructions(tool: ToolRoots): readonly string[] {
+  let root: string;
+  let planned: ReturnType<typeof planTemplateInstall>;
+  try {
+    root = tool.templateRoot ?? resolveTemplateRoot();
+    planned = planTemplateInstall(root);
+  } catch {
+    return [];
+  }
+
+  const sources: string[] = [];
+  for (const file of planned) {
+    if (!file.to.endsWith(".md")) continue;
+    const source = readTextFile(join(root, ...file.from.split("/")));
+    if (source !== null) sources.push(source);
+  }
+  return sources;
 }
 
 /**
@@ -124,7 +236,7 @@ export interface StaleVerbScan {
  * that died on an unrelated unreadable file would report nothing at all.
  */
 export function staleVerbCitations(scan: StaleVerbScan): readonly StaleCitation[] {
-  const surface = commandSurface(scan.registry);
+  const surface = scanSurface(scan);
   const found: StaleCitation[] = [];
 
   for (const relative of instructionFiles(scan.root)) {
@@ -159,6 +271,41 @@ export function citationsIn(
   surface: CommandSurface,
 ): readonly StaleCitation[] {
   const found: StaleCitation[] = [];
+  for (const invocation of invocationsIn(source)) {
+    const stale = resolveInvocation(invocation.tokens, surface);
+    if (stale === null) continue;
+    found.push({
+      path,
+      line: invocation.line,
+      command: stale.command,
+      text: invocation.text,
+      hint: stale.hint,
+    });
+  }
+  return found;
+}
+
+/** One `corpus …` command found in a document, before anything judges it. */
+interface Invocation {
+  /** Positional names only, flags removed, capped at two — see {@link corpusInvocations}. */
+  readonly tokens: readonly string[];
+  readonly line: number;
+  /** The line as written, trimmed. */
+  readonly text: string;
+}
+
+/**
+ * Every `corpus …` command a document contains, wherever a document is read as
+ * instructions rather than as prose.
+ *
+ * Separate from {@link citationsIn} because two callers need the same reading
+ * and must not disagree about it: the report asks which of these the tool lacks,
+ * and {@link vouchedSurface} asks which of these the incoming tool has. One
+ * walker means a line the report would read as a command is a line the vouching
+ * reads as a command.
+ */
+function invocationsIn(source: string): readonly Invocation[] {
+  const found: Invocation[] = [];
   let inFence = false;
   let heredocTerminator: string | null = null;
 
@@ -180,16 +327,8 @@ export function citationsIn(
     const sources = inFence ? [line] : lineExplainsARemoval(line) ? [] : inlineCodeSpans(line);
 
     for (const candidate of sources) {
-      for (const invocation of corpusInvocations(candidate)) {
-        const stale = resolveInvocation(invocation, surface);
-        if (stale === null) continue;
-        found.push({
-          path,
-          line: index + 1,
-          command: stale.command,
-          text: line.trim(),
-          hint: stale.hint,
-        });
+      for (const tokens of corpusInvocations(candidate)) {
+        found.push({ tokens, line: index + 1, text: line.trim() });
       }
     }
 

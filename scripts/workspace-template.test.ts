@@ -1445,6 +1445,26 @@ describe("skills", () => {
   });
 
   /**
+   * AGENT-070. The README is what a person reads before they ever open a skill,
+   * and it carried both statements the rider and the no-fallback rule made
+   * false: that a plain comment never wakes the agent, and that an absent
+   * listener's messages get answered by the general loop meanwhile.
+   */
+  it("states participation in the README as §8 now has it", () => {
+    const readme = documentAt("README.md").body;
+    // The fallback, which v0.23.0 removed and this page outlived.
+    expect(readme).not.toMatch(/answered by the general loop instead/);
+    expect(readme).toMatch(wrapped("its messages wait for it — nobody else takes them"));
+    // The rider signed 2026-09-06: designating is the second way in.
+    expect(readme).toMatch(wrapped("Designating a conversation is the other way in"));
+    expect(readme).toMatch(
+      wrapped("it engages the thread, so every message there reaches its resident with no"),
+    );
+    // And the passive-note rule survives, scoped to where it still holds.
+    expect(readme).toMatch(wrapped("Plain comments elsewhere are notes to yourself"));
+  });
+
+  /**
    * AGENT-024, SPEC.md §9.2's patch bullet signed 2026-08-12: _"the agent's
    * skills prefer it over a whole-body edit for bounded changes"_. That sentence
    * is a promise about **this text**, so it is pinned here rather than left to a
@@ -2394,6 +2414,35 @@ describe("orchestrate skill body", () => {
     // re-reads and writes again itself rather than reporting a block.
     expect(body).toMatch(/\*\*A subagent that stands aside defers — through you\.\*\*/);
     expect(body).toMatch(/A\s+stale-key refusal is a different thing and never reaches you/);
+  });
+
+  /**
+   * AGENT-064. The v0.32.0 pre-release pass (story 1, run 3) drained the queue
+   * with a `comment.created` "settled" by a hand `mv` into `processed/` — its
+   * JSON body still said `pending` — and its "reply" hand-written into the
+   * thread file as a `## resident · <ts>` heading, which is not a §6 turn and
+   * so was filed as bytes inside the person's own turn, watcher-committed as
+   * `user`. §7 rules the silent settle out, so `complete` on an answering
+   * event is tied to the turn the subagent's report names. The boundary
+   * (sprint-024 TEST-1161) is the two event types a person is waiting on:
+   * "these two" binds the rule to the paragraph above it, and the reflection
+   * side is held by *A trivial edit is completed in silence* in the doc.edited
+   * describe — a reflection completes with no turn, as ever.
+   */
+  it("completes an answering event only against the turn the report names (AGENT-064)", () => {
+    expect(body).toMatch(
+      wrapped("**And complete these two only against the turn the report names**"),
+    );
+    expect(body).toMatch(wrapped("a report naming none did not answer"));
+    expect(body).toMatch(
+      wrapped("fail the event with a readable reason rather than complete it on trust"),
+    );
+    // The scope: "these two" is the pair the previous paragraph names, so the
+    // rule sits after that sentence and reaches nothing else.
+    const scope = body.indexOf("For `comment.created` and `form.respond`, a person is watching");
+    const rule = body.indexOf("**And complete these two only against the turn the report names**");
+    expect(scope).toBeGreaterThan(-1);
+    expect(rule).toBeGreaterThan(scope);
   });
 
   /**
@@ -4305,6 +4354,12 @@ describe("comment skill body", () => {
   });
 
   it("routes from the payload's fields, never from the turn text", () => {
+    // AGENT-070: not every `comment.created` is a request. An engaged thread
+    // enqueues on a plain turn, and §8's rider signed 2026-09-06 engages a
+    // thread at its designation — so "a turn that requested the agent" named
+    // the one shape that no longer covers the event.
+    expect(body).not.toMatch(/a turn that requested the agent/);
+    expect(body).toMatch(wrapped("`comment.created` — a turn for the agent to answer."));
     for (const field of ["threadId", "parentId", "turnTs", "mentions", "skills", "unresolved"]) {
       expect(body, `payload field ${field} unnamed`).toContain(field);
     }
@@ -4320,9 +4375,23 @@ describe("comment skill body", () => {
     expect(body).toMatch(/name the\s+deviation explicitly in the reply/i);
   });
 
+  /**
+   * AGENT-070, SPEC.md §8's rider signed 2026-09-06. The old text named one
+   * route into `engaged` — this skill's own first turn — and a designation is
+   * now the other, written by the server in the same act. The consequence is
+   * this skill's and not the converse skill's: a released conversation keeps
+   * its engagement, so it arrives here already engaged, with no turn of this
+   * agent's in it, and its plain turns are ordinary work until it is resolved.
+   */
   it("states engagement as the server's doing, with its consequence", () => {
     expect(body).toMatch(/`requested` to `engaged`/);
     expect(body).toMatch(/There is no CLI verb that sets it/i);
+    expect(body).toMatch(wrapped("a designation engages a thread the same way, in one write"));
+    expect(body).toMatch(
+      wrapped("**So a conversation whose resident was released reaches you already engaged**"),
+    );
+    expect(body).toMatch(wrapped("with no turn of yours in it"));
+    expect(body).toMatch(wrapped("stays engaged until somebody resolves it"));
     expect(body).toMatch(/\*\*every later user turn\s+re-triggers you\*\*/i);
     expect(body).toMatch(/note only/i);
   });
@@ -4463,6 +4532,26 @@ describe("comment skill body", () => {
     expect(body).toMatch(/pending indicator/i);
     expect(body).toContain("[[id]]");
     expect(body).toMatch(/Length follows the work/i);
+  });
+
+  /**
+   * AGENT-064. The hand-edit ban predates the breach, so what changed is the
+   * consequence beside it: the run that hand-wrote `## resident · <ts>` into a
+   * thread file produced not a wrongly-attributed turn but **no turn** — §6's
+   * author set is closed, so the bytes were filed inside the person's own turn
+   * and the watcher committed them as `user`. The bullet now says what the
+   * bytes actually become, because "a corrupted conversation" understated it
+   * into something a light model could discount.
+   */
+  it("says what a hand-written heading actually becomes (AGENT-064)", () => {
+    expect(body).toMatch(wrapped("The turn grammar admits only authors the server writes"));
+    expect(body).toMatch(wrapped("a hand-written heading is not a turn at all"));
+    expect(body).toMatch(
+      wrapped("inside the person's own turn, under their name, invisible to every reader"),
+    );
+    expect(body).toMatch(wrapped("and no event fires"));
+    // The understatement stays gone.
+    expect(body).not.toMatch(/a hand-written turn is a corrupted conversation/);
   });
 
   it("files the inbox concretely and names its convention", () => {
@@ -5278,13 +5367,27 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         wrapped("**Your own weight is your designation's, and no message changes it.**"),
       );
-      // The reason it cannot reach the resident's own turn, which is what stops
-      // the clause being restored as a courtesy to the symmetry.
+      /*
+       * The reason it cannot reach the resident's own turn, which is what stops
+       * the clause being restored as a courtesy to the symmetry.
+       *
+       * **AGENT-073.** That reason used to be *"becoming another one would mean
+       * discarding this conversation, which is the thing you are here to hold"*
+       * — an impossibility claim, and SPEC.md §7's rider signed 2026-09-06 says
+       * in as many words that it "was too strong". A weight change is a
+       * re-designation: the running agent is released, a successor launches on
+       * the same conversation, and the conversation survives because it is a
+       * document on disk. What a message cannot do is *be* that act, and that —
+       * not impossibility — is why a `weight` on an event stops at what the
+       * resident hands off. The real cost stays stated where the old claim
+       * stood, because the rider names it deliberately.
+       */
       expect(body).toMatch(
-        wrapped(
-          "becoming another one would mean discarding this conversation, which is the thing you are here to hold",
-        ),
+        wrapped("what this lane runs at changes only by re-designation: it releases you and"),
       );
+      expect(body).toMatch(wrapped("launches a successor, which reads this conversation off disk"));
+      expect(body).toMatch(wrapped("What does not survive is your working context."));
+      expect(body, "the overstated cost is back").not.toMatch(/discard(ing|s)? this conversation/i);
       expect(body).toMatch(wrapped("governs what you **hand off** and never your own turn"));
       expect(body).toMatch(
         wrapped("There is nothing in it for you to honour or to fail on your own account"),
@@ -5397,16 +5500,34 @@ describe("converse skill body", () => {
        * the sentence that explains why a listener stops rather than adjusts is
        * not (CONTRACT-071's decision 4).
        */
-      // The reason moved to the reference whole (AGENT-065); the acts stay below.
+      /*
+       * The reason moved to the reference whole (AGENT-065); the acts stay below.
+       *
+       * **AGENT-073.** The reference used to earn the act with an impossibility
+       * — *"without discarding the conversation it is holding"* — which SPEC.md
+       * §7's rider signed 2026-09-06 corrects by name. The act is unchanged and
+       * so is its reason: a session cannot become another one, so the change is
+       * made by *replacing* it. What that costs is the released listener's own
+       * working context, and the pin holds the reference to saying so — a
+       * successor that rehydrates from the thread and the artifacts is the same
+       * handoff this file already describes for a lost race.
+       */
       expect(leaving).toMatch(
-        wrapped(
-          "**no running agent becomes another one without discarding the conversation it is holding.**",
-        ),
+        wrapped("**no running agent becomes another one — the change is made by replacing it.**"),
       );
       expect(leaving).toMatch(
         wrapped(
           "Somebody has asked for this conversation to be worked at a weight this session cannot become",
         ),
+      );
+      expect(leaving).toMatch(
+        wrapped("What that costs is your own working context, and never the conversation"),
+      );
+      expect(leaving).toMatch(
+        wrapped("your successor rehydrates from it and the artifacts exactly as the survivor of"),
+      );
+      expect(leaving, "the overstated cost is back").not.toMatch(
+        /discard(ing|s)? the conversation/i,
       );
       // The same ending as a release, reached one read later — and the same
       // three actions, in the same order.
@@ -5597,9 +5718,13 @@ describe("converse skill body", () => {
 
     it("carries the rule to the two places a listener actually meets it", () => {
       // Arriving after a lapse — the section a returning resident reads.
-      expect(body).toMatch(/\*\*Do not adopt what the orchestrator is still holding\.\*\*/);
+      // AGENT-070: the row's holder is another *listener*, never the
+      // orchestrator, which cannot claim a designated lane at all. The heading
+      // and the closing clause both used to name it.
+      expect(body).toMatch(wrapped("**Do not adopt a held row another caller claimed.**"));
+      expect(body).not.toMatch(/\*\*Do not adopt what the orchestrator is still holding\.\*\*/);
       expect(body).toMatch(/nothing on the row to say it is\s+in flight/);
-      expect(body).toMatch(/do not race the work it\s+is still doing/);
+      expect(body).not.toMatch(/do not race the work it\s+is still doing/);
       /*
        * The roster branch at startup used to carry a second caution — that the
        * orchestrator might be holding some of this lane's work right now —
@@ -5879,6 +6004,37 @@ describe("converse skill body", () => {
     });
   });
 
+  /**
+   * AGENT-064 (sprint-024 TEST-1160). The breached run answered by writing
+   * bytes into the thread file and "settled" by moving the queue file — no
+   * claim, no reply, no verb, queue drained, question dropped. The gate is the
+   * receipt: `corpus thread reply` prints `replied to <id> — turn <ts>`, and
+   * completing a message's event means holding that line. The closing clause
+   * names the workspace's files as a path to neither, which is exactly the
+   * pair of hand-moves the run made.
+   */
+  it("gates complete on the reply's printed receipt (AGENT-064)", () => {
+    expect(body).toMatch(
+      wrapped("**Complete a message's event only holding its reply's receipt.**"),
+    );
+    expect(body).toMatch(wrapped("answers with `replied to <thread> — turn <ts>`"));
+    expect(body).toMatch(wrapped("that printed line is what makes a reply exist"));
+    expect(body).toMatch(wrapped("quote its ts in the settled job-log line"));
+    expect(body).toMatch(
+      wrapped("Holding none, the question is still open: post now, or fail with a reason"),
+    );
+    expect(body).toMatch(
+      wrapped(
+        "A settle is one of the three verbs above and a reply is that receipt; neither has a path through the workspace's files.",
+      ),
+    );
+    // After the verbs it gates, inside *Settling your own lane*.
+    const verbs = body.indexOf("corpus queue complete evt_7c1d9a");
+    const rule = body.indexOf("**Complete a message's event only holding its reply's receipt.**");
+    expect(verbs).toBeGreaterThan(-1);
+    expect(rule).toBeGreaterThan(verbs);
+  });
+
   it("orders the settling call after the writes, with the exit that proves it", () => {
     // Measured against a running server: `--job` naming a settled event is
     // exit 5, so settling early does not fail — it makes the rest of this
@@ -5911,12 +6067,28 @@ describe("converse skill body", () => {
     expect(body).toMatch(/\*\*Say nothing yet\.\*\*/);
   });
 
+  /**
+   * AGENT-070. This section was the last place in the tree still teaching the
+   * lapse fallback, which v0.23.0 removed and `queue/lanes.ts` no longer
+   * implements: `visibleTo` is exact equality plus release, and consults
+   * liveness nowhere. The skill's own *Settling your own lane* already said
+   * the orchestrator "cannot be holding any now", so the file contradicted
+   * itself — and the half a returning listener reads is this one.
+   *
+   * Both halves are pinned, because deleting the false promise without stating
+   * what replaces it leaves a listener with no account of a backlog at all:
+   * the work **stays on the lane**, and every turn in it is still unanswered.
+   */
   it("treats a lapse as the design working, and restates no window", () => {
     expect(body).toMatch(/\*\*Do not treat a `lapsed` row as breakage\.\*\*/);
-    expect(body).toMatch(/\*\*Do not redo what the orchestrator did while you were gone\.\*\*/);
-    expect(body).toMatch(
-      /slower, and without\s+this conversation's warmth, but never silently not done/,
-    );
+    // The fallback's own promise, and the bullet that only made sense under it.
+    expect(body).not.toMatch(/\*\*Do not redo what the orchestrator did while you were gone\.\*\*/);
+    expect(body).not.toMatch(/without\s+this conversation's warmth/);
+    expect(body).toMatch(wrapped("its pending work **stays yours**"));
+    expect(body).toMatch(wrapped("an unscoped claim never sees this lane"));
+    expect(body).toMatch(wrapped("no amount of absence hands it away"));
+    expect(body).toMatch(wrapped("**Do not read the backlog as somebody else's leftovers.**"));
+    expect(body).toMatch(wrapped("every turn waiting here is a question still open"));
     expect(body).toMatch(/\*\*Do not shorten your park to lapse less\.\*\*/);
     expect(body).toMatch(/longer than a\s+rearm gap/);
     // The number is the server's, and naming it here is how the two drift apart.
@@ -5942,6 +6114,28 @@ describe("converse skill body", () => {
     // The stamp is made once, which is why designating moves nothing.
     expect(body).toMatch(/\*\*The stamp is made once and never rewritten\.\*\*/);
     expect(body).toMatch(/\*\*You never see the designation event\.\*\*/);
+  });
+
+  /**
+   * AGENT-070, SPEC.md §8's rider signed 2026-09-06: *"the server sets the
+   * thread engaged in the same act that designates it, so a plain message to a
+   * designated conversation reaches its resident without a mention."*
+   *
+   * The rule is pinned in the **positive**, because what it has to prevent is
+   * not a sentence — it is a habit. AGENT-068's and AGENT-069's rehearsals both
+   * hit the pre-SERVER-165 behaviour and worked around it by writing `@agent`
+   * into the message, which is exactly what a listener would ask a person to do
+   * if it read an unmentioned turn as one that had arrived by accident.
+   */
+  it("says a plain turn reaches it, with no mention needed", () => {
+    expect(body).toMatch(
+      wrapped("**Every message in your conversation reaches you, and no mention is needed.**"),
+    );
+    expect(body).toMatch(wrapped("Designating this thread engaged it"));
+    expect(body).toMatch(wrapped("a plain turn wakes you exactly as an `@agent` one does"));
+    // The two things a listener must never do with the rule.
+    expect(body).toMatch(wrapped("Never ask the person to mention you"));
+    expect(body).toMatch(wrapped("never read an unmentioned turn as not meant for you"));
   });
 
   it("answers a summons where it was asked, and annexes nothing", () => {
@@ -6144,14 +6338,18 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         /still answers on a lane whose resident was just\s+released, and hands back/,
       );
-      // Why refusing it too would be worse: nobody could reach those events.
-      // The server's reasoning moved to the reference whole (AGENT-065).
+      // Why refusing it too would be worse. The server's reasoning moved to the
+      // reference whole (AGENT-065), and AGENT-070 corrected it: `visibleTo`
+      // does not consult liveness, so a release hands those events to the
+      // orchestrator at once rather than after a grace window. The leaver is
+      // not their only reader — it is the one already in the conversation.
+      expect(leaving).not.toMatch(/cannot see this lane until it has lapsed out of presence/);
+      expect(leaving).not.toMatch(/strand them for a whole grace window/);
+      expect(leaving).toMatch(wrapped("you are refused at the park, while the claim still"));
+      expect(leaving).toMatch(wrapped("The release does hand those events to the orchestrator"));
       expect(leaving).toMatch(
-        wrapped(
-          "the orchestrator's unscoped claim cannot see this lane until it has lapsed out of presence",
-        ),
+        wrapped("is why the drain is the leaver's job and not merely its right"),
       );
-      expect(leaving).toMatch(wrapped("strand them for a whole grace window"));
       // So the drain is an instruction, not a fact about the server.
       expect(body).toMatch(/Draining them is therefore the departing listener's job/);
       expect(body).toMatch(/make \*\*one\*\* last/);
@@ -6906,6 +7104,16 @@ describe("a listener launched at its designation's weight", () => {
     expect(losing).toMatch(/You never\s+tell that listener and you never stand it down/);
     // The lane afterwards is the fallback's, which the skill already handles.
     expect(losing).toMatch(/worked on your lane again, under the routing every other thread gets/);
+    // AGENT-070: "ordinary routing" is not "ordinary participation". §8's rider
+    // signed 2026-09-06 leaves the thread engaged through a release, so its
+    // plain turns keep arriving here — the orchestrator must not read a release
+    // as a conversation going quiet.
+    expect(losing).toMatch(
+      wrapped("It stays **engaged** — designating it engaged it, and only resolving ends that"),
+    );
+    expect(losing).toMatch(
+      wrapped("keep arriving as ordinary `comment.created` events of yours, mention or none"),
+    );
     // The worked transcript, re-derived: the payload carries the departing
     // resident with its weight, and a `reason`.
     const fences = fencedBlocks(losing).filter((fence) => fence.info === "bash");
@@ -7055,15 +7263,63 @@ describe("a listener launched at its designation's weight", () => {
     );
     expect(occupied, "the wait-for-the-fallback rule is back").not.toMatch(/launch nothing now/i);
     expect(occupied).toMatch(/you launch now, at the new weight/);
-    // The invariant this rule rests on, stated as an outcome and pointed home.
+    /*
+     * The invariant this rule rests on, stated as an outcome and pointed home.
+     * **AGENT-073**: the outcome is a *replacement*, and the old wording made
+     * the conversation the casualty of it. SPEC.md §7's rider signed 2026-09-06
+     * corrects that in as many words — the conversation is a document, it is on
+     * disk, and the successor reads it — so the cost this bullet may state is
+     * the released listener's working context and nothing wider. The negative
+     * pin keeps the overstatement from coming back as a shorter way to say the
+     * same thing.
+     */
+    expect(occupied).toMatch(wrapped("No running agent becomes another model, so the change"));
+    expect(occupied).toMatch(wrapped("is made by replacing it: the old listener ends its own run"));
     expect(occupied).toMatch(
-      /No running agent\s+becomes another model without discarding the conversation it holds/,
+      wrapped("and the successor you launch reads the conversation off disk"),
     );
     expect(occupied).toMatch(
-      /\*\*When it goes, and how it finds out, is the\s+converse skill's to state\.\*\*/,
+      wrapped("What that costs is the released listener's working context, never the conversation"),
+    );
+    expect(occupied, "the overstated cost is back").not.toMatch(
+      /discard(ing|s)? the conversation/i,
+    );
+    expect(occupied).toMatch(
+      wrapped("**When it goes, and how it finds out, is the converse skill's to state.**"),
     );
     // The old listener is still never stood down by the orchestrator.
-    expect(occupied).toMatch(/Standing it down yourself is still not yours to do/);
+    expect(occupied).toMatch(wrapped("Standing it down yourself is still not yours to do"));
+  });
+
+  /**
+   * **AGENT-073, the sweep.** Three files carried the same overstatement in
+   * three wordings, and each was found by reading rather than by a test — the
+   * defect's whole shape is that it spreads by paraphrase. So the guard is
+   * workspace-wide and on the *claim*, not on any one sentence: no template
+   * file may say that a running agent's change discards, loses, or throws away
+   * the conversation. SPEC.md §7's rider signed 2026-09-06 settles what is
+   * true — the conversation is a document, it is on disk, and the successor
+   * reads it — so what a skill may call the cost is the released agent's own
+   * working context and nothing wider.
+   */
+  it("nowhere claims a weight change costs the conversation", () => {
+    const forbidden = /(discard|lose|losing|throw(ing)? away)[a-z]*\s+(this|the)\s+conversation/i;
+    for (const relPath of templateFiles) {
+      expect(
+        readTemplateFile(relPath),
+        `${relPath}: a re-designation releases the agent, not the conversation (SPEC.md §7 rider, 2026-09-06)`,
+      ).not.toMatch(forbidden);
+    }
+    // The sweep is worthless if its regex misses the wordings that shipped.
+    for (const shipped of [
+      "becoming another one would mean discarding this conversation",
+      "without discarding the conversation it is holding",
+      "without discarding the conversation it holds",
+    ]) {
+      expect(shipped, "the sweep would not have caught the defect it exists for").toMatch(
+        forbidden,
+      );
+    }
   });
 
   /**

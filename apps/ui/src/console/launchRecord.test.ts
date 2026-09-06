@@ -1,6 +1,6 @@
 import type { Job, JobLogLine } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { designationJob, readLaunchRecord } from "./launchRecord";
+import { launchPromptingJob, readLaunchRecord } from "./launchRecord";
 
 /**
  * The launch record AGENT-059 writes, as this tab reads it (UI-186).
@@ -120,19 +120,19 @@ describe("reading a launch record", () => {
   });
 });
 
-describe("finding the designation's own event", () => {
+describe("finding the event that prompted this lane's launch", () => {
   it("takes the most recent designation of this lane", () => {
     const jobs = [job({ eventId: "evt_new" }), job({ eventId: "evt_old" })];
-    expect(designationJob(jobs, "th_solo")?.eventId).toBe("evt_new");
+    expect(launchPromptingJob(jobs, "th_solo")?.eventId).toBe("evt_new");
   });
 
   it("ignores this lane's other events", () => {
     const jobs = [job({ eventId: "evt_c", type: "comment.created" }), job({ eventId: "evt_d" })];
-    expect(designationJob(jobs, "th_solo")?.eventId).toBe("evt_d");
+    expect(launchPromptingJob(jobs, "th_solo")?.eventId).toBe("evt_d");
   });
 
   it("ignores a designation of another conversation", () => {
-    expect(designationJob([job({ originId: "th_other" })], "th_solo")).toBeNull();
+    expect(launchPromptingJob([job({ originId: "th_other" })], "th_solo")).toBeNull();
   });
 
   /*
@@ -141,6 +141,25 @@ describe("finding the designation's own event", () => {
    * this until the list has landed — the hook's own guard, asserted there.
    */
   it("answers nothing while the job list is undefined", () => {
-    expect(designationJob(undefined, "th_solo")).toBeNull();
+    expect(launchPromptingJob(undefined, "th_solo")).toBeNull();
+  });
+
+  /*
+   * **SERVER-163.** A plainly created conversation designates a general
+   * resident and announces no `resident.designated` — the server's deliberate
+   * decision, because that event is a launch instruction and one per created
+   * thread would start one background agent per conversation. Its launch is
+   * recorded on the `lane.waiting` that asked for it instead, so a reader that
+   * looked only at designations reported *"unknown"* for the commonest lane in
+   * a workspace while the record sat on the queue beside it.
+   */
+  it("takes a `lane.waiting` notice, which is all a plainly created lane gets", () => {
+    const jobs = [job({ eventId: "evt_w", type: "lane.waiting" })];
+    expect(launchPromptingJob(jobs, "th_solo")?.eventId).toBe("evt_w");
+  });
+
+  it("takes the most recent of the two kinds, whichever kind that is", () => {
+    const jobs = [job({ eventId: "evt_w", type: "lane.waiting" }), job({ eventId: "evt_d" })];
+    expect(launchPromptingJob(jobs, "th_solo")?.eventId).toBe("evt_w");
   });
 });

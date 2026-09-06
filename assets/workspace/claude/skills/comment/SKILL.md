@@ -19,7 +19,7 @@ event. You read, you work, you reply — and you hand the event back. The termin
 event belongs to the orchestrate skill alone; never make it here, and never claim work of
 your own.
 
-`comment.created` — a turn that requested the agent. Its payload carries six fields:
+`comment.created` — a turn for the agent to answer. Its payload carries six fields:
 
 ```json
 {
@@ -260,8 +260,7 @@ Pick the smallest shape that actually answers the request.
 - **Patch the parent** with
   `corpus doc patch <id> --from agent --old '<what it says>' --new '<what it should say>'`
   when the change is one you can quote — a figure that moved, a sentence that is now wrong, a
-  paragraph that should go. It is the ordinary way to change a document that is mostly right,
-  and it sends the change rather than the document.
+  paragraph that should go. It sends the change rather than the document.
 - **Edit the parent** with `corpus doc edit <id> --key <the key that read printed> --from agent`
   and a heredoc body when there is nothing to quote because the whole shape is changing. The
   heredoc *is* the document's whole new body, so this is the escalation of *Gather context*:
@@ -451,8 +450,10 @@ Rules:
 - **A stamp is never repaired by another turn.** The record is frontmatter the server keeps,
   not text to amend: a reply posted only to fix one puts a second agent turn where one
   answer was asked. A wrong stamp noticed late goes in the job log — the turn stays.
-- **Never post a reply by editing the thread file.** The format, the timestamps and the
-  events a turn triggers are the server's — a hand-written turn is a corrupted conversation.
+- **Never post a reply by editing the thread file.** The turn grammar admits only authors
+  the server writes, so a hand-written heading is not a turn at all: your answer lands as
+  stray bytes inside the person's own turn, under their name, invisible to every reader,
+  and no event fires.
 - **Always reply**, even when the outcome is "nothing to do" — a person is watching a pending
   indicator, and a silent event reads as a hang. "I checked; that figure is still current, so
   I changed nothing" is a complete reply.
@@ -485,8 +486,7 @@ Rules:
   `↳ filed [[doc_5c8b2f]] into finance/, tagged insurance`. It is an action report, not
   conversation: no question, no next step, no second line, and never anywhere but last. **A
   turn whose work changed nothing carries no trace** — answering is not acting. Write the
-  arrow into the turn body exactly as it is written here; how the board renders that line is
-  not your concern.
+  arrow into the turn body exactly as it is written here.
 - **Length follows the work.** Two or three sentences for a normal exchange; a short list when
   you touched several documents. Lead with the answer, then what changed. No preamble, no
   restating the question, no apologising.
@@ -496,7 +496,7 @@ Rules:
 **The reply is the last of a run, so send the run as one invocation.** The write, the job-log
 line recording it and the reply are all settled before any of them goes: you wrote the reply
 out of what you had already read, not out of what the write prints. So they are one batch
-rather than three — about a second saved for the waiting person.
+rather than three.
 
 ```bash
 corpus batch --from agent <<'CORPUS_EOF'
@@ -517,9 +517,12 @@ batch is the writes in front of it. One invocation is not worth a turn cut to fi
 ## Engagement and closure
 
 The **server** flips the thread's participation from `requested` to `engaged` on your first
-turn in it. There is no CLI verb that sets it and you never attempt to: the flag is mechanical.
+turn in it, and a designation engages a thread the same way, in one write.
+There is no CLI verb that sets it and you never attempt to: the flag is mechanical.
+**So a conversation whose resident was released reaches you already engaged**, with no turn
+of yours in it, and stays engaged until somebody resolves it.
 
-The consequence is the part that matters. Once a thread is `engaged`, **every later user turn
+Once a thread is `engaged`, **every later user turn
 re-triggers you** — no `@agent` needed — unless the thread is `resolved` or the turn was posted
 with the "note only" toggle. So end turns like someone who will be asked again, and say when
 you consider a matter closed, in words: "that's the whole change — nothing else in the document
@@ -528,9 +531,8 @@ referenced the old figure."
 You may close a settled matter yourself. Resolving is
 `corpus thread resolve <id> --from agent`, and **the resolve rides on the reply that reports
 the work** — one reply and one resolve for the same act, never a resolve with no readable turn
-attached, with the closing stated in the prose and named in the trace line. Whether a thread
-is yours to close is a set of rules rather than a call, which is why the act has its own
-briefing: **before you resolve any thread, or suggest resolving one, read
+attached. Whether a thread is yours to close has its own briefing:
+**before you resolve any thread, or suggest resolving one, read
 `references/closure.md`.** It carries the four conditions that must all hold, the four
 threads you never close, what resolving costs, and why it cascades nowhere.
 
@@ -621,8 +623,8 @@ session that is running.
   holds the history.
 - **The turn is attachment-only** — an image or a file with no text. The attachment *is* the
   request: read it and answer it.
-- **The turn is note-only.** A note posts no event, so it should never reach you; if one does,
-  handle it normally. The absence of an explicit request is not an error.
+- **The turn is note-only.** A note posts no event, so it should never reach you. If one does,
+  handle it normally.
 - **A standalone thread stays trivial.** Not every Ask deserves a document. Answer it, title
   it, and say in the reply when something was durable enough to write down and when it was not.
 - **The thread is about a skill document** — someone selected an instruction in a skill and

@@ -53,12 +53,25 @@ export interface UnifiedDiff {
   readonly coarse: boolean;
 }
 
-type OpKind = "equal" | "remove" | "add";
+export type OpKind = "equal" | "remove" | "add";
 
-interface Op {
+export interface Op {
   readonly kind: OpKind;
   /** The raw line, terminator included. */
   readonly line: string;
+}
+
+/**
+ * The raw edit script between two line arrays — exported for the three-way
+ * merge (`merge3.ts`, CLI-082), which needs the same alignment this diff
+ * prints. One aligner for both is what keeps `corpus workspace diff` and
+ * `corpus workspace merge` telling the same story about the same two files.
+ */
+export function diffOps(
+  from: readonly string[],
+  to: readonly string[],
+): { readonly ops: readonly Op[]; readonly coarse: boolean } {
+  return compare(from, to);
 }
 
 export function unifiedDiff(

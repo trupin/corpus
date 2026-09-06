@@ -6,6 +6,7 @@ import {
   allocatePort,
   assertRehearsalWorkspace,
   BASE_DIR_PREFIX,
+  firstDocumentId,
   MARKER_FILE,
   RehearsalSafetyError,
   sanitizedEnv,
@@ -54,6 +55,30 @@ describe("the temp directory name", () => {
     for (const banned of ["rehears", "test", "fixture", "scenario"]) {
       expect(BASE_DIR_PREFIX.toLowerCase()).not.toContain(banned);
     }
+  });
+});
+
+/**
+ * INFRA-037's window close reads `corpus doc list --json` for a document to
+ * diff — any document, since the commit window is workspace-wide. This is the
+ * one pure seam of that close: the payload read.
+ */
+describe("firstDocumentId", () => {
+  it("picks the first listed document", () => {
+    const stdout = JSON.stringify({
+      items: [{ id: "doc_seedboardattention" }, { id: "doc_other" }],
+      page: { offset: 0 },
+    });
+    expect(firstDocumentId(stdout)).toBe("doc_seedboardattention");
+  });
+
+  it("refuses an empty listing loudly — a seeded workspace always has its templates", () => {
+    const stdout = JSON.stringify({ items: [], page: { offset: 0 } });
+    expect(() => firstDocumentId(stdout)).toThrow(/no documents/);
+  });
+
+  it("refuses a payload that is not a listing", () => {
+    expect(() => firstDocumentId('{"rows": []}')).toThrow();
   });
 });
 

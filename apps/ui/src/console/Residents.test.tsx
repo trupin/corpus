@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoardNavigationProvider, useRegisterBoardNavigation } from "../board/openInColumn";
 import { ToastProvider } from "../shell/Toasts";
-import { LAUNCHER_DECIDES_LABEL } from "../thread/residentActions";
+import { LAUNCHER_DECIDES_LABEL, RELEASED_NOTICE } from "../thread/residentActions";
 import {
   NO_LEVELS as NO_LEVELS_BODY,
   SKILL_QUERY_SEARCH,
@@ -17,11 +17,17 @@ import {
 import { Residents } from "./Residents";
 import {
   LAUNCH_FAILED_LEAD,
+  LAUNCH_NEVER_PROMPTED_NOTE,
   LAUNCH_READING_NOTE,
   LAUNCH_RECORDED_LEAD,
   LAUNCH_UNRECORDED_NOTE,
   NO_DESIGNATIONS_NOTE,
   ORCHESTRATOR_SCOPE_NOTE,
+  RELEASE_CANCEL_LABEL,
+  RELEASE_CONFIRM_LABEL,
+  RELEASE_CONSEQUENCE,
+  RELEASE_FAILED_LEAD,
+  RELEASE_LABEL,
   SCOPE_BOUND_NOTE,
   SCOPE_RELEASED_NOTE,
   SCOPE_VIA_MARKS,
@@ -168,6 +174,12 @@ interface StubLaunch {
   readonly eventId: string;
   /** The lines its log holds. Omitted is an empty log — a reaped one reads so. */
   readonly lines?: readonly string[];
+  /**
+   * Which event prompted the launch. Omitted is the designation; `lane.waiting`
+   * is the notice a **plainly created** conversation gets instead, and is the
+   * only launch-prompting event such a lane ever has (SERVER-163).
+   */
+  readonly type?: "resident.designated" | "lane.waiting";
 }
 
 interface Workspace {
@@ -189,6 +201,10 @@ interface Workspace {
   readonly holdJobs?: boolean;
   /** Answers `GET /api/jobs` with a `500` — a read that failed, not an absence. */
   readonly jobsFail?: boolean;
+  /** Refuses `DELETE /api/threads/{id}/resident` — a release that did not land. */
+  readonly releaseFails?: boolean;
+  /** Never answers the release, so the pane is held in flight and can be read there. */
+  readonly releaseHolds?: boolean;
 }
 
 function json(body: unknown, status = 200): Promise<Response> {
@@ -200,11 +216,11 @@ function json(body: unknown, status = 200): Promise<Response> {
   );
 }
 
-/** One `GET /api/jobs` row for a seeded designation event. */
+/** One `GET /api/jobs` row for a seeded launch-prompting event. */
 function designationRow(launch: StubLaunch): Job {
   return {
     eventId: launch.eventId,
-    type: "resident.designated",
+    type: launch.type ?? "resident.designated",
     status: "processed",
     // §7's carve-out: a designation is announced on the **orchestrator's** lane
     // whoever is designated, and its origin is the conversation.
@@ -277,6 +293,24 @@ function transport(workspace: Workspace = {}): Wire {
         }
         return json({ thread: { id }, warnings: [] });
       });
+    }
+    /*
+     * §9.2's release, and it **removes the lane from the roster** rather than
+     * answering 200 and leaving the seed standing. The untyped `json({})`
+     * fallback at the bottom of this stub would have answered every DELETE ever
+     * sent, so a green run would have stood for a release nobody performed —
+     * the trap UI-116 records on `POST .../turns` and UI-162 on `tags`.
+     */
+    if (designate !== null && method === "DELETE") {
+      writes.push({ path: `DELETE ${url.pathname}`, body: null });
+      if (workspace.releaseHolds === true) return new Promise<Response>(() => undefined);
+      if (workspace.releaseFails === true) {
+        return json({ code: "internal_error", message: "the lane could not be reached" }, 500);
+      }
+      const id = designate[1] ?? "";
+      const index = lanes.findIndex((lane) => lane.lane === id);
+      if (index >= 0) lanes.splice(index, 1);
+      return json({ thread: { id }, warnings: [] });
     }
     if (url.pathname === "/api/jobs") {
       if (workspace.holdJobs === true) return new Promise<Response>(() => undefined);
@@ -696,22 +730,60 @@ describe("what the launch went out at", () => {
    * the absence, said plainly, and never a level nobody wrote down.
    */
   it("says the record is gone rather than naming a level nobody recorded", async () => {
-    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
-    await selectOpen();
-
-    await waitFor(() => {
-      expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
-    });
-    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
-  });
-
-  it("says the same where the event is still held and its log is empty", async () => {
+    // The event is still on the queue and its log holds no launch: reaped, or
+    // written by guidance that predates AGENT-059.
     renderResidents({ lanes: OPEN_ROSTER, launches: [{ lane: "th_open", eventId: "evt_d" }] });
     await selectOpen();
 
     await waitFor(() => {
       expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
     });
+    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
+    expect(weightNote("th_open")).not.toContain(LAUNCH_NEVER_PROMPTED_NOTE);
+  });
+
+  /*
+   * **The other absence, and it is not the same absence** (SERVER-163). The
+   * queue holds no event that would have launched this lane — no designation
+   * and no waiting notice — so nothing has ever run here and there is no record
+   * to be missing. This is the ordinary state of a conversation created plainly:
+   * §7's rider A gives it a general resident, and the listener starts when the
+   * lane has work rather than when the thread is made.
+   */
+  it("tells a lane nothing ever launched apart from one whose record is gone", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_NEVER_PROMPTED_NOTE);
+    });
+    // …and it does not claim a record went missing, which is what it said
+    // before and was not true.
+    expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);
+  });
+
+  /*
+   * A plainly created conversation's launch is logged on the `lane.waiting`
+   * that asked for it, which is the only launch-prompting event it ever gets
+   * (SERVER-163). Reading only designations reported *"unknown"* for the
+   * commonest lane in a workspace while the record sat on the queue beside it.
+   */
+  it("reads the launch a `lane.waiting` recorded, for a plainly created lane", async () => {
+    renderResidents({
+      lanes: OPEN_ROSTER,
+      launches: [
+        { lane: "th_open", eventId: "evt_w", type: "lane.waiting", lines: [JUDGED_LAUNCH] },
+      ],
+    });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_RECORDED_LEAD);
+    });
+    expect(weightNote("th_open")).toContain(
+      "Haiku — judged: no weight chosen, the lane is for quick factual lookups",
+    );
+    expect(weightNote("th_open")).not.toContain(LAUNCH_NEVER_PROMPTED_NOTE);
   });
 
   /*
@@ -971,6 +1043,245 @@ describe("changing a resident's weight", () => {
       expect(document.querySelector('[data-lane-weight-note="th_open"]')?.textContent).toContain(
         `${WEIGHT_STATED_LEAD}: Heavy or judgment-laden.`,
       );
+    });
+  });
+});
+
+/**
+ * Stopping a resident where the pane shows it (UI-195).
+ *
+ * The one act §9.2 gives a person with an observable end, offered on the lane
+ * they are looking at. The seed matters as much as the assertions: the stub's
+ * `DELETE` **removes the lane from the roster**, so a row that leaves the list is
+ * evidence a release landed rather than evidence that a component hid something.
+ */
+describe("releasing a resident from the pane", () => {
+  const openLane = async (lane: string, count: number): Promise<void> => {
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(count);
+    });
+    await userEvent.click(laneRow(lane));
+    await waitFor(() => {
+      expect(document.querySelector(`[data-lane-release-panel="${lane}"]`)).not.toBeNull();
+    });
+  };
+  const arm = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: RELEASE_LABEL }));
+  };
+  const confirm = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: RELEASE_CONFIRM_LABEL }));
+  };
+
+  it("offers the act on a lane with a resident, and nothing on a lane without one", async () => {
+    renderResidents();
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-lane]")).toHaveLength(5);
+    });
+
+    // The orchestrator's lane belongs to no conversation and was designated by
+    // nobody, and it is the row the pane opens on.
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-scope="orchestrator"]')).not.toBeNull();
+    });
+    expect(document.querySelector("[data-lane-release-panel]")).toBeNull();
+
+    // …and an `unknown` row is a designated lane the roster reports with no
+    // resident on it. Nothing to release there either.
+    await userEvent.click(laneRow("th_quiet"));
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-scope="th_quiet"]')).not.toBeNull();
+    });
+    expect(document.querySelector("[data-lane-release-panel]")).toBeNull();
+
+    await openLane("th_claims", 5);
+    expect(screen.getByRole("button", { name: RELEASE_LABEL })).toBeTruthy();
+  });
+
+  /*
+   * §8's rider signed 2026-09-06 is the sentence: the lane returns to ordinary
+   * routing, the thread stays engaged, and the ordinary agent answers it. The
+   * first press states it and writes nothing.
+   */
+  it("states the consequence before it acts, and the first press is not the act", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+
+    // Readable before anything is pressed at all: the whole sentence rides the
+    // resting control, for a person who never arms it.
+    expect(screen.getByRole("button", { name: RELEASE_LABEL }).getAttribute("title")).toBe(
+      RELEASE_CONSEQUENCE,
+    );
+    expect(document.querySelector('[data-lane-release-consequence="th_claims"]')).toBeNull();
+
+    await arm();
+
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-lane-release-consequence="th_claims"]')?.textContent,
+      ).toBe(RELEASE_CONSEQUENCE);
+    });
+    // Nothing was sent. The act is the second press.
+    expect(wire.writes).toEqual([]);
+    expect(screen.getByRole("button", { name: RELEASE_CONFIRM_LABEL })).toBeTruthy();
+    // Both halves of the rider: the agent stops, and the conversation does not.
+    expect(RELEASE_CONSEQUENCE).toContain("stops this lane's agent");
+    expect(RELEASE_CONSEQUENCE).toContain("stays open and engaged");
+    expect(RELEASE_CONSEQUENCE).toContain("ordinary agent answers it");
+  });
+
+  /*
+   * The section is taller armed than the space a 210px drawer leaves it, so the
+   * confirm would land below the pane's edge. `.lane-scope` scrolls and this
+   * uses it. jsdom implements no scrolling, so what is asserted is the call —
+   * the geometry was measured against the real app instead.
+   */
+  it("brings itself into view when it arms, so the presses arrive with the sentence", async () => {
+    const scrollIntoView = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    try {
+      renderResidents();
+      await openLane("th_claims", 5);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      await arm();
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalled();
+      });
+      const target = scrollIntoView.mock.instances[0] as Element;
+      expect(target.getAttribute("data-lane-release-panel")).toBe("th_claims");
+
+      // Disarming shrinks the section, so nothing is scrolled on the way out.
+      scrollIntoView.mockClear();
+      await userEvent.click(screen.getByRole("button", { name: RELEASE_CANCEL_LABEL }));
+      await waitFor(() => {
+        expect(document.querySelector('[data-lane-release-consequence="th_claims"]')).toBeNull();
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      } else {
+        Object.defineProperty(Element.prototype, "scrollIntoView", original);
+      }
+    }
+  });
+
+  it("sends §9.2's release, and nothing else", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+    await arm();
+    await confirm();
+
+    await waitFor(() => {
+      expect(wire.writes).toHaveLength(1);
+    });
+    // The existing route through the kit's existing mutation — no new surface,
+    // and no designation masquerading as a stop.
+    expect(wire.writes[0]).toEqual({
+      path: "DELETE /api/threads/th_claims/resident",
+      body: null,
+    });
+  });
+
+  it("keeps the row on the screen until the server has answered", async () => {
+    renderResidents({ releaseHolds: true });
+    await openLane("th_claims", 5);
+    await arm();
+    await confirm();
+
+    // The request is out and unanswered. Nothing may claim the agent stopped:
+    // §9.2's effect is observable, and painting it early is the one thing this
+    // pane must not do.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: RELEASE_CONFIRM_LABEL })).toHaveProperty(
+        "disabled",
+        true,
+      );
+    });
+    expect(document.querySelector('[data-lane="th_claims"]')).not.toBeNull();
+    expect(document.querySelector('[data-lane-release-panel="th_claims"]')).not.toBeNull();
+  });
+
+  it("drops the lane when the roster stops naming it, and says what happened", async () => {
+    renderResidents();
+    await openLane("th_claims", 5);
+    await arm();
+    await confirm();
+
+    // The roster is refetched because the mutation invalidates ["agents"], and
+    // the lane is gone from the answer — which is the server confirming, not
+    // this component hiding a row.
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane="th_claims"]')).toBeNull();
+    });
+    expect(document.querySelectorAll("[data-lane]")).toHaveLength(4);
+    // The pane does not strand itself on a row that has gone.
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-scope="orchestrator"]')).not.toBeNull();
+    });
+    // One wording for one act: the conversation's own menu says this sentence.
+    expect(screen.getByText(RELEASED_NOTICE)).toBeTruthy();
+  });
+
+  it("keeps the resident when the way out is taken", async () => {
+    const wire = renderResidents();
+    await openLane("th_claims", 5);
+    await arm();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: RELEASE_CANCEL_LABEL })).toBeTruthy();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: RELEASE_CANCEL_LABEL }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-release-consequence="th_claims"]')).toBeNull();
+    });
+    expect(wire.writes).toEqual([]);
+    expect(document.querySelector('[data-lane="th_claims"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: RELEASE_LABEL })).toBeTruthy();
+  });
+
+  it("keeps the lane and reports the server's own words when the release fails", async () => {
+    renderResidents({ releaseFails: true });
+    await openLane("th_claims", 5);
+    await arm();
+    await confirm();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(`${RELEASE_FAILED_LEAD}: the lane could not be reached`),
+      ).toBeTruthy();
+    });
+    // Nothing stopped, so the row is where it was.
+    expect(document.querySelector('[data-lane="th_claims"]')).not.toBeNull();
+  });
+
+  /*
+   * The one lane the weight control refuses and this one does not: a release
+   * names no profile that has to resolve, so a resident whose `agent-def` has
+   * gone can still be stopped where it is shown.
+   */
+  it("releases a lane whose profile has gone, which the weight control refuses", async () => {
+    const wire = renderResidents();
+    await openLane("th_gone", 5);
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane-weight-blocked="th_gone"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole("button", { name: WEIGHT_CHANGE_LABEL })).toBeNull();
+
+    await arm();
+    await confirm();
+
+    await waitFor(() => {
+      expect(wire.writes).toEqual([{ path: "DELETE /api/threads/th_gone/resident", body: null }]);
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-lane="th_gone"]')).toBeNull();
     });
   });
 });

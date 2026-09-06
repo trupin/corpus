@@ -5,9 +5,10 @@ import { plural } from "../../input.js";
 import { templateManifestPath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { suggest } from "../../suggest.js";
+import { ignoredKeyDelta } from "../../template/ignored-keys.js";
 import {
   collectIncoming,
-  shaOnDisk,
+  shasOnDisk,
   workspaceFilePath,
   type ToolRoots,
 } from "../../template/incoming.js";
@@ -104,6 +105,15 @@ export interface WorkspaceDiffReport extends WorkspaceDiffFile {
   readonly baselineRecordedBy: string | null;
   /** `null` when there is nothing to diff: the sides agree, or the tool retired the file. */
   readonly diff: WorkspaceDiffBody | null;
+  /**
+   * The frontmatter keys in which the two copies differ, when that is the
+   * **whole** difference (CLI-083, UI-189) — a server-stamped `updated:` or a
+   * board-written `width:`. Non-empty exactly when the shas differ, the verdict
+   * is `current`, and `diff` is `null`: instead of an empty diff that would
+   * read as "no difference" or a raw one that would read as an edit, the report
+   * names the keys and the rendering states them in one line.
+   */
+  readonly ignoredKeyDelta: readonly string[];
 }
 
 /** `corpus workspace diff` with no path. */
@@ -127,7 +137,7 @@ export async function runWorkspaceDiff(
   const root = context.workspace.root;
   const manifest = readTemplateManifest(templateManifestPath(root));
   const incoming = collectIncoming(roots);
-  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shaOnDisk(root, path));
+  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shasOnDisk(root, path));
 
   const common = {
     root,
@@ -150,7 +160,28 @@ export async function runWorkspaceDiff(
     ...common,
     ...describe(decision),
     diff: bodyFor(decision, root, sources.get(decision.path)),
+    ignoredKeyDelta: ignoredDeltaFor(decision, root, sources.get(decision.path)),
   });
+}
+
+/**
+ * The keys behind an ignored-only difference, or none. Populated exactly when
+ * both copies exist and differ in bytes but not in normalized form — the case
+ * where `bodyFor` deliberately prints no diff and the verdict line has to say
+ * what it is looking at instead (sprint-024 TEST-1096).
+ */
+function ignoredDeltaFor(
+  decision: UpgradeDecision,
+  root: string,
+  from: string | undefined,
+): readonly string[] {
+  if (decision.workspace === null || decision.incoming === null || from === undefined) return [];
+  if (decision.workspace === decision.incoming) return [];
+  if (decision.workspaceNormalized !== decision.incomingNormalized) return [];
+  return ignoredKeyDelta(
+    readFileSync(workspaceFilePath(root, decision.path), "utf8"),
+    readFileSync(from, "utf8"),
+  );
 }
 
 /** The rule SPEC.md §2.4 calls a conflict, in the upgrade's own vocabulary. */
@@ -191,6 +222,12 @@ function bodyFor(
 ): WorkspaceDiffBody | null {
   if (decision.incoming === null || from === undefined) return null;
   if (decision.workspace === decision.incoming) return null;
+  // Differs only in ignored frontmatter keys: printing those lines as a diff
+  // would present a server stamp or a column width as an edit. The verdict line
+  // names the keys instead (`ignoredDeltaFor`).
+  if (decision.workspace !== null && decision.workspaceNormalized === decision.incomingNormalized) {
+    return null;
+  }
 
   const here =
     decision.workspace === null ? "" : readFileSync(workspaceFilePath(root, decision.path), "utf8");
@@ -218,7 +255,21 @@ function locate(
   cwd: string,
   decisions: readonly UpgradeDecision[],
 ): string {
-  const known = new Set(decisions.map((decision) => decision.path));
+  return locateTemplatePath(requested, root, cwd, new Set(decisions.map((d) => d.path)));
+}
+
+/**
+ * The same resolution, over any set of known template paths — exported because
+ * `corpus workspace keep`, `unkeep` and `merge` accept a path exactly the way
+ * this verb does, and two resolutions that can disagree would send an agent
+ * pasting the upgrade's own output to a "not template-tracked" refusal.
+ */
+export function locateTemplatePath(
+  requested: string,
+  root: string,
+  cwd: string,
+  known: ReadonlySet<string>,
+): string {
   const direct = requested.replace(/^\.\//, "");
   if (known.has(direct)) return direct;
 
@@ -341,7 +392,12 @@ function verdict(report: WorkspaceDiffReport): string {
         "there is nothing upstream to take."
       );
     case "current":
-      return `identical to the copy corpus ${report.toolVersion} ships — nothing to merge.`;
+      return report.ignoredKeyDelta.length === 0
+        ? `identical to the copy corpus ${report.toolVersion} ships — nothing to merge.`
+        : `differs from the copy corpus ${report.toolVersion} ships only in ` +
+            `${report.ignoredKeyDelta.join(", ")} — server-stamped and presentation frontmatter, ` +
+            "not an edit. An upgrade treats this file as current and keeps this workspace's " +
+            "values for those keys.";
     case "install":
       return (
         "the tool ships this and this workspace has never had it; `corpus workspace upgrade` " +
@@ -414,7 +470,9 @@ export const workspaceDiffCommand: WorkspaceCommandSpec = {
     "new work, and a workspace copy that still matches the baseline needs no merge at all.\n\n" +
     "**Nothing normal here is a failure.** A file with no conflict says which of the harmless " +
     "cases it is and exits 0 — identical to the tool's, edited here but unchanged upstream, " +
-    "untouched here so the upgrade will simply update it. A file the tool has **retired** says " +
+    "untouched here so the upgrade will simply update it. A file differing from the tool's copy " +
+    "only in server-stamped or presentation frontmatter (`created`, `updated`, `width`) is not " +
+    "an edit: it says so in one line naming the keys, and shows no diff. A file the tool has **retired** says " +
     "so and shows no diff, because there is nothing on the other side to compare against, which " +
     "is not the same as an empty file. A file this workspace deleted is shown as a whole-file " +
     "addition. Only a path the tool does not install at all is refused (exit 2), with the reason " +

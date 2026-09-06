@@ -7,7 +7,7 @@ shared
 ## Status
 
 done — decision and decomposition recorded 2026-09-06 (user directive); the
-§ rider below is DRAFTED, NOT SIGNED, and gets read back at the next release
+§9 rider below was SIGNED by the user 2026-09-06 — quoted verbatim in the release
 proposal before any behaviour lands.
 
 ## Priority
@@ -67,7 +67,7 @@ directive describes. Cheap to move if the reading is wrong.
   own size as the reference line — flat cost against a growing size is the
   bounded reads working; cost tracking size is an agent reading whole.
 
-## The rider, drafted for signature at the next release proposal
+## The rider — signed 2026-09-06, applied to SPEC.md as §9.4
 
 For §9 (server) with §2/§10 cross-references:
 
@@ -83,7 +83,7 @@ For §9 (server) with §2/§10 cross-references:
 > expensive as it grows?" is answered by looking rather than by feeling. A
 > report that fails to arrive costs the command nothing and is never retried:
 > the measurements are advisory, and no verb's outcome may depend on the
-> telemetry channel. _(Rider signed — date to be filled at signature.)_
+> telemetry channel. _(Rider signed 2026-09-06.)_
 
 ## Decomposition
 

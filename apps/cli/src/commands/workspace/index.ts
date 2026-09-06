@@ -1,17 +1,21 @@
 import type { TopicSpec } from "../../registry/types.js";
 import { workspaceDiffCommand } from "./diff.js";
+import { workspaceKeepCommand, workspaceUnkeepCommand } from "./keep.js";
 import { maintainCommand } from "./maintain.js";
+import { workspaceMergeCommand } from "./merge.js";
 import { upgradeCommand } from "./upgrade.js";
 
 /**
  * The workspace itself, as opposed to what is in it (SPEC.md §2.1). `corpus
  * init` creates one and lives at the top level because it runs where no
  * workspace exists yet; everything that maintains an existing workspace's own
- * scaffolding belongs here. Today that is `upgrade` — carrying the tool's
- * template forward without overwriting what the agent has made of it — `diff`,
- * which shows what the tool changed under a file the upgrade refused to
- * overwrite, and `maintain`, which packs the workspace's git repository because
- * Corpus does not let git do it in the background (CLI-037).
+ * scaffolding belongs here. That is `upgrade` — carrying the tool's template
+ * forward without overwriting what the agent has made of it — `diff`, which
+ * shows what the tool changed under a file the upgrade refused to overwrite,
+ * `merge`, which performs the three-way that conflict calls for (CLI-082),
+ * `keep`/`unkeep`, which record a divergence as deliberate so upgrades stop
+ * reporting it (CLI-081), and `maintain`, which packs the workspace's git
+ * repository because Corpus does not let git do it in the background (CLI-037).
  */
 export const workspaceTopic: TopicSpec = {
   name: "workspace",
@@ -30,10 +34,22 @@ export const workspaceTopic: TopicSpec = {
     "difference the resolver has to act on. Neither of those two needs the server running: a " +
     "workspace whose skills are broken is exactly the one whose loop cannot be asked to fix " +
     "them.\n\n" +
+    "A conflict then goes one of two ways. `merge` performs the three-way the report points at " +
+    "— baseline, your copy, the tool's — writing clean merges through the server and printing " +
+    "unresolved hunks instead of writing anything. `keep` records the divergence as deliberate, " +
+    "so upgrades stop reporting the file, while still naming every kept path on one quiet line " +
+    "each run. `unkeep` resumes reporting against the current template.\n\n" +
     "`maintain` is about the workspace's git repository rather than its files. Corpus disables " +
     "git's own background maintenance in every workspace — a detached repack racing the server's " +
     "commits can leave the object store permanently corrupt, and that store is the audit trail " +
     "SPEC.md §4 makes the only recovery for a deletion — and packs the repository itself " +
     "instead, at `corpus server start` and through this verb.",
-  commands: [upgradeCommand, workspaceDiffCommand, maintainCommand],
+  commands: [
+    upgradeCommand,
+    workspaceDiffCommand,
+    workspaceMergeCommand,
+    workspaceKeepCommand,
+    workspaceUnkeepCommand,
+    maintainCommand,
+  ],
 };

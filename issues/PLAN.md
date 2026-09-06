@@ -178,7 +178,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | CLI-012 | Install plugin seed templates at corpus init | done | P2 | PLUGINS-002 |
 | UI-015 | Remaining teardown callbacks | done | P2 | UI-012 |
 | SERVER-032 | needs=form drops threads with a second answerable form | done | P2 | SERVER-029 |
-| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
+| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | done | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | done | P2 | SERVER-005 |
 | CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 | SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | done | P0 | SHARED-004 |
@@ -809,7 +809,7 @@ ones their own files carry.
 | CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | done | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
-| SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
+| SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | done | P2 | — |
 
 ### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
 
@@ -1649,7 +1649,7 @@ user, not work).
 | UI-169 | The UI reads `unread` and `enqueued` instead of guessing them | done | P1 | opus | SERVER-148 |
 | UI-170 | A document that failed to load is not a drifted anchor (UI-144 finding) | done | P2 | opus | UI-144 |
 | SERVER-149 | A signed sentence says the cut is never mid-line, and the code keeps a fallback that is (CLI-028 finding) | done | P1 | opus | CONTRACT-032 |
-| SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | todo | P2 | opus | INFRA-020 |
+| SERVER-150 | Three tests hold real waits, and one of them nobody has diagnosed (INFRA-020 finding) | done | P2 | opus | INFRA-020 |
 
 ## Phase 46 — Reported after v0.22.0 (2026-08-25, user reports)
 
@@ -2258,13 +2258,13 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | done | P0 | fable | — |
 | AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | done | P0 | fable | — |
 | UI-186 | The Residents tab never says what it launched at, and cannot change it | done | P0 | opus | AGENT-059 |
-| SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
+| SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | done | P1 | opus | UI-186 |
 | UI-187 | TipTap 2 carries a shipped advisory with no backport, so the editor moves to 3 | done | P0 | opus | — |
 | UI-188 | A browser spec pins an absolute date, so it fails on a calendar rather than on a defect | done | P1 | opus | — |
-| INFRA-035 | Nothing proves the listener judgment reads two lanes differently | todo | P1 | fable | AGENT-063 |
+| INFRA-035 | Nothing proves the listener judgment reads two lanes differently | done | P1 | fable | AGENT-063 |
 | INFRA-036 | A run whose runner exited with work still pending is scored as a product breach | done | P0 | fable | — |
-| AGENT-064 | An event is settled without the reply it was claimed to write | todo | P1 | fable | INFRA-036 |
-| INFRA-037 | A seed write can commit after the boundary, and the run is blamed for it | todo | P0 | fable | — |
+| AGENT-064 | An event is settled without the reply it was claimed to write | done | P1 | fable | INFRA-036 |
+| INFRA-037 | A seed write can commit after the boundary, and the run is blamed for it | done | P0 | fable | — |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
@@ -2318,8 +2318,9 @@ and shipped in v0.22.0.
 | SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
 | AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
 | SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | done | P1 | fable | — |
-| SERVER-165 | Designating a thread engages it | todo | P0 | opus | SHARED-078 |
-| AGENT-070 | The skills still read "a parked resident answers only mentions" | todo | P1 | opus | SERVER-165 |
+| SERVER-165 | Designating a thread engages it | done | P0 | opus | SHARED-078 |
+| AGENT-070 | The skills still read "a parked resident answers only mentions" | done | P1 | opus | SERVER-165 |
+| AGENT-073 | The skills still call a weight change a discarded conversation | done | P0 | opus | SHARED-076 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole
@@ -2462,11 +2463,13 @@ binary's registry (CLI-084 records both hypotheses and mandates the reproduction
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| UI-189 | Resizing a column manufactures a template conflict by clicking | todo | P0 | fable | — |
-| CLI-081 | The manifest cannot record deliberate divergence | todo | P0 | fable | — |
-| CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
-| CLI-083 | `updated:` restamps count as modification | todo | P0 | opus | — |
-| CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
+| CONTRACT-098 | Frontmatter key classes are declared once, where both sides can import them | done | P0 | opus | — |
+| UI-189 | Resizing a column manufactures a template conflict by clicking | done | P0 | fable | CONTRACT-098 |
+| CLI-081 | The manifest cannot record deliberate divergence | done | P0 | fable | — |
+| CLI-082 | Skills have dual ownership and no merge verb | done | P0 | fable | — |
+| CLI-083 | `updated:` restamps count as modification | done | P0 | opus | CONTRACT-098 |
+| CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | done | P0 | opus | — |
+| UI-195 | A resident can be stopped where it is shown | done | P0 | opus | SERVER-165 |
 
 ## Phase 59 — What a document costs is measured, not felt (2026-09-06, user directive)
 
@@ -2477,8 +2480,8 @@ The token-accounting chain: every CLI invocation weighs what the agent wrote and
 the house estimate), reports it fire-and-forget, the server keeps it as runtime state beside the
 queue, and a document's own view shows its cost over time beside its size — flat cost against a
 growing document is Phase 57's bounded reads visibly working. Placement reading recorded in
-SHARED-079: the panel lives with the document, not in the console. The §9 rider is drafted in
-SHARED-079 and signs at the next release proposal before anything lands.
+SHARED-079: the panel lives with the document, not in the console. The §9 rider was signed by the user 2026-09-06
+(quoted verbatim in the release goal) and applied to SPEC.md as §9.4 before any behaviour.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
@@ -2503,3 +2506,41 @@ INFRA-025-clean by construction — with exemptions as config paths, never inlin
 | INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
 | UI-193 | Overlays correct by construction, and a battery that proves it | todo | P0 | fable | UI-191, INFRA-040 |
 | UI-192 | The designation popover is broken four ways | todo | P0 | fable | UI-191, UI-193 |
+
+## Debt harvest — SHARED-003 audit (2026-09-06)
+
+The PR #11 / PR #12 review ledger (`SHARED-003`) carried 58 findings from six
+review and eval rounds since 2026-07-29. An audit dispositioned every one of
+them: **15 struck** as already done or moot, **7 re-filed** as the standalone
+issues below, **32 batched** into four issues by kind, and **4 waived**. The
+ledger is now a closed record — kept, not deleted, because a struck item is what
+stops a later reviewer re-litigating a finding.
+
+Seven were re-filed standalone because they are defects, not nits: a spec
+violation, a destructive unguarded path, a concurrency race, an undeclared error
+response, a credential-bearing wrong answer, a data-loss window, and a skill that
+instructs a mechanism the product does not have. The other 32 batched by kind
+rather than by domain, so `SHARED-080` and `SHARED-081` span domains on purpose.
+
+`SPEC.md:354` cited `SHARED-003` by name for the `agent.done` producer chain.
+That citation now points at `SHARED-081`, which carries it. Two other
+`SHARED-003` citations in code (`packages/contract/src/routes/inventory.ts:22`,
+`apps/cli/src/commands/workspace/upgrade.ts:115`) were left alone: what they cite
+is the PR #12 sign-off record and the sprint-017 `deferred/.gitkeep`
+adjudication, both of which stay in the closed ledger and are accurate as
+written.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | todo | P0 | opus | — |
+| CLI-086 | `server status` names the wrong port when a live pid is not answering | todo | P1 | opus | — |
+| SERVER-167 | A rebuild discards an index it may not be able to rebuild | todo | P1 | opus | — |
+| SERVER-168 | A create and an unarchive race for one skill name | todo | P1 | opus | — |
+| CONTRACT-099 | The doctor's refusal reaches the CLI as a bare 500 | todo | P1 | opus | — |
+| UI-194 | The leave-warning never fires, and the refused buffer dies with the tab | todo | P1 | opus | — |
+| AGENT-071 | The comment skill promises a wake-back that does not exist | todo | P1 | opus | — |
+| AGENT-072 | Eight places where the skills and the docs say what is not so | todo | P1 | opus | AGENT-071 |
+| INFRA-041 | Four script findings the gates cannot see | todo | P1 | opus | — |
+| SHARED-080 | Ten code nits from the PR #11 ledger | todo | P2 | opus | — |
+| SHARED-081 | Ten design decisions the ledger deferred to triage | todo | P2 | fable | — |
+| SERVER-170 | A hand-moved event is invisible to every reader | todo | P1 | opus | — |

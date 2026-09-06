@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { QUEUE_EVENT_STATUSES, type QueueEventStatus } from "@corpus/contract";
 import { templateManifestPath } from "../../paths.js";
+import { normalizedSha256 } from "../../template/ignored-keys.js";
 import { planTemplateInstall, type PlannedTemplateFile } from "../../template/install.js";
 import {
   serializeManifest,
@@ -223,7 +224,16 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
   for (const file of installed) {
     const source = join(templateRoot, ...file.from.split("/"));
     created.copyFile(source, join(root, ...file.to.split("/")));
-    files.push({ path: file.to, sha256: sha256(readFileSync(source)) });
+    // Both hashes, from birth: the normalized one is what lets a later upgrade
+    // tell a server-stamped `updated:` or a board-written `width:` from an edit
+    // (CLI-083) — and it is recordable only now, while the installed bytes are
+    // in hand.
+    const contents = readFileSync(source);
+    files.push({
+      path: file.to,
+      sha256: sha256(contents),
+      normalizedSha256: normalizedSha256(contents),
+    });
   }
 
   const configPath = join(root, CONFIG_DIR, CONFIG_FILE);

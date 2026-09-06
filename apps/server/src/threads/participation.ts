@@ -38,9 +38,16 @@ export interface ParticipationInput {
   readonly parsed: ParsedMentions;
   /**
    * The thread as it stands **before** this turn, or `null` when the turn is
-   * creating the thread. A new thread cannot be `engaged`, so creation's omitted
-   * behaviour is mention-only — which is exactly what the contract's
-   * `THREAD_CREATE_OMITTED_BEHAVIOUR` promises.
+   * creating the thread. There is no thread yet for the creating turn to be a
+   * *later* turn of, so creation's omitted behaviour is mention-only — which is
+   * exactly what the contract's `THREAD_CREATE_OMITTED_BEHAVIOUR` promises.
+   *
+   * **That survives the designation-engages rider** (SPEC.md §8, signed
+   * 2026-09-06; SERVER-165, open question O1). A creation that designates writes
+   * `agent: engaged` into the thread it makes, so the thread is engaged from its
+   * first byte — but §8's automatic clause is about *"every **later** turn"*,
+   * and the turn the thread arrived with is not one. `threads/create.ts` carries
+   * the argument; this field is where the answer is enforced, by staying `null`.
    */
   readonly thread: { readonly agent: ThreadAgent; readonly status: ThreadStatus } | null;
 }
@@ -121,6 +128,13 @@ function shouldEnqueue(input: ParticipationInput, status: ThreadStatus): boolean
  *     the thread unable to re-trigger for the rest of its life.
  *   - `none → requested` on the first turn that asks for the agent, which is
  *     what makes the pending-agent indicator honest before any reply exists.
+ *
+ * **A third writer sets it, and it is not a transition** (SERVER-165): §7's
+ * designation writes `agent: engaged` straight onto the thread, in the same
+ * write as the `resident:` key (`threads/resident.ts`, `threads/create.ts`).
+ * That is a person handing the conversation over rather than a turn moving the
+ * state machine along, so it does not belong in this function — but it obeys the
+ * same one-way rule, which is why designating can only ever raise the key.
  *
  * `engaged` is terminal: resolving a thread stops the re-trigger without
  * unwinding the fact that the agent took part.

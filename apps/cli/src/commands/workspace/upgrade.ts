@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES, type Actor } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
@@ -12,11 +12,13 @@ import type {
   WorkspaceCommandContext,
   WorkspaceCommandSpec,
 } from "../../registry/types.js";
-import { collectIncoming, shaOnDisk, type ToolRoots } from "../../template/incoming.js";
+import { normalizedSha256, preserveUpgradeIgnoredKeys } from "../../template/ignored-keys.js";
+import { collectIncoming, shasOnDisk, type ToolRoots } from "../../template/incoming.js";
 import { staleVerbCitations, type StaleCitation } from "../../template/stale-verbs.js";
 import {
   readTemplateManifest,
   serializeManifest,
+  sha256,
   type TemplateManifest,
 } from "../../template/manifest.js";
 import {
@@ -24,12 +26,14 @@ import {
   nextManifestFiles,
   planUpgrade,
   writes,
+  type ContentShas,
   type IncomingFile,
   type UpgradeAction,
   type UpgradeDecision,
 } from "../../template/plan.js";
 import { CONFIG_DIR, DEFAULT_DATA_DIR } from "../../workspace.js";
 import { commitPaths, gitExitCode, gitFailure, identityFor, runGit } from "../init/git.js";
+import { pruneBaselineStore, storeBaselineBytes } from "./baseline.js";
 import { ensureMaintenanceSettings, missingMaintenanceSettings } from "./maintenance.js";
 
 /**
@@ -64,7 +68,12 @@ import { ensureMaintenanceSettings, missingMaintenanceSettings } from "./mainten
  * recoverable; undoing the writes to keep git tidy is what would not be.
  */
 
-/** Workspace-relative path of the one file under `.corpus/` an upgrade may write. */
+/**
+ * Workspace-relative path of the manifest. Under `.corpus/` an upgrade writes
+ * only template-machinery state — this file, the queue skeleton's markers, and
+ * the baseline store beside it (`baseline.ts`) — never the runtime state the
+ * server owns.
+ */
 const MANIFEST_RELATIVE_PATH = `${CONFIG_DIR}/${TEMPLATE_MANIFEST_FILE}`;
 
 /** How each reported verdict is labelled, and the order the plan prints them in. */
@@ -124,6 +133,25 @@ export function missingQueueMarkers(root: string): readonly string[] {
   );
 }
 
+/**
+ * Stores the incoming bytes behind every kept entry whose baseline this run
+ * advances, so a later `corpus workspace merge` can still produce the base.
+ * Idempotent — the store is content-addressed — and cheap: kept files are the
+ * exception, not the population.
+ */
+function storeAdvancedBaselines(
+  root: string,
+  decisions: readonly UpgradeDecision[],
+  incoming: readonly IncomingFile[],
+): void {
+  const sources = new Map(incoming.map((file) => [file.path, file.from]));
+  for (const decision of decisions) {
+    if (!decision.kept || decision.incoming === null) continue;
+    const from = sources.get(decision.path);
+    if (from !== undefined) storeBaselineBytes(root, readFileSync(from));
+  }
+}
+
 /** Creates the missing markers, empty, and returns what it wrote. */
 function healQueueSkeleton(root: string, missing: readonly string[]): readonly string[] {
   for (const relative of missing) {
@@ -170,6 +198,17 @@ export interface UpgradeReport {
   /** True when the workspace has no manifest: nothing is overwritten, whatever the plan says. */
   readonly withoutBaseline: boolean;
   readonly changes: readonly ReportedChange[];
+  /**
+   * Template paths this workspace marked **deliberately diverged** with
+   * `corpus workspace keep` (CLI-081), in path order. They are absent from
+   * {@link UpgradeReport.changes} and never written, and the rendering
+   * **names every one of them** on every run that has any — SPEC.md §2.4 says
+   * the upgrade names each divergent file, and §2.1 says a modified file is
+   * reported, so a bare count would be the silence the mark was never meant to
+   * buy. Their manifest baselines still advance to each incoming copy, so
+   * `corpus workspace unkeep` resumes reporting against the current template.
+   */
+  readonly kept: readonly string[];
   /**
    * Queue-skeleton markers this run created — empty in a workspace that already
    * has all of them, which is every workspace `corpus init` made since the last
@@ -311,7 +350,14 @@ export async function applyWorkspaceUpgrade(
   const report = await syncTemplate(request, dependencies);
   const registry = request.registry;
   if (registry === undefined) return { ...report, staleCitations: [] };
-  return { ...report, staleCitations: staleVerbCitations({ root: request.root, registry }) };
+  // `tool` is what keeps the scan honest under `corpus upgrade`: that command
+  // installs the new package and syncs from this same process, so `registry` is
+  // the *outgoing* build's while the template is the incoming one's. The
+  // incoming template's own citations widen the surface (CLI-084).
+  return {
+    ...report,
+    staleCitations: staleVerbCitations({ root: request.root, registry, tool: dependencies }),
+  };
 }
 
 async function syncTemplate(
@@ -330,7 +376,7 @@ async function syncTemplate(
   const withoutBaseline = manifest === undefined;
 
   const incoming = collectIncoming(dependencies);
-  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shaOnDisk(root, path));
+  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shasOnDisk(root, path));
 
   // Not a template file and not part of the three-way compare: a status
   // directory is either there or it is not, so healing it needs no baseline and
@@ -358,6 +404,9 @@ async function syncTemplate(
     upToDate: false,
     withoutBaseline,
     changes: describe(decisions, root, incoming, withoutBaseline),
+    kept: decisions
+      .filter((decision) => decision.kept && decision.incoming !== null)
+      .map((decision) => decision.path),
     queueSkeleton,
     queueSkeletonIgnored: [],
     written: [],
@@ -377,12 +426,32 @@ async function syncTemplate(
     }),
   };
 
-  const pending = decisions.filter((decision) => writes(decision.action, restore));
+  // A kept path is never written — not by `update`, and not by `--restore`
+  // either: keeping says the workspace owns this file, its absence included
+  // (CLI-081). The verdicts are untouched; the write set is where the mark
+  // bites.
+  const pending = decisions.filter(
+    (decision) => !decision.kept && writes(decision.action, restore),
+  );
+  // A kept entry whose recorded shas trail the incoming copy still needs the
+  // manifest rewritten — the advance is what lets a later un-keep compare
+  // against the current template — so that run is not "up to date" even though
+  // it reports nothing and writes no workspace file.
+  const keptAdvances =
+    !dryRun &&
+    decisions.some(
+      (decision) =>
+        decision.kept &&
+        decision.incoming !== null &&
+        (decision.baseline !== decision.incoming ||
+          decision.baselineNormalized !== decision.incomingNormalized),
+    );
   if (
     report.changes.length === 0 &&
     pending.length === 0 &&
     queueSkeleton.length === 0 &&
-    !(withoutBaseline && adopt)
+    !(withoutBaseline && adopt) &&
+    !keptAdvances
   ) {
     // An empty commit every time somebody checks would be noise in the one
     // history that is supposed to mean something.
@@ -424,18 +493,27 @@ async function syncTemplate(
   // all.
   const applied = withoutBaseline ? [] : applyPlan(root, pending, incoming);
   const healed = healQueueSkeleton(root, queueSkeleton);
-  const written = [...applied, ...healed];
+  const appliedPaths = applied.map((file) => file.path);
+  const written = [...appliedPaths, ...healed];
   const nextManifest: TemplateManifest = {
     version: 1,
     tool: request.version,
     installedAt: new Date().toISOString(),
     // What was written, never what was planned: under `--adopt` the plan is not
     // applied at all, and recording its incoming shas would put paths in the
-    // manifest that are not on disk (CLI-014).
-    files: nextManifestFiles(decisions, new Set(written)),
+    // manifest that are not on disk (CLI-014). The hashes are of the bytes as
+    // they landed — an `update` preserves the workspace's ignored keys, so the
+    // template's own sha would describe bytes that are not there.
+    files: nextManifestFiles(decisions, new Map(applied.map((file) => [file.path, file.shas]))),
   };
   mkdirSync(join(root, CONFIG_DIR), { recursive: true });
+  // A kept entry's baseline advances to the incoming copy (CLI-081) — bytes of
+  // the *tool's*, which no workspace commit will ever hold, so they go into
+  // the baseline store or `corpus workspace merge` could never recover its
+  // base for that file later (`baseline.ts`).
+  storeAdvancedBaselines(root, decisions, incoming);
   writeFileSync(templateManifestPath(root), serializeManifest(nextManifest), "utf8");
+  pruneBaselineStore(root, nextManifest);
 
   // The workspace's own `.gitignore` decides whether the manifest is part of the
   // commit. The shipped template ignores all of `.corpus/` as runtime state, so
@@ -445,7 +523,11 @@ async function syncTemplate(
   // here, and neither case is achieved by overriding the operator's `.gitignore`.
   const manifestCommitted = !(await isIgnored(root, MANIFEST_RELATIVE_PATH));
   const trackable = await trackableMarkers(root, healed);
-  const staged = [...applied, ...trackable, ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : [])];
+  const staged = [
+    ...appliedPaths,
+    ...trackable,
+    ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : []),
+  ];
 
   const result: Omit<UpgradeReport, "staleCitations"> = {
     ...report,
@@ -493,22 +575,52 @@ async function isIgnoredByRules(root: string, relative: string): Promise<boolean
   }
 }
 
-/** Copies the bytes for every writing verdict and returns what it wrote. */
+/** One file this run put on disk, hashed as it landed. */
+interface WrittenFile {
+  readonly path: string;
+  readonly shas: ContentShas;
+}
+
+/**
+ * Writes the bytes for every writing verdict and returns what it wrote.
+ *
+ * An `update` does not copy the template's bytes verbatim: it writes the
+ * template's content **with the workspace copy's ignored frontmatter keys
+ * preserved** (sprint-024 P5, TEST-1094, TEST-1099). Ignoring `updated:` and
+ * `width:` in the comparison is what made this file `update`-eligible, and a
+ * bare copy would then destroy the very state the comparison protected — a
+ * resized view would lose its width to the fix for the resize, and `updated`
+ * would jump backwards to the template's fixed seed date, which §5's staleness
+ * ramp and §9.2's ordering both read. `install` and `--restore` copy verbatim:
+ * there is no workspace copy to preserve anything from.
+ *
+ * What lands on disk is therefore the merge, so the caller records the
+ * **written** bytes' hashes in the manifest, not the template's.
+ */
 function applyPlan(
   root: string,
   pending: readonly UpgradeDecision[],
   incoming: readonly IncomingFile[],
-): readonly string[] {
+): readonly WrittenFile[] {
   const sources = new Map(incoming.map((file) => [file.path, file.from]));
-  const written: string[] = [];
+  const written: WrittenFile[] = [];
 
   for (const decision of pending) {
     const from = sources.get(decision.path);
     if (from === undefined) continue;
     const to = join(root, ...decision.path.split("/"));
     mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(from, to);
-    written.push(decision.path);
+    const template = readFileSync(from, "utf8");
+    const contents =
+      decision.action === "update" && existsSync(to)
+        ? preserveUpgradeIgnoredKeys(template, readFileSync(to, "utf8"))
+        : template;
+    writeFileSync(to, contents, "utf8");
+    const bytes = Buffer.from(contents, "utf8");
+    written.push({
+      path: decision.path,
+      shas: { sha256: sha256(bytes), normalizedSha256: normalizedSha256(bytes) },
+    });
   }
   return written;
 }
@@ -522,14 +634,23 @@ function describe(
   const sources = new Map(incoming.map((file) => [file.path, file.from]));
   const rank = (action: UpgradeAction): number => ACTION_ORDER.indexOf(action);
 
-  return decisions
-    .filter((decision) => isReported(decision.action))
-    .sort((one, other) => rank(one.action) - rank(other.action) || (one.path < other.path ? -1 : 1))
-    .map((decision) => ({
-      path: decision.path,
-      action: decision.action,
-      ...detailFor(decision, root, sources.get(decision.path), withoutBaseline),
-    }));
+  return (
+    decisions
+      .filter((decision) => isReported(decision.action))
+      // A kept path is deliberately diverged (CLI-081): no per-file report, only
+      // the summary line the renderer always prints. `retired` still reports —
+      // the entry is being dropped and takes the mark with it, which the
+      // workspace should hear once.
+      .filter((decision) => !decision.kept || decision.action === "retired")
+      .sort(
+        (one, other) => rank(one.action) - rank(other.action) || (one.path < other.path ? -1 : 1),
+      )
+      .map((decision) => ({
+        path: decision.path,
+        action: decision.action,
+        ...detailFor(decision, root, sources.get(decision.path), withoutBaseline),
+      }))
+  );
 }
 
 function detailFor(
@@ -670,9 +791,31 @@ export function renderUpgradeReport(out: Output, report: UpgradeReport): void {
   }
   if (report.upToDate) {
     out.line("already up to date.");
+    renderKeptSummary(out, report);
     return;
   }
   renderUpgradeReportBody(out, report);
+}
+
+/**
+ * The kept-file section (CLI-081), on **every** run that has any — silence
+ * hiding a growing list is the failure mode this refuses.
+ *
+ * It **names each kept path**, one compact line apiece, because SPEC.md §2.4
+ * says the upgrade names each divergent file and §2.1 says a modified file is
+ * reported: a count alone told the operator that something diverged while
+ * withholding which thing, which is the one fact the sentence is read for. The
+ * anti-nag goal survives intact — named is not nagged. A kept path gets no
+ * verdict column, no diff summary and no `unresolved —` follow-up, so it stays
+ * visually quiet and never reads as a conflict the operator must act on.
+ */
+function renderKeptSummary(out: Output, report: UpgradeReport): void {
+  if (report.kept.length === 0) return;
+  out.line(
+    `${plural(report.kept.length, "kept file")} deliberately diverged, skipped by this report — ` +
+      "`corpus workspace unkeep <path>` resumes reporting:",
+  );
+  for (const path of report.kept) out.line(`  kept: ${path}`);
 }
 
 /**
@@ -750,6 +893,7 @@ function renderUpgradeReportBody(out: Output, report: UpgradeReport): void {
       out.line(`${" ".repeat(10)}unresolved — ${conflictResolutionCommand(change.path)}`);
     }
   }
+  renderKeptSummary(out, report);
   for (const marker of report.queueSkeleton) {
     out.line(
       `  ${(report.dryRun ? "pending" : "create").padEnd(7)} ${marker} — queue status directory ` +
@@ -834,6 +978,15 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in " +
     "the workspace with git. A run with nothing to do prints `already up to date.` and makes no " +
     "commit.\n\n" +
+    "Two frontmatter key classes never count as an edit: the server's stamps (`created`, " +
+    "`updated`) and presentation state (`width`, written by resizing a board column). A file " +
+    "differing only in them reads as untouched, and an update takes the tool's content while " +
+    "keeping this workspace's values for those keys — a resize or a restamp is not a conflict, " +
+    "and an upgrade never moves `updated` backwards.\n\n" +
+    "A file marked **kept** (`corpus workspace keep`) is deliberately diverged: it is skipped " +
+    "by the conflict report and never written, every run that has any names each kept path on " +
+    "one quiet line, and its baseline still advances — so `corpus workspace unkeep` resumes " +
+    "reporting against the current template.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
     "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template installs " +
     "— and nothing under `.corpus/` except the manifest itself and a missing queue status " +

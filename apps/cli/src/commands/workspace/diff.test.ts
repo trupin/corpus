@@ -219,6 +219,42 @@ describe("corpus workspace diff <path>", () => {
     expect(harness.json<WorkspaceDiffReport>().diff).toMatchObject({ added: 0, removed: 1 });
   });
 
+  it("names a stamp-only difference in one line, with no diff (CLI-083, UI-189)", async () => {
+    const template = makeTemplate();
+    write(
+      template,
+      "claude/skills/comment/SKILL.md",
+      `---\ntitle: Comment\nupdated: 2026-07-26T00:00:00Z\n---\n\n${SKILL_V1}`,
+    );
+    const root = makeWorkspace(template);
+    // The server restamped `updated:` and the board wrote a `width:` — nobody
+    // edited the file.
+    write(
+      root,
+      COMMENT_SKILL,
+      `---\ntitle: Comment\nupdated: 2026-09-06T10:00:00Z\nwidth: 686\n---\n\n${SKILL_V1}`,
+    );
+
+    const harness = harnessFor(root, { path: COMMENT_SKILL });
+    await diff(harness, { template });
+
+    // The recorded choice (sprint-024 TEST-1096): not an empty diff, which
+    // would read as "no difference", and not a raw diff, which would present a
+    // stamp as an edit — one line naming the keys.
+    const out = harness.stdout();
+    expect(out).toContain("only in updated, width — server-stamped and presentation frontmatter");
+    expect(out).toContain("not an edit");
+    expect(out).not.toContain("--- workspace/");
+
+    const machine = harnessFor(root, { path: COMMENT_SKILL, json: true });
+    await diff(machine, { template });
+    const report = machine.json<WorkspaceDiffReport>();
+    expect(report.action).toBe("current");
+    expect(report.conflict).toBe(false);
+    expect(report.diff).toBeNull();
+    expect(report.ignoredKeyDelta).toEqual(["updated", "width"]);
+  });
+
   it("says a retired file is retired rather than diffing it against nothing", async () => {
     const template = makeTemplate();
     const root = makeWorkspace(template);

@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done — 2026-09-06, evaluator PASS, committed on phase-58
 
 ## Priority
 
@@ -63,6 +63,140 @@ and clearable from the CLI (shape to decide: a `corpus workspace keep <path>`
       decide and record)
 - [ ] `docs/cli.md` regenerates; help states the semantics above
 
+## Decisions (recorded per issue instructions)
+
+- **Verb shape**: `corpus workspace keep <path>` marks, `corpus workspace keep`
+  with no path **lists kept files by path** (TEST-1104's listing verb), and
+  `corpus workspace unkeep <path>` clears. Flags on an existing verb were
+  rejected: the mark is an act on per-path state, not a mode of the upgrade,
+  and the bare-`keep` listing gives the count line somewhere to point.
+- **Storage**: **in the manifest**, as an optional `kept: true` per entry
+  (like `normalizedSha256`, no version bump — both manifest generations parse
+  under `version: 1` in both directions, and a malformed value degrades to
+  "not kept", which reports more, never less). Chosen over a side file because
+  the mark has the entry's own lifecycle: `nextManifestFiles` carries it
+  forward on every advance, and a `retired` entry takes its mark with it — a
+  side file would accumulate marks for paths the manifest no longer knows.
+  One file, one reader (`entry.kept === true`), read identically by upgrade,
+  keep/unkeep, and merge (S2).
+- **Kept semantics beyond the issue text**: a kept file is excluded from the
+  upgrade's *writes* as well as its report — including `--restore` (the
+  workspace owns its absence too). `retired` still reports once, because the
+  entry (and mark) is being dropped. The summary line prints on every run
+  with ≥1 kept file, including "already up to date" runs; zero kept files
+  print nothing (there is no list to hide).
+- **Baseline advance mechanics**: the kept entry advances to the **incoming
+  copy's** shas (never the workspace's — the plan.ts safety property holds),
+  and the advance alone defeats the `upToDate` early exit so the manifest is
+  actually rewritten. The advanced bytes are the tool's and no workspace
+  commit ever holds them, so the upgrade also writes them into the **baseline
+  store** (`.corpus/template-baselines/<sha256>`, CLI-082's `baseline.ts`) —
+  without that, `corpus workspace merge` on a kept file was unrecoverable the
+  moment the template moved again (found live in E2E, below).
+
+## The §2.4 rider, drafted for signature (PR #75 review, finding 1)
+
+The review found the upgrade strand shipped behaviour §2.4 does not describe.
+The report-naming half was fixed in code (kept files are named, not counted).
+The spec half is this rider, for the user's signature:
+
+> **The comparison reads edits, and a person can retire a file from the
+> report.** A file differing from its baseline only in keys the server stamps
+> (`created`, `updated`) or keys that carry presentation state (`width`) is
+> not an edit: the comparison reads through them, and the upgrade's write
+> carries them forward, so a resize or a restamp neither blocks an update nor
+> is destroyed by one. A person may mark a customized file **kept** —
+> deliberately diverged, no longer a conflict — and the upgrade then names it
+> in one quiet line instead of reporting it: named, not nagged, because a
+> silence that hides a growing list is the failure this mark must not create.
+> Keeping is not merging: the baseline still advances, so un-keeping compares
+> against the current template. And a dual-owned file can be **merged**: a
+> three-way of baseline, workspace, and incoming copies, written through the
+> server when clean, reported and left untouched when conflicted, with the
+> one undecidable hunk shape — present in baseline and workspace, absent from
+> the incoming copy — named as undecidable rather than silently resolved.
+> _(Rider signed — date to be filled at signature.)_
+
 ## E2E Verification Log
 
-_Implementing agent fills; state the model._
+**Model: Fable (claude-fable-5), 2026-09-06.** Real built CLI
+(`apps/cli/dist/bin/corpus.js`), real `corpus init` workspace at
+`scratchpad/e2e-081`, template = this worktree's `assets/workspace` (edited to
+simulate a tool release, restored afterwards). No server needed — keep is
+bootstrap-class like upgrade/diff.
+
+1. Customized `data/docs/boards/attention.md` (appended a hand-written column
+   note), appended a line to the template's copy, ran `corpus workspace
+   upgrade`:
+   `keep    data/docs/boards/attention.md — modified here — 1 line only here, 1 line only in the new copy`
+   `unresolved — corpus workspace diff data/docs/boards/attention.md` — the
+   reported eternal conflict reproduced.
+2. `corpus workspace keep data/docs/boards/attention.md` → exit 0, then
+   `corpus workspace upgrade` again: **no conflict line**, and the summary
+   `1 kept file deliberately diverged, skipped by this report — \`corpus
+   workspace keep\` lists them, \`corpus workspace unkeep <path>\` resumes
+   reporting.` (TEST-1103). The advance was committed
+   (`wrote 0 files in commit aa339d6…` — the manifest is tracked by the stock
+   `.gitignore`).
+3. Third upgrade: `already up to date.` **plus** the same summary line —
+   silence never hides the list (TEST-1104's line). Manifest entry:
+   `"sha256": "bfeb0fe7…", "kept": true` — byte-equal to
+   `shasum -a 256` of the template's changed copy, i.e. the baseline advanced
+   while the file on disk kept its customization verbatim (TEST-1106/1107).
+4. `corpus workspace unkeep …` → next `corpus workspace upgrade` printed
+   nothing for the path (local-only divergence against a **current** baseline
+   is `keep-silent`); after appending a *second* template change,
+   `corpus workspace diff` showed `baseline bfeb0fe7…` (the advanced one) and
+   a diff whose `+` side named the newest template's line — un-keep compares
+   against the current template, not the one in force when kept (TEST-1105).
+5. `corpus workspace keep data/docs/notes/mine.md` → exit 2,
+   `"data/docs/notes/mine.md" is not template-tracked — the manifest has no
+   entry for it — so there is no divergence to mark. Nothing was written.`
+   (TEST-1108). Bare `corpus workspace keep` → `no kept files: …`.
+
+Unit coverage: `keep.test.ts` (12 tests: skip+summary, three-file count and
+listing, advance-without-write across two releases, un-keep vs current
+baseline, kept restore-candidate, unknown-path refusal with manifest byte
+comparison, idempotence, no-manifest refusal, cwd-relative resolution, JSON
+shapes, upgrade `--json` `kept` array), plus `plan.test.ts` and
+`manifest.test.ts` cases for the mark's plumbing and parsing.
+
+### PR #75 review fixes (2026-09-06, opus)
+
+**Finding (MAJOR).** SPEC.md:90's signed rider says the upgrade "names each
+one" of the divergent files, and SPEC.md:35 says a modified file is
+"reported". CLI-081 had reduced every kept file to a single count line, so an
+operator was told that something diverged while the one fact they needed —
+*which* file — was withheld. `renderKeptSummary` now **names each kept path**,
+one compact `  kept: <path>` line apiece, sorted (the plan's own path order).
+The `describe()` filter is unchanged, so a kept path still gets no verdict
+column, no diff summary and no `unresolved —` follow-up: named, not nagged.
+Help prose in `upgrade.ts`, `keep.ts` and `workspace/index.ts` that promised
+only a count was rewritten, and `docs/cli.md` regenerated.
+
+E2E, real built CLI (`apps/cli/dist/bin/corpus.js`), real `corpus init`
+workspace at `scratchpad/e2e-ws`, template = this worktree's
+`assets/workspace` (edited to simulate a tool release, restored afterwards):
+
+1. Pre-fix build, two customized-and-kept files
+   (`.claude/skills/comment/SKILL.md`, `data/docs/boards/attention.md`):
+   `2 kept files deliberately diverged, skipped by this report — \`corpus
+   workspace keep\` lists them, \`corpus workspace unkeep <path>\` resumes
+   reporting.` — neither path named.
+2. Post-fix build, same workspace, after moving the template again:
+   ```
+   upgrade (tool 0.33.0 → 0.33.0):
+   2 kept files deliberately diverged, skipped by this report — `corpus workspace unkeep <path>` resumes reporting:
+     kept: .claude/skills/comment/SKILL.md
+     kept: data/docs/boards/attention.md
+   wrote 0 files in commit d9b2ce1a…
+   ```
+3. Next run, the up-to-date branch: `already up to date.` followed by the same
+   two named lines — the naming is on every run that has any, not only on runs
+   with other work.
+
+New/updated unit coverage in `keep.test.ts`: the single-kept case asserts
+`  kept: <path>` **and** the absence of `unresolved — corpus workspace diff
+<path>` (quiet, not a conflict), the three-file case asserts the exact sorted
+list of `  kept: ` lines, and a new test asserts the names on an otherwise
+`already up to date.` run.
