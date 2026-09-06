@@ -260,8 +260,8 @@ export const LAUNCH_UNRECORDED_NOTE =
  * person can act on — that this conversation has never needed its resident.
  */
 export const LAUNCH_NEVER_PROMPTED_NOTE =
-  "This lane has not been launched: nothing has been queued on it, so there is no launch to " +
-  "record. A listener starts when the conversation has work waiting.";
+  "This lane has not been launched: nothing that launches a listener has been queued on it, " +
+  "so there is no launch to record. A listener starts when the conversation has work waiting.";
 
 /** …and while the two reads behind that answer are still in flight (UI-098's rule). */
 export const LAUNCH_READING_NOTE = "Reading what the launch went out at…";

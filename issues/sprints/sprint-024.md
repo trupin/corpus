@@ -435,9 +435,18 @@ When: The upgrade runs
 Then: No finding is reported for `thread digest`
 
 TEST-1121: A genuinely removed verb is still flagged
-Given: A template skill referencing a verb the incoming tool does not have
+Given: A workspace file (CLAUDE.md, a workspace-evolved skill) referencing a
+verb the incoming tool does not have, unvouched by the incoming template
 When: The upgrade's scan runs
 Then: It is flagged, naming the file and line — CLI-059's purpose survives the fix
+_Amended 2026-09-06 at evaluation (orchestrator ruling): the original Given —
+the incoming TEMPLATE itself citing such a verb — is unshippable, because CI
+pins the shipped template to zero findings against its own registry, so the
+vouched set is a subset of the incoming tool's verbs in every released pair.
+The evaluator reproduced the unshippable case with a synthetic template and
+its silence is the disclosed trade CLI-084 records; the shippable case above
+is what the product must catch, and does (frobnicate/rollback flagged while
+summarize was template-vouched)._
 
 TEST-1122: The direction is recorded
 Given: The issue file after implementation

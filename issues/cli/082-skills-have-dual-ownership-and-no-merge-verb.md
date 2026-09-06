@@ -6,7 +6,7 @@ cli
 
 ## Status
 
-todo
+done — 2026-09-06, evaluator PASS, committed on phase-58
 
 ## Priority
 
