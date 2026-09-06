@@ -245,6 +245,24 @@ export const LAUNCH_UNRECORDED_NOTE =
   "No launch record for this designation is on the queue — a job's log is runtime state, " +
   "reaped with its event — so what it went out at is unknown here. Nothing is guessed in its place.";
 
+/**
+ * …and the **other** absence, which is not the same absence (SERVER-163).
+ *
+ * The queue holds no event that would have launched this lane at all — no
+ * designation, no waiting notice — so there is no record to be missing. That is
+ * the ordinary state of a conversation created plainly: §7's rider A gives it a
+ * general resident, and the same rider makes the listener start when the lane
+ * *"has something pending and none is running, not when the thread is
+ * created"*. Nothing has run, so nothing has been recorded.
+ *
+ * Reporting this as *"unknown"* was the complaint UI-186's drill filed: it reads
+ * as a gap in the record where there is no gap, and it hides the one fact a
+ * person can act on — that this conversation has never needed its resident.
+ */
+export const LAUNCH_NEVER_PROMPTED_NOTE =
+  "This lane has not been launched: nothing has been queued on it, so there is no launch to " +
+  "record. A listener starts when the conversation has work waiting.";
+
 /** …and while the two reads behind that answer are still in flight (UI-098's rule). */
 export const LAUNCH_READING_NOTE = "Reading what the launch went out at…";
 
@@ -290,6 +308,18 @@ export function residentWeightNote(
   if (reading.record !== null) {
     return `${lead} ${LAUNCH_RECORDED_LEAD}: ${reading.record.clause}.`;
   }
+  /*
+   * **Two absences, two sentences** (SERVER-163). A lane nothing has ever
+   * launched is not a lane whose record was reaped, and the first is said even
+   * where a level *was* stated — because "the level this would go out at" and
+   * "nothing has gone out" are different answers, and the second is the one a
+   * person watching a quiet conversation needs.
+   *
+   * The reaped case keeps its old rule and is said only where the designation
+   * stated nothing: there, the stated level already answers the question this
+   * line is asked, and the absence of a record adds nothing.
+   */
+  if (reading.absence === "never-prompted") return `${lead} ${LAUNCH_NEVER_PROMPTED_NOTE}`;
   return stated ? lead : `${lead} ${LAUNCH_UNRECORDED_NOTE}`;
 }
 

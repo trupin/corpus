@@ -79,6 +79,26 @@ describe("resolveOrigin", () => {
     ).toEqual({ id: DOC, title: DOC_TITLE });
   });
 
+  it("resolves a `lane.waiting` notice to the conversation it names (SERVER-163)", () => {
+    // The notice carries the lane and nothing else, and it is the only
+    // launch-prompting event a plainly created conversation ever gets — so its
+    // origin has to be findable by lane, or the launch record it holds is
+    // reachable by nobody.
+    expect(resolveOrigin(ws.db, JSON.stringify({ lane: THREAD }))).toEqual({
+      id: THREAD,
+      title: THREAD_TITLE,
+    });
+    // The orchestrator's own lane is not a document and answers null, as does a
+    // lane naming a conversation the corpus no longer holds.
+    expect(resolveOrigin(ws.db, JSON.stringify({ lane: "orchestrator" }))).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify({ lane: "th_gone0000" }))).toBeNull();
+    // …and it is last: a payload carrying both is still about its thread.
+    expect(resolveOrigin(ws.db, JSON.stringify({ threadId: THREAD, lane: DOC }))).toEqual({
+      id: THREAD,
+      title: THREAD_TITLE,
+    });
+  });
+
   it("follows a rename: the title is read at response time, never stored", async () => {
     const id = await enqueue({ threadId: THREAD });
     expect(readJobRow(ws.db, id)?.originTitle).toBe(THREAD_TITLE);

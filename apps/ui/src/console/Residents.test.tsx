@@ -17,6 +17,7 @@ import {
 import { Residents } from "./Residents";
 import {
   LAUNCH_FAILED_LEAD,
+  LAUNCH_NEVER_PROMPTED_NOTE,
   LAUNCH_READING_NOTE,
   LAUNCH_RECORDED_LEAD,
   LAUNCH_UNRECORDED_NOTE,
@@ -168,6 +169,12 @@ interface StubLaunch {
   readonly eventId: string;
   /** The lines its log holds. Omitted is an empty log — a reaped one reads so. */
   readonly lines?: readonly string[];
+  /**
+   * Which event prompted the launch. Omitted is the designation; `lane.waiting`
+   * is the notice a **plainly created** conversation gets instead, and is the
+   * only launch-prompting event such a lane ever has (SERVER-163).
+   */
+  readonly type?: "resident.designated" | "lane.waiting";
 }
 
 interface Workspace {
@@ -200,11 +207,11 @@ function json(body: unknown, status = 200): Promise<Response> {
   );
 }
 
-/** One `GET /api/jobs` row for a seeded designation event. */
+/** One `GET /api/jobs` row for a seeded launch-prompting event. */
 function designationRow(launch: StubLaunch): Job {
   return {
     eventId: launch.eventId,
-    type: "resident.designated",
+    type: launch.type ?? "resident.designated",
     status: "processed",
     // §7's carve-out: a designation is announced on the **orchestrator's** lane
     // whoever is designated, and its origin is the conversation.
@@ -696,22 +703,60 @@ describe("what the launch went out at", () => {
    * the absence, said plainly, and never a level nobody wrote down.
    */
   it("says the record is gone rather than naming a level nobody recorded", async () => {
-    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
-    await selectOpen();
-
-    await waitFor(() => {
-      expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
-    });
-    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
-  });
-
-  it("says the same where the event is still held and its log is empty", async () => {
+    // The event is still on the queue and its log holds no launch: reaped, or
+    // written by guidance that predates AGENT-059.
     renderResidents({ lanes: OPEN_ROSTER, launches: [{ lane: "th_open", eventId: "evt_d" }] });
     await selectOpen();
 
     await waitFor(() => {
       expect(weightNote("th_open")).toContain(LAUNCH_UNRECORDED_NOTE);
     });
+    expect(weightNote("th_open")).toContain(WEIGHT_LAUNCHER_SENTENCE);
+    expect(weightNote("th_open")).not.toContain(LAUNCH_NEVER_PROMPTED_NOTE);
+  });
+
+  /*
+   * **The other absence, and it is not the same absence** (SERVER-163). The
+   * queue holds no event that would have launched this lane — no designation
+   * and no waiting notice — so nothing has ever run here and there is no record
+   * to be missing. This is the ordinary state of a conversation created plainly:
+   * §7's rider A gives it a general resident, and the listener starts when the
+   * lane has work rather than when the thread is made.
+   */
+  it("tells a lane nothing ever launched apart from one whose record is gone", async () => {
+    renderResidents({ lanes: OPEN_ROSTER, launches: [] });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_NEVER_PROMPTED_NOTE);
+    });
+    // …and it does not claim a record went missing, which is what it said
+    // before and was not true.
+    expect(weightNote("th_open")).not.toContain(LAUNCH_UNRECORDED_NOTE);
+  });
+
+  /*
+   * A plainly created conversation's launch is logged on the `lane.waiting`
+   * that asked for it, which is the only launch-prompting event it ever gets
+   * (SERVER-163). Reading only designations reported *"unknown"* for the
+   * commonest lane in a workspace while the record sat on the queue beside it.
+   */
+  it("reads the launch a `lane.waiting` recorded, for a plainly created lane", async () => {
+    renderResidents({
+      lanes: OPEN_ROSTER,
+      launches: [
+        { lane: "th_open", eventId: "evt_w", type: "lane.waiting", lines: [JUDGED_LAUNCH] },
+      ],
+    });
+    await selectOpen();
+
+    await waitFor(() => {
+      expect(weightNote("th_open")).toContain(LAUNCH_RECORDED_LEAD);
+    });
+    expect(weightNote("th_open")).toContain(
+      "Haiku — judged: no weight chosen, the lane is for quick factual lookups",
+    );
+    expect(weightNote("th_open")).not.toContain(LAUNCH_NEVER_PROMPTED_NOTE);
   });
 
   /*

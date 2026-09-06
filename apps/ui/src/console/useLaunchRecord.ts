@@ -1,5 +1,10 @@
 import { useJobLog, useJobs } from "@corpus/kit";
-import { designationJob, readLaunchRecord, type LaunchRecord } from "./launchRecord";
+import {
+  launchPromptingJob,
+  readLaunchRecord,
+  type LaunchAbsence,
+  type LaunchRecord,
+} from "./launchRecord";
 
 /**
  * What the selected lane's listener launched at, read through the queue
@@ -8,8 +13,10 @@ import { designationJob, readLaunchRecord, type LaunchRecord } from "./launchRec
  *
  * ## Two reads, and only for the lane a person is looking at
  *
- * `GET /api/jobs?originId=<lane>` finds the designation's own event, then
- * `GET /api/jobs/{id}/log` reads what that event logged. Both are keyed on the
+ * `GET /api/jobs?originId=<lane>` finds the event that prompted this lane's
+ * launch — its designation, or the `lane.waiting` a plainly created
+ * conversation gets instead (SERVER-163) — then `GET /api/jobs/{id}/log` reads
+ * what that event logged. Both are keyed on the
  * **selected** lane, exactly as `useThreadScope` is: a roster of a dozen lanes
  * must not be two dozen requests on mount, and §7 forbids the sweep.
  *
@@ -37,26 +44,46 @@ export interface LaunchReading {
    * either read is still in flight.
    */
   readonly record: LaunchRecord | null | undefined;
+  /**
+   * Which absence this is, set exactly when {@link record} is `null` and
+   * `null` otherwise (SERVER-163).
+   *
+   * The two absences mean different things and the pane says different things
+   * for them: `never-prompted` is a conversation nothing has ever launched a
+   * listener for, and `unrecorded` is a launch whose record the queue no longer
+   * holds. Reporting both as *"unknown"* was honest and unhelpful.
+   */
+  readonly absence: LaunchAbsence | null;
   /** The message of whichever read failed, or `null` when neither did. */
   readonly failure: string | null;
 }
 
 /** Nothing to read: the pane is showing a lane with no designation behind it. */
-const IDLE: LaunchReading = { record: null, failure: null };
+const IDLE: LaunchReading = { record: null, absence: null, failure: null };
+
+/** A read still in flight, or one that failed: no record, and no absence to name. */
+const pending = (failure: string | null): LaunchReading => ({
+  record: undefined,
+  absence: null,
+  failure,
+});
 
 export function useLaunchRecord(lane: string | null): LaunchReading {
   const enabled = lane !== null;
   const jobs = useJobs({ originId: lane ?? "" }, { enabled });
-  const designation = designationJob(jobs.data?.jobs, lane ?? "");
-  const log = useJobLog(designation?.eventId ?? null, { enabled: enabled && designation !== null });
+  const prompting = launchPromptingJob(jobs.data?.jobs, lane ?? "");
+  const log = useJobLog(prompting?.eventId ?? null, { enabled: enabled && prompting !== null });
 
   if (!enabled) return IDLE;
-  if (jobs.error !== null) return { record: undefined, failure: jobs.error.message };
-  if (jobs.data === undefined) return { record: undefined, failure: null };
-  // The queue holds no designation event for this lane: reaped, or made before
-  // AGENT-059 ever logged one. Answered, and the answer is nothing.
-  if (designation === null) return { record: null, failure: null };
-  if (log.error !== null) return { record: undefined, failure: log.error.message };
-  if (log.data === undefined) return { record: undefined, failure: null };
-  return { record: readLaunchRecord(log.data.lines), failure: null };
+  if (jobs.error !== null) return pending(jobs.error.message);
+  if (jobs.data === undefined) return pending(null);
+  // The queue holds nothing that would have launched this lane — no designation
+  // and no waiting notice. Nothing has ever run here, which is an answer.
+  if (prompting === null) return { record: null, absence: "never-prompted", failure: null };
+  if (log.error !== null) return pending(log.error.message);
+  if (log.data === undefined) return pending(null);
+  const record = readLaunchRecord(log.data.lines);
+  // A launch was prompted and its log names none: reaped with its event (§7),
+  // or written by guidance that predates AGENT-059.
+  return { record, absence: record === null ? "unrecorded" : null, failure: null };
 }
