@@ -336,6 +336,51 @@ function closeIdleConnections(server: ServerType): void {
   }
 }
 
+/**
+ * How often shutdown re-sweeps the connections that have gone idle since the
+ * last sweep. See {@link closeConnectionsUntil} for why one sweep is not enough.
+ */
+const IDLE_SWEEP_INTERVAL_MS = 10;
+
+/**
+ * Closes the listener, sweeping idle connections until it is closed.
+ *
+ * Node sweeps exactly once, inside `close()` itself, and a connection that
+ * becomes idle a moment later is never swept again — it holds shutdown open
+ * until the *peer's* keep-alive timeout expires. Every streamed response has
+ * that shape: the adapter writes it across several turns of the loop, so the
+ * response's `finish` — the event that makes its socket idle — has not run when
+ * the one sweep does.
+ *
+ * Measured before this loop existed (SERVER-150), each against a real socket on
+ * a real listener: an attachment's `200` (a `ReadableStream` body) held
+ * `close()` for **4004 ms**, and an SSE stream `hub.close()` had just ended held
+ * it for **4007 ms** — in both cases the peer's keep-alive timeout, not any work
+ * of ours. The same request answered `404` (a buffered JSON body, finished
+ * synchronously) cost 0 ms, which is why the cost looked like a warm-up
+ * belonging to whichever test ran first. Sleeping 50 ms before `close()` also
+ * cost 0 ms, which is what makes this a race rather than a busy connection.
+ *
+ * The sweep only ever closes connections Node itself reports as idle, so it can
+ * never cut off a request that is still being served.
+ */
+async function closeConnectionsUntil(server: ServerType): Promise<void> {
+  const sweep = setInterval(() => {
+    closeIdleConnections(server);
+  }, IDLE_SWEEP_INTERVAL_MS);
+  sweep.unref?.();
+  try {
+    await new Promise<void>((resolveClose) => {
+      server.close(() => {
+        resolveClose();
+      });
+      closeIdleConnections(server);
+    });
+  } finally {
+    clearInterval(sweep);
+  }
+}
+
 export function createServer(config: ServerConfig, deps: CreateServerDeps = {}): CorpusServer {
   const logger = deps.logger ?? createLogger(config.logLevel);
   const now = deps.now ?? Date.now;
@@ -416,7 +461,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   });
   mountEventStream(app, hub);
 
-  const selfWrites = createSelfWriteRegistry();
+  // On the server's own clock, like everything else it builds. In production
+  // that is `Date.now` either way. What it buys is that a test which advances
+  // this server's clock also expires its registrations, instead of having to
+  // sleep out `SELF_WRITE_TTL_MS` in real time to reach the same state
+  // (SERVER-150).
+  const selfWrites = createSelfWriteRegistry({ now });
   const queue = createQueueService({
     corpusDir: config.corpusDir,
     logger,
@@ -949,12 +999,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       const server = httpServer;
       httpServer = undefined;
       if (server !== undefined) {
-        await new Promise<void>((resolveClose) => {
-          server.close(() => {
-            resolveClose();
-          });
-          closeIdleConnections(server);
-        });
+        await closeConnectionsUntil(server);
       }
 
       for (const dispose of [...disposers].reverse()) {

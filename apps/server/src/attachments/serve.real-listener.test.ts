@@ -144,16 +144,17 @@ describe("the attachment raw-target guard, over a real socket", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toBe("attachment-bytes-ok\n");
-    // Measured 4328 ms idle, 4502-4570 ms under load averages of 12 and 45 —
-    // 87% of the 5000 ms default, and barely moved by load (INFRA-020). The time
-    // is one-time warm-up, not this assertion: this is the first test in the file
-    // to bind a real listener and boot a server, and its six siblings doing the
-    // same work cost 241-266 ms each. Given room because a budget cannot fix a
-    // cost that belongs to the file rather than the test. The real remedy is to
-    // move the warm-up into a `beforeAll` so it stops being charged to whichever
-    // test happens to run first — a reorder would otherwise move this risk to a
-    // different name without changing anything real.
-  }, 15_000);
+    // This test used to cost 4328 ms and carry a 15_000 ms budget, recorded as
+    // one-time warm-up billed to the first test in the file. That diagnosis was
+    // wrong, and SERVER-150 disproved it by measurement: five copies of *this*
+    // test, all asserting a 200, each cost 4.2 s, and a 404 in first position
+    // cost 0. What it is instead is the `afterEach` — `ws.server.close()` waited
+    // 4004 ms for the connection this 200 left behind, because a streamed body
+    // goes idle a tick after shutdown's single sweep. This is the only test in
+    // the file that gets a 200, which is what made it look like warm-up. Fixed in
+    // `app.ts` (`closeConnectionsUntil`); measured 336 ms afterwards, so the
+    // budget is the 5000 ms default again.
+  });
 
   it.each([
     ["an encoded dot segment", "%2e%2e"],

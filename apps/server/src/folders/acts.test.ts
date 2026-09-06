@@ -300,12 +300,15 @@ describe("POST /api/folders/rename — a case-only rename", () => {
     const ws = workspace("rename-case-watcher");
     await createDoc(ws, { type: "note", title: "Deed", folder: "Finance", body: "the deed" });
     ws.advance(60_000);
-    // The **create** declared these same bytes at this same path, and the
-    // registry's TTL runs on the wall clock rather than the fixture's, so
-    // without this wait the assertions below would pass on a create the rename
-    // had nothing to do with. Two seconds of real time is what makes the claims
-    // that follow claims about the rename.
-    await new Promise((resolve) => setTimeout(resolve, SELF_WRITE_TTL_MS + 100));
+    // The **create** declared these same bytes at this same path, so without
+    // collecting its registrations first the assertions below would pass on a
+    // create the rename had nothing to do with. The registry reads the server's
+    // injected clock, so advancing past the TTL is what makes the claims that
+    // follow claims about the rename — and `expect(size).toBe(0)` is what proves
+    // it happened. This used to be `setTimeout(SELF_WRITE_TTL_MS + 100)`, 2100 ms
+    // of real time in a 2537 ms test, which is the whole of what INFRA-020
+    // flagged here (SERVER-150).
+    ws.advance(SELF_WRITE_TTL_MS + 100);
     expect(ws.server.selfWrites.size).toBe(0);
 
     expect((await act(ws, "rename", { from: "Finance", to: "finance" })).status).toBe(200);
