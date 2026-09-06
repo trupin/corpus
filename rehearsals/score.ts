@@ -26,8 +26,21 @@ export const USER_AUTHOR_EMAIL = "user@corpus.local";
  * The three checks every run gets. A breach is reported even on an over-budget
  * run: a hand-edit or a lost event is real evidence however the run ended, and
  * none of these can be caused by the harness stopping a parked agent.
+ *
+ * **A cut-short run is the one exception** (INFRA-037, deliberately narrow —
+ * a real widening of INFRA-036). It contributes no universal findings for the
+ * same reason it contributes no score: the runner stopped with work still on
+ * the queue, so the workspace is mid-flight — commit windows may be open,
+ * queue events mid-move, the tree mid-write — and a red read off that state
+ * blames the product for the harness's own timing. Story 4 of the v0.32.0
+ * pass is the measured case: all three runs cut short, and the scenario
+ * failed on a `user` commit no completed run would have shown. The cost is
+ * accepted knowingly: a genuine hand-edit on a cut-short run goes unreported
+ * there — a **completed** run with the same hand-edit still fails, and only a
+ * completed run was ever evidence about the product.
  */
 export function universalFindings(record: RunRecord): readonly string[] {
+  if (record.meta.cutShort) return [];
   const findings: string[] = [];
   const { observation, seedSnapshot } = record;
 

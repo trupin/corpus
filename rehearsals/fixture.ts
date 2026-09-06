@@ -305,6 +305,65 @@ export async function createWorkspace(): Promise<RehearsalWorkspace> {
 const SEED_COMMIT_WAIT_MS = 90_000;
 const CLEAN_TREE_POLL_MS = 1_000;
 
+/** The one shape {@link firstDocumentId} needs from `corpus doc list --json`. */
+const DocListSchema = z.looseObject({
+  items: z.array(z.looseObject({ id: z.string().min(1) })),
+});
+
+/**
+ * The first document id in a `corpus doc list --json` payload. A seeded
+ * workspace always lists at least its template documents, so an empty listing
+ * is a broken workspace and says so rather than skipping the window close.
+ */
+export function firstDocumentId(listStdout: string): string {
+  const { items } = DocListSchema.parse(JSON.parse(listStdout));
+  const first = items[0];
+  if (first === undefined) {
+    throw new Error(
+      "corpus doc list returned no documents — even a fresh workspace lists its templates, " +
+        "so the seed window cannot be closed against this workspace",
+    );
+  }
+  return first.id;
+}
+
+/**
+ * Close the seed's last commit window, deterministically, through the product
+ * itself (INFRA-037).
+ *
+ * The server closes a commit window lazily: after the seed's final write its
+ * window stays open until the run's own activity closes it, and the close
+ * relabels an unnamed window's commit ("editing session: N documents") with an
+ * amend that lands mid-run — after the boundary, authored `user`, and visible
+ * to the authorship invariant. Waiting cannot fix that (INFRA-020, and
+ * INFRA-033 measured it: the relabel arrived with a 35 s settle wait in
+ * place), because an amend never dirties `git status` — there is nothing to
+ * wait *on*.
+ *
+ * What does fix it is SPEC.md §4's read-back rule: any read that names a
+ * commit closes the open window before it answers, relabel included, inside
+ * one critical section. `corpus doc diff` is exactly such a read, costs no
+ * write, and works against any document — the window is workspace-wide. So:
+ * list one document through the product, diff it, and when the call returns
+ * the window is closed and HEAD is final. The boundary taken afterwards is
+ * true: no seed window remains for the run to close.
+ */
+async function closeSeedCommitWindow(handle: RehearsalWorkspace): Promise<void> {
+  const listed = await runCorpus(handle, ["doc", "list", "--json"]);
+  if (listed.code !== 0) {
+    throw new Error(
+      `corpus doc list failed while closing the seed's commit window (exit ${String(listed.code)}): ${listed.stderr}`,
+    );
+  }
+  const docId = firstDocumentId(listed.stdout);
+  const diffed = await runCorpus(handle, ["doc", "diff", docId]);
+  if (diffed.code !== 0) {
+    throw new Error(
+      `corpus doc diff ${docId} failed while closing the seed's commit window (exit ${String(diffed.code)}): ${diffed.stderr}`,
+    );
+  }
+}
+
 /**
  * Wait for `git status --porcelain` to come back empty. The server gathers a
  * party's writes into one commit while its window is open, so a write's commit
@@ -327,15 +386,22 @@ export async function waitForCleanTree(workspaceRoot: string, timeoutMs: number)
  * Record the boundary the scorer measures from: HEAD, its tree, and the queue
  * as seeded.
  *
- * The clean-tree wait is load-bearing: a HEAD read before the seed's own
- * `user` commit lands would put that commit on the run's side of the boundary
- * and the authorship invariant would flag the seed itself (measured
- * 2026-09-01). The tree hash is recorded because the boundary commit will not
- * stay put: the server closes a commit window lazily, so the agent's first
- * write *amends* the seed's commit into its "editing session" relabel — same
- * content, new hash, after the boundary. Waiting does not help (measured: the
- * relabel arrived mid-run with a 35 s post-seed settle wait in place); the
- * scorer recognises the relabel by this tree instead.
+ * Two steps make the boundary true, in order:
+ *
+ * 1. **The clean-tree wait**: a HEAD read before the seed's own `user` commit
+ *    lands would put that commit on the run's side of the boundary and the
+ *    authorship invariant would flag the seed itself (measured 2026-09-01).
+ * 2. **The window close** ({@link closeSeedCommitWindow}, INFRA-037): a clean
+ *    tree is not a closed window. The seed's window stays open across the
+ *    boundary, and its close — an unnamed window's "editing session" relabel,
+ *    an amend that never dirties the tree — lands mid-run, authored `user`,
+ *    on the run's side of the boundary. Closing it here, through the
+ *    product's own read-back, makes HEAD final before it is read.
+ *
+ * The tree hash is still recorded, and the scorer's tree-and-parent excusal
+ * for the relabel stays: closing here should make it fire less, not carry
+ * more. If a relabel still appears mid-run it is a window the *run* opened,
+ * and the scorer's job is to look at it, not this fixture's to prevent it.
  */
 export async function snapshotSeed(handle: RehearsalWorkspace): Promise<SeedSnapshot> {
   await assertRehearsalWorkspace(handle);
@@ -344,6 +410,7 @@ export async function snapshotSeed(handle: RehearsalWorkspace): Promise<SeedSnap
       `the seed's writes were still uncommitted after ${String(SEED_COMMIT_WAIT_MS)} ms`,
     );
   }
+  await closeSeedCommitWindow(handle);
   const rev = async (spec: string): Promise<string> => {
     const { stdout } = await execFileAsync("git", ["rev-parse", spec], {
       cwd: handle.workspaceRoot,

@@ -115,13 +115,68 @@ above, read from
 `user`-authored second commit appears in the earlier pass on story 1 run 3 and
 story 2 runs 1 and 10, so it is recurrent rather than a one-off.
 
+**Implementation, 2026-09-06 (infra-dev, Fable 5):**
+
+_Correction to the diagnosis, from the run records themselves._ The lazy-close
+defect is real, but `60ee4f2f` is not a seed write. Its content includes a
+`## Claude · 2026-09-02T17:56:30Z` turn — 25 s into the run — hand-written into
+`data/threads/th_3fszl5np.md`, which the watcher committed out-of-band as
+`user` (SPEC.md §4: an out-of-band edit belongs to the person). Same shape in
+the earlier pass: `0353bc51` (story 1 run 3) holds a `## resident · 16:30:15Z`
+turn. These are launched listeners editing thread files directly instead of
+using the product's turn verb — AGENT-064's real bug, sitting exactly where
+this issue predicted noise would hide it. What **was** the harness's own timing
+is the `f9c04c6c` class: the seed window's relabel amend landing post-boundary,
+which the tree-and-parent excusal absorbed.
+
+_The mechanism chosen._ SPEC.md §4's read-back rule: any read that names a
+commit closes the open window — relabel included — inside one critical section
+(`AutoCommitter.withClosedWindow("read-back")`, reached via
+`GET /api/docs/{id}/diff`). `snapshotSeed` now runs `corpus doc list --json` →
+`corpus doc diff <first id>` after the clean-tree wait and before reading HEAD.
+`SEED_COMMIT_WAIT_MS` is unchanged (TEST-1149); nothing waits longer — an amend
+never dirties `git status`, so there was nothing to wait on.
+
+_Live proof against the real product (corpus 0.33.0 build, scratch workspace
+on port 55332, composer `POST /api/threads` as the seed write):_
+
+- Before the close: tree clean, `HEAD = 008a4ae`, tree `02dc5082`, subject
+  `comment: new standalone thread (th_mn66zgvl) by user` — the exact boundary
+  the old `snapshotSeed` would have taken, with the window still open.
+- `corpus doc diff th_mn66zgvl` → HEAD amended **during the call** to
+  `1bb87a3`, same tree `02dc5082`, subject
+  `editing session: 1 document by user` — the very commit that used to land
+  mid-run and need the excusal, now landed before the boundary.
+- A second `corpus doc diff` moved nothing (`1bb87a3` stable): the close is
+  idempotent, so the boundary read after it is final.
+
+_Cut-short clause._ `universalFindings` returns `[]` for a run with
+`meta.cutShort` (rehearsals/score.ts), decided deliberately: the run's
+workspace is mid-flight, and it contributes no findings for the same reason it
+contributes no score. A completed run with the same `user` commit still fails —
+both halves held by unit tests. The tree-and-parent excusal is untouched.
+
+_Tests run:_ `vitest run rehearsals` — 7 files, 68 tests, all green (3 new in
+`fixture.test.ts` for `firstDocumentId`, 2 new in `score.test.ts` for the
+cut-short clause at both the findings and the grade level). ESLint, Prettier
+and `tsc --noEmit -p rehearsals/tsconfig.json` clean on the touched files.
+
+_What the release pass must confirm (TEST-1148/1150/1152)._ Across the full
+pass: (a) no `user` commit with the boundary's tree-and-parent appears mid-run
+any more — the excusal should fire rarely or never; (b) no `user` commit with a
+tree the boundary does not hold appears on a **completed** run, unless it is a
+genuine hand-edit — after AGENT-064, a listener writing a turn by hand must
+fail a completed run, and that red is real; (c) story 4 regrades on runs that
+complete, and its grade — whatever it is — is about the product.
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes (ESLint + Prettier + tsc, scoped to the touched files)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified (the last two await the release pass:
+      story 4's re-run is the orchestrator's, per the sprint's S7 serialization)
 
 ## Completion Checklist (orchestrator)
 
