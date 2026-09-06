@@ -83,6 +83,23 @@ describe("the template manifest", () => {
     expect(readTemplateManifest(write(serializeManifest(mixed)))).toEqual(mixed);
   });
 
+  it("round-trips a keep-mark, and degrades a malformed one to unmarked", () => {
+    // The mark is per entry and optional (CLI-081), like `normalizedSha256`:
+    // both generations parse, and a value that is not literally `true` reads
+    // as "not kept" — which reports more rather than hiding anything.
+    const kept: TemplateManifest = {
+      ...MANIFEST,
+      files: [{ path: "a.md", sha256: "a".repeat(64), kept: true }],
+    };
+    expect(readTemplateManifest(write(serializeManifest(kept)))).toEqual(kept);
+
+    const malformed =
+      '{"version":1,"tool":"0.1.0","installedAt":"x","files":[' +
+      `{"path":"a.md","sha256":"${"a".repeat(64)}","kept":"yes"}]}`;
+    const entry = readTemplateManifest(write(malformed))?.files[0];
+    expect(entry?.kept === true).toBe(false);
+  });
+
   it("hashes bytes, not text", () => {
     expect(sha256(Buffer.from("abc"))).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",

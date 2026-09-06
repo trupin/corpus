@@ -280,6 +280,21 @@ describe("planUpgrade", () => {
     expect(byPath.get("README.md")?.baselineNormalized).toBe(C);
     expect(byPath.get(".claude/skills/comment/SKILL.md")?.baselineNormalized).toBeNull();
   });
+
+  it("carries the keep-mark from the manifest entry, and only a literal true", () => {
+    const plan = planUpgrade(
+      [
+        { path: "README.md", sha256: A, kept: true },
+        { path: ".claude/skills/comment/SKILL.md", sha256: A, kept: "yes" as never },
+      ],
+      incoming,
+      () => null,
+    );
+    const byPath = new Map(plan.map((decision) => [decision.path, decision]));
+    expect(byPath.get("README.md")?.kept).toBe(true);
+    expect(byPath.get(".claude/skills/comment/SKILL.md")?.kept).toBe(false);
+    expect(byPath.get(".claude/skills/notes/SKILL.md")?.kept).toBe(false);
+  });
 });
 
 describe("nextManifestFiles", () => {
@@ -298,6 +313,7 @@ describe("nextManifestFiles", () => {
     baselineNormalized: normalized?.baselineNormalized ?? null,
     workspaceNormalized: shas.workspace,
     incomingNormalized: shas.incoming,
+    kept: false,
   });
 
   /** What the run put on disk: the second argument is a fact, not a plan. */
@@ -396,6 +412,50 @@ describe("nextManifestFiles", () => {
     expect(legacy[0]).not.toHaveProperty("normalizedSha256");
   });
 
+  it("advances a kept entry to the incoming copy's shas, mark and all (CLI-081)", () => {
+    // Keeping is not merging: the file is never written, but the recorded
+    // baseline follows the template — so a later un-keep compares against the
+    // current template. The incoming shas are the tool's own bytes, so the
+    // modified copy still reads modified.
+    expect(
+      nextManifestFiles(
+        [
+          {
+            ...decision("a", "keep-modified", { baseline: A, workspace: B, incoming: C }),
+            kept: true,
+          },
+        ],
+        NOTHING,
+      ),
+    ).toEqual([{ path: "a", sha256: C, normalizedSha256: C, kept: true }]);
+    // A kept file the workspace deleted advances the same way — the workspace
+    // owns its absence, and the entry survives for a later un-keep.
+    expect(
+      nextManifestFiles(
+        [
+          {
+            ...decision("a", "restore-candidate", { baseline: A, workspace: null, incoming: C }),
+            kept: true,
+          },
+        ],
+        NOTHING,
+      ),
+    ).toEqual([{ path: "a", sha256: C, normalizedSha256: C, kept: true }]);
+    // Retirement still drops the entry, mark included: the tool no longer
+    // ships the file, so there is nothing left to keep quiet about.
+    expect(
+      nextManifestFiles(
+        [
+          {
+            ...decision("a", "retired", { baseline: A, workspace: B, incoming: null }),
+            kept: true,
+          },
+        ],
+        NOTHING,
+      ),
+    ).toEqual([]);
+  });
+
   it("keeps a deleted file's baseline so a later --restore still knows it", () => {
     expect(
       nextManifestFiles(
@@ -448,6 +508,7 @@ describe("nextManifestFiles", () => {
       workspaceNormalized: A,
       incoming: C,
       incomingNormalized: A,
+      kept: false,
     };
     expect(nextManifestFiles([stampOnly], NOTHING)).toEqual([
       { path: "a", sha256: B, normalizedSha256: A },
