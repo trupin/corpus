@@ -54,6 +54,31 @@ travel into the repo — this prose and the design mockup are the record):
   popover on the dark surface — a styled native `<select>` is not the target,
   because the popup is native chrome too.
 
+## A third screenshot, and what it adds (user, 2026-09-06)
+
+The Ask composer's designation row mixes both languages **in one row**:
+"agent will answer ▾" is already the correct pill dropdown, while the "owner"
+and "at" controls beside it are native selects — glossy chrome — **and both
+truncate their labels** ("its own agen…", "the launche…"). Located:
+`apps/ui/src/compose/ComposeOverlay.tsx:475` and `:517`.
+
+Two things this instance adds to the requirements:
+
+1. **The migration's proof-of-done includes mixed rows**: the composer row is
+   the acceptance screenshot, because it shows the before and after side by
+   side in one component.
+2. **The `Select` primitive must handle long labels** — these two truncate
+   mid-word with no affordance. The primitive states its truncation
+   behaviour: ellipsis with the full value in the popover (which, being
+   custom, can be wider than its trigger — the native popup cannot), and a
+   `title` for hover. A dropdown whose closed label is unreadable is the
+   defect that motivated this sentence.
+
+Note the file's own comments document fighting the native element
+(`ComposeOverlay.tsx:100-103` — the sentinel dance because "a `<select>`
+value is a string and cannot be `null`"). The kit `Select` takes real values,
+`null` included, and that workaround is deleted rather than ported.
+
 ## What to build
 
 1. **Design first, in the authoritative place.** The primitives are drawn in
@@ -86,6 +111,11 @@ travel into the repo — this prose and the design mockup are the record):
 - [ ] Keyboard: every dropdown fully operable without a mouse — e2e-tested
 - [ ] Both themes (§10's dark and light) — verified in the mockup and the
       product
+- [ ] The composer's designation row renders one language: pill dropdowns for
+      recipient, owner and weight, no truncated closed labels, the null
+      sentinel workaround deleted (`ComposeOverlay.tsx:100-103`)
+- [ ] `Select` states its long-label behaviour and an e2e proves a long
+      option readable
 - [ ] Full e2e suite green with assertion semantics unchanged
 
 ## E2E Verification Log
