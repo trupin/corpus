@@ -6,7 +6,12 @@ shared
 
 ## Status
 
-todo
+done — all three riders signed by the user 2026-09-06, each presented with its
+verbatim text in a survey and signed as drafted. Applied to SPEC.md the same
+day: the main rider replaces the 2026-08-19 rider's closing justification (§7),
+rider A follows §10's model-record rider, rider B follows §7's
+stating-no-weight rider. The §7 sweep found no other assertion of
+unchangeability, and AGENT-059's unsigned-rider section was already deleted.
 
 ## Priority
 
@@ -141,12 +146,12 @@ Drafted, to follow that clause:
 
 ## Acceptance Criteria
 
-- [ ] The rider above, or the user's revision of it, is applied to SPEC.md §7
+- [x] The rider above, or the user's revision of it, is applied to SPEC.md §7
       **after the user signs it** — never before
-- [ ] `AGENT-059`'s open-question section is removed: the unsigned rider it
+- [x] `AGENT-059`'s open-question section is removed (was already deleted; verified): the unsigned rider it
       carried was for the fixed default, which `AGENT-063` reverts, and it should
       not be left looking like outstanding work
-- [ ] Any other §7 text asserting the weight is unchangeable is found and
+- [x] Any other §7 text asserting the weight is unchangeable is found and
       corrected in the same pass — one contradiction left behind is the whole
       problem repeating
 

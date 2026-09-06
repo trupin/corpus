@@ -2255,7 +2255,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | todo | P0 | fable | — |
+| SHARED-076 | §7 says a resident's weight cannot change; it can, and the cost is smaller | done | P0 | fable | — |
 | AGENT-063 | A weightless resident is judged on the conversation, not defaulted to a tier | done | P0 | fable | — |
 | UI-186 | The Residents tab never says what it launched at, and cannot change it | done | P0 | opus | AGENT-059 |
 | SERVER-163 | A plainly created thread designates with no event, so its lane cannot say what it launched at | todo | P1 | opus | UI-186 |
@@ -2317,7 +2317,9 @@ and shipped in v0.22.0.
 | CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
 | SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
 | AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
-| SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | todo | P1 | fable | — |
+| SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | done | P1 | fable | — |
+| SERVER-165 | Designating a thread engages it | todo | P0 | opus | SHARED-078 |
+| AGENT-070 | The skills still read "a parked resident answers only mentions" | todo | P1 | opus | SERVER-165 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole
