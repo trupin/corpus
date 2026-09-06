@@ -183,8 +183,8 @@ tree says:
 | act | door | declares `act: "names-the-window"`? |
 | --- | --- | --- |
 | archived | `POST /api/docs/{id}/archive` | **yes** — `archive.ts:639` |
-| archived | `PUT` with `{status:"archived"}` | **no** — `update.ts:796` sets it only for `reviewed` |
-| restored | `PUT` with `{status:"open"}` | **no** — same line |
+| archived | `PUT` with `{status:"archived"}` | **no** — `update.ts:777` sets it only for `reviewed` |
+| restored | `PUT` with `{status:"open"}` | **n/a — no door**: refused 400 at `update.ts:539` (SERVER-039). The real restore gap is §5's stage coupling, which bypasses that guard (`update.ts:707`). Corrected 2026-09-06 by SERVER-106's audit, which also found a third gap: retitling. |
 | moved / renamed | `move.ts` | **yes** — `move.ts:133` |
 | marked still current | `PUT` with `reviewed` | **yes** — `update.ts:796` |
 

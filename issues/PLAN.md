@@ -809,7 +809,7 @@ ones their own files carry.
 | CONTRACT-029 | `Job.started` means two different instants | done | P2 | — |
 | CLI-039 | A hung `git gc` leaves children the timeout does not kill | done | P2 | — |
 | SERVER-100 | A document with no `title:` wakes the agent on the save that adds one | done | P2 | — |
-| SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | todo | P2 | — |
+| SERVER-101 | Starting a thread is not one of §4's acts, so its commit gets renamed | done | P2 | — |
 
 ### Found in flight during Phase 33, deliberately not in v0.10.0 (2026-08-16)
 
