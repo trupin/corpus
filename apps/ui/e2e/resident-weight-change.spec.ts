@@ -133,16 +133,29 @@ test.describe("the Residents tab's weight", () => {
   });
 
   /*
-   * §7 makes a job's log runtime state reaped with its event, so a lane
-   * designated days ago legitimately has nothing left to read. §10's standing
-   * rule decides what to say: the unknown, said plainly, never a level nobody
-   * wrote down. This is the exact row the screenshot behind UI-186 showed.
+   * §7 makes a job's log runtime state reaped with its event, and SERVER-163
+   * split the absence in two. A launch-prompting event whose log names no
+   * launch is the reaped/unwritten case: §10's standing rule decides what to
+   * say — the unknown, said plainly, never a level nobody wrote down. This is
+   * the exact row the screenshot behind UI-186 showed.
    */
   test("says the record is gone rather than naming a level nobody recorded", async ({ page }) => {
-    await openResidents(page, []);
+    await openResidents(page, [designation(null)]);
 
     await expect(page.locator(NOTE)).toContainText("No level was stated, so the launcher decides.");
     await expect(page.locator(NOTE)).toContainText("Nothing is guessed in its place.");
+  });
+
+  /*
+   * The other absence SERVER-163 named: a queue holding no launch-prompting
+   * event at all is a conversation whose resident has never been needed, and
+   * the pane says that instead of mourning a record nobody was owed.
+   */
+  test("says the lane has never launched when nothing was ever queued on it", async ({ page }) => {
+    await openResidents(page, []);
+
+    await expect(page.locator(NOTE)).toContainText("This lane has not been launched");
+    await expect(page.locator(NOTE)).toContainText("no launch to record");
   });
 
   test("offers the workspace's own levels, launcher-first, and the cost of changing", async ({
