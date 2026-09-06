@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done — 2026-09-06, committed on phase-58 (the waits were a product shutdown defect)
 
 ## Priority
 

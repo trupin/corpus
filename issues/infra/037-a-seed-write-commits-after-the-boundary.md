@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done — 2026-09-06, committed on phase-58 (boundary closed via read-back)
 
 ## Priority
 

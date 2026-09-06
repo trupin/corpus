@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done — 2026-09-06, committed on phase-58, evaluator PASS
 
 ## Priority
 

@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done — 2026-09-06, scenario 11 committed on phase-58
 
 ## Priority
 
