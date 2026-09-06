@@ -2316,7 +2316,7 @@ and shipped in v0.22.0.
 | SHARED-077 | A conversation carries its own digest — the §6 rider and the decomposition | done | P0 | fable | — |
 | CONTRACT-096 | A thread's digest on the wire | done | P0 | opus | SHARED-077 |
 | SERVER-164 | The digest write path, and staleness on delete and revise | done | P0 | opus | CONTRACT-096 |
-| AGENT-069 | The resident writes the digest at reply time | todo | P0 | fable | CLI-077, SERVER-164 |
+| AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
 | SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | todo | P1 | fable | — |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the

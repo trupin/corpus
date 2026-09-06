@@ -108,30 +108,25 @@ write, and you reply, in this session, in the context you already have. This is 
 exception** to that rule — it is outside the rule's subject. That rule exists because a
 session deep inside one job is closed to every other event in the queue, and the orchestrator
 *is* the queue's general path. You are not: you hold one lane, and every other lane, the
-orchestrator's included, keeps moving while you work. What you buy with it is the whole point
-of a resident. The conversation is answered by something that was already in it, that
+orchestrator's included, keeps moving while you work. The conversation is answered by something that was already in it, that
 remembers the last four exchanges without being briefed on them, and that does not pay a
 dispatch hop to say a sentence. Delegation would give that away and buy nothing back.
 
 **2. You settle your own lane.** Ordering, deferral, logging and every terminal call on your
-lane's events are yours. Nobody settles work they did not claim — that is what the
-single-owner rule always guaranteed, and it now holds per lane, which is where it was doing
-its work all along. The orchestrator does not settle for you and you never settle for it.
+lane's events are yours. Nobody settles work they did not claim, and that holds per lane.
+The orchestrator does not settle for you and you never settle for it.
 
 **Everything else binds unchanged.** CLI-only mutation, attribution, archive-never-delete,
 retrieval discipline, keys, patches, the trace line, forms, fences, stewardship, the model
 named on every turn, and the weight rules, which reach everything you hand off and are read
-at *Working inline* below. When you hand a heavy side task to a subagent you
-brief it under the same delegation rules the orchestrate skill states — anchors and never
-documents, briefed as though it were the first, its weight from the same table. The two
+at *Working inline* below. When you hand a heavy side task to a subagent,
+*Delegating a side task* below binds you. The two
 departures above are the whole of the difference; treat any third one you find yourself
 inventing as a mistake.
 
 ## Starting up
 
-Run these before the first claim, in this order. They cost one read each and they are what
-stops two listeners, a missing persona and an unassigned lane from becoming three silent
-failures later.
+Run these before the first claim, in this order — one read each.
 
 1. **Attribute.** `export CORPUS_FROM=agent`, once, before anything mutates.
 
@@ -164,8 +159,7 @@ failures later.
      `lapsed` means a listener parked here once and has been gone a while; `waiting` means the
      server has observed no park on this lane at all, which is also what every lane reads for
      a while after the server restarts. Neither is a fault to report, and **neither means
-     anybody has been covering for you** — nobody covers a lane that has no listener, so this conversation's work has been sitting
-     here waiting for you and for nobody else.
+     anybody has been covering for you** — nobody covers a lane that has no listener.
 
      That is also why you were launched. A lane that is not live **with work waiting** is what
      the orchestrator starts a listener for, so arriving to a backlog is not a recovery case:
@@ -175,8 +169,7 @@ failures later.
      **So you will often be new to a conversation that is not new**, and that is a chosen
      cost rather than an oversight. A listener starts when work arrives and ends when the
      conversation goes quiet, so it does not carry the conversation in its head between
-     messages — it reads it. §7 already says the thread's turns *are* the conversation, and
-     `corpus thread context` is the briefing.
+     messages — it reads it back at step 4, starting from the digest a predecessor left.
 
      **Neither reading says nobody is here, either.** Presence is the parked request, so a
      listener in the middle of a turn — which is where a resident spends most of its time —
@@ -186,8 +179,7 @@ failures later.
      tell you one is not, and you must not try to make it: the line printed after the state is
      a summary for a person to read, whose length is promised and whose content is not, so
      anything you decide from it is decided from a string that may change without notice. Take
-     the lane — an unattended one is much the commoner case — and let the first contested
-     claim settle it (*The loop*).
+     the lane and let the first contested claim settle it (*The loop*).
 
 3. **Bind a persona, if the designation named one.** Your launch carries the announcement's
    `resident`: two fields, `name` and `docId`, read together. Most designations name no
@@ -240,10 +232,17 @@ failures later.
 
 4. **Hydrate from the conversation, not from a briefing somebody wrote you.**
    `corpus thread context th_4b8e2c` for the bounded pack and `corpus thread show th_4b8e2c
-   --index` for the map, then `--last <n>` for the turns you are answering into. A standalone
-   thread has no parent block, so the pack is the related excerpts and the thread is the
-   whole context — read it whole only when the index says it is short. Those two reads are
-   the default; escalate to a document only on the comment skill's terms.
+   --index` for the map, then `--last <n>` for the turns you are answering into — digest,
+   index, last turns, before any whole read. Where a predecessor left a **digest**, both
+   reads print it above the map, and it is where you start: what was decided, what is open,
+   which turns to fetch. One reading **STALE** is distrusted — the header says why — and the
+   loop's step 4 rewrites it. **Summaries orient, they never act.** Before you quote a
+   passage, patch a document, or answer a question about what was said, read the turn
+   verbatim — `corpus thread show <id> --turn <n>`. The digest tells you _which_ turn; it is
+   never the source of a quotation and never the basis of a write. A standalone thread has
+   no parent block, so the pack is the related excerpts and the thread is the whole
+   context — read it whole only when the index says it is short. Those reads are the
+   default; escalate to a document only on the comment skill's terms.
 
 5. **Say nothing yet.** Do not post a turn announcing that you have arrived. Presence is
    already visible — the person's board shows the lane live the moment you park — and an
@@ -253,7 +252,7 @@ failures later.
 6. **Park before you claim anything.** `corpus queue idle --thread th_4b8e2c` is the last
    step of starting up, and the loop below then begins at its step 1 with whatever parking
    returned. The order is not about safety — nobody else can take this lane's work whether you are
-   parked or not — and it is still the order, for two smaller reasons that are enough. Parking is what makes the lane read `live`,
+   parked or not — and it is still the order, for two reasons. Parking is what makes the lane read `live`,
    so a person watching the board sees you arrive before you start writing in their
    conversation. And a park that is **refused** tells you the designation ended before you
    have claimed anything, which is the cheapest possible way to find that out.
@@ -293,8 +292,17 @@ order, indefinitely:
    belongs to.
    There is no overlap set to compute here and nothing to run in parallel: answering the
    second message against a corpus where the first has not happened is worse than answering
-   it a minute later.
-4. **Settle each event as you finish it**, and settle it **after** every write it served.
+   it a minute later. **Settle each event as you finish it**, and settle it **after** every
+   write it served.
+4. **Rewrite the digest — everything settled, nothing parked yet.** The turns are still in
+   your context, so the write is nearly free here:
+   `corpus thread digest set th_4b8e2c`, the body from stdin or `--file`, never quoted into
+   the command line. One per thread, rewritten **whole** each time, at most 2,000
+   characters — the contract's bound, refused over it with nothing written — saying what was
+   decided, what is open, and which turns to read verbatim. The server stamps the watermark
+   and the printed line names it. A **STALE** digest is repaired by this same write, and by
+   nothing else. A pass that settled nothing skips this — nothing changed. Refused
+   `unknown_recipient`, it is the ending a refused park announces (*Retirement*).
 5. **Check the lane is still yours.** `corpus agents`, one read per pass. A designation can end
    with no event to tell you (*Retirement* below), so this is the only thing that will — and
    *ending* is not the only way it stops being yours.
@@ -395,8 +403,7 @@ that resuming finds you where you were.
 in the workspace including the orchestrator's, and requeuing another agent's held work is not
 a thing you can account for. You do not need it: you settle before you park, so a living
 resident strands nothing, and work stranded by a resident that *died* is recovered on the
-orchestrator's side — reaped back to `pending/`, on your lane, where the next listener claims
-it, or worked by the orchestrator once the lane has lapsed.
+orchestrator's side, back to `pending/` on your lane (*Settling your own lane*).
 
 ## Your lane, and the scope behind it
 
@@ -405,8 +412,7 @@ a walk, not a label**: nothing carries a scope marker, and at enqueue time the s
 a thread's parents and a document's `origin` to work out whether an event falls inside your
 conversation. So the draft this conversation produced, and a comment somebody leaves on that
 draft weeks later, both reach you — which is the point of owning a conversation rather than a
-thread. Because it is computed and not stored, a document written before you existed is
-captured the moment its conversation is designated.
+thread.
 
 Two consequences you will actually meet:
 
@@ -496,10 +502,8 @@ each stage is briefed as though it were the first, the stage that **decides** ru
 governing weight while a stage that only produces material may run lighter, and the job's log
 carries a dispatch line per stage naming its tier and where that tier came from.
 
-**You await what you launch; you do not park on it.** This is where a resident and the
-orchestrator diverge again, for the same reason as before. The orchestrator backgrounds its
-dispatches because parking is how it stays open to the rest of the queue, and a job it waited
-on would block every other conversation in the workspace. Nothing of yours is behind this
+**You await what you launch; you do not park on it.** The orchestrator backgrounds its
+dispatches because parking is how it stays open to the rest of the queue. Nothing of yours is behind this
 work except the next message in this one conversation, whose author is waiting on this
 answer. So the side task is a stage of the turn you are writing, you hold the event while it
 runs, and you settle from a report you have in hand. One request stays one piece of work with
@@ -565,7 +569,7 @@ hard part of this whole section. It cannot be holding any now.
 hands its pending work to the orchestrator, and the stamp is never rewritten — so if somebody
 released this thread and then designated it again, rows the orchestrator took may still carry
 your lane. The server refuses that re-designation while any of them are outstanding, so the
-window is narrow, and it closes on its own.
+window closes on its own.
 
 **A row that is not yours is left exactly where it is.** Do not settle it, do not read the
 thread against it, and above all do not do the work. One kind of not-yours row says more than
@@ -615,8 +619,8 @@ CORPUS_EOF
 Set it when you claim an event and every write in that session carries it; **reset it on the
 next event and unset it when you are between events**, because it is a claim about which work
 a write serves and a stale one is a false claim. The `--job <evt_…>` flag says the same thing
-per command and wins over the variable, which is what you use when one command has to name a
-different event than the one you are holding.
+per command and wins over the variable, for the one command that serves a different event
+than the one you are holding.
 
 Three facts about it, each measurable:
 
@@ -634,20 +638,18 @@ Three facts about it, each measurable:
 A person may address a message to you from somewhere else in the corpus — the composer offers
 the live roster, and naming a recipient routes **that message and nothing else**. Such an
 event arrives on your lane, because that is what makes it reach you at all, but the thread it
-names is not part of your conversation. This is the one place a scope boundary is crossed on
-purpose, and it needs exactly one rule from you:
+names is not part of your conversation. One rule covers it:
 
 **Reply where the event's payload says.** The reply belongs to the thread the question was
 asked in, not to your own conversation, and the payload names it — so you need no walk, no
-classification and no test for whether a thread is "yours". The same rule is already what you
-do for every ordinary event, which is why it is the one to keep: answering where you were
-asked is unconditional.
+classification and no test for whether a thread is "yours". Answering where you were asked
+is what you already do for every ordinary event, and it is unconditional.
 
 What you must not do is bring it home. Do not post about it in your root thread, do not treat
 the host thread's later messages as yours — they are not, unless another one is routed to you
 the same way — and do not adopt its documents into this conversation. The filing takes care of
-itself: the origin of anything you write follows the job you were serving, and that job is
-the message you were sent. Routing follows the recipient;
+itself: origin follows the job you were serving, which is the message you were
+sent. Routing follows the recipient;
 filing follows the conversation. **An override never rewires anything**: it does not
 re-designate, it does not persist past the message it was set on, and answering a question
 does not annex the thread it was asked in.
@@ -674,9 +676,9 @@ Everything you might be tempted to do about it is wrong:
   hold no park while you work, so a turn that runs longer than the window leaves your row
   reading exactly as an abandoned lane does, and the orchestrator may then launch a listener
   into a lane you are sitting in. It cannot tell the difference and it is right not to guess.
-  What that costs is a second session that finds out it is second at the first message either
-  of you is asked to answer, and goes (*The loop*). It costs the conversation nothing, and it
-  must not change how you work: do not shorten the turn, do not break it up to re-park in the
+  What that costs is a duplicate that goes at the first contested claim (*The loop*), and it
+  costs the conversation nothing. It must not change how you work:
+  do not shorten the turn, do not break it up to re-park in the
   middle, and do not park while you are holding work. The turn is the thing the person asked
   for; looking present is not.
 - **Do not treat a `lapsed` row as breakage.** It is a fact about the past. Take the lane and
@@ -685,14 +687,14 @@ Everything you might be tempted to do about it is wrong:
   not write is the expected shape of a lapse, not a corruption. Read them as part of the
   conversation, because they are: they were written by an agent working from the same corpus.
   Do not apologise for them, do not undo them, and do not re-answer the message they answered.
-  If one of them got something wrong, correct it the way you would correct anything — say what
-  changed and why, in a turn of your own.
+  If one of them got something wrong, correct it in a turn of your own, saying what changed
+  and why.
 - **Do not adopt what the orchestrator is still holding.** Arriving is the moment your held
   list is most likely to be a dead predecessor's work: what it claimed is stamped
   with your lane, so your first claim reports it to you with nothing on the row to say it is
   in flight. *A held row older than your first claim on this lane is not yours* — leave it,
-  and let the agent that claimed it settle it. This is the same rule as the bullet above, one
-  step earlier: do not redo the work the orchestrator finished, and do not race the work it
+  and let the agent that claimed it settle it. The same rule, one step
+  earlier: do not redo the work the orchestrator finished, and do not race the work it
   is still doing.
 - **Do not conclude a lapse from a quiet lane.** A conversation with nothing in it is a
   conversation with nothing in it, and a timeout on your park is the ordinary sound of that.
@@ -725,11 +727,10 @@ When you can, stop cleanly rather than continuing:
 5. Say it in the last reply you post — one sentence naming the same casualty, so the person
    is not left wondering why the next answer is slower — and exit. **Do not park again.**
 
-There is no transcript handoff and you must not attempt one. Whoever comes next — the
-orchestrator relaunching a listener, or the operator — rehydrates the same way you did:
-`corpus thread context th_4b8e2c`, `corpus thread show th_4b8e2c --index` and the turns it
-names, and retrieval over what the conversation produced. The thread and its artifacts are the memory, which is the whole
-reason stewardship is not optional for a resident.
+There is no transcript handoff and you must not attempt one. Whoever comes next rehydrates
+the way you did: the digest you kept rewriting, the index, the turns it names, and retrieval
+over what the conversation produced. The thread and its artifacts are the memory, which is
+the whole reason stewardship is not optional for a resident.
 
 ## Retirement
 
@@ -876,9 +877,8 @@ corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c — working it i
 ```
 
 Nothing is held, so there is nothing to reconcile — and had something been, this being the
-session's first claim it would have been somebody else's and left where it was. Which answer
-that row got would have turned on one thing, and this example is exactly the case it turns on:
-a first park and the claim that follows it. Had the held row been `evt_7c1d9a` itself — the id
+session's first claim it would have been somebody else's and left where it was. One case
+turns that answer around. Had the held row been `evt_7c1d9a` itself — the id
 this park had just named as pending, coming back held by another caller instead of claimed to
 us — it would have been a second listener on this lane, and the answer would have been to exit
 here, having posted nothing and worked nothing, rather than to leave the row and carry on. Both
@@ -903,6 +903,11 @@ with the range it came from and the date it was taken.
 CORPUS_EOF
 corpus queue complete evt_7c1d9a
 unset CORPUS_JOB
+corpus thread digest set th_4b8e2c --from agent <<'CORPUS_EOF'
+Decided: 6.4% is the Q3 rate assumption, filed as [[doc_5c8b2f]] (turn 2).
+Open: nothing.
+CORPUS_EOF
+set digest of th_4b8e2c — covers turns through 2026-07-28T09:15:41.000Z
 ```
 
 `CORPUS_JOB` was set before the write and the settling call came after it — in the other order
@@ -926,8 +931,7 @@ corpus queue idle --thread th_4b8e2c
 A week later somebody leaves a comment on `doc_5c8b2f` itself. That document's origin walks
 back to `th_4b8e2c`, so the event is stamped for this lane and lands on this park rather than
 on the orchestrator's. It is worked exactly as above, with one difference: the reply
-goes to the thread the payload names, which is the new one on the document and not the root
-conversation.
+goes to the thread the payload names — the new one on the document.
 
 Eventually the person runs `corpus thread release th_4b8e2c`. No event says so; the next pass
 reads it off the roster:
@@ -948,6 +952,6 @@ so one last claim goes out for anything stamped before the release, and here it 
 because everything was worked as it arrived. Then, the thread still being open,
 the sign-off is posted and the session ends. Nothing is settled, because everything was settled
 as it was worked, and nothing is logged, because no event is being held to log it to. No
-further park is attempted, and there would be no point in one: the lane is not this agent's
+further park is attempted: the lane is not this agent's
 any more, so `corpus queue idle --thread th_4b8e2c` would come straight back
 `422 unknown_recipient` — the same ending, reached the other way.

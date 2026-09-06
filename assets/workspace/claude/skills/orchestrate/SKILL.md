@@ -18,7 +18,7 @@ You are this workspace's **general** agent, and `/orchestrate` is your main loop
 your lane of the event queue, dispatch every event to a subagent running the right skill,
 report progress to the console, drive each event to a settled state, and park — at zero
 token cost — until the next event arrives. The operator invokes `/orchestrate` once and
-leaves it running; you loop until the session is stopped.
+leaves it running.
 
 **The queue is partitioned into lanes, and you own one of them.** A person may give a
 standalone conversation a **resident**: a long-lived agent that owns that
@@ -35,10 +35,9 @@ claim theirs. **So a conversation nobody is
 answering is not your work to do. It is your listener to launch.** Only a person
 **releasing** a resident returns work to you.
 
-Run one orchestrating session at a time. The server never hands one event to two
-claimants — that guarantee is unchanged and now holds per lane — but a second loop on
-this lane would split the console's story in half, exactly as two listeners would
-split one conversation's.
+Run one orchestrating session at a time. The one-claimant guarantee
+now holds per lane, and a second loop on this lane would split the console's story
+in half, exactly as two listeners would split one conversation's.
 
 ## Invariants
 
@@ -230,8 +229,7 @@ mid-dispatch splices new events into an ordering you already computed. An **empt
 error — halted, or nothing pending — and it is still two commands rather than one:
 reconcile `inProgress` anyway — it is reported on every claim, empty batch included —
 then park
-with a separate `corpus queue idle`. A shortcut taken on the empty pass is the
-shortcut that loses the next real event.
+with a separate `corpus queue idle`.
 
 **What the claim hands you is yours, and you do not audit it.** The server already
 worked out what falls in your lane: your own events, plus the pending events of
@@ -288,13 +286,16 @@ no row below is failed with a reason and is never silently completed.
 | `resident.designated` | A conversation was given a resident. Launch a listener — a long-lived background subagent applying the **converse** skill to the payload's `threadId`, with the payload's `resident`, at the model that `resident`'s `weight` names (`references/launching.md`). It is one of the three rows that are not jobs. |
 | `resident.released`   | A conversation's resident has gone. Nothing is dispatched and nothing is launched: log who left and the payload's `reason`, then complete (`references/launching.md`). It is another row that is not a job. |
 | `lane.waiting`        | A conversation has work and nobody listening. **Never dispatched** — it is a report about somebody else's conversation, not the conversation. Make sure a listener is running for the payload's `lane` (`references/launching.md`), then complete. The third row that is not a job. |
-| `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
+| `agent.done`          | A finished piece of background work. Nothing produces this event today; handle an arriving one like a report — verify the work its payload identifies and settle it. |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
 
 Thread handling itself — reading context, honoring mentions, filing inbox captures,
 wording the reply, skill genesis — belongs to the comment skill, applied inside the
 subagent. This skill routes and dispatches, and owns queue state, ordering, deferral,
-logging, and the halt switch.
+logging, and the halt switch. A **digest** met on a thread read is the resident's
+account of that conversation. **Summaries orient, they never act.** Neither you nor a
+dispatch writes or clears one — **who writes a digest, and when, is the converse
+skill's to state, and it is stated there alone.**
 
 **Three rows above are not jobs, and `references/launching.md` is their whole
 procedure**: the launch act and its prompt, the weight a listener goes out at and the
@@ -636,7 +637,7 @@ Failed events are retried with `corpus job retry` or written off with
 ## HALT
 
 `.corpus/HALT` is the operator's kill switch, toggled with `corpus queue halt` and
-`corpus queue resume` (the console drawer exposes the same switch). While it exists,
+`corpus queue resume` (the console drawer is the same switch). While it exists,
 `corpus queue claim-all` returns an empty batch and `corpus queue idle` parks its
 full window, printing `idle — no events (halted)` at exit `0`. Events keep enqueuing
 — a halt stops your consumption, never the production — and `resume` makes it all
@@ -689,7 +690,7 @@ instead of quietly starting it.
 Your skills (`.claude/skills/<name>/SKILL.md`, `type: skill`) and subagent personas
 (`.claude/agents/<name>.md`, `type: agent-def`) are ordinary documents: indexed,
 commentable on the board, and edited through the CLI like everything else — the file
-under `.claude/agents/` is what `@<name>` resolves to, with no registry anywhere.
+under `.claude/agents/` is what `@<name>` resolves to.
 **What a persona has to carry, and how one is written, is the profile skill's to
 state, and it is stated there alone.** A request for an agent of somebody's own goes
 to `/profile`. Before editing a skill, read `references/conventions.md`: an edit to a

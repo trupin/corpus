@@ -120,6 +120,11 @@ contradict — and read every turn (the bare verb) only where the reply must squ
 whole history. **Those two reads are the whole default.** Stop there when you can restate
 the request in your own words and point at the text it is about.
 
+A resident's **digest**, where the thread has one, prints above that map under a header
+naming the turns it covers. **Summaries orient, they never act.** Fetch the turn it points
+at and quote from the fetch — and never write or clear one: **when a digest is written, and
+by whom, is the converse skill's to state, and it is stated there alone.**
+
 Two rules still govern where any read comes from, pack or no pack:
 
 - **State goes through the CLI.** A thread's turns, status, participation and anchoring come
@@ -168,8 +173,7 @@ Two rules still govern where any read comes from, pack or no pack:
   ranked on links alone. Work from what is there, and run `corpus search "<query>"` when the
   subject needs neighbours the links graph cannot know about.
 
-Nothing else earns a full read — not a hunch, not background nobody asked for. Stop reading
-the moment you can act.
+Nothing else earns a full read. Stop reading the moment you can act.
 
 The pack takes the thread's shape, and the shape is what you are handling:
 
@@ -180,8 +184,7 @@ comment is about the passage plus what the passage claims.
 **Whole-document** (`parent` set, `anchor` null) — the comment is about the document as such.
 The pack gives its title and opening content, and the request's shape usually needs more of the
 document than an opening does — this is the shape that escalates most often. Stop when you have
-the whole document in view; do not go hunting through the corpus for background nobody asked
-for.
+the whole document in view.
 
 **Orphaned anchor** — the selector no longer resolves, so the pack says the anchor is
 **orphaned** and prints the quote it was opened on rather than guessing where that text went.
@@ -535,17 +538,16 @@ threads you never close, what resolving costs, and why it cascades nowhere.
 
 **When a turn's purpose is to get something from the person, ask with a form.** A decision, a
 preference, a missing fact, a go/no-go before you start work: you ask those as a form, not as a
-question inside a paragraph. What makes the difference is what happens after the thread has
-been read. A question asked in prose leaves no trace that anyone is waiting the moment someone
-looks at it; a thread carrying an unanswered form sits in Attention as *awaiting your answer*
+question inside a paragraph. A question asked in prose leaves no trace that anyone is waiting;
+a thread carrying an unanswered form sits in Attention as *awaiting your answer*
 and stays there until the form is answered or the thread is resolved. Reading a question is not
-answering it, and the form is the only thing in the system that knows the difference.
+answering it.
 
 **Ask the whole batch at once.** Every question you need answered to proceed goes into **one
 form, in one turn**, one field per question — never one question per turn, and never a second
 form while the first is still open. Asked as one batch the answers come back together, each
-keyed to the question it answers. A form with a single field is still right when a single
-answer is all you need — the rule is "everything you need", not "at least three".
+keyed to the question it answers. A form with a single field is still right — the rule is
+"everything you need", not "at least three".
 
 **An open question is not a form; it is a reply.** A form is for questions that have answers.
 Anything open-ended — what do you make of this, where is this heading, is it worth doing at all
@@ -624,7 +626,7 @@ session that is running.
 - **A standalone thread stays trivial.** Not every Ask deserves a document. Answer it, title
   it, and say in the reply when something was durable enough to write down and when it was not.
 - **The thread is about a skill document** — someone selected an instruction in a skill and
-  commented on it. That is the workspace's feedback loop working as designed, not an intrusion:
+  commented on it. That is the workspace's feedback loop working as designed:
   edit the skill through the CLI, announce the change prominently, and say that the previous
   wording is one read of the history and one write away if the new one misbehaves — a skill is
   reverted like any other document (`references/history.md`), by no special command.

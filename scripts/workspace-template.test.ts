@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   CORE_DOC_TYPES,
+  DIGEST_MAX_CHARS,
   DOC_STATUSES,
   DocumentIdSchema,
   IsoDateTimeSchema,
@@ -20,6 +21,10 @@ import {
   IDLE_EVENTS_NEXT_STEP,
   IDLE_TIMEOUT_NEXT_STEP,
 } from "../apps/cli/src/commands/queue/next-step.js";
+// The digests-orient invariant, imported from the surface that prints it beside
+// every digest (CLI-077), so the skills and the tool keep one spelling of one
+// rule (AGENT-069) — the same anti-drift shape as the next-step lines above.
+import { DIGEST_ORIENTS_HELP } from "../apps/cli/src/commands/thread/digest.js";
 import { planTemplateInstall } from "../apps/cli/src/template/install.js";
 import {
   CLI_COMMANDS_PENDING_CLI_006,
@@ -1676,6 +1681,84 @@ describe("skills", () => {
       // The worked patches quote from a section read in both loop skills.
       expect(comment).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
       expect(orchestrate).toContain('corpus doc show doc_a1b2c3 --section "Rates"');
+    });
+  });
+
+  /**
+   * AGENT-069 — SPEC.md §6's digest rider (signed 2026-09-05): a thread's
+   * digest is written by its resident at reply time, and the server never
+   * writes one, so the digest exists only if the converse skill instructs the
+   * write. These pins are on the wording, per this file's standing caveat: the
+   * settle-step write, the digest-first rehydration, and the one invariant in
+   * the CLI's own spelling — imported, so the skill and the tool cannot drift
+   * into two versions of one rule.
+   */
+  describe("the resident writes the digest, and every reader only orients by it (AGENT-069)", () => {
+    const comment = documentAt("claude/skills/comment/SKILL.md").body;
+    const converse = documentAt("claude/skills/converse/SKILL.md").body;
+    const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+    it("rewrites the digest as the loop's step 4 — settled, not yet parked", () => {
+      expect(converse).toMatch(
+        /4\. \*\*Rewrite the digest — everything settled, nothing parked yet\.\*\*/,
+      );
+      // The verb, with the body arriving off the command line (CLI-074).
+      expect(converse).toMatch(wrapped("`corpus thread digest set th_4b8e2c`"));
+      expect(converse).toMatch(
+        wrapped("the body from stdin or `--file`, never quoted into the command line"),
+      );
+      // Whole, bounded by the contract's number — formatted as the CLI's own
+      // help formats it, so a changed bound fails here rather than shipping two.
+      expect(converse).toMatch(wrapped("rewritten **whole** each time"));
+      expect(converse).toMatch(
+        wrapped(
+          `at most ${DIGEST_MAX_CHARS.toLocaleString("en-US")} characters — the contract's bound`,
+        ),
+      );
+      // A quiet pass writes nothing, and a refusal is an ending, not a crash.
+      expect(converse).toMatch(wrapped("A pass that settled nothing skips this"));
+      expect(converse).toMatch(wrapped("it is the ending a refused park announces (*Retirement*)"));
+      // The worked example performs the step it teaches, after the settling.
+      const settled = converse.indexOf("corpus queue complete evt_7c1d9a");
+      const digestWrite = converse.indexOf(
+        "corpus thread digest set th_4b8e2c --from agent <<'CORPUS_EOF'",
+      );
+      expect(settled).toBeGreaterThan(-1);
+      expect(digestWrite).toBeGreaterThan(settled);
+    });
+
+    it("rehydrates digest-first, and distrusts a STALE one until it is rewritten", () => {
+      expect(converse).toMatch(wrapped("digest, index, last turns, before any whole read"));
+      expect(converse).toMatch(wrapped("One reading **STALE** is distrusted"));
+      expect(converse).toMatch(
+        wrapped("A **STALE** digest is repaired by this same write, and by nothing else"),
+      );
+      // The handoff reads back through it, which is what the write is for.
+      expect(converse).toMatch(wrapped("the digest you kept rewriting"));
+    });
+
+    it("states the invariant in the CLI's own words, once in full and once per reader", () => {
+      // The full statement, verbatim from the surface that prints it, at the
+      // owner's read site.
+      expect(converse).toMatch(wrapped(DIGEST_ORIENTS_HELP));
+      // Its opening sentence is the shared spelling — assert the link so the
+      // three-skill pin below cannot drift away from the constant.
+      const invariant = "**Summaries orient, they never act.**";
+      expect(DIGEST_ORIENTS_HELP.startsWith(invariant)).toBe(true);
+      for (const [name, body] of [
+        ["converse", converse],
+        ["comment", comment],
+        ["orchestrate", orchestrate],
+      ] as const) {
+        expect(body, `${name} drops the invariant sentence`).toContain(invariant);
+      }
+    });
+
+    it("keeps the write out of the skills that hold no designation", () => {
+      // The single-owner registry carries the pointer sentences; this is the
+      // outcome each consumer states beside them.
+      expect(comment).toMatch(wrapped("never write or clear one"));
+      expect(orchestrate).toMatch(wrapped("Neither you nor a dispatch writes or clears one"));
     });
   });
 
@@ -5752,7 +5835,9 @@ describe("converse skill body", () => {
       expect(example).toMatch(
         /had something been, this being the\s+session's first claim it would have been somebody else's and left where it was/,
       );
-      expect(example).toMatch(/this example is exactly the case it turns on:\s+a first park/);
+      // AGENT-069 rewrapped the bridge sentence while displacing prose for the
+      // digest step; the two answers themselves stay pinned below, unweakened.
+      expect(example).toMatch(/One case\s+turns that answer around/);
       // The counterfactual is written on the example's own ids, so it is read
       // against a payload the reader has just seen rather than in the abstract.
       expect(example).toMatch(
@@ -8135,8 +8220,11 @@ describe("one rule, one skill", () => {
       ],
     },
     {
-      why: "the pointer formula itself. AGENT-035 is the first single-owner rule whose consumers are the other three skills rather than `orchestrate`, so the closing clause of a pointer now occurs in four files. It is identical on purpose: it is what marks a sentence as a pointer rather than a second account, and the registry below matches it. Only the clause is shared — each pointer names a different thing about the rule it defers",
-      passages: ["is the orchestrate skill's to state, and it is stated there alone."],
+      why: "the pointer formula itself. AGENT-035 is the first single-owner rule whose consumers are the other three skills rather than `orchestrate`, so the closing clause of a pointer now occurs in four files. It is identical on purpose: it is what marks a sentence as a pointer rather than a second account, and the registry below matches it. Only the clause is shared — each pointer names a different thing about the rule it defers. AGENT-069's digest rule is the first converse-owned rule with two consumers, so the converse variant of the clause now occurs in `comment` and `orchestrate` the same way",
+      passages: [
+        "is the orchestrate skill's to state, and it is stated there alone.",
+        "is the converse skill's to state, and it is stated there alone.",
+      ],
     },
     {
       why: "stewardship, which binds whoever does the work — `orchestrate` states the charter and `comment` states the parts a turn carries",
@@ -8504,6 +8592,40 @@ describe("one rule, one skill", () => {
           skill: "comment",
           carries: wrapped(
             "**What a batch is, and when a run may go as one, is the orchestrate skill's to state, and it is stated there alone.**",
+          ),
+        },
+      ],
+    },
+    {
+      // AGENT-069. A thread's digest is written by its resident at reply time
+      // and by nobody else (SPEC.md §6, rider signed 2026-09-05) — the server
+      // never generates one, so `converse`'s settle step is the only place the
+      // write exists. The other skills meet digests on every thread read, and
+      // what a consumer carries is the outcome it relies on — orient by it,
+      // never write or clear it — plus the invariant sentence every digest-
+      // printing surface already quotes, in the CLI's spelling.
+      //
+      // The detector is the verb itself: naming `thread digest set` (or
+      // `clear`) is stating the procedure, and only the skill that performs it
+      // may. Net, not proof, in the same sense as the rules above: prose that
+      // paraphrases the write without naming the verb — *"replace the summary
+      // through the CLI before you park"* — states the rule and matches
+      // nothing here. The invariant sentence is deliberately not in the
+      // detector: every reader is supposed to carry it.
+      rule: "who writes a thread's digest, and when",
+      owner: "converse",
+      restatements: (body) => body.match(/[^\n]*thread digest (?:set|clear)[^\n]*/g) ?? [],
+      pointers: [
+        {
+          skill: "comment",
+          carries: wrapped(
+            "**when a digest is written, and by whom, is the converse skill's to state, and it is stated there alone.**",
+          ),
+        },
+        {
+          skill: "orchestrate",
+          carries: wrapped(
+            "**who writes a digest, and when, is the converse skill's to state, and it is stated there alone.**",
           ),
         },
       ],
