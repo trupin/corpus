@@ -24,9 +24,10 @@ import { locateTemplatePath } from "./diff.js";
  * each deliberate:
  *
  * - **Kept files are skipped by the upgrade's conflict report and never
- *   written.** One summary line still names how many kept files exist on every
- *   run that has any — a silence that hid a growing list is the failure mode
- *   this verb refuses.
+ *   written.** Every run that has any still **names each kept path**, one
+ *   quiet line apiece — SPEC.md §2.4 has the upgrade name each divergent file,
+ *   and a silence that hid a growing list is the failure mode this verb
+ *   refuses.
  * - **Keeping is not merging.** The manifest baseline goes on advancing to
  *   each incoming template copy while the file is kept, so un-keeping compares
  *   against the current template, not the one in force when the file was kept.
@@ -225,9 +226,9 @@ export const workspaceKeepCommand: WorkspaceCommandSpec = {
     "**deliberately diverged, stop reporting.**\n\n" +
     "A kept file is skipped by the upgrade's conflict report and is **never written** by an " +
     "upgrade — not by an update, not by `--restore`. The report never goes silent about it, " +
-    "though: every upgrade that runs while kept files exist prints one summary line naming how " +
-    "many there are, because a list that grows in silence is the failure this verb must not " +
-    "trade the noise for.\n\n" +
+    "though: every upgrade that runs while kept files exist names each kept path on one quiet " +
+    "line, because a list that grows in silence is the failure this verb must not trade the " +
+    "noise for.\n\n" +
     "**Keeping is not merging.** While a file is kept its manifest baseline keeps advancing to " +
     "each new template copy, so `corpus workspace unkeep` resumes reporting against the " +
     '**current** template — not the one in force when the file was kept. And kept is "stop ' +

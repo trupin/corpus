@@ -201,11 +201,12 @@ export interface UpgradeReport {
   /**
    * Template paths this workspace marked **deliberately diverged** with
    * `corpus workspace keep` (CLI-081), in path order. They are absent from
-   * {@link UpgradeReport.changes} and never written, and the rendering states
-   * their count on every run that has any — a silence that hid a growing list
-   * is the failure mode the summary line exists to refuse. Their manifest
-   * baselines still advance to each incoming copy, so `corpus workspace
-   * unkeep` resumes reporting against the current template.
+   * {@link UpgradeReport.changes} and never written, and the rendering
+   * **names every one of them** on every run that has any — SPEC.md §2.4 says
+   * the upgrade names each divergent file, and §2.1 says a modified file is
+   * reported, so a bare count would be the silence the mark was never meant to
+   * buy. Their manifest baselines still advance to each incoming copy, so
+   * `corpus workspace unkeep` resumes reporting against the current template.
    */
   readonly kept: readonly string[];
   /**
@@ -797,18 +798,24 @@ export function renderUpgradeReport(out: Output, report: UpgradeReport): void {
 }
 
 /**
- * The one summary line for kept files (CLI-081), on **every** run that has any
- * — silence hiding a growing list is the failure mode this refuses. It names
- * the count and where the list is, never the paths: the paths are one
- * `corpus workspace keep` away, and a list that grew silently would otherwise
- * re-become the noise keeping exists to remove.
+ * The kept-file section (CLI-081), on **every** run that has any — silence
+ * hiding a growing list is the failure mode this refuses.
+ *
+ * It **names each kept path**, one compact line apiece, because SPEC.md §2.4
+ * says the upgrade names each divergent file and §2.1 says a modified file is
+ * reported: a count alone told the operator that something diverged while
+ * withholding which thing, which is the one fact the sentence is read for. The
+ * anti-nag goal survives intact — named is not nagged. A kept path gets no
+ * verdict column, no diff summary and no `unresolved —` follow-up, so it stays
+ * visually quiet and never reads as a conflict the operator must act on.
  */
 function renderKeptSummary(out: Output, report: UpgradeReport): void {
   if (report.kept.length === 0) return;
   out.line(
     `${plural(report.kept.length, "kept file")} deliberately diverged, skipped by this report — ` +
-      "`corpus workspace keep` lists them, `corpus workspace unkeep <path>` resumes reporting.",
+      "`corpus workspace unkeep <path>` resumes reporting:",
   );
+  for (const path of report.kept) out.line(`  kept: ${path}`);
 }
 
 /**
@@ -977,8 +984,8 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "keeping this workspace's values for those keys — a resize or a restamp is not a conflict, " +
     "and an upgrade never moves `updated` backwards.\n\n" +
     "A file marked **kept** (`corpus workspace keep`) is deliberately diverged: it is skipped " +
-    "by the conflict report and never written, one summary line counts the kept files on every " +
-    "run that has any, and its baseline still advances — so `corpus workspace unkeep` resumes " +
+    "by the conflict report and never written, every run that has any names each kept path on " +
+    "one quiet line, and its baseline still advances — so `corpus workspace unkeep` resumes " +
     "reporting against the current template.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
     "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template installs " +

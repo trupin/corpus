@@ -127,7 +127,7 @@ function baselineSha(root: string, path: string): string | undefined {
 }
 
 describe("corpus workspace keep", () => {
-  it("stops the upgrade reporting a customized file, with the summary line present", async () => {
+  it("stops the upgrade reporting a customized file, and still names it", async () => {
     const template = makeTemplate();
     const root = await makeWorkspace(template);
 
@@ -144,11 +144,16 @@ describe("corpus workspace keep", () => {
     const after = await upgrade(root, template);
     expect(after.stdout()).not.toContain(`keep    ${BOARD}`);
     expect(after.stdout()).toContain("1 kept file deliberately diverged, skipped by this report");
+    // SPEC.md §2.4 has the upgrade name each divergent file, so the path is
+    // printed — quietly, with no verdict column and no `unresolved —` line
+    // (PR #75 review). Named, not nagged.
+    expect(after.stdout()).toContain(`  kept: ${BOARD}`);
+    expect(after.stdout()).not.toContain(`unresolved — corpus workspace diff ${BOARD}`);
     // The file is the workspace's: never written while kept.
     expect(read(root, BOARD)).toBe("board v1\nplus two hand-added columns\n");
   });
 
-  it("counts every kept file in the summary, and lists them by path on request", async () => {
+  it("names every kept file in the upgrade report, in path order", async () => {
     const template = makeTemplate();
     const root = await makeWorkspace(template);
 
@@ -162,12 +167,39 @@ describe("corpus workspace keep", () => {
     write(template, BOARD_TEMPLATE_PATH, "board v2\n");
     const run = await upgrade(root, template);
     expect(run.stdout()).toContain("3 kept files deliberately diverged, skipped by this report");
+    // Every one of them, sorted, one compact line apiece — including the two
+    // whose divergence the tool has not moved past, because the operator's
+    // question is "what is silenced", not "what changed upstream".
+    const named = run
+      .stdout()
+      .split("\n")
+      .filter((line) => line.startsWith("  kept: "));
+    expect(named).toEqual([
+      "  kept: .claude/skills/comment/SKILL.md",
+      "  kept: README.md",
+      `  kept: ${BOARD}`,
+    ]);
 
     const list = harnessFor(root);
     await runWorkspaceKeep(list.context);
     expect(list.stdout()).toContain("3 kept files in this workspace");
     expect(list.stdout()).toContain(`  ${BOARD}`);
     expect(list.stdout()).toContain("  README.md");
+  });
+
+  it("names the kept files on an otherwise up-to-date run too", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+
+    write(root, BOARD, "board custom\n");
+    await runWorkspaceKeep(harnessFor(root, { path: BOARD }).context);
+    write(template, BOARD_TEMPLATE_PATH, "board v2\n");
+    // First run advances the kept baseline; the second has nothing left to do.
+    await upgrade(root, template);
+
+    const idle = await upgrade(root, template);
+    expect(idle.stdout()).toContain("already up to date.");
+    expect(idle.stdout()).toContain(`  kept: ${BOARD}`);
   });
 
   it("advances the kept baseline to each incoming copy without writing the file", async () => {

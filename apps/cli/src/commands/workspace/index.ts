@@ -37,8 +37,8 @@ export const workspaceTopic: TopicSpec = {
     "A conflict then goes one of two ways. `merge` performs the three-way the report points at " +
     "— baseline, your copy, the tool's — writing clean merges through the server and printing " +
     "unresolved hunks instead of writing anything. `keep` records the divergence as deliberate, " +
-    "so upgrades stop reporting the file, with one summary line still counting the kept files " +
-    "on every run; `unkeep` resumes reporting against the current template.\n\n" +
+    "so upgrades stop reporting the file, while still naming every kept path on one quiet line " +
+    "each run. `unkeep` resumes reporting against the current template.\n\n" +
     "`maintain` is about the workspace's git repository rather than its files. Corpus disables " +
     "git's own background maintenance in every workspace — a detached repack racing the server's " +
     "commits can leave the object store permanently corrupt, and that store is the audit trail " +

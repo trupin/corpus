@@ -160,3 +160,43 @@ baseline, kept restore-candidate, unknown-path refusal with manifest byte
 comparison, idempotence, no-manifest refusal, cwd-relative resolution, JSON
 shapes, upgrade `--json` `kept` array), plus `plan.test.ts` and
 `manifest.test.ts` cases for the mark's plumbing and parsing.
+
+### PR #75 review fixes (2026-09-06, opus)
+
+**Finding (MAJOR).** SPEC.md:90's signed rider says the upgrade "names each
+one" of the divergent files, and SPEC.md:35 says a modified file is
+"reported". CLI-081 had reduced every kept file to a single count line, so an
+operator was told that something diverged while the one fact they needed —
+*which* file — was withheld. `renderKeptSummary` now **names each kept path**,
+one compact `  kept: <path>` line apiece, sorted (the plan's own path order).
+The `describe()` filter is unchanged, so a kept path still gets no verdict
+column, no diff summary and no `unresolved —` follow-up: named, not nagged.
+Help prose in `upgrade.ts`, `keep.ts` and `workspace/index.ts` that promised
+only a count was rewritten, and `docs/cli.md` regenerated.
+
+E2E, real built CLI (`apps/cli/dist/bin/corpus.js`), real `corpus init`
+workspace at `scratchpad/e2e-ws`, template = this worktree's
+`assets/workspace` (edited to simulate a tool release, restored afterwards):
+
+1. Pre-fix build, two customized-and-kept files
+   (`.claude/skills/comment/SKILL.md`, `data/docs/boards/attention.md`):
+   `2 kept files deliberately diverged, skipped by this report — \`corpus
+   workspace keep\` lists them, \`corpus workspace unkeep <path>\` resumes
+   reporting.` — neither path named.
+2. Post-fix build, same workspace, after moving the template again:
+   ```
+   upgrade (tool 0.33.0 → 0.33.0):
+   2 kept files deliberately diverged, skipped by this report — `corpus workspace unkeep <path>` resumes reporting:
+     kept: .claude/skills/comment/SKILL.md
+     kept: data/docs/boards/attention.md
+   wrote 0 files in commit d9b2ce1a…
+   ```
+3. Next run, the up-to-date branch: `already up to date.` followed by the same
+   two named lines — the naming is on every run that has any, not only on runs
+   with other work.
+
+New/updated unit coverage in `keep.test.ts`: the single-kept case asserts
+`  kept: <path>` **and** the absence of `unresolved — corpus workspace diff
+<path>` (quiet, not a conflict), the three-file case asserts the exact sorted
+list of `  kept: ` lines, and a new test asserts the names on an otherwise
+`already up to date.` run.
