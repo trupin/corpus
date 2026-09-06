@@ -2487,3 +2487,17 @@ SHARED-079 and signs at the next release proposal before anything lands.
 | SERVER-166 | The server keeps the cost ledger | todo | P0 | opus | CONTRACT-097 |
 | CLI-085 | Every invocation weighs itself | todo | P0 | fable | SERVER-166 |
 | UI-190 | A document shows what it costs | todo | P0 | fable | CLI-085 |
+
+## Phase 60 — The product has one button (2026-09-06, user directive, two screenshots)
+
+The editor toolbar renders native select chrome while the document header's pill row is the
+product's real language. UI-191 designs the primitives in `design/index.html` first (the token
+pipeline's authoritative source), builds Button/IconButton/Select/Chip in kit, and migrates all 82
+files carrying raw interactive elements. INFRA-040 then makes the end state permanent as an ESLint
+rule riding the existing diff-scoped pre-commit lint and whole-repo CI lint — zero new hook steps,
+INFRA-025-clean by construction — with exemptions as config paths, never inline disables.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| UI-191 | One button, one dropdown, everywhere | todo | P0 | fable | — |
+| INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
