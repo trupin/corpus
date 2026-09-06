@@ -1,6 +1,7 @@
 import { LaneDot, useThreadScope, type LaneRow, type WeightLevel } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { useOpenInColumn } from "../board/openInColumn";
+import { LaneRelease } from "./LaneRelease";
 import { LaneWeight } from "./LaneWeight";
 import { useLaunchRecord } from "./useLaunchRecord";
 import {
@@ -52,6 +53,15 @@ import {
  * list beside it because the answer is a **sentence** — the launch record is the
  * agent's own clause and arrives two round trips late — and the list's weight
  * box is a fixed reservation that must not grow (`console.css`, UI-131).
+ *
+ * ## …and the act that ends it
+ *
+ * Under the weight section sits {@link LaneRelease} (UI-195): §9.2's release,
+ * offered on the lane a person is looking at rather than only in the
+ * conversation's own menu. It is the same mutation that menu sends, so the two
+ * surfaces cannot come to disagree about what a stop is. It is here for the
+ * weight control's two reasons — the act owes a sentence, and the list beside
+ * this pane holds nothing that may grow.
  *
  * ## Every member opens
  *
@@ -122,6 +132,7 @@ export function LaneScope({ row, levels }: LaneScopeProps): ReactElement {
       {/* Keyed on the lane, so a half-made choice never travels to another
           conversation: the control seeds itself from the level in force. */}
       <LaneWeight key={row.lane} row={row} levels={levels} reading={reading} />
+      <LaneRelease key={`release-${row.lane}`} row={row} />
 
       {row.kind === "orchestrator" ? (
         <p className="lane-note" data-lane-note="orchestrator">

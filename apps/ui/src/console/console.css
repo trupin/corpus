@@ -798,11 +798,27 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * The detail pane, and **it scrolls** (UI-195).
+ *
+ * Its sections are `flex: none` sentences and controls, and by UI-195 there are
+ * two of them: the weight section's paragraph and the release section's. At the
+ * drawer's default 210px the two together are taller than the pane, and without
+ * this the overflow was simply **unreachable** — a `Confirm release` button
+ * below the drawer's own edge, with no gesture that could reach it and no
+ * indication it was there. A person can still resize the drawer, and now they do
+ * not have to in order to finish an act they started.
+ *
+ * `.scope-list` yields its space first (`min-height: 0` below), so this scroller
+ * engages only once the fixed sections alone exceed the pane. The list's own
+ * scroll is what handles a long scope in an ordinary-sized drawer.
+ */
 .lane-scope {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow-y: auto;
 }
 
 .lane-scope-head {
@@ -850,8 +866,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* `min-height: 0` so the list gives up its space before the sections above it
+   are pushed out of the pane — a flex item defaults to `min-height: auto` and
+   refuses to shrink under its content, which is what put a control below the
+   drawer's edge (UI-195). */
 .scope-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 6px;
 }
@@ -1077,7 +1098,8 @@
   line-height: 1.55;
 }
 
-.lane-weight-control {
+.lane-weight-control,
+.lane-release-control {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -1085,7 +1107,8 @@
 
 /* The console's own register — `.job-detail-head`'s controls, one pane over. */
 .lane-weight-control select,
-.lane-weight-control button {
+.lane-weight-control button,
+.lane-release-control button {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-2);
@@ -1097,7 +1120,8 @@
 }
 
 .lane-weight-control select:hover,
-.lane-weight-control button:not(:disabled):hover {
+.lane-weight-control button:not(:disabled):hover,
+.lane-release-control button:not(:disabled):hover {
   border-color: var(--accent);
   color: var(--accent-ink);
 }
@@ -1105,7 +1129,8 @@
 /* A press that would change nothing is offered and dimmed rather than removed:
    a control that vanishes reads as a bug, and one that is disabled with its
    cost still on the screen reads as an answer (`JobDetail`'s `↗ open`). */
-.lane-weight-control button:disabled {
+.lane-weight-control button:disabled,
+.lane-release-control button:disabled {
   opacity: 0.45;
 }
 
@@ -1115,4 +1140,39 @@
   color: var(--ink-3);
   font-size: 11px;
   line-height: 1.55;
+}
+
+/*
+ * ── The release section of the Residents tab (UI-195) ──
+ *
+ * §9.2's release, offered on the lane a person is looking at. It borrows the
+ * weight section's block above and its control register above that, rather than
+ * arriving with a style of its own: two per-resident acts one block apart that
+ * looked unalike would read as two different kinds of thing.
+ *
+ * The consequence paragraph is only on the screen while the control is armed —
+ * the drawer is 210px by default and the weight panel above already spends a
+ * paragraph of it — so the resting height of this block is one control row.
+ */
+.lane-release-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The panel supplies its own spacing through its gap, as the weight panel does. */
+.lane-release-panel .lane-note {
+  padding: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* What releasing does, said above the press that does it — SPEC.md §8's rider
+   signed 2026-09-06: the lane returns to ordinary routing and the conversation
+   keeps being answered. */
+.lane-release-consequence {
+  color: var(--ink-3);
 }

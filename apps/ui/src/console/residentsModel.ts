@@ -431,3 +431,63 @@ export function scopeFailure(error: unknown): string | null {
   if (typeof error === "string" && error !== "") return `${SCOPE_FAILED_LEAD}: ${error}`;
   return SCOPE_FAILED_LEAD;
 }
+
+/**
+ * **Stopping a resident where the pane shows it** (UI-195; user directive
+ * 2026-09-06: *"I want to be able to stop a resident agent from the console
+ * pannel."*).
+ *
+ * The act is **release** and nothing else. §9.2's `DELETE
+ * /api/threads/{id}/resident` is the one stop this product has with an
+ * observable end — SERVER-128 made it immediate, so a person who presses it
+ * watches the lane go rather than requesting that it go — and there is no second
+ * mechanism for halting one agent. So the control is named for the act the
+ * server performs, not for the wish a person arrives with.
+ */
+export const RELEASE_LABEL = "Release the resident";
+
+/** …the press that performs it, once the consequence has been stated. */
+export const RELEASE_CONFIRM_LABEL = "Confirm release";
+
+/**
+ * …and the way out, named for what it preserves rather than as "cancel".
+ *
+ * A person who armed the control and read the consequence is choosing between
+ * two outcomes, and "cancel" names neither of them.
+ */
+export const RELEASE_CANCEL_LABEL = "Keep the resident";
+
+/**
+ * **What releasing does, said before it is done** (SPEC.md §8's rider signed
+ * 2026-09-06, cross-referenced from §7).
+ *
+ * The rider is the whole of this sentence, and its two halves are both needed:
+ *
+ * > Releasing the resident returns the **lane** to ordinary routing and reverts
+ * > nothing on the thread: engagement is already sticky under this section's own
+ * > rule … so the conversation keeps being answered, by the ordinary agent now.
+ *
+ * A control that said only *"the agent stops"* would be read as *"the
+ * conversation goes quiet"*, which is what release used to mean and is no longer
+ * what it does. So the stop and what survives it are stated in one breath —
+ * `WEIGHT_CHANGE_COST`'s rule at this grain, that a person told only the price
+ * reads it as the conversation.
+ *
+ * **Two sentences and no third**, because the pane it appears in is measured:
+ * the console drawer is 210 px by default and the weight section above already
+ * spends a paragraph of it. A clause saying release *"removes the owner, never
+ * the conversation"* was drafted and cut — it restates *stays open and engaged*
+ * in other words, and it cost the panel a line it does not have.
+ *
+ * **What is deliberately not claimed** is where the lane's already-queued events
+ * go. §7's rider of 2026-08-25 and `apps/server/src/threads/resident.ts` do not
+ * read alike on that point, and a control must not settle a question its own
+ * spec has left open — the conversation's menu says its own piece about the
+ * queue (`RELEASE_META`), and this says the piece the 2026-09-06 rider settled.
+ */
+export const RELEASE_CONSEQUENCE =
+  "Releasing stops this lane's agent. The conversation stays open and engaged, so the ordinary " +
+  "agent answers it from now on.";
+
+/** …and the lead for a release that did not land, in the server's own words. */
+export const RELEASE_FAILED_LEAD = "The resident could not be released";
