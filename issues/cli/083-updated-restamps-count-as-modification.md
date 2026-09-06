@@ -18,8 +18,9 @@ opus
 
 ## Dependencies
 
-- Depends on: —
-- Related: CLI-081, CLI-082 (both consume the same comparison)
+- Depends on: **CONTRACT-098** (the importable key sets)
+- Related: CLI-081, CLI-082 (both consume the same comparison), UI-189 (its
+  presentation key rides the same mechanism)
 
 ## Spec References
 

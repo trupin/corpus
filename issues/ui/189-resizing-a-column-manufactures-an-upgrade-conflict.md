@@ -18,7 +18,7 @@ fable
 
 ## Dependencies
 
-- Depends on: —
+- Depends on: **CONTRACT-098** (the importable presentation-key set)
 - Related: CLI-081 (deliberate divergence — the general mechanism; this issue
   removes one systemic source of accidental divergence)
 
@@ -39,8 +39,18 @@ resizes a column manufactures this conflict by clicking.**
 
 ## What to build
 
-Decide between the two directions and record the decision — both are honest,
-one must be chosen and the other rejected in writing:
+**Orchestrator decision, 2026-09-06 (v0.34.0 run): direction 2.** The
+comparison ignores declared presentation keys, riding CLI-083's ignored-key
+mechanism and CONTRACT-098's declaration. Direction 1 was rejected because it
+moves storage across contract, server, and UI to solve what is a comparison
+defect, and forfeits the width surviving in the document for no gain a
+single-user product can see. Consequence (sprint-024 P1/E2): this issue
+changes no file in `apps/ui` — cli-dev implements it beside CLI-083, and the
+`ui` label stands only because the defect was found there. Sprint-024's P5
+hazard binds: the `update` verdict's write must preserve the ignored keys it
+enabled (TEST-1094, TEST-1099).
+
+The two directions considered were:
 
 1. **Presentation state moves out of template-tracked documents.** Per-viewer
    runtime state lives under `.corpus/` (never committed, never compared).
