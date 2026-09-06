@@ -518,12 +518,12 @@ resident's, and a resident settles nothing of yours — including the
 events you took from its lane while nobody was on it.
 
 **A subagent that stands aside defers — through you.** One that finds a person
-editing the document it was about to write reports that with the document id and
-stops. Confirm the waiting thread got its one-line reply (the comment skill has the
-subagent post it; post it yourself if it is missing), then defer exactly as
-`references/writing.md` prescribes — never `corpus queue fail` for it. A
-stale-key refusal is a different thing and never reaches you: the subagent re-reads,
-writes again, and reports the finished work.
+editing the target document reports the document id and stops. Confirm the waiting thread got its one-line reply (the comment skill has it
+posted; else post it yourself), then defer as
+`references/writing.md` says — never `corpus queue fail` for it, and never
+a loop of re-reads against somebody still typing. A
+stale-key refusal is a different thing and never reaches you: the subagent
+re-reads, writes again, and reports the finished work.
 
 ## Concurrency and ordering
 

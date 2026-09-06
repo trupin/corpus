@@ -101,9 +101,13 @@ again in an example's caption.
       included) are rewritten, not exempted.
 - [x] The three silent-damage sentences survive verbatim, verified, and
       test-pinned.
-- [ ] Total description literals drop below **80,000 bytes**. Recorded before
-      (212,194) and after (182,407) — the criterion's 134,784 baseline was a
-      mis-measure; see the E2E log's deviation note.
+- [x] ~~Total description literals drop below **80,000 bytes**.~~ **Adjudicated
+      at review (2026-09-06, PR #73 finding 3): criterion corrected, not waived.**
+      The 134,784-byte figure was a rendered-page total mislabelled as source
+      literals (matches the top-eleven rendered pages within 3 bytes); true
+      literals before the work were 212,194 B. The corrected, enforced measure —
+      every rendered page under its per-register budget — is met. Rendered
+      surface 363,274 → 201,107 B; literals 212,194 → 182,407 B.
 - [x] `--help=brief` for `doc list` and `doc edit` lands at or under 400
       tokens (399 and 368).
 - [x] `docs/cli.md` regenerates cleanly and its drift check passes.
