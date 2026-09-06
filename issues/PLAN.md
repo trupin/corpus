@@ -2465,8 +2465,8 @@ binary's registry (CLI-084 records both hypotheses and mandates the reproduction
 | --- | --- | --- | --- | --- | --- |
 | CONTRACT-098 | Frontmatter key classes are declared once, where both sides can import them | done | P0 | opus | — |
 | UI-189 | Resizing a column manufactures a template conflict by clicking | done | P0 | fable | CONTRACT-098 |
-| CLI-081 | The manifest cannot record deliberate divergence | todo | P0 | fable | — |
-| CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
+| CLI-081 | The manifest cannot record deliberate divergence | done | P0 | fable | — |
+| CLI-082 | Skills have dual ownership and no merge verb | done | P0 | fable | — |
 | CLI-083 | `updated:` restamps count as modification | done | P0 | opus | CONTRACT-098 |
 | CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
 
