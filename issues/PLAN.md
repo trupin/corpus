@@ -2319,7 +2319,8 @@ and shipped in v0.22.0.
 | AGENT-069 | The resident writes the digest at reply time | done | P0 | fable | CLI-077, SERVER-164 |
 | SHARED-078 | A designated thread whose `agent` is `none` enqueues nothing for a plain turn | done | P1 | fable | — |
 | SERVER-165 | Designating a thread engages it | done | P0 | opus | SHARED-078 |
-| AGENT-070 | The skills still read "a parked resident answers only mentions" | todo | P1 | opus | SERVER-165 |
+| AGENT-070 | The skills still read "a parked resident answers only mentions" | done | P1 | opus | SERVER-165 |
+| AGENT-073 | The skills still call a weight change a discarded conversation | todo | P0 | opus | SHARED-076 |
 
 **`CLI-077` is not ready to implement, and its own file says so.** "Stored in the
 thread file" means thread frontmatter gains a field, and the server is the sole
