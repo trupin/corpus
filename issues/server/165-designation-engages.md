@@ -18,8 +18,9 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-078 (the decision — made 2026-09-06), the §7/§8 rider
-  below being signed
+- Depends on: SHARED-078 (the decision — made 2026-09-06); the §7/§8 rider
+  below — **signed by the user 2026-09-06**, quoted verbatim in the release
+  /goal, applied to SPEC.md §8 the same day with a §7 cross-reference
 - Blocks: AGENT-070
 
 ## Spec References
@@ -35,7 +36,7 @@ resident's lane. Release and resolve return the thread to the ordinary opt-in
 state. No contract change: `agent` is an existing field and designation is an
 existing route.
 
-## The rider, drafted for signature at the next release proposal
+## The rider — signed 2026-09-06, applied to SPEC.md
 
 To follow §8's opt-in rule (and be cross-referenced from §7's designation
 text):
@@ -53,12 +54,12 @@ text):
 > asking for. Resolving the thread ends both, exactly as it always has. A
 > person who wants a silent owner releases the resident and resolves the
 > thread, which is the cost this trade accepts and states.
-> _(Rider signed — date to be filled at signature.)_
+> _(Rider signed 2026-09-06.)_
 
 ## Acceptance Criteria
 
-- [ ] The rider above (or the user's revision) is signed and applied before
-      the behaviour lands — never after
+- [x] The rider above (or the user's revision) is signed and applied before
+      the behaviour lands — never after (signed and applied 2026-09-06)
 - [ ] Designating (any surface: Ask, thread control, re-designation) sets
       `agent: engaged` in the same server write and same commit
 - [ ] Release reverts nothing on the thread — `agent: engaged` persists under
