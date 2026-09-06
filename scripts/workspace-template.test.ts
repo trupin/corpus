@@ -5367,13 +5367,27 @@ describe("converse skill body", () => {
       expect(body).toMatch(
         wrapped("**Your own weight is your designation's, and no message changes it.**"),
       );
-      // The reason it cannot reach the resident's own turn, which is what stops
-      // the clause being restored as a courtesy to the symmetry.
+      /*
+       * The reason it cannot reach the resident's own turn, which is what stops
+       * the clause being restored as a courtesy to the symmetry.
+       *
+       * **AGENT-073.** That reason used to be *"becoming another one would mean
+       * discarding this conversation, which is the thing you are here to hold"*
+       * — an impossibility claim, and SPEC.md §7's rider signed 2026-09-06 says
+       * in as many words that it "was too strong". A weight change is a
+       * re-designation: the running agent is released, a successor launches on
+       * the same conversation, and the conversation survives because it is a
+       * document on disk. What a message cannot do is *be* that act, and that —
+       * not impossibility — is why a `weight` on an event stops at what the
+       * resident hands off. The real cost stays stated where the old claim
+       * stood, because the rider names it deliberately.
+       */
       expect(body).toMatch(
-        wrapped(
-          "becoming another one would mean discarding this conversation, which is the thing you are here to hold",
-        ),
+        wrapped("what this lane runs at changes only by re-designation: it releases you and"),
       );
+      expect(body).toMatch(wrapped("launches a successor, which reads this conversation off disk"));
+      expect(body).toMatch(wrapped("What does not survive is your working context."));
+      expect(body, "the overstated cost is back").not.toMatch(/discard(ing|s)? this conversation/i);
       expect(body).toMatch(wrapped("governs what you **hand off** and never your own turn"));
       expect(body).toMatch(
         wrapped("There is nothing in it for you to honour or to fail on your own account"),
@@ -5486,16 +5500,34 @@ describe("converse skill body", () => {
        * the sentence that explains why a listener stops rather than adjusts is
        * not (CONTRACT-071's decision 4).
        */
-      // The reason moved to the reference whole (AGENT-065); the acts stay below.
+      /*
+       * The reason moved to the reference whole (AGENT-065); the acts stay below.
+       *
+       * **AGENT-073.** The reference used to earn the act with an impossibility
+       * — *"without discarding the conversation it is holding"* — which SPEC.md
+       * §7's rider signed 2026-09-06 corrects by name. The act is unchanged and
+       * so is its reason: a session cannot become another one, so the change is
+       * made by *replacing* it. What that costs is the released listener's own
+       * working context, and the pin holds the reference to saying so — a
+       * successor that rehydrates from the thread and the artifacts is the same
+       * handoff this file already describes for a lost race.
+       */
       expect(leaving).toMatch(
-        wrapped(
-          "**no running agent becomes another one without discarding the conversation it is holding.**",
-        ),
+        wrapped("**no running agent becomes another one — the change is made by replacing it.**"),
       );
       expect(leaving).toMatch(
         wrapped(
           "Somebody has asked for this conversation to be worked at a weight this session cannot become",
         ),
+      );
+      expect(leaving).toMatch(
+        wrapped("What that costs is your own working context, and never the conversation"),
+      );
+      expect(leaving).toMatch(
+        wrapped("your successor rehydrates from it and the artifacts exactly as the survivor of"),
+      );
+      expect(leaving, "the overstated cost is back").not.toMatch(
+        /discard(ing|s)? the conversation/i,
       );
       // The same ending as a release, reached one read later — and the same
       // three actions, in the same order.
@@ -7231,15 +7263,63 @@ describe("a listener launched at its designation's weight", () => {
     );
     expect(occupied, "the wait-for-the-fallback rule is back").not.toMatch(/launch nothing now/i);
     expect(occupied).toMatch(/you launch now, at the new weight/);
-    // The invariant this rule rests on, stated as an outcome and pointed home.
+    /*
+     * The invariant this rule rests on, stated as an outcome and pointed home.
+     * **AGENT-073**: the outcome is a *replacement*, and the old wording made
+     * the conversation the casualty of it. SPEC.md §7's rider signed 2026-09-06
+     * corrects that in as many words — the conversation is a document, it is on
+     * disk, and the successor reads it — so the cost this bullet may state is
+     * the released listener's working context and nothing wider. The negative
+     * pin keeps the overstatement from coming back as a shorter way to say the
+     * same thing.
+     */
+    expect(occupied).toMatch(wrapped("No running agent becomes another model, so the change"));
+    expect(occupied).toMatch(wrapped("is made by replacing it: the old listener ends its own run"));
     expect(occupied).toMatch(
-      /No running agent\s+becomes another model without discarding the conversation it holds/,
+      wrapped("and the successor you launch reads the conversation off disk"),
     );
     expect(occupied).toMatch(
-      /\*\*When it goes, and how it finds out, is the\s+converse skill's to state\.\*\*/,
+      wrapped("What that costs is the released listener's working context, never the conversation"),
+    );
+    expect(occupied, "the overstated cost is back").not.toMatch(
+      /discard(ing|s)? the conversation/i,
+    );
+    expect(occupied).toMatch(
+      wrapped("**When it goes, and how it finds out, is the converse skill's to state.**"),
     );
     // The old listener is still never stood down by the orchestrator.
-    expect(occupied).toMatch(/Standing it down yourself is still not yours to do/);
+    expect(occupied).toMatch(wrapped("Standing it down yourself is still not yours to do"));
+  });
+
+  /**
+   * **AGENT-073, the sweep.** Three files carried the same overstatement in
+   * three wordings, and each was found by reading rather than by a test — the
+   * defect's whole shape is that it spreads by paraphrase. So the guard is
+   * workspace-wide and on the *claim*, not on any one sentence: no template
+   * file may say that a running agent's change discards, loses, or throws away
+   * the conversation. SPEC.md §7's rider signed 2026-09-06 settles what is
+   * true — the conversation is a document, it is on disk, and the successor
+   * reads it — so what a skill may call the cost is the released agent's own
+   * working context and nothing wider.
+   */
+  it("nowhere claims a weight change costs the conversation", () => {
+    const forbidden = /(discard|lose|losing|throw(ing)? away)[a-z]*\s+(this|the)\s+conversation/i;
+    for (const relPath of templateFiles) {
+      expect(
+        readTemplateFile(relPath),
+        `${relPath}: a re-designation releases the agent, not the conversation (SPEC.md §7 rider, 2026-09-06)`,
+      ).not.toMatch(forbidden);
+    }
+    // The sweep is worthless if its regex misses the wordings that shipped.
+    for (const shipped of [
+      "becoming another one would mean discarding this conversation",
+      "without discarding the conversation it is holding",
+      "without discarding the conversation it holds",
+    ]) {
+      expect(shipped, "the sweep would not have caught the defect it exists for").toMatch(
+        forbidden,
+      );
+    }
   });
 
   /**

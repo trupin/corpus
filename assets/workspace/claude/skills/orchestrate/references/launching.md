@@ -223,11 +223,12 @@ ordinary dispatch-only pass never needs this file.
   **A weight that changed is this release case, not a third one.** A re-designation that
   only changes the weight reaches you as release and designation — paired or split — on a
   lane that may still read `live`, and you launch now, at the new weight. No running agent
-  becomes another model without discarding the conversation it holds, so the old listener
-  ends its own run instead of changing. **When it goes, and how it finds out, is the
-  converse skill's to state.** Standing it down yourself is still not yours to do: you
-  launch its successor, log that the lane is designated at a new weight and what went out,
-  and let it leave on its own.
+  becomes another model, so the change is made by replacing it: the old listener ends its
+  own run, and the successor you launch reads the conversation off disk. What that costs is
+  the released listener's working context, never the conversation. **When it goes, and how
+  it finds out, is the converse skill's to state.** Standing it down yourself is still not
+  yours to do: log that the lane is designated at a new weight and what went out, and let it
+  leave on its own.
 
 - **A lane with work waiting and nobody on it gets a listener, once a pass.** For every roster
   row that is not the orchestrator's, does not read `live`, **has something pending**, and is

@@ -43,10 +43,12 @@ every other field on that row can come back reading exactly as it did. Only the 
 own id says whether the designation is still the one you were launched for.
 
 The reason a replaced listener stops rather than adapts: **no running agent becomes another
-one without discarding the conversation it is holding.** Somebody has asked for this
-conversation to be worked at a weight this session cannot become — or by a persona this
-session was never bound to — and the only way to give them that is to stop and let the
-successor have the lane.
+one — the change is made by replacing it.** Somebody has asked for this conversation to be
+worked at a weight this session cannot become — or by a persona this session was never bound
+to — and the only way to give them that is to stop and let the successor have the lane. What
+that costs is your own working context, and never the conversation: a conversation is a
+document, and your successor rehydrates from it and the artifacts exactly as the survivor of
+the race above does.
 
 ## Retirement: the refused park, and why the drain is guarded
 
@@ -82,9 +84,8 @@ refusal, no roster row, no held id. That makes it the exit a session reaches for
 continuing merely feels expensive, which is why the body puts a bar on it — a casualty you can
 name — and a record behind it — the job log line and the last reply. Stopping here must be an
 act with a visible cause, or lanes lose their listeners to moods nobody can audit. As for the
-handover: a summary you write for your successor is a fourth account of the conversation
-nobody asked for and nobody will trust; a document you wrote while the work was fresh is one
-they can read. The corpus is the handoff, never a transcript.
+handover: write no summary. A fourth account of the conversation is one nobody asked for and
+nobody will trust, and the corpus is the handoff, never a transcript.
 
 ## A resolved thread
 
