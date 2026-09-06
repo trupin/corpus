@@ -65,20 +65,63 @@ export function writes(action: UpgradeAction, restore: boolean): boolean {
   return action === "update" || action === "install" || (restore && action === "restore-candidate");
 }
 
+/** A file's two identities: its bytes, and its bytes minus the ignored keys. */
+export interface ContentShas {
+  readonly sha256: string;
+  /** Sha with `UPGRADE_IGNORED_KEYS` frontmatter lines removed (`ignored-keys.ts`). */
+  readonly normalizedSha256: string;
+}
+
 export interface UpgradeInput {
   /** Workspace-relative, POSIX-separated, post-rename. */
   readonly path: string;
   /** Sha the manifest recorded, or `null` for a path the manifest does not know. */
   readonly baseline: string | null;
+  /**
+   * Normalized sha the manifest recorded, or `null` when it recorded none — a
+   * manifest written before CLI-083 holds only raw shas, and the baseline's
+   * bytes are gone, so its normalized form is **unrecoverable**. Never guessed:
+   * a legacy entry simply compares raw (sprint-024 P4, O2).
+   */
+  readonly baselineNormalized: string | null;
   /** Sha of the file in the workspace, or `null` when it is not there. */
   readonly workspace: string | null;
+  /** Normalized sha of the workspace's copy, `null` exactly when `workspace` is. */
+  readonly workspaceNormalized: string | null;
   /** Sha the new tool would install, or `null` when the source no longer has it. */
   readonly incoming: string | null;
+  /** Normalized sha of the incoming copy, `null` exactly when `incoming` is. */
+  readonly incomingNormalized: string | null;
+}
+
+/**
+ * Whether two copies are the same document: byte-identical, or — when both
+ * normalized identities are known — differing only in ignored frontmatter keys
+ * (CLI-083, UI-189). A server-stamped `updated:` or a board-written `width:` is
+ * not an edit, so it must not read as one in any cell of the matrix.
+ */
+function same(
+  rawA: string,
+  normalizedA: string | null,
+  rawB: string,
+  normalizedB: string | null,
+): boolean {
+  if (rawA === rawB) return true;
+  return normalizedA !== null && normalizedB !== null && normalizedA === normalizedB;
 }
 
 /**
  * The verdict for one path. Exhaustive over (baseline × workspace × incoming),
  * and every branch is one of {@link UPGRADE_ACTIONS}.
+ *
+ * Every equality runs through {@link same}, so a copy that differs only in
+ * ignored keys reads as unchanged on that side. The one asymmetry is the
+ * baseline (sprint-024 P4): its bytes are gone and only its recorded shas
+ * remain, so a legacy manifest entry — raw sha only — compares raw, and the
+ * residual case (upstream changed the file, and the workspace's only delta is
+ * ignored keys) honestly reads `keep-modified` there rather than guessing a
+ * baseline. Manifests written since CLI-083 record the normalized sha too, and
+ * the same case reads `update`.
  */
 export function decide(input: UpgradeInput): UpgradeAction {
   const { baseline, workspace, incoming } = input;
@@ -94,19 +137,27 @@ export function decide(input: UpgradeInput): UpgradeAction {
     // Never overwrite a file we have no baseline for: without one we cannot
     // tell an untouched old copy from an edited one, and guessing wrong
     // destroys work. Identical bytes are simply adopted.
-    return workspace === incoming ? "current" : "keep-modified";
+    return same(workspace, input.workspaceNormalized, incoming, input.incomingNormalized)
+      ? "current"
+      : "keep-modified";
   }
 
   if (workspace === null) return "restore-candidate";
 
-  if (workspace === baseline) {
+  if (same(workspace, input.workspaceNormalized, baseline, input.baselineNormalized)) {
     // Untouched here. This is the one cell that writes.
-    return incoming === baseline ? "current" : "update";
+    return same(incoming, input.incomingNormalized, baseline, input.baselineNormalized)
+      ? "current"
+      : "update";
   }
 
   // Modified here. Reported only when there was something to upgrade.
-  if (workspace === incoming) return "current";
-  return incoming === baseline ? "keep-silent" : "keep-modified";
+  if (same(workspace, input.workspaceNormalized, incoming, input.incomingNormalized)) {
+    return "current";
+  }
+  return same(incoming, input.incomingNormalized, baseline, input.baselineNormalized)
+    ? "keep-silent"
+    : "keep-modified";
 }
 
 export interface UpgradeDecision extends UpgradeInput {
@@ -121,31 +172,38 @@ export interface UpgradeDecision extends UpgradeInput {
 export function planUpgrade(
   manifest: readonly ManifestEntry[],
   incoming: readonly IncomingFile[],
-  workspaceSha: (path: string) => string | null,
+  workspaceShas: (path: string) => ContentShas | null,
 ): readonly UpgradeDecision[] {
-  const baselines = new Map(manifest.map((entry) => [entry.path, entry.sha256]));
+  const baselines = new Map(manifest.map((entry) => [entry.path, entry]));
   const sources = new Map(incoming.map((file) => [file.path, file]));
   const paths = [...new Set([...baselines.keys(), ...sources.keys()])].sort();
 
   return paths.map((path) => {
+    const entry = baselines.get(path);
+    const disk = workspaceShas(path);
     const source = sources.get(path);
     const input: UpgradeInput = {
       path,
-      baseline: baselines.get(path) ?? null,
-      workspace: workspaceSha(path),
+      baseline: entry?.sha256 ?? null,
+      // A hand-damaged optional field degrades to the raw comparison rather
+      // than comparing a string against whatever it holds.
+      baselineNormalized:
+        typeof entry?.normalizedSha256 === "string" ? entry.normalizedSha256 : null,
+      workspace: disk?.sha256 ?? null,
+      workspaceNormalized: disk?.normalizedSha256 ?? null,
       incoming: source?.sha256 ?? null,
+      incomingNormalized: source?.normalizedSha256 ?? null,
     };
     return { ...input, action: decide(input) };
   });
 }
 
-/** One file the current tool would install, hashed. */
-export interface IncomingFile {
+/** One file the current tool would install, hashed both ways. */
+export interface IncomingFile extends ContentShas {
   /** Workspace-relative, POSIX-separated, post-rename. */
   readonly path: string;
   /** Absolute path of the bytes to copy. */
   readonly from: string;
-  readonly sha256: string;
 }
 
 /**
@@ -169,28 +227,63 @@ export interface IncomingFile {
  * records a manifest without applying the plan. Recording an incoming sha for a
  * file nobody installed made the manifest claim a path that is not on disk, and
  * the next run then read that absence as "the user deleted it" (CLI-014). A
- * manifest is a record of what happened, so it takes what happened as its input.
+ * manifest is a record of what happened, so it takes what happened as its input
+ * — and since CLI-083 the input carries **both hashes** of each written file,
+ * because an `update` no longer writes the template's exact bytes: it preserves
+ * the workspace's ignored keys, so the bytes on disk are the merge, and the
+ * manifest records the merge. The normalized sha travels beside the raw one so
+ * the next run can still tell "differs only in ignored keys" from "edited".
+ *
+ * A kept baseline carries its recorded normalized sha forward when it has one,
+ * and stays raw-only when it does not — a legacy entry never gains a normalized
+ * sha it cannot prove (sprint-024 P4: never guess a baseline).
  */
 export function nextManifestFiles(
   decisions: readonly UpgradeDecision[],
-  written: ReadonlySet<string>,
+  written: ReadonlyMap<string, ContentShas>,
 ): readonly ManifestEntry[] {
   const files: ManifestEntry[] = [];
   for (const decision of decisions) {
     if (decision.action === "retired" || decision.incoming === null) continue;
 
-    const sha = written.has(decision.path)
-      ? decision.incoming
-      : (decision.baseline ?? adoptable(decision));
-    if (sha === null) continue;
-    files.push({ path: decision.path, sha256: sha });
+    const wrote = written.get(decision.path);
+    if (wrote !== undefined) {
+      files.push({ path: decision.path, ...wrote });
+      continue;
+    }
+    if (decision.baseline !== null) {
+      files.push({
+        path: decision.path,
+        sha256: decision.baseline,
+        ...(decision.baselineNormalized === null
+          ? {}
+          : { normalizedSha256: decision.baselineNormalized }),
+      });
+      continue;
+    }
+    const adopted = adoptable(decision);
+    if (adopted !== null) files.push({ path: decision.path, ...adopted });
   }
   return files;
 }
 
-/** A baseline-less path is adopted only when it already *is* the incoming copy. */
-function adoptable(decision: UpgradeDecision): string | null {
-  return decision.workspace !== null && decision.workspace === decision.incoming
-    ? decision.workspace
+/**
+ * A baseline-less path is adopted only when it already *is* the incoming copy —
+ * byte-identical, or the same document up to ignored keys. What is recorded is
+ * the **workspace copy's** own hashes: those are the bytes on disk, and any
+ * ignored-key delta they carry over the incoming copy is exactly the kind of
+ * delta the comparison exists to not care about.
+ */
+function adoptable(decision: UpgradeDecision): ContentShas | null {
+  if (decision.workspace === null || decision.workspaceNormalized === null) return null;
+  if (decision.incoming === null) return null;
+  const matches = same(
+    decision.workspace,
+    decision.workspaceNormalized,
+    decision.incoming,
+    decision.incomingNormalized,
+  );
+  return matches
+    ? { sha256: decision.workspace, normalizedSha256: decision.workspaceNormalized }
     : null;
 }

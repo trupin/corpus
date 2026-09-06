@@ -982,3 +982,168 @@ describe("the workspace upgrade command spec", () => {
     ]);
   });
 });
+
+describe("ignored frontmatter keys (CLI-083, UI-189)", () => {
+  const VIEW = "data/docs/views/inbox.md";
+  const SEED_STAMP = "updated: 2026-07-26T00:00:00Z";
+
+  const view = (body: string, ...extraKeys: readonly string[]): string =>
+    [
+      "---",
+      "id: doc_view",
+      "type: note",
+      "title: Inbox",
+      "created: 2026-07-26T00:00:00Z",
+      SEED_STAMP,
+      ...extraKeys,
+      "---",
+      "",
+      body,
+    ].join("\n");
+
+  /** The shipped template, plus one seed view document with real frontmatter. */
+  function makeTemplateWithView(): string {
+    const template = makeTemplate();
+    write(template, VIEW, view("query: inbox v1\n"));
+    return template;
+  }
+
+  /**
+   * A pre-CLI-083 manifest: the same entries with every normalized sha
+   * stripped, which is exactly what a workspace installed by an older tool
+   * carries. Nothing else about the workspace changes.
+   */
+  function stripNormalizedShas(root: string): void {
+    const manifest = readTemplateManifest(templateManifestPath(root));
+    if (manifest === undefined) throw new Error("expected a manifest to strip");
+    writeFileSync(
+      templateManifestPath(root),
+      serializeManifest({
+        ...manifest,
+        files: manifest.files.map((entry) => ({ path: entry.path, sha256: entry.sha256 })),
+      }),
+      "utf8",
+    );
+  }
+
+  it("updates a restamp-only file cleanly and keeps the workspace's updated:", async () => {
+    const template = makeTemplateWithView();
+    const root = await makeWorkspace(template);
+
+    // The server restamped `updated:` — a content edit was made and unmade, or
+    // reconciliation rewrote the file — and nothing else differs.
+    write(
+      root,
+      VIEW,
+      view("query: inbox v1\n").replace(SEED_STAMP, "updated: 2026-09-06T10:00:00Z"),
+    );
+    await commitAll({ dir: root, message: "server restamped the view" });
+    write(template, VIEW, view("query: inbox v2\n"));
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    // TEST-1093: `update`, not a conflict.
+    expect(harness.stdout()).toContain(`update  ${VIEW}`);
+    expect(harness.stdout()).not.toContain(`keep    ${VIEW}`);
+    // TEST-1094: the template's body arrived, and the template's fixed seed
+    // date did not — `updated` never moves backwards.
+    const written = read(root, VIEW);
+    expect(written).toContain("query: inbox v2");
+    expect(written).toContain("updated: 2026-09-06T10:00:00Z");
+    expect(written).not.toContain(SEED_STAMP);
+    // The manifest records the merged bytes it wrote, both hashes, so the next
+    // run reads this file as current rather than as modified.
+    const entry = readTemplateManifest(templateManifestPath(root))?.files.find(
+      (file) => file.path === VIEW,
+    );
+    expect(entry?.sha256).toBe(sha256(Buffer.from(written, "utf8")));
+    expect(typeof entry?.normalizedSha256).toBe("string");
+  });
+
+  it("upgrades a resized view with no conflict, and the width survives the write", async () => {
+    const template = makeTemplateWithView();
+    const root = await makeWorkspace(template);
+
+    // The board wrote `width:` into the view document (UI-189's PUT); the user
+    // never edited the file.
+    write(root, VIEW, view("query: inbox v1\n", "width: 686"));
+    await commitAll({ dir: root, message: "board resized a column" });
+    write(template, VIEW, view("query: inbox v2\n"));
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    // TEST-1098: no conflict for the resized view.
+    expect(harness.stdout()).toContain(`update  ${VIEW}`);
+    expect(harness.stdout()).not.toContain("unresolved");
+    // TEST-1099: the width is not lost by the write that ignoring it enabled.
+    const written = read(root, VIEW);
+    expect(written).toContain("query: inbox v2");
+    expect(written).toContain("width: 686");
+  });
+
+  it("still keeps and reports a stamped delta that carries a real edit", async () => {
+    const template = makeTemplateWithView();
+    const root = await makeWorkspace(template);
+
+    write(
+      root,
+      VIEW,
+      view("query: inbox v1, hand-tuned\n", "width: 686").replace(
+        SEED_STAMP,
+        "updated: 2026-09-06T10:00:00Z",
+      ),
+    );
+    await commitAll({ dir: root, message: "user edited the view too" });
+    const editedBefore = read(root, VIEW);
+    write(template, VIEW, view("query: inbox v2\n"));
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    // TEST-1095: the stamp does not launder the edit.
+    expect(harness.stdout()).toContain(`keep    ${VIEW}`);
+    expect(read(root, VIEW)).toBe(editedBefore);
+  });
+
+  it("reads a stamp-only file as current under a LEGACY manifest, with no migration", async () => {
+    const template = makeTemplateWithView();
+    const root = await makeWorkspace(template);
+    stripNormalizedShas(root);
+    const manifestBefore = read(root, ".corpus/template-manifest.json");
+
+    // Resized before the fix existed; the tool's copy of the view is unchanged.
+    write(root, VIEW, view("query: inbox v1\n", "width: 686"));
+    await commitAll({ dir: root, message: "board resized a column, pre-fix" });
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    // TEST-1100: no conflict, nothing to do, and the manifest was not rewritten
+    // to make it so — the migration criterion is met comparison-side.
+    expect(harness.stdout()).toContain("already up to date.");
+    expect(read(root, ".corpus/template-manifest.json")).toBe(manifestBefore);
+    expect(read(root, VIEW)).toContain("width: 686");
+  });
+
+  it("honestly reports the legacy residual case as a conflict (sprint-024 O2)", async () => {
+    const template = makeTemplateWithView();
+    const root = await makeWorkspace(template);
+    stripNormalizedShas(root);
+
+    // Upstream changed the file AND the workspace's only delta is an ignored
+    // key. Deciding "untouched" needs the baseline's normalized sha, which a
+    // legacy manifest never recorded and nothing can recover — so the raw
+    // comparison stands and the file is kept, never overwritten on a guess.
+    write(root, VIEW, view("query: inbox v1\n", "width: 686"));
+    await commitAll({ dir: root, message: "board resized a column, pre-fix" });
+    write(template, VIEW, view("query: inbox v2\n"));
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template });
+
+    expect(harness.stdout()).toContain(`keep    ${VIEW}`);
+    expect(read(root, VIEW)).toContain("query: inbox v1");
+  });
+});

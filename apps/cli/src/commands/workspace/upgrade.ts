@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES, type Actor } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
@@ -12,11 +12,13 @@ import type {
   WorkspaceCommandContext,
   WorkspaceCommandSpec,
 } from "../../registry/types.js";
-import { collectIncoming, shaOnDisk, type ToolRoots } from "../../template/incoming.js";
+import { normalizedSha256, preserveUpgradeIgnoredKeys } from "../../template/ignored-keys.js";
+import { collectIncoming, shasOnDisk, type ToolRoots } from "../../template/incoming.js";
 import { staleVerbCitations, type StaleCitation } from "../../template/stale-verbs.js";
 import {
   readTemplateManifest,
   serializeManifest,
+  sha256,
   type TemplateManifest,
 } from "../../template/manifest.js";
 import {
@@ -24,6 +26,7 @@ import {
   nextManifestFiles,
   planUpgrade,
   writes,
+  type ContentShas,
   type IncomingFile,
   type UpgradeAction,
   type UpgradeDecision,
@@ -330,7 +333,7 @@ async function syncTemplate(
   const withoutBaseline = manifest === undefined;
 
   const incoming = collectIncoming(dependencies);
-  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shaOnDisk(root, path));
+  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shasOnDisk(root, path));
 
   // Not a template file and not part of the three-way compare: a status
   // directory is either there or it is not, so healing it needs no baseline and
@@ -424,15 +427,18 @@ async function syncTemplate(
   // all.
   const applied = withoutBaseline ? [] : applyPlan(root, pending, incoming);
   const healed = healQueueSkeleton(root, queueSkeleton);
-  const written = [...applied, ...healed];
+  const appliedPaths = applied.map((file) => file.path);
+  const written = [...appliedPaths, ...healed];
   const nextManifest: TemplateManifest = {
     version: 1,
     tool: request.version,
     installedAt: new Date().toISOString(),
     // What was written, never what was planned: under `--adopt` the plan is not
     // applied at all, and recording its incoming shas would put paths in the
-    // manifest that are not on disk (CLI-014).
-    files: nextManifestFiles(decisions, new Set(written)),
+    // manifest that are not on disk (CLI-014). The hashes are of the bytes as
+    // they landed — an `update` preserves the workspace's ignored keys, so the
+    // template's own sha would describe bytes that are not there.
+    files: nextManifestFiles(decisions, new Map(applied.map((file) => [file.path, file.shas]))),
   };
   mkdirSync(join(root, CONFIG_DIR), { recursive: true });
   writeFileSync(templateManifestPath(root), serializeManifest(nextManifest), "utf8");
@@ -445,7 +451,11 @@ async function syncTemplate(
   // here, and neither case is achieved by overriding the operator's `.gitignore`.
   const manifestCommitted = !(await isIgnored(root, MANIFEST_RELATIVE_PATH));
   const trackable = await trackableMarkers(root, healed);
-  const staged = [...applied, ...trackable, ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : [])];
+  const staged = [
+    ...appliedPaths,
+    ...trackable,
+    ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : []),
+  ];
 
   const result: Omit<UpgradeReport, "staleCitations"> = {
     ...report,
@@ -493,22 +503,52 @@ async function isIgnoredByRules(root: string, relative: string): Promise<boolean
   }
 }
 
-/** Copies the bytes for every writing verdict and returns what it wrote. */
+/** One file this run put on disk, hashed as it landed. */
+interface WrittenFile {
+  readonly path: string;
+  readonly shas: ContentShas;
+}
+
+/**
+ * Writes the bytes for every writing verdict and returns what it wrote.
+ *
+ * An `update` does not copy the template's bytes verbatim: it writes the
+ * template's content **with the workspace copy's ignored frontmatter keys
+ * preserved** (sprint-024 P5, TEST-1094, TEST-1099). Ignoring `updated:` and
+ * `width:` in the comparison is what made this file `update`-eligible, and a
+ * bare copy would then destroy the very state the comparison protected — a
+ * resized view would lose its width to the fix for the resize, and `updated`
+ * would jump backwards to the template's fixed seed date, which §5's staleness
+ * ramp and §9.2's ordering both read. `install` and `--restore` copy verbatim:
+ * there is no workspace copy to preserve anything from.
+ *
+ * What lands on disk is therefore the merge, so the caller records the
+ * **written** bytes' hashes in the manifest, not the template's.
+ */
 function applyPlan(
   root: string,
   pending: readonly UpgradeDecision[],
   incoming: readonly IncomingFile[],
-): readonly string[] {
+): readonly WrittenFile[] {
   const sources = new Map(incoming.map((file) => [file.path, file.from]));
-  const written: string[] = [];
+  const written: WrittenFile[] = [];
 
   for (const decision of pending) {
     const from = sources.get(decision.path);
     if (from === undefined) continue;
     const to = join(root, ...decision.path.split("/"));
     mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(from, to);
-    written.push(decision.path);
+    const template = readFileSync(from, "utf8");
+    const contents =
+      decision.action === "update" && existsSync(to)
+        ? preserveUpgradeIgnoredKeys(template, readFileSync(to, "utf8"))
+        : template;
+    writeFileSync(to, contents, "utf8");
+    const bytes = Buffer.from(contents, "utf8");
+    written.push({
+      path: decision.path,
+      shas: { sha256: sha256(bytes), normalizedSha256: normalizedSha256(bytes) },
+    });
   }
   return written;
 }
@@ -834,6 +874,11 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "and new tool versions — so a bad upgrade is undone in one move, by reverting that commit in " +
     "the workspace with git. A run with nothing to do prints `already up to date.` and makes no " +
     "commit.\n\n" +
+    "Two frontmatter key classes never count as an edit: the server's stamps (`created`, " +
+    "`updated`) and presentation state (`width`, written by resizing a board column). A file " +
+    "differing only in them reads as untouched, and an update takes the tool's content while " +
+    "keeping this workspace's values for those keys — a resize or a restamp is not a conflict, " +
+    "and an upgrade never moves `updated` backwards.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
     "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template installs " +
     "— and nothing under `.corpus/` except the manifest itself and a missing queue status " +

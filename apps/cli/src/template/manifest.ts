@@ -20,6 +20,22 @@ export interface ManifestEntry {
   /** Workspace-relative, POSIX-separated, post-rename. */
   readonly path: string;
   readonly sha256: string;
+  /**
+   * Sha of the same bytes with the upgrade-ignored frontmatter keys removed
+   * (`ignored-keys.ts`, CLI-083) — what lets a later run tell "differs only in
+   * a server stamp or a column width" from "edited".
+   *
+   * Optional rather than a manifest version 2: a manifest written before
+   * CLI-083 has no way to gain it — the installed bytes are gone, so the
+   * normalized baseline is unrecoverable, never guessed (sprint-024 P4) — and
+   * an optional field lets both generations parse under `version: 1` in both
+   * directions ({@link readTemplateManifest}'s `isEntry` is structural and
+   * carries unknown keys, so an older tool reads a newer manifest too). An
+   * entry without it simply compares raw, which for the residual case —
+   * upstream changed the file and the workspace's only delta is ignored keys —
+   * honestly reads `keep-modified`.
+   */
+  readonly normalizedSha256?: string;
 }
 
 export interface TemplateManifest {
@@ -89,6 +105,11 @@ function isManifest(value: unknown): value is TemplateManifest {
  * beside the hash — still parse instead of being rejected as unrecognisable,
  * which would break `corpus workspace upgrade` in the very workspaces it exists
  * to protect.
+ *
+ * `normalizedSha256` is read when it is a string and treated as absent for any
+ * other shape, rather than failing the manifest: a malformed optional field
+ * degrades to the raw comparison, which is exactly the pre-CLI-083 behaviour
+ * and overwrites nothing.
  */
 function isEntry(value: unknown): value is ManifestEntry {
   if (typeof value !== "object" || value === null) return false;

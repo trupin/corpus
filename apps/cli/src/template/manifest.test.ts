@@ -69,6 +69,20 @@ describe("the template manifest", () => {
     ]);
   });
 
+  it("reads both manifest generations under version 1", () => {
+    // A normalized sha is optional per entry rather than a manifest version 2:
+    // a pre-CLI-083 manifest has no way to gain one — the installed bytes are
+    // gone — and both generations must parse in both directions.
+    const mixed: TemplateManifest = {
+      ...MANIFEST,
+      files: [
+        { path: "old.md", sha256: "a".repeat(64) },
+        { path: "new.md", sha256: "b".repeat(64), normalizedSha256: "c".repeat(64) },
+      ],
+    };
+    expect(readTemplateManifest(write(serializeManifest(mixed)))).toEqual(mixed);
+  });
+
   it("hashes bytes, not text", () => {
     expect(sha256(Buffer.from("abc"))).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
