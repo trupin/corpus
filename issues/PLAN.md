@@ -2264,7 +2264,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | INFRA-035 | Nothing proves the listener judgment reads two lanes differently | todo | P1 | fable | AGENT-063 |
 | INFRA-036 | A run whose runner exited with work still pending is scored as a product breach | done | P0 | fable | — |
 | AGENT-064 | An event is settled without the reply it was claimed to write | todo | P1 | fable | INFRA-036 |
-| INFRA-037 | A seed write can commit after the boundary, and the run is blamed for it | todo | P0 | fable | — |
+| INFRA-037 | A seed write can commit after the boundary, and the run is blamed for it | done | P0 | fable | — |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
 
@@ -2462,7 +2462,7 @@ binary's registry (CLI-084 records both hypotheses and mandates the reproduction
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| CONTRACT-098 | Frontmatter key classes are declared once, where both sides can import them | todo | P0 | opus | — |
+| CONTRACT-098 | Frontmatter key classes are declared once, where both sides can import them | done | P0 | opus | — |
 | UI-189 | Resizing a column manufactures a template conflict by clicking | todo | P0 | fable | CONTRACT-098 |
 | CLI-081 | The manifest cannot record deliberate divergence | todo | P0 | fable | — |
 | CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
