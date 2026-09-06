@@ -35,16 +35,13 @@
  */
 
 import type { RunRecord, Scenario, ScenarioRunScore, SeedContext } from "../scenario.js";
-import { modelFamilyOf, recordedModelMatches } from "../weight-table.js";
 import {
   corpusJson,
-  eventsOfType,
   eventStatus,
-  jobLogLines,
+  laneJudgedTruthfully,
+  readLaneLaunch,
   readServedWeightTable,
-  threadById,
   ThreadCreateResultSchema,
-  turnsBy,
   weightTableFromRefs,
   weightTableRefs,
 } from "./support.js";
@@ -78,59 +75,15 @@ async function seed(ctx: SeedContext) {
 function score(record: RunRecord): ScenarioRunScore {
   const threadId = record.seed.refs.threadId ?? "";
   const commentEventId = record.seed.refs.commentEventId ?? "";
-  const rows = weightTableFromRefs(record);
 
-  const launchEventIds = [
-    ...eventsOfType(record, "resident.designated", threadId).map((event) => event.id),
-    ...eventsOfType(record, "lane.waiting", threadId).map((event) => event.id),
-  ];
-  const lines = launchEventIds.flatMap((eventId) => jobLogLines(record, eventId));
-  // `defaulted` is dead vocabulary (AGENT-063), kept detectable so a revert to
-  // the fixed rule shows up in the label rather than as a mute "unrecorded".
-  const provenance = lines.some((entry) => entry.line.includes("judged"))
-    ? "judged"
-    : lines.some((entry) => entry.line.includes("defaulted"))
-      ? "defaulted"
-      : lines.some((entry) => entry.line.includes("stated"))
-        ? "stated"
-        : "unrecorded";
-
-  // The weight the launch *logged*: a declared row named on a judged line —
-  // matched by model family, case-insensitively, the same tolerance
-  // `recordedModelMatches` gives a turn's recorded model.
-  const loggedRow =
-    rows.find((row) =>
-      lines.some(
-        (entry) =>
-          entry.line.includes("judged") &&
-          entry.line.toLowerCase().includes(modelFamilyOf(row.model)),
-      ),
-    ) ?? null;
-
-  const thread = threadById(record, threadId);
-  const replies = thread === undefined ? [] : turnsBy(thread, "agent");
-  const reply = replies.length === 1 ? (replies[0] ?? null) : null;
-  const matchedRow =
-    reply === null
-      ? null
-      : (rows.find((row) => recordedModelMatches(row.model, reply.model)) ?? null);
-
-  const tier =
-    reply === null
-      ? replies.length === 0
-        ? "(no reply)"
-        : `(${String(replies.length)} replies)`
-      : matchedRow === null
-        ? `unmatched model "${reply.model ?? "(none)"}"`
-        : matchedRow.model;
-  const label = `${tier} · ${provenance}`;
-
-  const pass =
-    provenance === "judged" &&
-    loggedRow !== null &&
-    matchedRow !== null &&
-    loggedRow.key === matchedRow.key &&
-    eventStatus(record, commentEventId) === "processed";
+  // The lane read lives in support.ts (`readLaneLaunch`), shared verbatim with
+  // story 11 — which seeds a second, working-something-out lane beside this
+  // story's fetch-and-relay one and asserts the two launches *differ*. This
+  // story keeps owning the single-lane promise: judged, logged truthfully,
+  // settled.
+  const lane = readLaneLaunch(record, threadId, weightTableFromRefs(record));
+  const label = `${lane.tier} · ${lane.provenance}`;
+  const pass = laneJudgedTruthfully(lane) && eventStatus(record, commentEventId) === "processed";
 
   return { kind: "judgment", pass, label };
 }

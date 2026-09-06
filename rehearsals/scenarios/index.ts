@@ -14,6 +14,7 @@ import { hostileTranscript } from "./07-hostile-transcript.js";
 import { unmeetableWeight } from "./08-unmeetable-weight.js";
 import { retieredTable } from "./09-retiered-table.js";
 import { aListenerAnswersTwice } from "./10-a-listener-answers-twice.js";
+import { twoLanesTwoWeights } from "./11-two-lanes-two-weights.js";
 
 export const SCENARIOS: readonly Scenario[] = [
   statedWeight,
@@ -26,4 +27,5 @@ export const SCENARIOS: readonly Scenario[] = [
   unmeetableWeight,
   retieredTable,
   aListenerAnswersTwice,
+  twoLanesTwoWeights,
 ];
