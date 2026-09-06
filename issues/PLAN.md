@@ -2469,6 +2469,7 @@ binary's registry (CLI-084 records both hypotheses and mandates the reproduction
 | CLI-082 | Skills have dual ownership and no merge verb | done | P0 | fable | — |
 | CLI-083 | `updated:` restamps count as modification | done | P0 | opus | CONTRACT-098 |
 | CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
+| UI-195 | A resident can be stopped where it is shown | todo | P0 | opus | SERVER-165 |
 
 ## Phase 59 — What a document costs is measured, not felt (2026-09-06, user directive)
 
