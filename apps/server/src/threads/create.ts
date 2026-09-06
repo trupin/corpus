@@ -548,6 +548,33 @@ export async function createThread(
             parentId === null
               ? `comment: new standalone thread (${id}) by ${actor}`
               : `comment: new thread on ${parentId} (${id}) by ${actor}`,
+          /*
+           * SPEC.md §4's first act — "a turn posted to a thread" — and the turn
+           * posted *with* the thread is one of them (SERVER-101, orchestrator
+           * ruling 2026-09-06; sprint-024 Ruling 2). No spec change was needed:
+           * §4's existing words already cover it, and `commitTurnAppend`'s own
+           * justification applies verbatim here. A person's comment is "a change
+           * someone else can act on" — under §8 it is what wakes the agent — and
+           * a thread's first turn is the *most* actionable of them, since it is
+           * the one that starts the conversation. The party is deliberately not
+           * read, exactly as on the reply path: every other entry in §4's list
+           * names an act without one, and the user struck the word `agent` from
+           * this entry on 2026-08-10.
+           *
+           * The observable defect this closes: a person commenting mid-edit had
+           * `comment: new thread on doc_… (th_…) by user` overwritten by the
+           * next save folding into the same window, and relabelled
+           * `editing session: N documents by user` when it finally closed — a
+           * subject §4 says an act's commit keeps.
+           *
+           * `"names-the-window"` and not `"commits-alone"`: §4 gives that shape
+           * to a deletion and a bulk Save only. So the creation folds into the
+           * open window — carrying the parent's frontmatter write with it, which
+           * is why the anchored two-file act stays **one** commit (§6 forbids the
+           * intermediate state, and two commits would publish it) — and the
+           * window closes after, keeping this subject.
+           */
+          act: "names-the-window" as const,
         },
         keys,
         // A thread counts in the folder its parent is filed in

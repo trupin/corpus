@@ -852,17 +852,24 @@ describe("only a content edit opens a session (SERVER-095)", () => {
      * Named by position, never by a sha captured mid-window: a window no act
      * named is relabelled as it closes, which is an amend and so a new sha for
      * the same tree (SERVER-091).
+     *
+     * `commits` is how many the interlude left between the base and the tip —
+     * the range always starts one commit before the first edit, so `from` is
+     * `HEAD~commits` whichever door the interloper came through. A save the
+     * tracker does not follow folds (2); an interloper that is one of §4's acts
+     * closes the window, so the typing after it lands its own commit (3).
      */
     function expectBothEditsInRange(
       ws: WriteWorkspace,
       payload: DocEditedPayload | undefined,
       path: string,
+      commits = 2,
     ): void {
       expect(payload).toBeDefined();
       expect(payload?.to).toBe(ws.head());
-      expect(payload?.from).toBe(ws.git("rev-parse", "HEAD~2").trim());
-      // Two commits, not one: the sitting spans the interloper as well.
-      expect(payload?.stats.commits).toBe(2);
+      expect(payload?.from).toBe(ws.git("rev-parse", `HEAD~${String(commits)}`).trim());
+      // More than one: the sitting spans the interloper as well.
+      expect(payload?.stats.commits).toBe(commits);
       // The observable the review states: pre-fix the first edit shows up as a
       // context line rather than an added one, because `from` names the commit
       // that already contains it.
@@ -888,7 +895,12 @@ describe("only a content edit opens a session (SERVER-095)", () => {
         });
         expect(response.status).toBe(201);
       });
-      expectBothEditsInRange(ws, payload, path);
+      // Three commits since SERVER-101, not two, and the invariant is unchanged:
+      // a thread creation is §4's "a turn posted to a thread", so it closes the
+      // window it lands in and the typing after it opens a fresh one. What this
+      // case is about — the session's base not moving onto the interloper — is
+      // asserted the same way, and the range still holds both edits.
+      expectBothEditsInRange(ws, payload, path, 3);
     });
   });
 

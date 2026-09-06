@@ -284,19 +284,33 @@ describe("the queue and the auto-commit", () => {
     expect(ws.server.queue.parked).toBe(0);
   });
 
-  it("folds two same-actor thread writes inside the squash window into one commit", async () => {
+  it("gives every thread write its own commit, because every one of them is an act (§4)", async () => {
+    // This asserted the opposite until SERVER-101, and the difference is a
+    // ruling rather than a regression. §4's first closer is "a turn posted to a
+    // thread"; a turn append has declared that act since SERVER-092, and the
+    // turn posted **with** the thread is one too (orchestrator ruling,
+    // 2026-09-06, sprint-024 Ruling 2). So a creation no longer leaves a window
+    // open for the next turn to fold into: each write here closes the window it
+    // landed in, whoever wrote it and however close together they are.
+    //
+    // What still folds is an ordinary save of a document body, whichever
+    // document it is to — §4's own negative list, and `docs/acts.test.ts` owns
+    // both lists. This file's concern is narrower: that the thread pipeline
+    // reaches the same committer, one commit per act.
     const created = await createThread(ws, { body: "first" });
     const before = ws.log("%H").length;
 
     await appendTurn(ws, created.id, { body: "second" });
-    expect(ws.log("%H")).toHaveLength(before);
-
-    // The other actor starts a fresh commit, and so does the same actor past the window.
-    await appendTurn(ws, created.id, { body: "third" }, "agent");
     expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(ws.log("%s")[0]).toBe(`comment: turn on ${created.id} by user`);
+
+    // The other actor's turn is a commit of its own, and so is the same actor's
+    // past the idle window — neither of which is now what separates them.
+    await appendTurn(ws, created.id, { body: "third" }, "agent");
+    expect(ws.log("%H")).toHaveLength(before + 2);
     ws.advance(31_000);
     await appendTurn(ws, created.id, { body: "fourth" }, "agent");
-    expect(ws.log("%H")).toHaveLength(before + 2);
+    expect(ws.log("%H")).toHaveLength(before + 3);
   });
 
   it("commits with the acting party as git author (SPEC.md §4)", async () => {

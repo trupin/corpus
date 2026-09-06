@@ -193,6 +193,60 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(commitCount()).toBe(before + 2);
   });
 
+  it("a thread started mid-edit — the first turn is a turn (SERVER-101)", async () => {
+    // §4's first entry is "a turn posted to a thread", and the turn posted
+    // *with* the thread is one of them (orchestrator ruling, 2026-09-06;
+    // sprint-024 Ruling 2). No spec change was needed: `commitTurnAppend`'s own
+    // justification — a person's comment is "a change someone else can act on",
+    // since under §8 it is what wakes the agent — applies verbatim to the
+    // comment that creates the thread, and starting one is the canonical UI flow
+    // for commenting.
+    const doc = await settledDoc("Pricing", "one");
+
+    const saved = await putDoc(ws, doc.id, { body: "still typing" }, asUser);
+    expect(saved.status).toBe(200);
+    const before = commitCount() - 1;
+
+    const thread = await createThread(ws, { parent: doc.id, body: "is this right?" }, "user");
+
+    // One commit: the save folded in, and the creation named it.
+    expect(commitCount()).toBe(before + 1);
+    expect(subjectOf("HEAD")).toBe(`comment: new thread on ${doc.id} (${thread.id}) by user`);
+    expect(filesIn("HEAD")).toEqual([doc.path, threadPath(thread.id)].sort());
+
+    // And the subject survives: the next save by the same party opens a fresh
+    // window rather than folding in and relabelling this commit an editing
+    // session, which is what it did before SERVER-101.
+    const later = await putDoc(ws, doc.id, { body: "a later thought" }, asUser);
+    expect(later.status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+    expect(subjectOf("HEAD^")).toBe(`comment: new thread on ${doc.id} (${thread.id}) by user`);
+  });
+
+  it("an anchored thread creation stays one commit, not two (SERVER-101)", async () => {
+    // The anchored mode writes the parent's frontmatter *and* the thread file,
+    // and §6 forbids the intermediate state — "no highlight is ever left
+    // pointing at an empty conversation". Declaring the act must not split them,
+    // which is what `"names-the-window"` buys: the write folds into the open
+    // window and the close comes after. `"commits-alone"` would have closed
+    // first, landing the anchor entry in a different commit from the thread it
+    // names.
+    const doc = await settledDoc("Pricing", "the sentence to quote");
+    const before = commitCount();
+
+    const thread = await createThread(
+      ws,
+      { parent: doc.id, selector: { exact: "the sentence to quote" }, body: "why?" },
+      "user",
+    );
+    expect(thread.anchorId).not.toBeNull();
+
+    expect(commitCount()).toBe(before + 1);
+    expect(subjectOf("HEAD")).toBe(`comment: new thread on ${doc.id} (${thread.id}) by user`);
+    expect(filesIn("HEAD")).toEqual([doc.path, threadPath(thread.id)].sort());
+    expect(ws.read(doc.path)).toContain(String(thread.anchorId));
+  });
+
   it.each([
     ["resolved", "resolve", "thread resolve"],
     ["reopened", "reopen", "thread reopen"],
