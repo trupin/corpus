@@ -2263,7 +2263,7 @@ giving the orchestrator something to weigh a *conversation* by restores that exa
 | UI-188 | A browser spec pins an absolute date, so it fails on a calendar rather than on a defect | done | P1 | opus | — |
 | INFRA-035 | Nothing proves the listener judgment reads two lanes differently | done | P1 | fable | AGENT-063 |
 | INFRA-036 | A run whose runner exited with work still pending is scored as a product breach | done | P0 | fable | — |
-| AGENT-064 | An event is settled without the reply it was claimed to write | todo | P1 | fable | INFRA-036 |
+| AGENT-064 | An event is settled without the reply it was claimed to write | done | P1 | fable | INFRA-036 |
 | INFRA-037 | A seed write can commit after the boundary, and the run is blamed for it | done | P0 | fable | — |
 
 | AGENT-060 | The skills' fixed `/tmp/corpus-*.txt` flag-file paths collide under parallel dispatch | done | P1 | fable | INFRA-034 |
@@ -2541,3 +2541,4 @@ written.
 | INFRA-041 | Four script findings the gates cannot see | todo | P1 | opus | — |
 | SHARED-080 | Ten code nits from the PR #11 ledger | todo | P2 | opus | — |
 | SHARED-081 | Ten design decisions the ledger deferred to triage | todo | P2 | fable | — |
+| SERVER-170 | A hand-moved event is invisible to every reader | todo | P1 | opus | — |
