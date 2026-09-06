@@ -91,9 +91,9 @@ reproduction the SDLC requires for a bug, in the only form this defect has one.
 - [x] Every assertion reads the corpus. None reads a transcript.
 - [x] It scores `k/N` and the scorecard shows the fraction.
 - [x] A **pre-fix baseline** is recorded in this issue.
-- [ ] A post-fix number is recorded, over the same N.
-- [ ] The issue states plainly what the two numbers do and do not establish
-      (the baseline half is stated; the pair completes post-fix).
+- [x] A post-fix number is recorded, over the same N.
+- [x] The issue states plainly what the two numbers do and do not establish
+      (below, with the pair complete).
 
 ## Technical Design
 
@@ -233,8 +233,27 @@ the truth about what ran), noted here for the record.
 
 ### Post-Implementation Verification
 
-_[To be filled after CLI-078 and AGENT-065 land: the post-fix k/N at the same
-N = 5, and what the pair establishes.]_
+**Post-fix pass (v0.33.0 release pass, 2026-09-06, tree dab70b61, N=5):** 2/2
+scored runs passed — `second answered live · 1 launch` (321s, 126s) — and 3/5
+runs were cut short by the runner stopping with work still pending, excluded
+from scoring per INFRA-036. Judgment grade `fail` on n: 2 scored against a
+threshold of 5.
+
+**Against the pre-fix baseline** (3/3 scored, 2/5 cut short, tree ed4a4c3b):
+statistically indistinguishable. **What the pair establishes, and what it does
+not:** every observed second message, before and after, was answered live by
+the same listener — the relaunch defect never appeared under scoring on either
+side, so the pass proves the fix did not regress liveness and cannot prove it
+improved it. The obstacle to a full-N judgment is the runner-stops family
+(AGENT-064's subject), cutting 2/5 before and 3/5 after — the rate the whole
+suite shows (9 cut-short in the v0.32.0 pass, 11 in this one). Scenario 10
+reads a true k/N when that family is fixed; until then its scored runs are the
+measurement.
+
+**Known artifact:** two cut-short runs carry a universal-invariant flag (a
+`user`-authored commit) — the follow-up excusal is count-shaped, and a run
+dying mid-follow-up leaves its seed commit unamended. Visible only on runs
+already excluded from scoring.
 
 ## Completion Checklist (domain agent)
 

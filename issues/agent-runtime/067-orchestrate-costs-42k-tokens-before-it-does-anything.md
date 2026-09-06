@@ -165,9 +165,15 @@ reviewable and its failure would not be attributable.
 - [x] The tier table is unmoved and its header cells unchanged _(pinned in
       `workspace-template.test.ts`, and proven live: the E2E turn's
       `--model "Haiku"` stamp was validated against the split skill's projection)_.
-- [ ] The nine rehearsal scenarios score **no worse after than before**.
-      _(Deviation, recorded in the E2E log: the orchestrator runs the single
-      full rehearsal pass after the phase lands.)_
+- [x] The nine rehearsal scenarios score **no worse after than before** —
+      verified against the committed v0.32.0 release pass, one full pass after
+      the phase landed (the recorded deviation). Scenario 04 improved (fail
+      0/3 → pass-short 2/3), 02 identical (over-budget 6/6 vs ≥10 both
+      passes), 06 scored one fewer run with zero breaches (within the suite's
+      pass-to-pass variance), everything else unchanged. Cut-short runs 9 → 11
+      across the pass — the pre-existing runner family (AGENT-064). Both
+      scorecards: `rehearsals/scorecard.md` at dab70b61 (before, in git) and
+      at 9bb776db (after).
 - [x] The sum of `SKILL.md` and its references is reported, per INFRA-038
       _(155,672 bytes ≈ 38,920 tokens; the E2E log has the table and the
       sum-grew caveat)_.
