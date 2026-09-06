@@ -2450,3 +2450,20 @@ sizes.
 Liveness (CLI-078/AGENT-065/INFRA-039) rides in the token plan on purpose: every listener that dies
 is a relaunch that re-reads the skill and rehydrates the conversation from the top, so the leak the
 user reported is also the most expensive single event in the ledger.
+
+## Phase 58 — An upgrade you do not fight (2026-09-06, corpus-agent report from the cos workspace)
+
+All five conflicts the 0.32.0 → 0.33.0 upgrade reported were systemic, not accidents: presentation
+state written into tracked documents, a manifest with no word for deliberate divergence, dual-owned
+skills with no merge verb, server restamps counted as edits, and a stale-verb scan that judges the
+incoming template against the outgoing tool. Filed as reported, with one diagnosis corrected on
+reading: the scan's parser handles the three-word grammar fine — what was running was the old
+binary's registry (CLI-084 records both hypotheses and mandates the reproduction).
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| UI-189 | Resizing a column manufactures a template conflict by clicking | todo | P0 | fable | — |
+| CLI-081 | The manifest cannot record deliberate divergence | todo | P0 | fable | — |
+| CLI-082 | Skills have dual ownership and no merge verb | todo | P0 | fable | — |
+| CLI-083 | `updated:` restamps count as modification | todo | P0 | opus | — |
+| CLI-084 | The stale-verb scan judges the incoming template against the outgoing tool | todo | P0 | opus | — |
