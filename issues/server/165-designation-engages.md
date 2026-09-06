@@ -45,9 +45,14 @@ text):
 > saying somebody owns this conversation, and handing it over is the opt-in:
 > the server sets the thread engaged in the same act that designates it, so a
 > plain message to a designated conversation reaches its resident without a
-> mention. Releasing the resident — directly, or by resolving the thread —
-> returns the conversation to the ordinary rule. A person who wants a silent
-> owner releases it, which is the cost this trade accepts and states.
+> mention. Releasing the resident returns the **lane** to ordinary routing and
+> reverts nothing on the thread: engagement is already sticky under this
+> section's own rule — an engaged thread stays engaged until it is resolved —
+> so the conversation keeps being answered, by the ordinary agent now, which
+> is what a person releasing a resident but not closing the conversation is
+> asking for. Resolving the thread ends both, exactly as it always has. A
+> person who wants a silent owner releases the resident and resolves the
+> thread, which is the cost this trade accepts and states.
 > _(Rider signed — date to be filled at signature.)_
 
 ## Acceptance Criteria
@@ -56,8 +61,11 @@ text):
       the behaviour lands — never after
 - [ ] Designating (any surface: Ask, thread control, re-designation) sets
       `agent: engaged` in the same server write and same commit
-- [ ] Release sets the thread back to its pre-designation participation;
-      resolve keeps its existing release cascade and does the same
+- [ ] Release reverts nothing on the thread — `agent: engaged` persists under
+      §8's ordinary stickiness and plain turns route to the orchestrator's
+      lane; resolve ends engagement via its existing cascade (settled at
+      review 2026-09-06, PR #74 finding 3: the pre-designation-restore
+      reading loses the edge where a thread was engaged before designation)
 - [ ] A plain user turn on a designated thread enqueues on the resident's
       lane — verified E2E with a real listener answering an unmentioned message
 - [ ] `resident.designated` / `resident.released` payloads unchanged (the

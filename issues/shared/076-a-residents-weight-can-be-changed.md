@@ -178,5 +178,5 @@ _Not applicable — spec text. The behaviour it describes is verified by `UI-186
 
 ## Completion Checklist (orchestrator)
 
-- [ ] User signature recorded, with the date
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] User signature recorded, with the date (2026-09-06, survey, signed as drafted)
+- [x] Committed with `[SHARED-076]` prefix (76b7604d)
