@@ -6,7 +6,8 @@ cli
 
 ## Status
 
-todo
+done — 2026-09-06, implemented with its sibling by one cli-dev agent
+(one mechanism); committed on phase-58
 
 ## Priority
 
