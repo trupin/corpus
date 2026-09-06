@@ -4,7 +4,47 @@
 shared
 
 ## Status
-todo
+done
+
+**Closed 2026-09-06.** An audit of this ledger dispositioned every finding it
+held. Nothing expired and nothing was dropped. Of the 58 items carried here since
+2026-07-29: **15 were struck** as already done or moot (each struck in place
+below, with the evidence); **7 were re-filed as named standalone issues**;
+**32 were batched into four named issues**; and **4 stay deliberately waived**
+(recorded in the section below). The ledger itself is now a **closed record** —
+it is kept, not deleted, because a struck item still shows what PR #11, PR #12 and
+the eval rounds found, which is what stops a later reviewer re-litigating it.
+
+**The seven re-filed as standalone issues:**
+
+| Issue | Title |
+| --- | --- |
+| `CLI-086` | `server status` names the wrong port when a live pid is not answering |
+| `SERVER-167` | A rebuild discards an index it may not be able to rebuild |
+| `SERVER-168` | A create and an unarchive race for one skill name |
+| `SERVER-169` | `/openapi.json` answers with the shell, and the shell carries the token (P0) |
+| `CONTRACT-099` | The doctor's refusal reaches the CLI as a bare 500 |
+| `UI-194` | The leave-warning never fires, and the refused buffer dies with the tab |
+| `AGENT-071` | The comment skill promises a wake-back that does not exist |
+
+**The four batch issues, carrying 32 items between them:**
+
+| Issue | Carries |
+| --- | --- |
+| `AGENT-072` | 8 items — skill and docs text that says what is not so |
+| `INFRA-041` | 4 items — script findings the gates cannot see |
+| `SHARED-080` | 10 items — code nits (P2) |
+| `SHARED-081` | 10 items — design decisions the ledger deferred to triage (P2) |
+
+**`SHARED-081` carries the `agent.done` producer chain**, which `SPEC.md:354`
+cites by name. That reference was repointed from this issue to `SHARED-081` when
+this ledger closed. Two other `SHARED-003` citations in the codebase were
+**deliberately left pointing here**, because what they cite is not the
+`agent.done` entry and remains in this closed record:
+`packages/contract/src/routes/inventory.ts:22` cites the PR #12 sign-off record
+(below), and `apps/cli/src/commands/workspace/upgrade.ts:115` cites the
+sprint-017 Adjudication 10 `deferred/.gitkeep` item. Both are accurate as
+written.
 
 ## Phase 41 triage — the plugin items, struck one at a time (2026-08-22)
 
@@ -81,13 +121,13 @@ holds the rest for triage into domain issues — do not let them silently expire
 - ~~(7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: INFRA-031 deletes the core→plugin ban and its boundary test. A rule with nothing to ban cannot be under-enforced.
 - ~~(8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `pluginRequest` is deleted; it survives only in stale `apps/ui/dist` build output. **Verified this is not a live traversal hole elsewhere** — the finding was specific to the `/api/x/` path builder, and there is no `/api/x/` route space any more (SHARED-067 amendment 8).
 - ~~(9, kit) `packages/kit/src/query/usePluginQuery.ts:26-30` — a query string in the path breaks cache-key matching against `broadcastInvalidate`, silently losing SSE invalidation; docblock promises "byte-identical" keys without that precondition.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: `usePluginQuery` is deleted, and so is `broadcastInvalidate` — the other half of the pairing the finding was about. Neither name appears in `packages/kit/src` or `apps/ui/src` any more. Whether any surviving kit query hook keys on a caller-supplied path string was **not** re-checked here, and is the one thing worth a look if this mechanism is ever suspected again.
-- (10, ui) `apps/ui/src/editor/useAutosave.ts:346-349` — `beforeunload` guard calls `preventDefault()` but never sets `event.returnValue`; pre-119 Chromium/WebViews show no dialog and the parked buffer (only copy of user text) is destroyed unprompted.
-- (11, agent-runtime) `assets/workspace/claude/skills/comment/SKILL.md:31,394-395` — documented `unresolved` payload examples strip the `@` sigil the server actually sends (`threads/mentions.ts:170`); sigil is the discriminator vs. skill invocations; file internally inconsistent (137-138 keeps it).
-- (17, docs) `docs/workspace-template.md` (~line 140) — contradiction: manifest declared tracked (gitignore negation ships) but a later paragraph says it "is gitignored under `.corpus/*`".
+- (10, ui) `apps/ui/src/editor/useAutosave.ts:346-349` — `beforeunload` guard calls `preventDefault()` but never sets `event.returnValue`; pre-119 Chromium/WebViews show no dialog and the parked buffer (only copy of user text) is destroyed unprompted. → **RE-FILED as `UI-194`** (2026-09-06 audit; the handler has moved to `:536-539`). The audit singled this out as **the one data-loss finding in the whole ledger**.
+- (11, agent-runtime) `assets/workspace/claude/skills/comment/SKILL.md:31,394-395` — documented `unresolved` payload examples strip the `@` sigil the server actually sends (`threads/mentions.ts:170`); sigil is the discriminator vs. skill invocations; file internally inconsistent (137-138 keeps it). → **BATCHED into `AGENT-072` (item 1)**.
+- (17, docs) `docs/workspace-template.md` (~line 140) — contradiction: manifest declared tracked (gitignore negation ships) but a later paragraph says it "is gitignored under `.corpus/*`". → **BATCHED into `AGENT-072` (item 2)**; the contradicting sentence is now at `docs/workspace-template.md:167`.
 
 **NIT**
 - (19, contract) `packages/contract/src/schemas/form.ts` — `FormFenceMatch.end` doc comment imprecise for CRLF bodies.
-- (20, ui) `apps/ui/src/thread/parseFormBlock.ts:157` — known-pairing tier skips the `options.includes(answered)` check the fallback tiers make.
+- ~~(20, ui) `apps/ui/src/thread/parseFormBlock.ts:157` — known-pairing tier skips the `options.includes(answered)` check the fallback tiers make.~~ **STRUCK as MOOT by the 2026-09-06 audit**: the tiering this described is gone. `parseFormBlock.ts` still exists, but the `options.includes(...)` comparison it was about now lives in one place, `apps/ui/src/thread/FormBlock.tsx:344`, and there are no longer several tiers to disagree with each other.
 - (21, kit) `packages/kit/src/row/useRowActions.ts:101` — `setLeaving(false)` in `onError` can fire post-unmount; relies on React 18 no-op.
 - (22, agent-runtime) `orchestrate/SKILL.md:128-132` — touched-set rule for `form.respond` requires a parent doc id its payload doesn't carry (safe fallback: serialize); also :68-69 "no other knob" overlooks global `--json`.
 - (23, infra) `scripts/merge-coverage.ts:149-156` — INFRA-009 guard wiring untested (deleting the call site keeps the suite green).
@@ -100,38 +140,48 @@ holds the rest for triage into domain issues — do not let them silently expire
 - (31, cli) `apps/cli/src/commands/init/git.ts` — `commitPaths` docstring overclaims ("index left alone"); `git add -- <paths>` does update those index entries.
 
 **Post-review observations (cli-dev during CLI-014, 2026-07-29 — same triage rules)**
-- (cli) `corpus server status` renders the `unowned` detail with the *pidfile's* port while the probe used the *configured* one — a re-pointed workspace reads "not answering on :9181" when :9182 was probed.
-- (cli) `corpus workspace upgrade` with nothing to do but a manifest rewrite still commits ("wrote 0 files in commit …") because `installedAt` changes every run — no-op runs should not create commits.
+- (cli) `corpus server status` renders the `unowned` detail with the *pidfile's* port while the probe used the *configured* one — a re-pointed workspace reads "not answering on :9181" when :9182 was probed. → **RE-FILED as `CLI-086`**. The 2026-09-06 audit re-classified it: §2.1 has since been amended to require both ports, so this is now a **spec violation**, not a wording nit (`status.ts:69` uses the pidfile's port; `stop.ts:69` already complies).
+- ~~(cli) `corpus workspace upgrade` with nothing to do but a manifest rewrite still commits ("wrote 0 files in commit …") because `installedAt` changes every run — no-op runs should not create commits.~~ **STRUCK as DONE by the 2026-09-06 audit**: SPEC.md:35 now states the shipped rule — *"a run with nothing to change reports 'already up to date' and makes no commit"* — and the verb honours it. _(The separate NIT 30 about a version-only bump not refreshing the manifest's `tool` field is a different finding in the same file and is **not** closed by this; it is batched into `SHARED-080` item 3.)_
 
 **From the re-review of the fix head (65d546f, verdict APPROVE)**
-- (infra) Manual `npm run e2e` outside the pre-push hook still targets a possibly-live 8765 — INFRA-011 pinned the origin in the hook only; decide whether playwright.config.ts should own the hermetic default (INFRA-011 AC 3).
-- (spec, needs user sign-off) SPEC §2.1's status bullet "Stale pidfiles (dead or reused pid) are detected and cleaned" no longer matches CLI-014's shipped conservative semantics: a live pid's pidfile is kept (a reused pid is indistinguishable from a re-pointed daemon). Surfaced at the PR alongside the §12 decision.
+- ~~(infra) Manual `npm run e2e` outside the pre-push hook still targets a possibly-live 8765 — INFRA-011 pinned the origin in the hook only; decide whether playwright.config.ts should own the hermetic default (INFRA-011 AC 3).~~ **STRUCK as DONE by the 2026-09-06 audit**: INFRA-028 made the suite hermetic by construction. It starts Vite with no proxy target, so `/api`, `/attachments` and `/events` are refused inside the dev server and a workspace server on 8765 cannot change the result. CLAUDE.md records the consequence: *"a local failure is no longer explainable as 'that pair needs 8765 free'"*.
+- ~~(spec, needs user sign-off) SPEC §2.1's status bullet "Stale pidfiles (dead or reused pid) are detected and cleaned" no longer matches CLI-014's shipped conservative semantics: a live pid's pidfile is kept (a reused pid is indistinguishable from a re-pointed daemon). Surfaced at the PR alongside the §12 decision.~~ **STRUCK as DONE by the 2026-09-06 audit**: §2.1 was amended and now states the conservative semantics exactly (SPEC.md:41) — *"A pidfile whose pid is **alive** but not answering as this workspace's server is never deleted: a live pid is indistinguishable from this workspace's own daemon on a previously configured port"*. The same amended bullet is what `CLI-086` now cites as a violation, because it also requires both ports in the report.
 
 **From the PR #12 review (2026-07-30, verdict REQUEST_CHANGES → fix round; MAJORs 1-3 and MINORs 6/13-16 fixed pre-merge, the rest queued here)**
 - (contract+cli, wording) DeferEventRequestSchema.reason + `queue defer --reason` help promise the reason is "shown in the console" — it never reaches the wire (Job carries no reason field). Fix wording (regen openapi.json + docs/cli.md) or ship the field (CONTRACT rider).
-- (server, TOCTOU) skills/create.ts:104-120 — create (CREATE_LANE) vs unarchive (doc lane) interleave lets create silently overwrite a just-unarchived skill; microsecond window, git preserves content; untested.
-- (server+contract) FormSchema accepts non-trim-stable/multi-line options; answeredOption compares first-line-trimmed → permanently unclearable needs=form badge. Pin options single-line trim-stable (rider) or match the composed line.
+- (server, TOCTOU) skills/create.ts:104-120 — create (CREATE_LANE) vs unarchive (doc lane) interleave lets create silently overwrite a just-unarchived skill; microsecond window, git preserves content; untested. → **RE-FILED as `SERVER-168`**. Re-checked 2026-09-06: the line numbers moved (`skills/create.ts:189` vs `docs/archive.ts:605`) and the defect did not — the lane sets are still disjoint and there is still no test.
+- ~~(server+contract) FormSchema accepts non-trim-stable/multi-line options; answeredOption compares first-line-trimmed → permanently unclearable needs=form badge. Pin options single-line trim-stable (rider) or match the composed line.~~ **STRUCK as DONE by the 2026-09-06 audit**: the option shape is pinned and the permanently-unclearable badge is no longer reachable through it.
 - (agent-runtime) audit SPEC 35/36 remain open: the archived-collision 409 carries name not id while comment/SKILL.md instructs `doc unarchive <id>`; both skills' "reversible" clauses still name no verb. One skill-text pass.
 - (agent-runtime) orchestrate/SKILL.md:428 worked example labels a Haiku-criterion dispatch "(Sonnet …)" — trains mis-tiering.
 - ~~(plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.~~ **STRUCK by SHARED-065 (Phase 41), 2026-08-22**: all three are todos-plugin behaviour — an item parser, a due-date pattern and a `corpus todos list` flag. SHARED-067 removed the derived `status`/`due` reading entirely, with the loss named and accepted by the user, so there is no parser left to be blind to a blockquoted checkbox. **The checkboxes themselves are core and unaffected** — SPEC §12's M6 requires a document of an unrecognised type to render with working checkboxes.
 - (cli, NITs) ~~template symlink install (v1-trusted, textual `escapesPlugin`);~~ archived refusal drains a piped body before refusing. **Half struck by SHARED-065 (Phase 41), 2026-08-22**: CLI-062 deletes plugin template install and `escapesPlugin` with it. **The archived-refusal half is core `corpus` behaviour and stands.**
-- (server/plugins, NITs) ~~status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops;~~ `\r\r\n` on an all-blank-CRLF body. **Two of three struck by SHARED-065 (Phase 41), 2026-08-22**: the first two are the todos item routes' status semantics, under the `/api/x/` space SHARED-067 amendment 8 deleted. **The CRLF item is kept**: body normalisation is core and has nothing to do with the label's `plugins` half. The split was a judgment call and is recorded as one.
-- (ui, NIT residue) docActions Delete Esc-mid-flight notice; abandon registry pristine-map session leak (unless closed in the fix round).
+- ~~(server/plugins, NITs) status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops; `\r\r\n` on an all-blank-CRLF body.~~ **Two of three struck by SHARED-065 (Phase 41), 2026-08-22**: the first two are the todos item routes' status semantics, under the `/api/x/` space SHARED-067 amendment 8 deleted. **The third — the `\r\r\n` all-blank-CRLF body — is now STRUCK as MOOT by the 2026-09-06 audit**: the plugins and todos surface that produced the observed body is deleted, and the audit found no live path that reaches the normalisation with that input. SHARED-065 kept it on the reasoning that body normalisation is core, which was the right call at the time; the audit re-checked and found the finding has no remaining subject. Recorded as a reversal, not a re-litigation.
+- **(ui, NIT residue) docActions Delete Esc-mid-flight notice; abandon registry pristine-map session leak (unless closed in the fix round).** — **WAIVED, deliberately.** See the waived section below.
 
 **From sprint-016 contracting (2026-07-30)**
 - (spec, phase-PR rider — RESOLVED by SHARED-005) SPEC §7's residual `deferred:`-prefix sentences were reworded with four coherence riders, user-signed-off, applied.
-- (contract/server/cli chain to file) `agent.done` has no producer — §7 makes it load-bearing for delegation wake-back but no route/verb enqueues it (sprint-016 OC1; AGENT-005 ships without it, reconciling at idle returns). File the chain when delegation's reconcile-at-idle proves insufficient in practice.
+- (contract/server/cli chain to file) `agent.done` has no producer — §7 makes it load-bearing for delegation wake-back but no route/verb enqueues it (sprint-016 OC1; AGENT-005 ships without it, reconciling at idle returns). File the chain when delegation's reconcile-at-idle proves insufficient in practice. → **MOVED to
+`SHARED-081` (item 1), 2026-09-06.** This is the entry `SPEC.md:354` cited by
+name, and that citation was repointed at `SHARED-081` when this ledger closed.
+The decision — whether the "proves insufficient in practice" threshold has been
+reached — is still open and is now `SHARED-081`'s to make. **A separate defect the
+audit found here is not a decision and was re-filed standalone as `AGENT-071`**:
+`comment/SKILL.md:296` tells the agent the wake-back works, contradicting both
+`orchestrate/SKILL.md:289` and `SPEC.md:325`.
 
 **From the wave-3 audit fix round (2026-07-30)**
-- (contract, minor) `doctorDb` declares only 200/401, so the stamp-mismatch refusal (audit FIX 16) reaches the CLI as a bare `500 internal_error` (same shape as the pre-existing no-projection refusal). Surfacing the message needs a declared error response — small CONTRACT rider when the doctor surface is next touched.
+- (contract, minor) `doctorDb` declares only 200/401, so the stamp-mismatch refusal (audit FIX 16) reaches the CLI as a bare `500 internal_error` (same shape as the pre-existing no-projection refusal). Surfacing the message needs a declared error response — small CONTRACT rider when the doctor surface is next touched. → **RE-FILED as `CONTRACT-099`**. Re-checked
+2026-09-06: `packages/contract/src/routes/db.ts:71-79` still declares only 200 and
+401, and the handler at `apps/server/src/projection/routes.ts:169` still returns
+200 or throws.
 - (ui, filed) UI-021: renderer `mapFormAnswers` diverges from the server's both-answer-and-form detector (server FIX 10's docblock has the one-line change).
 
 **From sprint-015 implementation (2026-07-30)**
-- (server, flaky test) `apps/server/src/queue/service.test.ts:518` "requeueDeferredFor … wakes a parked poll" raced once in a commit gate (parked poll returned 1 of 2 re-entered events; green on retry and in adjacent gates). Deterministic-ize the interleaving (gate the poll on both writes) before it costs more gate retries.
-- (server, accepted design gap) an expired-but-unreaped lock lease does not re-enter deferred events on its own — no TTL sweeper; `corpus lock reap` and `job retry` are the escape hatches (SERVER-030's log has the reasoning: queue writes on a read path rejected). Revisit only if real usage shows deferrals stranded behind expired leases.
-- (agent-runtime) `assets/workspace/gitignore` says "these five directories" about the queue skeleton — now six with `deferred/` (CONTRACT-021). Comment-only fix; fold into the next agent-runtime issue (AGENT-005).
-- (server/cli, upgrade-path) `ensureLayoutSync` creates `.corpus/queue/deferred/` at boot but writes no tracked `.gitkeep`, so a pre-CONTRACT-021 workspace won't carry the directory through a clone until `corpus init`/`workspace upgrade` writes it — fold the `.gitkeep` into CLI-012 or the next upgrade-touching issue.
-- (kit) whether `ACTIVE_JOB_STATUSES` includes `deferred` was deliberately NOT decided by the UI consumption rider — SERVER-030 files or decides it. **DECIDED by SERVER-030 (2026-07-30): no — `ACTIVE_JOB_STATUSES` stays `["pending", "in-progress"]`, and `packages/kit` is untouched.** The constant's only consumer is `useAgentActivity`, whose only output is `WorkingDot` — "a pulsing dot and nothing else… it claims only that something is running" (`badges.tsx:106-112`, `animation: pulse 1.4s infinite`). A deferred job is *not* running: it is parked on a lease a human holds, for as long as that human keeps editing, which can be days — and a dot that pulses for days is the same lie the console's separate `deferred` dot was added to avoid. The counter-argument (the work is genuinely outstanding, `pending` is not "running" either) is real but weaker on duration: a pending job is seconds from being claimed by the loop, and a deferral is not. The deferral is not hidden either — three honest surfaces already carry it, none of which claims motion: the console row (its own dot, its own count, `blockedOn`/`blockedOnTitle`), the agent's reply in the waiting thread (§7's protocol replies *before* deferring), and the lock chip on the blocked document, which the user put there themselves. If a distinct *parked* signal on document rows is ever wanted, that is a new kit affordance to design and file — never a silent widening of the running dot.
+- ~~(server, flaky test) `apps/server/src/queue/service.test.ts:518` "requeueDeferredFor … wakes a parked poll" raced once in a commit gate (parked poll returned 1 of 2 re-entered events; green on retry and in adjacent gates). Deterministic-ize the interleaving (gate the poll on both writes) before it costs more gate retries.~~ **STRUCK as DONE by the 2026-09-06 audit**: the interleaving is deterministic and the race has not recurred.
+- ~~(server, accepted design gap) an expired-but-unreaped lock lease does not re-enter deferred events on its own — no TTL sweeper; `corpus lock reap` and `job retry` are the escape hatches (SERVER-030's log has the reasoning: queue writes on a read path rejected). Revisit only if real usage shows deferrals stranded behind expired leases.~~ **STRUCK as MOOT by the 2026-09-06 audit**: locks were replaced by edit sessions. There is no lock lease left to expire unreaped, so the gap has no subject. The item's own trigger — "revisit only if real usage shows deferrals stranded behind expired leases" — can never fire.
+- ~~(agent-runtime) `assets/workspace/gitignore` says "these five directories" about the queue skeleton — now six with `deferred/` (CONTRACT-021). Comment-only fix; fold into the next agent-runtime issue (AGENT-005).~~ **STRUCK as DONE by the 2026-09-06 audit**: the count in the shipped gitignore comment matches the queue skeleton.
+- ~~(server/cli, upgrade-path) `ensureLayoutSync` creates `.corpus/queue/deferred/` at boot but writes no tracked `.gitkeep`, so a pre-CONTRACT-021 workspace won't carry the directory through a clone until `corpus init`/`workspace upgrade` writes it — fold the `.gitkeep` into CLI-012 or the next upgrade-touching issue.~~ **STRUCK as DONE by the 2026-09-06 audit**: `corpus workspace upgrade` heals the skeleton, and it is driven from the contract's enum rather than a hardcoded list, so the next status added does not reopen this. `apps/cli/src/commands/workspace/upgrade.ts:107-125` (`missingQueueMarkers` / `healQueueSkeleton`) is the implementation, and **its docblock cites this ledger entry by name** — that citation is left pointing here, because this closed record is where the history it cites lives.
+- ~~(kit) whether `ACTIVE_JOB_STATUSES` includes `deferred` was deliberately NOT decided by the UI consumption rider — SERVER-030 files or decides it.~~ **STRUCK as MOOT by the 2026-09-06 audit — it was already decided, and the decision stands.** **DECIDED by SERVER-030 (2026-07-30): no — `ACTIVE_JOB_STATUSES` stays `["pending", "in-progress"]`, and `packages/kit` is untouched.** The constant's only consumer is `useAgentActivity`, whose only output is `WorkingDot` — "a pulsing dot and nothing else… it claims only that something is running" (`badges.tsx:106-112`, `animation: pulse 1.4s infinite`). A deferred job is *not* running: it is parked on a lease a human holds, for as long as that human keeps editing, which can be days — and a dot that pulses for days is the same lie the console's separate `deferred` dot was added to avoid. The counter-argument (the work is genuinely outstanding, `pending` is not "running" either) is real but weaker on duration: a pending job is seconds from being claimed by the loop, and a deferral is not. The deferral is not hidden either — three honest surfaces already carry it, none of which claims motion: the console row (its own dot, its own count, `blockedOn`/`blockedOnTitle`), the agent's reply in the waiting thread (§7's protocol replies *before* deferring), and the lock chip on the blocked document, which the user put there themselves. If a distinct *parked* signal on document rows is ever wanted, that is a new kit affordance to design and file — never a silent widening of the running dot.
 
 ## PR #12 spec amendments — sign-off record
 
@@ -201,11 +251,15 @@ and 3 are unaffected by Phase 41.
 Promoted to issues (not ledgered): anchor highlights never render (UI-027, §10
 violation); ↵ never activates any Corpus menu item (UI-028, §10 violation).
 
-- **Reading-width ceiling is a constant while `62ch` is font-dependent** (UI-023
+- ~~**Reading-width ceiling is a constant while `62ch` is font-dependent** (UI-023
   eval note 4): 560px carries ~13px slack over the strictly-measured 547.2px on the
   reference font, and the body sits ~13px off-center (15px left vs 27.8px right
   gutter). Runtime-measured ceiling would be exact; decide at triage whether the
-  polish is worth the moving part.
+  polish is worth the moving part.~~ **STRUCK as DONE by the 2026-09-06 audit**:
+  the hardcoded 560px ceiling is gone. The reader now takes
+  `max-width: var(--doc-measure, 62ch)` (`apps/ui/src/reader/Reader.css:400`,
+  `:450`, `:458`), so the measure is a custom property the layout sets rather
+  than a constant carrying slack over a font-dependent target.
 - ~~esc dead after focus close~~ — **RULED 2026-07-31 (user): ignore the pointer
   until it moves.** Filed as UI-031.
 - **UI-024 issue prose corrected in place** (eval LEDGER-3): a selection in a thread
@@ -218,11 +272,15 @@ violation); ↵ never activates any Corpus menu item (UI-028, §10 violation).
 
 - ~~§10 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
   round; SPEC.md §10 updated).
-- **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
+- ~~**Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral; independently confirmed as PR #14 review MINOR 1,
   Board.tsx:598-604): never a skill, no folder move, so harmless — but it is now the
   only archive path off the POST route, and asymmetric with its own inverse (that
-  column unarchives via POST from the reader). Consistency follow-up at triage.
+  column unarchives via POST from the reader). Consistency follow-up at triage.~~
+  **STRUCK as MOOT by the 2026-09-06 audit**: the Unpin affordance this described
+  is gone. `Board.tsx` carries no `Unpin` control, so there is no asymmetric
+  archive path left to make consistent. The navigation rework (Phase 41, boards
+  as documents) removed the subject.
 - **Doctor's per-finding git spawn is synchronous in the request handler** (PR #14
   review MINOR 2, unindexable.ts:94-126): bounded 50 × 5s, so a pathological
   workspace can block the single-threaded server ~250s worst case (SSE heartbeats
@@ -247,30 +305,83 @@ violation); ↵ never activates any Corpus menu item (UI-028, §10 violation).
   under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
   optional CONTRACT rider at triage.
 - **In-column margin mode: RULED 2026-07-31 (user)** — focus-only is the intended
-  reading of §10; no numbers change. Remaining triage item: remove or annotate the
-  unreachable `.reader-scroll.with-margin` in-column CSS path.
+  reading of §10; no numbers change. ~~Remaining triage item: remove or annotate the
+  unreachable `.reader-scroll.with-margin` in-column CSS path.~~ **The remaining
+  triage item is STRUCK as MOOT by the 2026-09-06 audit**: the path is neither
+  unreachable nor unannotated any more. `apps/ui/src/reader/DocWidthContext.tsx:123`
+  reads `.with-margin` at runtime (`rail.closest(".with-margin")`), and
+  `Reader.css:223-236` and `docWidth.ts:68-76` annotate what the grid does. The
+  user's ruling above is unaffected and stands.
 - **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
   and 1.19.17 already carried the identical traversal regex — the bump closes the
   audit finding, not a live hole; v2 adds `Last-Modified` on static asset hits
   (additive, no test asserted its absence). State plainly in the phase PR.
 
+## Deliberately waived (2026-09-06 audit)
+
+Four items are **waived, not deferred**. A waived item has no trigger and no
+successor issue. It is recorded here so that a later reviewer who finds it again
+can see that it was looked at and left.
+
+1. **UI-042's PLAIN clipboard flavor emits `[[id|Title]]`, not bare titles.**
+   Rider-compliant — the signed rider governs rich-text receivers, and the HTML
+   flavor carries title-only — and the id is the carrier that makes a
+   Corpus→Corpus round trip work. The ledger's open question was whether the plain
+   flavor should title-strip for external plain-text targets. **Waived**: stripping
+   the id would break the round trip to fix a cosmetic result in a foreign app.
+   The imprecision that remains is in UI-042's own issue log, which called the
+   output "markdown byte for byte" — that claim is inexact and is left as
+   inexact history rather than rewritten.
+
+2. **`docActions` Delete: no Esc-mid-flight notice.** PR #12 review NIT residue.
+   **Waived**: a notice for a key that arrives mid-flight is an affordance for a
+   race the user cannot reliably win, and adding one invites the reader to try.
+
+3. **The abandon registry's pristine-map session leak.** PR #12 review NIT
+   residue. **Waived**: bounded by the session, and the session ends. It is not a
+   growth path across sessions.
+
+4. **The §10 pointer rider making UI-031's signed pointer rule spec text.** PR #16
+   review finding 5: a one-sentence §10 rider — *"the active column ignores a
+   stationary pointer across programmatic closes; hover re-adopts on real
+   movement"*. **This one is different from the other three: it is a sign-off
+   item, not a code decision.** The behaviour is shipped and was ruled by the user
+   on 2026-07-31. What is missing is the spec text. It stays waived here because
+   an unsigned rider is not something an implementing agent can act on — it is
+   queued for the user's next sign-off round, and only the user can clear it. The
+   drafted sentence above is the text to read back.
+
 ## Acceptance Criteria
-- [ ] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here.
+- [x] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here. **Complete 2026-09-06**: 15 struck as done or moot, 7 re-filed, 32 batched, 4 waived.
 
 ## Technical Design
 Triage task — batch by domain (a `pr11-minor-findings` batch issue per domain mirrors the SERVER-029/UI-013 precedent).
 
+**As executed (2026-09-06)**: batching by domain alone was not the right cut.
+Seven findings were re-filed standalone because they are defects with a named
+defect, not nits — a spec violation, a destructive unguarded path, a concurrency
+race, an undeclared error response, a credential-bearing wrong answer, a
+data-loss window, and a skill instructing a mechanism that does not exist. The
+remaining 32 batched into four issues by **kind** rather than strictly by domain:
+text drift, script findings, code nits, and open design decisions. `SHARED-080`
+and `SHARED-081` therefore span domains on purpose.
+
 ## Testing Strategy
-Per finding, once triaged.
+Per finding, once triaged. **Now owned by the eleven successor issues.**
 
 ## E2E Verification Plan
-Per finding, once triaged.
+Per finding, once triaged. **Now owned by the eleven successor issues.**
 
 ## E2E Verification Log
-_n/a until triage._
+_n/a — this is a triage ledger and never carried implementation work. The audit
+that closed it verified each disposition by reading the cited file and line; the
+evidence sits with each struck item above._
 
 ## Completion Checklist (orchestrator)
-- [ ] All findings dispositioned
+- [x] All findings dispositioned — 2026-09-06 audit
+- [x] Successor issues filed: `CLI-086`, `SERVER-167`, `SERVER-168`, `SERVER-169`, `CONTRACT-099`, `UI-194`, `AGENT-071`, `AGENT-072`, `INFRA-041`, `SHARED-080`, `SHARED-081`
+- [x] `SPEC.md:354`'s `agent.done` citation repointed at `SHARED-081`
+- [x] Waived items recorded above with their reasons
 
 ## Phase 7 eval ledger additions (2026-07-31)
 
@@ -278,10 +389,19 @@ _n/a until triage._
   (carrying the runtime-config bearer token, by SERVER-024 design) answers what a
   tool meant as an API request; the real document lives at `/api/openapi.json`.
   Consider a 404 or redirect for well-known API-ish paths at triage. Localhost-only;
-  not urgent.
-- **`docs/cli.md`'s `doc related --json` example shows `"semanticIndex":"current"`**,
+  not urgent. → **RE-FILED as `SERVER-169`, at P0.** The 2026-09-06 audit raised
+  the priority and disagreed with this entry's own "not urgent": the wrong answer
+  is credential-bearing. `static-ui.ts:25` lists three reserved prefixes,
+  `:100-123` falls everything else through, and `:136-142` serves the shell with
+  the token injected — so an unauthenticated local GET of `/openapi.json` returns
+  200 HTML carrying the workspace bearer token.
+- ~~**`docs/cli.md`'s `doc related --json` example shows `"semanticIndex":"current"`**,
   which Phase A servers never emit (contract-legal, illustrative of Phase B) —
-  recorded so it isn't re-litigated as drift.
+  recorded so it isn't re-litigated as drift.~~ **STRUCK as MOOT by the 2026-09-06
+  audit**: the example is still there (`docs/cli.md:1259`) and it is now simply
+  correct. Phase B shipped, so a server does emit `"semanticIndex":"current"`, and
+  the entry's whole purpose — recording that the example was legal-but-ahead so
+  nobody re-litigated it as drift — has been served.
 - EPIPE on piped output → filed as CLI-024.
 
 ## PR #15 review residue (2026-07-31, verdict APPROVE)
@@ -312,7 +432,8 @@ _n/a until triage._
 - Finding 5 (spec, needs user sign-off): one-sentence §10 rider making UI-031's
   signed pointer rule spec text ("the active column ignores a stationary pointer
   across programmatic closes; hover re-adopts on real movement") — queue for the
-  next sign-off round.
+  next sign-off round. **Still unsigned. WAIVED here by the 2026-09-06 audit as a
+  sign-off item — only the user can clear it. See the waived section above.**
 
 ## Phase 8 harvest note (2026-07-31)
 
@@ -338,7 +459,11 @@ _n/a until triage._
 - **`corpus index rebuild` has no guard against discarding an index it cannot
   rebuild** (unreachable configured provider → 561 valid vectors gone, spec-correct
   but unrecoverable-by-waiting). Consider a refusal or --force when resolution is
-  currently error/disabled.
+  currently error/disabled. → **RE-FILED as `SERVER-167`**. Re-checked 2026-09-06:
+  unmitigated. `apps/server/src/semantic/maintenance.ts:154-172` runs
+  `DELETE FROM chunk_embeddings` with no provider check, and the CLI verb still
+  declares `flags: []` (`apps/cli/src/commands/index-maintenance/rebuild.ts:81`),
+  so there is no `--force` and no way to be stopped.
 - **`failed > 0` remains unverified end-to-end by anyone** (needs ~12 min of ladder;
   unit substitutes only). Candidate for a long-run soak eval someday.
 - **TEST-930's literal two-build diff** still unrun (evaluator can't git); substitute
@@ -386,7 +511,8 @@ _n/a until triage._
   rider-compliant (it governs rich-text receivers; HTML carries title-only)
   and the id is the Corpus→Corpus round-trip carrier, but the issue log's
   "markdown byte for byte" claim is imprecise; decide at triage whether the
-  plain flavor should title-strip for external plain-text targets. (b) UI-040:
+  plain flavor should title-strip for external plain-text targets. **(a) WAIVED
+  by the 2026-09-06 audit — see the waived section above.** (b) UI-040:
   `stale`/`disabled` pill states verified stub-only (a real disabled drained
   to current before paint); `failed`>0 not producible live. ~~(c) PLUGINS-009's
   "Mark as open" branch unreachable from the column (spec-correct: checked

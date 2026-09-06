@@ -178,7 +178,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | CLI-012 | Install plugin seed templates at corpus init | done | P2 | PLUGINS-002 |
 | UI-015 | Remaining teardown callbacks | done | P2 | UI-012 |
 | SERVER-032 | needs=form drops threads with a second answerable form | done | P2 | SERVER-029 |
-| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
+| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | done | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | done | P2 | SERVER-005 |
 | CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 | SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | done | P0 | SHARED-004 |
@@ -2504,3 +2504,40 @@ INFRA-025-clean by construction — with exemptions as config paths, never inlin
 | INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
 | UI-193 | Overlays correct by construction, and a battery that proves it | todo | P0 | fable | UI-191, INFRA-040 |
 | UI-192 | The designation popover is broken four ways | todo | P0 | fable | UI-191, UI-193 |
+
+## Debt harvest — SHARED-003 audit (2026-09-06)
+
+The PR #11 / PR #12 review ledger (`SHARED-003`) carried 58 findings from six
+review and eval rounds since 2026-07-29. An audit dispositioned every one of
+them: **15 struck** as already done or moot, **7 re-filed** as the standalone
+issues below, **32 batched** into four issues by kind, and **4 waived**. The
+ledger is now a closed record — kept, not deleted, because a struck item is what
+stops a later reviewer re-litigating a finding.
+
+Seven were re-filed standalone because they are defects, not nits: a spec
+violation, a destructive unguarded path, a concurrency race, an undeclared error
+response, a credential-bearing wrong answer, a data-loss window, and a skill that
+instructs a mechanism the product does not have. The other 32 batched by kind
+rather than by domain, so `SHARED-080` and `SHARED-081` span domains on purpose.
+
+`SPEC.md:354` cited `SHARED-003` by name for the `agent.done` producer chain.
+That citation now points at `SHARED-081`, which carries it. Two other
+`SHARED-003` citations in code (`packages/contract/src/routes/inventory.ts:22`,
+`apps/cli/src/commands/workspace/upgrade.ts:115`) were left alone: what they cite
+is the PR #12 sign-off record and the sprint-017 `deferred/.gitkeep`
+adjudication, both of which stay in the closed ledger and are accurate as
+written.
+
+| ID | Title | Status | Priority | Model | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | todo | P0 | opus | — |
+| CLI-086 | `server status` names the wrong port when a live pid is not answering | todo | P1 | opus | — |
+| SERVER-167 | A rebuild discards an index it may not be able to rebuild | todo | P1 | opus | — |
+| SERVER-168 | A create and an unarchive race for one skill name | todo | P1 | opus | — |
+| CONTRACT-099 | The doctor's refusal reaches the CLI as a bare 500 | todo | P1 | opus | — |
+| UI-194 | The leave-warning never fires, and the refused buffer dies with the tab | todo | P1 | opus | — |
+| AGENT-071 | The comment skill promises a wake-back that does not exist | todo | P1 | opus | — |
+| AGENT-072 | Eight places where the skills and the docs say what is not so | todo | P1 | opus | AGENT-071 |
+| INFRA-041 | Four script findings the gates cannot see | todo | P1 | opus | — |
+| SHARED-080 | Ten code nits from the PR #11 ledger | todo | P2 | opus | — |
+| SHARED-081 | Ten design decisions the ledger deferred to triage | todo | P2 | fable | — |
