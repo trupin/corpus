@@ -9,7 +9,12 @@ import {
 } from "../errors.js";
 import type { InputDependencies } from "../input.js";
 import { collectRegistryProblems } from "../registry/validate.js";
-import type { Registry, WorkspaceCommandContext, WorkspaceCommandSpec } from "../registry/types.js";
+import type {
+  Registry,
+  SubInvocationCost,
+  WorkspaceCommandContext,
+  WorkspaceCommandSpec,
+} from "../registry/types.js";
 import {
   closeStubServers,
   jsonResponder,
@@ -130,7 +135,9 @@ function fixture(): Fixture {
               context.out.emit({ id: context.args.get("id") });
               await Promise.resolve();
             },
-            { args: [{ name: "id", required: true, description: "An id." }] },
+            {
+              args: [{ name: "id", required: true, subject: true, description: "A document id." }],
+            },
           ),
           verb("fail", async (context) => {
             saw("fail", context);
@@ -185,16 +192,27 @@ interface Harness {
   stdout(): string;
   stderr(): string;
   readonly stub: StubServer;
+  /** What the batch recorded for the dispatcher's cost report (SPEC.md §9.4). */
+  readonly costs: SubInvocationCost[];
 }
 
 async function harness(registry: Registry, options: StubContextOptions = {}): Promise<Harness> {
   const stub = await startStubServer(jsonResponder(200, {}));
   const built = stubContext(stub, { registry, ...options });
+  const costs: SubInvocationCost[] = [];
   return {
-    context: built.context,
+    context: {
+      ...built.context,
+      costs: {
+        record: (cost) => {
+          costs.push(cost);
+        },
+      },
+    },
     stdout: () => built.stdout(),
     stderr: () => built.stderr(),
     stub,
+    costs,
   };
 }
 
@@ -711,5 +729,122 @@ describe("a batch carries somebody's words by path too (CLI-074)", () => {
       ),
     ).rejects.toThrow(/cannot read --flag-file/);
     expect(seen, "a command ran before the batch was refused").toEqual([]);
+  });
+});
+
+/**
+ * A batch is several invocations wearing one process, so it is measured as
+ * several (SPEC.md §9.4, CLI-085). One report over the lot would attribute every
+ * entry's cost to every entry's document, which is the one thing a per-document
+ * series must not do.
+ */
+describe("what a batch costs, per entry", () => {
+  it("records one measurement per entry, under the entry's own resolved command path", async () => {
+    const { registry } = fixture();
+    const h = await harness(registry);
+
+    await runBatch(
+      h.context,
+      stdinWith([
+        ["t", "show", "doc_a1b2c3"],
+        ["t", "quiet"],
+        ["t", "show", "doc_d4e5f6"],
+      ]),
+    );
+
+    expect(h.costs.map((cost) => cost.command)).toEqual(["t show", "t quiet", "t show"]);
+    expect(h.costs.map((cost) => cost.subjects)).toEqual([["doc_a1b2c3"], [], ["doc_d4e5f6"]]);
+  });
+
+  it("charges each entry its own argv, and the batch's stdin framing to nobody", async () => {
+    const { registry } = fixture();
+    const h = await harness(registry);
+    const commands = [
+      ["t", "show", "doc_a1b2c3"],
+      ["t", "quiet"],
+    ];
+
+    await runBatch(h.context, stdinWith(commands));
+
+    expect(h.costs.map((cost) => cost.wroteBytes)).toEqual([
+      Buffer.byteLength("t show doc_a1b2c3", "utf8"),
+      Buffer.byteLength("t quiet", "utf8"),
+    ]);
+    // The JSON array that carried them is the batch's own framing, and it is
+    // deliberately charged to no entry — see `byteLength`'s note in batch.ts.
+    const stdinBytes = Buffer.byteLength(JSON.stringify(commands), "utf8");
+    expect(h.costs.reduce((sum, cost) => sum + cost.wroteBytes, 0)).toBeLessThan(stdinBytes);
+  });
+
+  it("counts a human entry's own lines, which sum to less than the process printed", async () => {
+    const { registry } = fixture();
+    const h = await harness(registry);
+
+    await runBatch(
+      h.context,
+      stdinWith([
+        ["t", "ok"],
+        ["t", "quiet"],
+      ]),
+    );
+
+    expect(h.costs.map((cost) => cost.readBytes)).toEqual([
+      Buffer.byteLength("ok did its work\n", "utf8"),
+      Buffer.byteLength("quiet said only this\n", "utf8"),
+    ]);
+
+    // The difference is the rules above each entry, the blank line between them
+    // and the closing summary. That framing belongs to no document (sprint-025 P8).
+    const printed = Buffer.byteLength(h.stdout() + h.stderr(), "utf8");
+    expect(h.costs.reduce((sum, cost) => sum + cost.readBytes, 0)).toBeLessThan(printed);
+  });
+
+  it("counts an entry's captured JSON value under --json, which never reaches stdout", async () => {
+    // `createNestedOutput` captures the entry's value for the composite report
+    // instead of writing it, so the seam in `pipe.ts` never sees these bytes.
+    const { registry } = fixture();
+    const h = await harness(registry, { json: true });
+
+    await runBatch(h.context, stdinWith([["t", "ok"]]));
+
+    expect(h.costs[0]?.readBytes).toBe(
+      Buffer.byteLength(`${JSON.stringify({ answer: 42 })}\n`, "utf8"),
+    );
+  });
+
+  it("counts a failing entry's rendered failure, because the caller paid for it", async () => {
+    const { registry } = fixture();
+    const h = await harness(registry);
+
+    await runBatch(h.context, stdinWith([["t", "fail"]])).catch(() => undefined);
+
+    expect(h.costs).toHaveLength(1);
+    expect(h.costs[0]?.command).toBe("t fail");
+    expect(h.costs[0]?.readBytes).toBeGreaterThan(0);
+  });
+
+  it("records nothing for an entry that never ran", async () => {
+    const { registry } = fixture();
+    const h = await harness(registry);
+
+    await runBatch(
+      h.context,
+      stdinWith([
+        ["t", "dead"],
+        ["t", "ok"],
+      ]),
+    ).catch(() => undefined);
+
+    expect(h.costs.map((cost) => cost.command)).toEqual(["t dead"]);
+  });
+
+  it("costs nothing at all when the ledger is absent", async () => {
+    // A handler may be invoked outside the dispatcher, and the batch must not
+    // require a collector it was not given.
+    const { registry } = fixture();
+    const stub = await startStubServer(jsonResponder(200, {}));
+    const built = stubContext(stub, { registry });
+
+    await expect(runBatch(built.context, stdinWith([["t", "quiet"]]))).resolves.toBeUndefined();
   });
 });

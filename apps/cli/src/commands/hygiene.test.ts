@@ -513,6 +513,10 @@ describe("every command that reads the output mode is inventoried", () => {
     // is absent by construction — it names the property rather than reading it
     // off someone else's output.
     expect(modeReaders(await modulesUnder(sourceRoot))).toEqual([
+      // Counts each entry's cost as the entry would have printed it alone: its
+      // JSON value under `--json`, its human lines otherwise (SPEC.md §9.4).
+      // It reads the mode to *measure* what it printed, never to choose it.
+      "commands/batch.ts",
       // `--fields` is a projection of the JSON value, so it requires `--json`.
       "commands/doc/list.ts",
       // `--section` writes the section's bytes raw in human mode.
@@ -608,5 +612,65 @@ describe("every heredoc the CLI demonstrates terminates with CORPUS_EOF", () => 
       'const hint = "Always `CORPUS_EOF`, never `EOF`: carried text can contain a line reading `EOF`.";\n',
     );
     expect(heredocViolations([warning])).toEqual([]);
+  });
+});
+
+/**
+ * **Every byte the CLI prints goes through one seam** (SPEC.md §9.4, CLI-085).
+ *
+ * `bin/corpus.ts` names the two real streams, wraps them in `guardPipes`, and
+ * hands the resulting writers to `run`. The pipe guard counts what it delivers,
+ * so a verb's printed bytes are measured once, for every verb, including the
+ * ones written after this test. A module that reached a stream directly would be
+ * invisible to that counter — nothing would fail, nothing would warn, and a
+ * document's cost series would quietly under-report.
+ *
+ * The rule is scanned rather than reviewed, and its exception is **named**
+ * rather than left as a shape somebody has to notice:
+ *
+ * - `bin/corpus.ts` is the seam. It is where the two streams are supposed to be.
+ * - `commands/doc/delete.ts` writes its confirmation prompt through `readline`,
+ *   which owns the stream it is given. That prompt is user-only and interactive:
+ *   `corpus doc delete` refuses `--from agent` before any request is sent, so it
+ *   is never on the agent's loop, and its bytes are the one printed thing the
+ *   ledger does not see. Re-plumbing `readline`'s stream ownership to chase a
+ *   prompt was weighed and refused (sprint-025 R3).
+ *
+ * Prose is stripped first, so `pipe.ts`'s own explanation of why
+ * `process.stdout.write` may throw is not a violation.
+ */
+const OUTPUT_SEAM = "bin/corpus.ts";
+
+/** The argued exception, and the only one. */
+const PROMPT_EXCEPTION = "commands/doc/delete.ts";
+
+const DIRECT_WRITE = /\bprocess\s*\.\s*(stdout|stderr)\b|\bconsole\s*\.\s*(log|error|warn|info)\b/;
+
+function directWriters(modules: readonly Module[]): readonly string[] {
+  return modules.filter((module) => DIRECT_WRITE.test(module.code)).map((module) => module.path);
+}
+
+describe("every byte the CLI prints passes one seam", () => {
+  it("finds no module reaching a stream except the seam and the named prompt", async () => {
+    expect(directWriters(await modulesUnder(sourceRoot))).toEqual([OUTPUT_SEAM, PROMPT_EXCEPTION]);
+  });
+
+  it("catches a verb that printed around the seam, and names the file", () => {
+    const rogue = fabricate(
+      "doc/rogue.ts",
+      "export function shout() { process.stdout.write('unmeasured\\n'); }",
+    );
+    expect(directWriters([rogue])).toEqual(["doc/rogue.ts"]);
+
+    const noisy = fabricate("queue/noisy.ts", "export const say = () => console.error('oops');");
+    expect(directWriters([noisy])).toEqual(["queue/noisy.ts"]);
+  });
+
+  it("does not mistake prose about the streams for a write", () => {
+    const documented = fabricate(
+      "doc/documented.ts",
+      "/** Never touches process.stdout. */\nexport const note = 'console.log is off limits';\n",
+    );
+    expect(directWriters([documented])).toEqual([]);
   });
 });

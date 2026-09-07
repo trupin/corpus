@@ -35,6 +35,7 @@ import type {
   WorkspaceCommandContext,
   WorkspaceCommandSpec,
 } from "../registry/types.js";
+import { collectSubjects } from "../telemetry/subjects.js";
 
 /**
  * `corpus batch` — several commands, one process (CLI-064). A `corpus`
@@ -125,6 +126,15 @@ interface PreparedEntry {
    */
   readonly actor: WorkspaceCommandContext["actor"];
   readonly label: string;
+  /**
+   * The entry's **resolved command path** — `doc show`, `thread reply` — composed
+   * where the resolution still exists, for the entry's own cost report (SPEC.md
+   * §9.4). `label` is for a person reading the rule above an entry's output and
+   * is not this: the ledger's key must be the path `corpus --help` spells, or two
+   * spellings of one command show as two lines that each look like the whole
+   * cost of that verb.
+   */
+  readonly path: string;
 }
 
 /**
@@ -189,6 +199,18 @@ export async function runBatch(
     }
 
     const nested = createNestedOutput(context.out, "");
+    // The entry's own measurement (SPEC.md §9.4). Recorded from inside each
+    // branch, because what an entry printed is decided differently by each of
+    // them — see `byteLength`'s note on what is counted and what is not.
+    const measure = (printed: readonly string[]): void => {
+      context.costs?.record({
+        command: entry.path,
+        wroteBytes: byteLength(entry.argv.join(" ")),
+        readBytes: printed.reduce((total, line) => total + byteLength(`${line}\n`), 0),
+        subjects: collectSubjects(entry.command, entry.args, entry.flags),
+      });
+    };
+
     try {
       await entry.command.handler({
         args: entry.args,
@@ -202,12 +224,17 @@ export async function runBatch(
         client: clientFor(entry.actor),
         actor: entry.actor,
       });
-      reports.push({ command: entry.argv, ran: true, ok: true, value: nested.value() ?? null });
+      const value = nested.value() ?? null;
+      reports.push({ command: entry.argv, ran: true, ok: true, value });
+      measure(context.out.json ? [JSON.stringify(value)] : nested.lines());
     } catch (error) {
-      reports.push({ command: entry.argv, ran: true, ok: false, error: toProblem(error) });
-      for (const line of renderError(error, { verbose: false }).trimEnd().split("\n")) {
-        context.out.line(line);
-      }
+      const problem = toProblem(error);
+      reports.push({ command: entry.argv, ran: true, ok: false, error: problem });
+      const rendered = renderError(error, { verbose: false }).trimEnd().split("\n");
+      for (const line of rendered) context.out.line(line);
+      measure(
+        context.out.json ? [JSON.stringify({ error: problem })] : [...nested.lines(), ...rendered],
+      );
       if (endsTheBatch(error)) aborted = true;
     }
   }
@@ -406,7 +433,43 @@ function prepareEntry(
     }
   }
 
-  return { argv, command: spec, args, flags: parsed.flags, parsed, actor, label };
+  const path = resolution.topic === undefined ? spec.name : `${resolution.topic} ${spec.name}`;
+  return { argv, command: spec, args, flags: parsed.flags, parsed, actor, label, path };
+}
+
+/**
+ * What one entry printed, as UTF-8 bytes — the entry's own `readBytes` (SPEC.md
+ * §9.4).
+ *
+ * ## Why this is computed rather than measured at the stream
+ *
+ * A batch entry's payload never reaches stdout. `createNestedOutput` **captures**
+ * the entry's JSON value for the composite report to fold in, and routes its
+ * human lines through the parent indented. So the seam in `pipe.ts` sees the
+ * batch's output and not the entries', and each entry has to be counted where
+ * its own output is produced.
+ *
+ * What is counted is what the entry would have printed **had it run alone**, in
+ * the mode the batch is running in: under `--json` its one JSON value, in human
+ * mode its lines, and in either mode the failure exactly as `Output.fail` would
+ * have rendered it. That makes an entry's figure comparable with the same verb
+ * run on its own, which is the only thing a per-document series can do with it.
+ *
+ * ## The entries do not add up to the process, and that is correct
+ *
+ * The sum of the entries' `readBytes` is **less** than what the process printed.
+ * The difference is the batch's own framing — the rule above each entry, the
+ * blank lines, the `all N commands succeeded` line, the JSON array brackets and
+ * the per-entry `command`/`ran`/`ok` keys — plus anything an aborted entry's
+ * `not run.` cost. That framing belongs to no document, so it is attributed to
+ * none: it is the price of batching, not the price of any entry's subject.
+ * Nobody should expect the two numbers to agree, and this is where it is said.
+ *
+ * `wroteBytes` splits the same way. Each entry is charged its own argv, joined,
+ * and the JSON array that carried them on stdin is the batch's own framing.
+ */
+function byteLength(text: string): number {
+  return Buffer.byteLength(text, "utf8");
 }
 
 /**

@@ -207,7 +207,7 @@ export const designateCommand: WorkspaceCommandSpec = {
     "this with `--from agent` is the server's `403`. Nothing already queued moves — a lane is " +
     "stamped once, at enqueue time — so designating does not re-route work the orchestrator is " +
     "already holding.",
-  args: [{ name: "id", required: true, description: "The standalone thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The standalone thread's id." }],
   flags: [
     {
       name: "agent",

@@ -107,7 +107,7 @@ export const deleteCommand: WorkspaceCommandSpec = {
     "that no longer resolve — and the printed line names every one of them. Nothing is removed " +
     "from git history. Confirmation is required: with a terminal you are asked, and without one " +
     "`--yes` is mandatory, because a piped body must never be mistaken for a yes.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [
     {
       name: "yes",

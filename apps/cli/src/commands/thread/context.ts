@@ -271,7 +271,9 @@ export const contextCommand: WorkspaceCommandSpec = {
     "single honest line and exit 0. `--json` emits the server's envelope unchanged, whose " +
     "`shape` field is the one thing a machine reader switches on. A thread id that names " +
     "nothing is the server's `404`, which is exit 5.",
-  args: [{ name: "id", required: true, description: "The thread to brief yourself on." }],
+  args: [
+    { name: "id", required: true, subject: true, description: "The thread to brief yourself on." },
+  ],
   flags: [],
   examples: [
     {

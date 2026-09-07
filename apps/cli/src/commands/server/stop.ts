@@ -163,6 +163,9 @@ function signal(pid: number, name: NodeJS.Signals): void {
 
 export const stopCommand: WorkspaceCommandSpec = {
   name: "stop",
+  // Server lifecycle, so unmeasured (SPEC.md §9.4): it kills the very server a
+  // report would be sent to, and the report would pay its whole cap for nothing.
+  measured: false,
   summary: "Stop this workspace's server.",
   description:
     "Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, " +

@@ -209,6 +209,9 @@ export async function runInit(
 export const initCommand: StandaloneCommandSpec = {
   name: "init",
   requiresWorkspace: false,
+  // Nothing exists yet to report to — this run is what creates the config the
+  // report would read its base URL and token from (SPEC.md §9.4).
+  measured: false,
   summary: "Create a Corpus workspace here (document tree, config, git repository, agent skills).",
   description:
     "Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a " +

@@ -85,6 +85,9 @@ export const fixtureStandaloneCommand: CommandSpec = {
   name: "bootstrap",
   summary: "Run without a workspace or a server.",
   requiresWorkspace: false,
+  // No workspace means no server to report a cost to, which `validateRegistry`
+  // insists on rather than leaves to be remembered (SPEC.md §9.4).
+  measured: false,
   args: [],
   flags: [],
   examples: [{ command: "corpus bootstrap", description: "Bootstrap in the current directory." }],

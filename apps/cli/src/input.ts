@@ -6,6 +6,7 @@ import { UsageError } from "./errors.js";
 import type { ParsedFlags } from "./parse-args.js";
 import type { CommandContext, WorkspaceCommandContext } from "./registry/types.js";
 import type { FlagSpec } from "./registry/types.js";
+import { countStdinBytes } from "./telemetry/stdin-bytes.js";
 
 /**
  * The two inputs every mutating verb shares: **who is acting** and **where the
@@ -396,7 +397,11 @@ export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promi
     chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
   }
   chunks.push(decoder.decode());
-  return chunks.join("");
+  const body = chunks.join("");
+  // The one funnel every stdin read goes through, so the invocation's
+  // `wroteBytes` is counted once, here (SPEC.md §9.4, `telemetry/stdin-bytes.ts`).
+  countStdinBytes(body);
+  return body;
 }
 
 /**

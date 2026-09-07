@@ -1,3 +1,4 @@
+import { BYTES_PER_TOKEN } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import { UsageError } from "./errors.js";
 import { gloss } from "./gloss.js";
@@ -6,6 +7,7 @@ import {
   commandSynopsis,
   flagDescription,
   flagUsage,
+  MEASUREMENT_NOTE,
   parseHelpMode,
   renderCommandHelp,
   renderRootHelp,
@@ -42,6 +44,26 @@ describe("renderRootHelp", () => {
 
   it("lists the global flags", () => {
     for (const flag of GLOBAL_FLAGS) expect(help).toContain(`--${flag.name}`);
+  });
+
+  it("names the measurement and its unit, once, on the page every reader starts from", () => {
+    // SPEC.md §9.4. The unit is named in the same words the panel uses, because
+    // the whole value of the estimate is that `wc -c` divided by four reproduces
+    // it. It carries the exclusions too, so nobody has to read the source to
+    // find out why `corpus server start` never appears in a series.
+    expect(help).toContain(MEASUREMENT_NOTE);
+    expect(help).toContain(`${String(BYTES_PER_TOKEN)} bytes to a token`);
+    expect(help).toContain("corpus server");
+
+    // Verb and topic pages do not repeat it: a fact about the tool would
+    // otherwise be charged to every reader of every page (CLI-080's budget).
+    expect(renderTopicHelp(fixtureTopic, plain)).not.toContain(MEASUREMENT_NOTE);
+    expect(renderCommandHelp(fixtureEverythingCommand, plain)).not.toContain(MEASUREMENT_NOTE);
+
+    // And `--help=brief` is names and one line each, so it carries nothing extra.
+    expect(renderRootHelp(fixtureRegistry, { color: false, mode: "brief" })).not.toContain(
+      MEASUREMENT_NOTE,
+    );
   });
 
   it("omits sections the registry does not declare", () => {

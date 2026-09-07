@@ -168,6 +168,16 @@ function commandProblems(command: CommandSpec, label: string, topic?: string): r
   }
   if (command.summary.trim() === "") problems.push(`${label} has no summary`);
   if (command.examples.length === 0) problems.push(`${label} has no examples`);
+  // SPEC.md §9.4: a command that runs without a workspace has no base URL and no
+  // token, so it has nowhere to report. Declaring it measured would be a claim
+  // the dispatcher could not honour, and it would fail silently — which is
+  // exactly the class of bug the exclusion is a *declared* property to avoid.
+  if (command.requiresWorkspace === false && command.measured !== false) {
+    problems.push(
+      `${label} runs without a workspace, so it must declare \`measured: false\` — there is no ` +
+        `server to report its cost to`,
+    );
+  }
   problems.push(
     ...helpBudgetProblems(
       (mode) =>
@@ -227,6 +237,14 @@ function commandProblems(command: CommandSpec, label: string, topic?: string): r
     problems.push(...flagGlossProblems(flag, label));
     if (flag.bareValue !== undefined && flag.type !== "string") {
       problems.push(`${label} flag "--${flag.name}" declares a bareValue but is not a string flag`);
+    }
+    // A subject is a document id read out of the flag's *value*, so a flag that
+    // carries no value can never name one (SPEC.md §9.4).
+    if (flag.subject === true && flag.type !== "string") {
+      problems.push(
+        `${label} flag "--${flag.name}" is marked as naming a document but is a ` +
+          `${flag.type} flag, which carries no id`,
+      );
     }
     if (flag.type === "boolean" && flag.repeated === true) {
       problems.push(`${label} flag "--${flag.name}" is a repeated boolean, which has no meaning`);

@@ -232,6 +232,10 @@ async function abandon(pid: number | undefined, alreadyExited: boolean): Promise
 
 export const startCommand: WorkspaceCommandSpec = {
   name: "start",
+  // Server lifecycle, so unmeasured (SPEC.md §9.4): the server is down when this
+  // runs, and reporting the invocation that made reporting possible measures the
+  // tool rather than a document.
+  measured: false,
   summary: "Start this workspace's server as a background daemon.",
   description:
     "Spawns the server detached, with its output appended to `.corpus/server.log`, and waits " +

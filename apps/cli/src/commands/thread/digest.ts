@@ -217,7 +217,7 @@ export const digestCommand: WorkspaceCommandSpec = {
       required: true,
       description: "`set` writes the digest; `clear` removes it. Anything else is exit 2.",
     },
-    { name: "id", required: true, description: "The thread's id." },
+    { name: "id", required: true, subject: true, description: "The thread's id." },
   ],
   flags: [...bodyFlags("The digest")],
   examples: [

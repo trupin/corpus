@@ -385,7 +385,7 @@ describe("the designate command spec", () => {
 
   it("takes one required thread id and two optional refinements", () => {
     expect(designateCommand.args).toEqual([
-      { name: "id", required: true, description: "The standalone thread's id." },
+      { name: "id", required: true, subject: true, description: "The standalone thread's id." },
     ]);
     expect(designateCommand.flags.map((flag) => flag.name)).toEqual(["agent", "weight"]);
   });

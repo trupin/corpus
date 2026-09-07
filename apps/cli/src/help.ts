@@ -1,3 +1,4 @@
+import { BYTES_PER_TOKEN } from "@corpus/contract";
 import { UsageError } from "./errors.js";
 import { gloss } from "./gloss.js";
 import { argUsage } from "./parse-args.js";
@@ -49,6 +50,21 @@ export function parseHelpMode(raw: string | undefined): HelpMode {
   }
   return mode;
 }
+
+/**
+ * What the workspace measures about its own use, said once, on the page every
+ * reader starts from (SPEC.md §9.4, CLI-085).
+ *
+ * It names the unit in the same words the panel uses, because the whole value of
+ * the estimate is that a person can reproduce it: `wc -c` on what a command
+ * printed, divided by four, rounded up. It is on `corpus --help` alone — a
+ * sentence repeated on every verb page would cost every reader of every page for
+ * a fact about the tool rather than about the verb.
+ */
+export const MEASUREMENT_NOTE =
+  `Every command reports what it wrote and printed, in bytes, shown in the app as a token ` +
+  `estimate at ${String(BYTES_PER_TOKEN)} bytes to a token. ` +
+  `\`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.`;
 
 const noStyle = (text: string): string => text;
 
@@ -113,6 +129,8 @@ export function renderRootHelp(registry: Registry, options: HelpOptions): string
 
   sections.push("", bold("Global flags:"), ...globalFlagLines(options));
   sections.push(
+    "",
+    MEASUREMENT_NOTE,
     "",
     "Run `corpus <command> --help` or `corpus <topic> --help` for details.",
     "Add `=brief` to any of them for names and one line each.",

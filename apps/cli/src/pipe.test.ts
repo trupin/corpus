@@ -181,3 +181,56 @@ describe("ordinary output", () => {
     expect(stderr.written).toEqual(["still reported\n"]);
   });
 });
+
+/**
+ * The counting seam (SPEC.md §9.4, CLI-085). It is here rather than beside
+ * `Output` for the same reason the guard is: these are the two real streams the
+ * bin owns, so wrapping them covers every verb at once — including the ones
+ * written after this test.
+ */
+describe("what the invocation printed", () => {
+  const guardOver = (stdout = fakeStream(), stderr = fakeStream()): ReturnType<typeof guardPipes> =>
+    guardPipes({ stdout, stderr, quit: () => undefined });
+
+  it("counts nothing before anything is written", () => {
+    expect(guardOver().bytesWritten()).toBe(0);
+  });
+
+  it("counts both streams as one total, in UTF-8 bytes", () => {
+    const guard = guardOver();
+    guard.stdout("one\n");
+    guard.stderr("a note\n");
+    expect(guard.bytesWritten()).toBe(4 + 7);
+  });
+
+  it("counts bytes, not characters — a multi-byte line is not its length", () => {
+    const guard = guardOver();
+    guard.stdout("héllo…\n");
+
+    // Seven characters, ten bytes: two for `é`, three for the ellipsis.
+    expect("héllo…\n").toHaveLength(7);
+    expect(guard.bytesWritten()).toBe(10);
+    expect(guard.bytesWritten()).toBe(Buffer.byteLength("héllo…\n", "utf8"));
+  });
+
+  it("counts delivered bytes, so `wc -c` on a redirect reproduces the figure", () => {
+    // The distinction sprint-025 P4 draws. A counter placed *above* the guard
+    // would count the second line as printed; the reader that closed the pipe
+    // never received it, and neither would a file.
+    const stdout = fakeStream();
+    const guard = guardOver(stdout);
+
+    guard.stdout("delivered\n");
+    stdout.emit(epipe());
+    guard.stdout("refused by a closed reader\n");
+
+    expect(stdout.written).toEqual(["delivered\n"]);
+    expect(guard.bytesWritten()).toBe(10);
+  });
+
+  it("does not count a write that threw", () => {
+    const guard = guardOver(fakeStream({ throwOnWrite: epipe() }));
+    guard.stdout("never left the process\n");
+    expect(guard.bytesWritten()).toBe(0);
+  });
+});

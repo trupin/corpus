@@ -76,7 +76,9 @@ export const relatedCommand: WorkspaceCommandSpec = {
     `${neighbourExclusionNote("corpus doc related")}\n\n` +
     "An id that names no document is the server's `404`, which is exit 5, and " +
     "a document nothing relates to is a single honest line and exit 0.",
-  args: [{ name: "id", required: true, description: "The document to expand from." }],
+  args: [
+    { name: "id", required: true, subject: true, description: "The document to expand from." },
+  ],
   flags: [
     {
       name: "limit",

@@ -88,6 +88,8 @@ Global flags:
   -h, --help[=<mode>]      Show help for the current topic or command and exit. Bare \`--help\` gives the full text: prose, whole flag descriptions, worked examples. \`--help=brief\` gives the synopsis and one line per argument and flag — the first sentence of each, so the two registers cannot disagree — and nothing else. The value is inline-only, so \`corpus doc list --help\` swallows nothing after it.
   --version                Print the version of the \`corpus\` tool and exit.
 
+Every command reports what it wrote and printed, in bytes, shown in the app as a token estimate at 4 bytes to a token. \`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.
+
 Run \`corpus <command> --help\` or \`corpus <topic> --help\` for details.
 Add \`=brief\` to any of them for names and one line each.
 Full command reference: docs/cli.md in the corpus repository.

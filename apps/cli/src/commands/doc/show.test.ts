@@ -685,6 +685,7 @@ describe("the doc show command spec", () => {
         name: "id",
         required: true,
         variadic: true,
+        subject: true,
         description:
           "The document's id. Several read several documents in one call, in the order given.",
       },

@@ -65,7 +65,7 @@ export const releaseCommand: WorkspaceCommandSpec = {
     "**User-only**: sending this with `--from agent` is the server's `403`. Releasing is the " +
     "other half of the same user-only state as designating, and an agent able to release could " +
     "quietly stop being resident in a conversation a person put it in.",
-  args: [{ name: "id", required: true, description: "The thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The thread's id." }],
   flags: [],
   examples: [
     {

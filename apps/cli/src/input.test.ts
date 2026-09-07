@@ -23,6 +23,7 @@ import {
 } from "./input.js";
 import { ParsedFlags, type FlagValue } from "./parse-args.js";
 import { createTestContext } from "./registry/fixtures.js";
+import { resetStdinBytes, stdinBytesRead } from "./telemetry/stdin-bytes.js";
 import { connectedSocket, pipe, unreadable } from "./testing/stdin.js";
 
 const flagsOf = (values: Readonly<Record<string, FlagValue>>): ParsedFlags =>
@@ -324,7 +325,30 @@ describe("readAll", () => {
 
     await expect(readAll(split())).resolves.toBe("aéb");
   });
+
+  it("counts what fd 0 handed the invocation, in bytes (SPEC.md §9.4)", async () => {
+    // The other half of `wroteBytes`. It is counted here because this is the one
+    // funnel every stdin read passes, thirty verbs below the dispatcher that
+    // composes the report (`telemetry/stdin-bytes.ts`).
+    resetStdinBytes();
+    expect(stdinBytesRead()).toBe(0);
+
+    await readAll(oneChunk("a body\n"));
+    expect(stdinBytesRead()).toBe(7);
+
+    // Bytes, not characters, and cumulative across the reads one run performs.
+    await readAll(oneChunk("héllo"));
+    expect(stdinBytesRead()).toBe(7 + 6);
+
+    resetStdinBytes();
+    expect(stdinBytesRead()).toBe(0);
+  });
 });
+
+async function* oneChunk(text: string): AsyncGenerator<string> {
+  await Promise.resolve();
+  yield text;
+}
 
 describe("requireBody", () => {
   it("rejects an absent body and an explicitly empty one with the same usage error", async () => {

@@ -285,6 +285,7 @@ describe("the doc check command spec", () => {
         name: "id",
         required: false,
         variadic: true,
+        subject: true,
         description: "Documents to check. Omit them to check the whole workspace.",
       },
     ]);

@@ -76,6 +76,23 @@ export interface PipeGuardOptions {
 export interface PipeGuard {
   readonly stdout: Writer;
   readonly stderr: Writer;
+  /**
+   * How many bytes the two streams have **delivered**, UTF-8 (SPEC.md §9.4,
+   * CLI-085) — the `readBytes` of the invocation's cost report.
+   *
+   * The counter lives here, below the guard, for two reasons. It wraps the two
+   * real streams where the guard already wraps them, so it covers every verb at
+   * once including verbs added later — the same reason the guard is here rather
+   * than in `run.ts`. And it counts what {@link guard} actually wrote: bytes a
+   * closed pipe refused are dropped by `if (broken) return` and are not counted,
+   * so `corpus … > out.json && wc -c < out.json` reproduces the reported number
+   * exactly. A counter placed *above* the guard would measure bytes attempted,
+   * which is a different number nobody can check by hand.
+   *
+   * stdout and stderr are one total, because §9.4 measures what the command
+   * printed and the split between the two channels is a fact about plumbing.
+   */
+  bytesWritten(): number;
 }
 
 /**
@@ -102,13 +119,23 @@ export interface PipeGuard {
  * `ENOSPC` would hide a workspace someone has to repair.
  */
 export function guardPipes(options: PipeGuardOptions): PipeGuard {
+  let delivered = 0;
+  const count = (text: string): void => {
+    delivered += Buffer.byteLength(text, "utf8");
+  };
+
   return {
-    stdout: guard(options.stdout, options.quit),
-    stderr: guard(options.stderr, undefined),
+    stdout: guard(options.stdout, options.quit, count),
+    stderr: guard(options.stderr, undefined, count),
+    bytesWritten: () => delivered,
   };
 }
 
-function guard(stream: PipeStream, quit: (() => void) | undefined): Writer {
+function guard(
+  stream: PipeStream,
+  quit: (() => void) | undefined,
+  count: (text: string) => void,
+): Writer {
   let broken = false;
 
   const onBroken = (): void => {
@@ -132,6 +159,9 @@ function guard(stream: PipeStream, quit: (() => void) | undefined): Writer {
     if (broken) return;
     try {
       stream.write(text);
+      // Counted only once the write returned — a byte a closed pipe refused was
+      // never delivered, and `wc -c` on a redirect would not see it either.
+      count(text);
     } catch (error) {
       if (!isBrokenPipe(error)) throw error;
       onBroken();

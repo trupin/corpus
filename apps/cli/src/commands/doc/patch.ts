@@ -454,7 +454,7 @@ export const patchCommand: WorkspaceCommandSpec = {
     "than a silent precedence: an ignored source would patch text you never quoted. Note that a " +
     "file and a heredoc both end in a newline and a newline is text like any other — an excerpt " +
     "that should obviously match and reports 0 matches is usually one trailing newline long.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [
     {
       name: "old",
