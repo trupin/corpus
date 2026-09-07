@@ -65,7 +65,10 @@ const report = (overrides: Partial<InvocationReport> = {}): InvocationReport => 
 describe("sending a cost report", () => {
   it("posts one invocation to the contract's ingestion route, bearing the workspace token", async () => {
     const listening = await listen(204);
-    await sendInvocationReports(listening.workspace, [report()]);
+    // A generous cap: this test asserts delivery, not runner speed — the
+    // production 50ms ceiling raced a loaded CI runner and dropped the report
+    // by design, which is the other tests' subject, not this one's.
+    await sendInvocationReports(listening.workspace, [report()], { timeoutMs: 5000 });
 
     expect(listening.requests).toHaveLength(1);
     expect(listening.requests[0]?.path).toBe("/api/telemetry/invocations");
@@ -76,7 +79,7 @@ describe("sending a cost report", () => {
   it("sends several in the contract's batch form, which exists for exactly this", async () => {
     const listening = await listen(204);
     const two = [report(), report({ command: "doc show", subjects: ["doc_b2"] })];
-    await sendInvocationReports(listening.workspace, two);
+    await sendInvocationReports(listening.workspace, two, { timeoutMs: 5000 });
 
     expect(listening.requests).toHaveLength(1);
     expect(JSON.parse(listening.requests[0]?.body ?? "null")).toEqual({ invocations: two });
