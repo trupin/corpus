@@ -203,6 +203,10 @@ export async function runBatch(
     // branch, because what an entry printed is decided differently by each of
     // them — see `byteLength`'s note on what is counted and what is not.
     const measure = (printed: readonly string[]): void => {
+      // A command that declares itself unmeasured stays unmeasured here too —
+      // the exclusion is a documented property of the verb, not of the door
+      // it was invoked through (PR #76 review, finding 1).
+      if (entry.command.measured === false) return;
       context.costs?.record({
         command: entry.path,
         wroteBytes: byteLength(entry.argv.join(" ")),

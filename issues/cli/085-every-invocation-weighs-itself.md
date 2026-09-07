@@ -284,3 +284,18 @@ in the last phase, where the report is.
 The server-side half is SERVER-166's: retention, `db rebuild` emptying the
 series, and survival across a restart were not re-exercised. The UI panel does
 not exist yet (UI-190).
+
+## PR #76 review fixes (orchestrator, 2026-09-07)
+
+- **Finding 1 (MAJOR)**: a batch entry for a `measured: false` command was
+  recorded. Fixed — the batch's `measure()` consults the declaration, with a
+  test pinning that the batch door and the standalone door agree.
+- **Finding 2**: sprint-025 O1's decision, recorded here as the sprint
+  required: only argv and stdin count as "wrote" — what `--file` reads does
+  not. The help note now names it ("What `--file` reads is not counted;
+  stdin is."). The recommendation was declined because counting file reads
+  would price the same bytes differently by transport while measuring the
+  invocation, not the filesystem.
+- **Finding 3**: the unit is now named in the same words on both surfaces —
+  the panel's sentence ("Tokens are this workspace's estimate: bytes ÷ 4,
+  rounded up.") is verbatim in `corpus --help`.

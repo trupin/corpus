@@ -56,13 +56,14 @@ interface Fixture {
 const verb = (
   name: string,
   handler: WorkspaceCommandSpec["handler"],
-  overrides: Partial<Pick<WorkspaceCommandSpec, "args" | "flags">> = {},
+  overrides: Partial<Pick<WorkspaceCommandSpec, "args" | "flags" | "measured">> = {},
 ): WorkspaceCommandSpec => ({
   name,
   summary: `Fixture verb ${name}.`,
   args: overrides.args ?? [],
   flags: overrides.flags ?? [],
   examples: [{ command: `corpus t ${name}`, description: "Fixture." }],
+  ...(overrides.measured === false ? { measured: false as const } : {}),
   handler,
 });
 
@@ -128,6 +129,15 @@ function fixture(): Fixture {
             context.out.line("quiet said only this");
             await Promise.resolve();
           }),
+          verb(
+            "unmeasured",
+            async (context) => {
+              saw("unmeasured", context);
+              context.out.line("unmeasured did its work");
+              await Promise.resolve();
+            },
+            { measured: false },
+          ),
           verb(
             "show",
             async (context) => {
@@ -836,6 +846,25 @@ describe("what a batch costs, per entry", () => {
     ).catch(() => undefined);
 
     expect(h.costs.map((cost) => cost.command)).toEqual(["t dead"]);
+  });
+
+  it("records nothing for an entry whose command declares itself unmeasured", async () => {
+    // The exclusion is a documented property of the verb, not of the door it
+    // was invoked through (PR #76 review, finding 1): a batch entry for an
+    // unmeasured command must leave the ledger exactly as a standalone
+    // invocation of it would.
+    const { registry } = fixture();
+    const h = await harness(registry);
+
+    await runBatch(
+      h.context,
+      stdinWith([
+        ["t", "unmeasured"],
+        ["t", "ok"],
+      ]),
+    );
+
+    expect(h.costs.map((cost) => cost.command)).toEqual(["t ok"]);
   });
 
   it("costs nothing at all when the ledger is absent", async () => {

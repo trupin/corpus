@@ -52,7 +52,7 @@ describe("renderRootHelp", () => {
     // it. It carries the exclusions too, so nobody has to read the source to
     // find out why `corpus server start` never appears in a series.
     expect(help).toContain(MEASUREMENT_NOTE);
-    expect(help).toContain(`${String(BYTES_PER_TOKEN)} bytes to a token`);
+    expect(help).toContain(`bytes ÷ ${String(BYTES_PER_TOKEN)}, rounded up`);
     expect(help).toContain("corpus server");
 
     // Verb and topic pages do not repeat it: a fact about the tool would

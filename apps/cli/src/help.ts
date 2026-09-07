@@ -62,9 +62,9 @@ export function parseHelpMode(raw: string | undefined): HelpMode {
  * a fact about the tool rather than about the verb.
  */
 export const MEASUREMENT_NOTE =
-  `Every command reports what it wrote and printed, in bytes, shown in the app as a token ` +
-  `estimate at ${String(BYTES_PER_TOKEN)} bytes to a token, rounded up. ` +
-  `\`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.`;
+  `Every command reports what it wrote and printed, in bytes. Tokens are this workspace’s ` +
+  `estimate: bytes ÷ ${String(BYTES_PER_TOKEN)}, rounded up. What \`--file\` reads is not ` +
+  `counted; stdin is. \`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.`;
 
 const noStyle = (text: string): string => text;
 
