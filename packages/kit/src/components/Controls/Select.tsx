@@ -1,11 +1,14 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
 } from "react";
+import { MIN_USABLE_HEIGHT_PX } from "./ScrollArea.js";
 
 /**
  * The one dropdown (UI-191): a chip-shaped pill trigger with a chevron over a
@@ -93,6 +96,60 @@ export function Select<T>({
 
   const selectedIndex = items.findIndex((item) => Object.is(item.value, value));
   const selected = selectedIndex >= 0 ? items[selectedIndex] : undefined;
+
+  /**
+   * The open menu is `position: fixed`, measured from the trigger — never
+   * `absolute` inside its own root (UI-193, from UI-191's escalation 2).
+   *
+   * The absolute menu was clipped by whatever scrollable ancestor held the
+   * trigger: inside the console's 210px drawer the lane-weight menu extended
+   * `.lane-scope`'s scroll content instead of overlaying it, and the overlay
+   * battery measured its last options at y=746 in a 720px viewport — options
+   * a person could not see or press. Fixed positioning escapes `overflow`
+   * clipping entirely (no ancestor of a menu surface may create a containing
+   * block via `transform`/`filter` — none does today), so the menu overlays
+   * wherever the pill is squeezed.
+   *
+   * It flips upward when the room below the trigger cannot hold
+   * `--min-usable-height` and the room above is larger, and its height is the
+   * room it actually has — floored at the minimum (the ScrollArea clamp
+   * philosophy: a menu pinned at the viewport edge beats an unusable sliver),
+   * capped at the stylesheet's own 40vh. Re-measured on scroll and resize, so
+   * a pane scrolling under an open menu moves the menu with its pill.
+   */
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(undefined);
+      return;
+    }
+    const place = (): void => {
+      const rect = trigger.current?.getBoundingClientRect();
+      if (rect === undefined) return;
+      const gap = 4;
+      const margin = 8;
+      const below = window.innerHeight - rect.bottom - gap - margin;
+      const above = rect.top - gap - margin;
+      const up = below < MIN_USABLE_HEIGHT_PX && above > below;
+      const room = Math.max(up ? above : below, MIN_USABLE_HEIGHT_PX);
+      setMenuStyle({
+        position: "fixed",
+        left: Math.max(margin, Math.min(rect.left, window.innerWidth - 320 - margin)),
+        ...(up
+          ? { bottom: window.innerHeight - rect.top + gap, top: "auto" }
+          : { top: rect.bottom + gap }),
+        minWidth: rect.width,
+        maxHeight: Math.round(Math.min(room, window.innerHeight * 0.4)),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    document.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      document.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   /**
    * Focus lands on the chosen option the moment the menu exists — on the
@@ -250,6 +307,7 @@ export function Select<T>({
           // — the DOM is the contract, both ways.
           data-kit-menu=""
           ref={menu}
+          style={menuStyle}
           onKeyDown={onMenuKeyDown}
         >
           {items.map((item, index) => (

@@ -203,6 +203,13 @@ button.chip:not(.on):not(.warn):not(.good):hover {
   flex: none;
 }
 
+/*
+ * The open menu is positioned `fixed` by an inline style Select measures from
+ * its trigger (see Select.tsx — an absolute menu was clipped by scrollable
+ * ancestors, UI-193). The absolute rules below are only the unpainted
+ * pre-measure frame; position, offsets, min-width and max-height are all
+ * overridden inline while the menu is up.
+ */
 .select-menu {
   position: absolute;
   top: calc(100% + 4px);

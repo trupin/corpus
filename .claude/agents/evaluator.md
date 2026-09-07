@@ -91,6 +91,15 @@ Test the happy path first, then edge cases:
 - Concurrent operations (if applicable)
 - Error states
 
+**The overlay sweep** (UI-193, sprint-026 seam 2 — this is review territory no
+static check or Playwright battery can claim): open every overlay the product
+can open; for each control in it, name what it edits; **two answers the same is
+a finding**. Semantic duplication — an "at" pill and a WEIGHT row both editing
+one designation — passes every automated check by construction, because no
+check can know two controls mean one concept. You are the only gate for this
+class. The overlay registry (`apps/ui/e2e/overlayRegistry.ts`) is the list of
+what opens; geometry, exits and Escape are the battery's job, meaning is yours.
+
 ### Step 5: Produce the Verdict
 
 Write a verdict file at `issues/evals/<ISSUE-ID>-eval.md`:

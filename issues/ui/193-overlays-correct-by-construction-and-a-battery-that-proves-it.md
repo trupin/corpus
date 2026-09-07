@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -91,4 +91,104 @@ lying about its coverage.
 
 ## E2E Verification Log
 
-_Implementing agent fills; state the model._
+**Model**: Fable (claude-fable-5). **Date**: 2026-09-07. All runs against the
+real Vite dev server (`CORPUS_UI_PORT=5373`), real Chromium, transport stubbed
+in-page by `stubCorpus` per the suite's standing arrangement.
+
+### Lane split, for the record
+
+UI-191 (landed on this base) delivered tier 1 — the `Popover`/`Modal`/
+`ScrollArea` primitives, their unit coverage, and `--min-usable-height: 120px`
+in `design/index.html:56` and `packages/kit/src/tokens.css:70`. The ESLint
+overlay ban rides INFRA-040's rule in that lane (sprint-026 seam 2: syntax is
+INFRA-040's). This lane delivered tiers 2 and 3: the registry, the battery,
+the crowded fixture, the evaluator checklist item — and fixed what the battery
+caught.
+
+### The battery's first contact: 7 failures, 4 of them fixed here
+
+First full run (default 1280×720, ten-lane crowded fixture): **PASS 39 /
+FAIL 7**. Every failure was a real finding:
+
+1. `kanban-dialog: Escape dismisses` — `.kanban-dialog` stayed visible after
+   Escape. Cause: `useEscapeStack`'s `isEditing` carve-out ignores keys typed
+   in a field, and the dialog opens with focus in its first field. **Fixed**:
+   the form answers Escape on its own subtree (`KanbanDialog.tsx`), the
+   CommentPopover arrangement. Red → green.
+2. `query-help: the declared exit affordance works` — clicking the `?` toggle
+   again left the panel visible: the panel's capture `mousedown` closed it and
+   the toggle's `click` reopened it. **Fixed**: `QueryHelp` takes an `anchor`
+   ref and treats presses on its opener as inside. Red → green.
+3. `comment-popover: exit` — "no visible exit control": the composer had no
+   control that leaves it (Escape and outside-click only). **Fixed**: a ✕
+   (`data-comment-cancel`, label "Close this composer" — no "Comment"
+   substring, per the file's own locator note) over the grip's right end.
+   Red → green.
+4. `lane-weight-menu: nothing interactive is clipped` — **UI-191's
+   escalation 2, reproduced**: `<button .select-option> "Standard weight…"
+   leaves the 1280×720 viewport (top 720, bottom 746)` and `"Heavy…"` at
+   746→772. The absolute `.select-menu` extended `.lane-scope`'s scroll
+   content inside the 210px drawer instead of overlaying. **Fixed in kit
+   `Select`**: the open menu is `position: fixed`, measured from its trigger,
+   flipping upward when the room below cannot hold `--min-usable-height`,
+   re-measured on scroll/resize. Judgment recorded: fix, not record — the
+   defect class (dead options below a clipped edge) is exactly the battery's,
+   and the fix lives in the primitive so every squeezed `Select` inherits it.
+5.–7. `designation-popover: exit / escape / scroll` — **TEST-1269's proof,
+   pinned expected-fail to UI-192**, failure text verbatim:
+   - exit: `no visible exit control at [data-address-pop="th_host"]
+     [data-address-close]` (element not found — the pre-rebuild popover has no
+     close control).
+   - escape: `toBeFocused` found no `button[data-address-line="th_host"]` —
+     Escape closed the **whole reader** out from under the popover
+     (ComposerAddress leaves the key to the app's chain), so the opener itself
+     was gone.
+   - scroll: `<div .recipient-lanes> overflows at 25px — below
+     --min-usable-height (120px)` — the roster the crowded fixture fills is a
+     25px sliver.
+
+   Three failures ≥ the required three, demonstrated against the old component
+   before UI-192 deletes it. They run under `test.fail()` pinned to UI-192 in
+   `overlayRegistry.ts`, so the battery stays this defect's reproduction until
+   the rebuild lands — and flips loudly ("passed unexpectedly") the moment it
+   does.
+
+### Verification runs (all exit 0)
+
+- Battery after fixes: `PASS 46 / FAIL 0` in 29s — 43 green checks + 3
+  UI-192-pinned expected-fails + 2 registry-integrity tests.
+- **Falsification of the completeness scan** (TEST-1267): a temporary
+  `apps/ui/src/dev/FalsifyOverlay.tsx` with `role="dialog"` and no registry
+  entry → the scan failed, exit 1, naming the file: *"These files define an
+  overlay … no overlayRegistry.ts entry claims them: —
+  apps/ui/src/dev/FalsifyOverlay.tsx"*. Probe removed.
+- Falsification of the other three checks: each produced a genuine failure on
+  first contact (fits №4, exit №2/№3, escape №1, scroll №6 above) — no check
+  in this battery has never failed.
+- e2e regression over every touched surface: `format-toolbar`,
+  `resident-weight-change`, `residents-tab`, `ask-designation-weight`,
+  `weight`, `kanban`, `boards`, `query-editor`, `turn-comment`,
+  `comment-move` — **PASS 87 / FAIL 0** in 55s, kit `dist/` rebuilt first
+  (the dist trap).
+- Unit: kit Controls 37/37; `apps/ui` board+anchors 970/970; console+compose+
+  editor 1310/1310; thread+reader 831/831.
+- `eslint` and `prettier --check` clean on every changed file; `tsc --noEmit`
+  clean in `packages/kit` and `apps/ui`.
+
+### Where things live
+
+- Registry: `apps/ui/e2e/overlayRegistry.ts` — 11 entries (search,
+  cheat-sheet, compose, kanban-dialog, query-help, upgrade, image-viewer,
+  focus-mode, comment-popover, designation-popover, lane-weight-menu), typed
+  exits (`control`/`scrim`/`trigger` — `scrim` only with mockup authority),
+  declared scroll regions with affordances, `expectedFailures` pinned by
+  issue.
+- Battery: `apps/ui/e2e/overlay-battery.spec.ts` — 4 checks × 11 entries + the
+  two completeness tests; reads `MIN_USABLE_HEIGHT_PX` from `@corpus/kit`,
+  never a literal.
+- Crowded fixture: `crowdedLanes()` + `CROWDED_SKILL` + `CROWDED_LEVELS` in
+  `apps/ui/e2e/stubCorpus.ts` (seam 3 — UI-192's roster test imports the same
+  fixture).
+- Evaluator item: `.claude/agents/evaluator.md`, Step 4 — "The overlay sweep":
+  open every overlay; for each control, name what it edits; two answers the
+  same is a finding.

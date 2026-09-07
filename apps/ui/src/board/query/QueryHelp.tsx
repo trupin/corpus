@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactElement, type RefObject } from "react";
 import {
   QUERY_COMBINATORS,
   QUERY_EXAMPLES,
@@ -27,6 +27,14 @@ export interface QueryHelpProps {
   readonly onClose: () => void;
   /** Positioning is the host's, exactly as `AutocompleteMenu` has it. */
   readonly style?: CSSProperties | undefined;
+  /**
+   * The `?` toggle that opened this panel. The outside-press listener treats a
+   * press on it as inside: the toggle's own click must be the one act on that
+   * press. Without this the capture listener closed the panel on `mousedown`
+   * and the toggle's `click` reopened it a breath later — so the visible "way
+   * out" only ever opened (found by UI-193's overlay battery).
+   */
+  readonly anchor?: RefObject<HTMLElement | null>;
 }
 
 function valueHint(field: QueryField): string {
@@ -46,7 +54,7 @@ function valueHint(field: QueryField): string {
   return field.multi ? `${base}  (comma-separated)` : base;
 }
 
-export function QueryHelp({ onClose, style }: QueryHelpProps): ReactElement {
+export function QueryHelp({ onClose, style, anchor }: QueryHelpProps): ReactElement {
   const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,13 +64,14 @@ export function QueryHelp({ onClose, style }: QueryHelpProps): ReactElement {
   useEffect(() => {
     const onPointerDown = (event: MouseEvent): void => {
       if (panel.current?.contains(event.target as Node) === true) return;
+      if (anchor?.current?.contains(event.target as Node) === true) return;
       onClose();
     };
     document.addEventListener("mousedown", onPointerDown, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown, true);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   return (
     <div

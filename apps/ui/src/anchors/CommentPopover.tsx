@@ -87,6 +87,15 @@ export const COMMENT_MOVE_LABEL = "Move this composer";
 export const COMMENT_MOVE_HINT = "Move this composer — drag it, or use the arrow keys";
 
 /**
+ * The visible way out (UI-193's overlay battery: an exit affordance on every
+ * overlay). Escape and an outside click closed this composer all along, but
+ * neither is a thing a person can *see* — the popover offered no control that
+ * leaves it. Named without the word "Comment" for the reason the grip's label
+ * documents above: `getByLabel("Comment")` is a substring match.
+ */
+export const COMMENT_CANCEL_LABEL = "Close this composer";
+
+/**
  * What a refused send hands back, so the composer that re-opens is the one that
  * closed rather than an empty one (UI-111).
  *
@@ -286,6 +295,15 @@ export function CommentPopover({
         onKeyDown={drag.onKeyDown}
       >
         <span aria-hidden="true">⠿</span>
+      </IconButton>
+      <IconButton
+        className="cm-cancel"
+        data-comment-cancel
+        label={COMMENT_CANCEL_LABEL}
+        title={`${COMMENT_CANCEL_LABEL} — esc does too`}
+        onClick={onClose}
+      >
+        <span aria-hidden="true">✕</span>
       </IconButton>
       <div className="cm-quote">“{quotePreview(quote)}”</div>
       <PendingAttachments pending={intake.pending} onRemove={intake.remove} />

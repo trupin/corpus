@@ -196,7 +196,7 @@ export function QueryEditor({
         label={`Query completions for ${columnTitle}`}
       />
 
-      {helpOpen ? <QueryHelp onClose={closeHelp} style={helpStyle} /> : null}
+      {helpOpen ? <QueryHelp onClose={closeHelp} style={helpStyle} anchor={helpButton} /> : null}
     </div>
   );
 }
