@@ -322,8 +322,11 @@ describe("the raw-control check rides the gates that already exist (sprint-026 P
     // Lint Discipline: the fix for this rule is a kit primitive, never a
     // suppression comment. The baseline is the only sanctioned exemption and
     // it lives in one committed file.
+    // The needle is assembled from parts so this scanner's own source never
+    // matches it (it joined its own scan the moment the file was committed).
+    const needle = new RegExp(["eslint-", "disable[^\\n]*no-restricted-", "syntax"].join(""));
     const offenders = trackedTypeScriptFiles().filter((file) =>
-      /eslint-disable[^\n]*no-restricted-syntax/.test(readFileSync(file, "utf8")),
+      needle.test(readFileSync(file, "utf8")),
     );
     expect(offenders.map((file) => relative(REPO_ROOT, file))).toEqual([]);
   });
