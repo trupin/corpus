@@ -2544,3 +2544,6 @@ written.
 | SHARED-080 | Ten code nits from the PR #11 ledger | todo | P2 | opus | — |
 | SHARED-081 | Ten design decisions the ledger deferred to triage | todo | P2 | fable | — |
 | SERVER-170 | A hand-moved event is invisible to every reader | todo | P1 | opus | — |
+| AGENT-074 | Listeners still write workspace files by hand | todo | P0 | fable | — |
+| AGENT-075 | The runner stops with work still on the queue | todo | P0 | fable | — |
+| INFRA-042 | A budget-stopped run still testifies against the product | todo | P1 | fable | INFRA-037 |
