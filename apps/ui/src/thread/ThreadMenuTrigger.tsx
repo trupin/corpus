@@ -1,3 +1,4 @@
+import { IconButton } from "@corpus/kit";
 import type { MouseEvent, ReactElement } from "react";
 
 /**
@@ -44,16 +45,14 @@ export function ThreadMenuTrigger({
   onOpen,
 }: ThreadMenuTriggerProps): ReactElement {
   return (
-    <button
-      type="button"
+    <IconButton
       className="t-menu"
       data-thread-menu={threadId}
-      aria-label={label}
+      label={label}
       aria-haspopup="menu"
-      title={label}
       onClick={onOpen}
     >
       ⋯
-    </button>
+    </IconButton>
   );
 }

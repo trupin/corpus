@@ -1,5 +1,5 @@
 import type { IndexStatus, QueueStatus } from "@corpus/contract";
-import { useHealth } from "@corpus/kit";
+import { Button, useHealth } from "@corpus/kit";
 import type { KeyboardEvent, ReactElement } from "react";
 import { AgentPill } from "./AgentPill";
 import { UNKNOWN_QUEUE_STATUS, consoleCounts } from "./consoleModel";
@@ -62,8 +62,7 @@ export function ServerStatus(): ReactElement {
    * it has to be reachable in place (SPEC.md §10's rider, clause 2).
    */
   return (
-    <button
-      type="button"
+    <Button
       className="c-status c-status-button"
       // No `role="status"` here, unlike the three spans above: an explicit role
       // *replaces* the implicit one, and a `<button role="status">` is not a
@@ -77,7 +76,7 @@ export function ServerStatus(): ReactElement {
       }}
     >
       corpus {health.data.version}
-    </button>
+    </Button>
   );
 }
 
@@ -215,8 +214,7 @@ export function ConsoleStrip({
       {index === undefined ? null : <IndexPill status={index} />}
       <span className="spacer" />
       <ServerStatus />
-      <button
-        type="button"
+      <Button
         className={counts.halted ? "halt-btn halted" : "halt-btn"}
         // Halting while the status is unknown would be a guess, and a write.
         disabled={status === undefined}
@@ -233,7 +231,7 @@ export function ConsoleStrip({
         }}
       >
         HALT {counts.halted ? "●" : "○"}
-      </button>
+      </Button>
     </div>
   );
 }

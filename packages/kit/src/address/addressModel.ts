@@ -91,18 +91,6 @@ export type AddressWeight =
        * declare *and* nobody chose.
        */
       readonly options: readonly WeightLevel[];
-      /**
-       * Present where this send also **designates a resident**
-       * ({@link ComposerAddressInput.designating}, UI-185): the name the levels
-       * above do *not* govern. The control stays live — the choice still rides
-       * the message, where §7 gives it a real job (it governs what the resident
-       * hands off) and where the same surface's Capture reads it — but the
-       * section says so out loud ({@link designationWeightSentence}), because a
-       * person reaching here for the resident's level would otherwise have
-       * their choice applied to the one thing §7 says it never governs, in
-       * silence.
-       */
-      readonly designating?: string;
     }
   /** A resident answers: no level is offered, and the resident's is named. */
   | { readonly kind: "resident"; readonly name: string; readonly weight: ResidentWeight };
@@ -150,14 +138,17 @@ export interface ComposerAddressInput {
    * send designates nobody — which is all of them except the global composer's
    * Ask (UI-185; SPEC.md §7's rider A).
    *
-   * What it changes is the **statement**, never the wire: the levels stay
-   * offered and the choice still travels as the message's weight (this
-   * surface's Capture shares the control, and §10 has Capture carry a weight
-   * exactly as Ask does), but the weight section says the levels govern only
-   * what the resident hands off and that the resident's own level is chosen on
-   * the owner control. Without it a person picking a weight for the resident
-   * being designated has the choice applied to the one thing §7 says it never
-   * governs — silently, which is the shape the rider of 2026-08-19 forbids.
+   * **A designating send gets no weight editor here, and states no weight**
+   * (UI-192). The surface that designates carries its own weight control —
+   * the "at" pill beside the owner — and that control is the one home of the
+   * question a person is actually asking ("how much thought does this work
+   * get?"), because the resident being designated is who answers this turn.
+   * The message-level weight UI-185 kept live beside it earned only §7's
+   * hand-off clause, and two adjacent editors offering the same three levels
+   * — reconciled by a tooltip — was the reported defect. The standing scope
+   * choice survives unshown and is **not sent** (§10: a value the surface no
+   * longer shows must not act); it comes back the moment the send stops
+   * designating, exactly as the floor already behaves.
    */
   readonly designating?: string | undefined;
 }
@@ -200,37 +191,19 @@ export function residentWeightSentence(name: string, weight: ResidentWeight): st
   }
 }
 
-/**
- * What the weight section says, under its rows, while this send also
- * designates a resident (UI-185).
- *
- * The same two halves {@link residentWeightSentence} gives an existing
- * resident's lane, in the same order, for the same rider — first what a level
- * here does govern (§7's boundary: the hand-offs), then where the resident's
- * own level actually lives. The difference is only tense and consequence: here
- * the control is live and the choice travels, because the message's weight has
- * a real job and Capture reads the same control, so the sentence qualifies the
- * rows rather than replacing them.
- */
-export function designationWeightSentence(name: string): string {
-  return (
-    `a weight set here rides this message and governs only what ${name} hands off — ` +
-    `the owner control states the level ${name} works at`
-  );
-}
-
-/** The title on the line while it opens to something. */
+/** The title on the line while the popover offers the weight levels too. */
 export const ADDRESS_OPEN_TITLE =
   "Who answers this message, and how much thought the work gets. Open to change either.";
 
 /**
- * …and while the send will also designate a resident, where "the work" would
- * read as the resident's: the weight here is the message's, and the resident's
- * own level has its own control.
+ * …and while the popover offers the recipient alone — a designating send
+ * (whose weight is the surface's own control, UI-192) or a resident recipient
+ * (whose weight is a fact, not a choice). One control, one sentence: a title
+ * that had to reconcile this control with another one was the reported defect
+ * stating itself, and `ADDRESS_DESIGNATING_TITLE` is deleted with the second
+ * editor it apologised for.
  */
-export const ADDRESS_DESIGNATING_TITLE =
-  "Who answers this message, and the weight this message carries — the resident being " +
-  "designated takes its own level from the owner control, not from here. Open to change either.";
+export const ADDRESS_RECIPIENT_TITLE = "Who answers this message. Open to change it.";
 
 /** …and on the floor, where the popover offers the recipient alone. */
 export const ADDRESS_FLOOR_TITLE =
@@ -275,16 +248,14 @@ function addressWeight(
       weight: residentWeightOf(answering, weight?.levels ?? []),
     };
   }
+  // A summons outranks a designation: with an existing resident's lane picked
+  // the branch above already spoke. Otherwise a designating send offers no
+  // level rows at all (UI-192): the resident being designated answers this
+  // turn, its level is the surface's own "at" control, and nothing here is
+  // offered — so nothing here is sent (see `ComposerAddressInput.designating`).
+  if (designating !== undefined) return { kind: "unweighed" };
   if (weight === undefined || weight.levels.length === 0) return { kind: "unweighed" };
-  return {
-    kind: "choice",
-    weight,
-    options: weightOptions(weight),
-    // A summons wins: with an existing resident's lane picked the branch above
-    // already spoke, so this only ever qualifies the orchestrator-answering
-    // rows of a send that is *creating* a designation.
-    ...(designating === undefined ? {} : { designating }),
-  };
+  return { kind: "choice", weight, options: weightOptions(weight) };
 }
 
 /** The line's weight clause: what will run, or nothing when nothing is stated. */

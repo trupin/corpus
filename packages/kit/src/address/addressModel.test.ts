@@ -13,7 +13,6 @@ import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
 import {
   composerAddress,
-  designationWeightSentence,
   residentWeightSentence,
   weightLabel,
   ADDRESSED_TO,
@@ -312,29 +311,42 @@ describe("what the popover offers", () => {
 });
 
 /**
- * A send that also **designates** a resident (UI-185): the rows stay live and
- * the choice still travels — the message's weight has §7's hand-off job and the
- * same surface's Capture reads the same control — and the section says so,
- * which is what keeps "a control whose choice is discarded in silence" from
- * coming back the other way round.
+ * A send that also **designates** a resident (UI-185, redrawn by UI-192): the
+ * one weight editor for such a send is the surface's own owner/"at" control,
+ * so the address offers **no** level rows — and, because nothing is offered,
+ * the standing scope choice is **not sent** (§10: a value the surface no
+ * longer shows must not act). UI-185's live-rows-plus-boundary-sentence design
+ * was the reported defect: two adjacent editors offering the same levels,
+ * reconciled only by a tooltip.
  */
 describe("a send that designates a resident", () => {
-  it("keeps the rows and the wire, and carries the boundary to say", () => {
+  it("offers no level rows, and does not send the standing choice", () => {
     const address = composerAddress({
       weight: weightOf("heavy"),
       recipient: recipientOf([ORCHESTRATOR], "orchestrator"),
       live: true,
       designating: "its own agent",
     });
+    expect(address.weight.kind).toBe("unweighed");
+    // The choice a person made while the rows were shown (the no-owner state)
+    // survives in its scope but does not travel: it was withheld from this
+    // send's surface, so it is withheld from this send's wire.
+    expect(address.weightRequest).toEqual({});
+    expect("weight" in address.request).toBe(false);
+  });
+
+  it("keeps the rows and the wire the moment the send stops designating", () => {
+    const address = composerAddress({
+      weight: weightOf("heavy"),
+      recipient: recipientOf([ORCHESTRATOR], "orchestrator"),
+      live: true,
+    });
     if (address.weight.kind !== "choice") throw new Error("expected a choice");
-    expect(address.weight.designating).toBe("its own agent");
     expect(address.weight.options.map((level) => level.key)).toEqual([
       "light",
       "standard",
       "heavy",
     ]);
-    // Still the message's weight, still sent: not the designation's, which the
-    // surface carries inside `resident` on its own control.
     expect(address.weightRequest).toEqual({ weight: "heavy" });
   });
 
@@ -360,13 +372,6 @@ describe("a send that designates a resident", () => {
       designating: "researcher",
     });
     expect(address.weight.kind).toBe("unweighed");
-  });
-
-  it("says what a level here governs, and where the resident's own level lives", () => {
-    expect(designationWeightSentence("researcher")).toBe(
-      "a weight set here rides this message and governs only what researcher hands off — " +
-        "the owner control states the level researcher works at",
-    );
   });
 });
 

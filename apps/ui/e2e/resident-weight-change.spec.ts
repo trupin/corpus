@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubJob, type StubRow } from "./stubCorpus";
 
@@ -116,7 +117,13 @@ async function openResidents(
 }
 
 const NOTE = '[data-lane-weight-note="th_solo"]';
-const LEVEL = '[data-lane-weight-panel="th_solo"] select';
+const LEVEL = '[data-lane-weight-panel="th_solo"] [data-select="lane-weight"]';
+
+/** Drives the kit `Select` (UI-191): open the pill, press the row by label. */
+async function pick(page: Page, label: string): Promise<void> {
+  await page.locator(LEVEL).click();
+  await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+}
 const APPLY = '[data-lane-weight-apply="th_solo"]';
 const COST = '[data-lane-weight-cost="th_solo"]';
 
@@ -163,14 +170,16 @@ test.describe("the Residents tab's weight", () => {
   }) => {
     await openResidents(page, [designation(LAUNCH_LINE)]);
 
-    await expect(page.locator(`${LEVEL} option`)).toHaveText([
+    await page.locator(LEVEL).click();
+    await expect(page.getByRole("menuitemradio")).toHaveText([
       "the launcher decides",
       "Small and mechanical",
       "Standard",
       "Heavy or judgment-laden",
     ]);
+    await page.keyboard.press("Escape");
     // Nothing is stated, so the control stands on the launcher's own member.
-    await expect(page.locator(LEVEL)).toHaveValue("");
+    await expect(page.locator(`${LEVEL} .select-value`)).toHaveText("the launcher decides");
     // Pressing now would write the state already in force, so the act is
     // offered and dimmed rather than removed — and no price is quoted for a
     // change nobody has asked for.
@@ -179,7 +188,7 @@ test.describe("the Residents tab's weight", () => {
 
     // SHARED-076: the act says what it costs **before** it is taken. The price
     // arrives with the act, while the press is still available.
-    await page.locator(LEVEL).selectOption("light");
+    await pick(page, "Small and mechanical");
     await expect(page.locator(COST)).toContainText(
       "releases the running listener and launches a new one at the new level",
     );
@@ -201,7 +210,7 @@ test.describe("the Residents tab's weight", () => {
   test("changes the weight by re-designating the thread at the level chosen", async ({ page }) => {
     const corpus = await openResidents(page, [designation(LAUNCH_LINE)]);
 
-    await page.locator(LEVEL).selectOption("heavy");
+    await pick(page, "Heavy or judgment-laden");
     await expect(page.locator(APPLY)).toBeEnabled();
     await page.locator(APPLY).click();
 
@@ -224,7 +233,7 @@ test.describe("the Residents tab's weight", () => {
   test("says out loud what it did, once the change lands", async ({ page }) => {
     await openResidents(page, [designation(LAUNCH_LINE)]);
 
-    await page.locator(LEVEL).selectOption("light");
+    await pick(page, "Small and mechanical");
     await page.locator(APPLY).click();
 
     await expect(page.locator(".toast .msg")).toContainText(

@@ -67,14 +67,14 @@ const COMPOSE_PANEL = `
            something to style. -->
       <div class="compose-settings">
         <span class="composer-address"></span>
-        <label class="compose-resident"><span class="compose-resident-label">owner</span><select><option>its own agent</option></select></label>
+        <span class="compose-resident"><span class="compose-resident-label">owner</span><span class="select"><button class="select-trigger"><span class="select-value">its own agent</span><span class="select-chevron">▾</span></button></span></span>
       </div>
       <div class="compose-actions">
         <button class="clip">📎</button>
         <span class="hint">@ agents · / skills · [[ refs · ↵ newline</span>
         <span class="spacer"></span>
-        <button class="btn-capture">Capture ⇧⌘↵</button>
-        <button class="btn-ask">Ask ⌘↵</button>
+        <button class="btn btn-outline btn-capture">Capture ⇧⌘↵</button>
+        <button class="btn btn-primary btn-ask">Ask ⌘↵</button>
       </div>
     </div>
   </div>`;
@@ -415,8 +415,8 @@ test.describe("the top bar's way in", () => {
       "input",
       "hint",
       "spacer",
-      "btn-capture",
-      "btn-ask",
+      "btn btn-outline btn-capture",
+      "btn btn-primary btn-ask",
     ]);
   });
 

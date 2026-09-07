@@ -20,6 +20,7 @@
     "./row.css": "./src/row/row.css",
     "./markdown.css": "./src/markdown/markdown.css",
     "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
+    "./controls.css": "./src/components/Controls/controls.css",
     "./composer.css": "./src/components/Composer/composer.css",
     "./cost.css": "./src/components/Cost/cost.css",
     "./address.css": "./src/address/address.css",
@@ -31,6 +32,7 @@
     "src/row/row.css",
     "src/markdown/markdown.css",
     "src/components/Autocomplete/autocomplete.css",
+    "src/components/Controls/controls.css",
     "src/components/Composer/composer.css",
     "src/components/Cost/cost.css",
     "src/address/address.css"

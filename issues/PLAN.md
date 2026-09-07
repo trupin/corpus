@@ -2502,10 +2502,10 @@ INFRA-025-clean by construction — with exemptions as config paths, never inlin
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| UI-191 | One button, one dropdown, everywhere | todo | P0 | fable | — |
-| INFRA-040 | A raw interactive element outside kit fails the build | todo | P0 | opus | UI-191 |
-| UI-193 | Overlays correct by construction, and a battery that proves it | todo | P0 | fable | UI-191, INFRA-040 |
-| UI-192 | The designation popover is broken four ways | todo | P0 | fable | UI-191, UI-193 |
+| UI-191 | One button, one dropdown, everywhere | done | P0 | fable | — |
+| INFRA-040 | A raw interactive element outside kit fails the build | done | P0 | opus | UI-191 |
+| UI-193 | Overlays correct by construction, and a battery that proves it | done | P0 | fable | UI-191, INFRA-040 |
+| UI-192 | The designation popover is broken four ways | done | P0 | fable | UI-191, UI-193 |
 
 ## Debt harvest — SHARED-003 audit (2026-09-06)
 
@@ -2547,3 +2547,5 @@ written.
 | AGENT-074 | Listeners still write workspace files by hand | todo | P0 | fable | — |
 | AGENT-075 | The runner stops with work still on the queue | todo | P0 | fable | — |
 | INFRA-042 | A budget-stopped run still testifies against the product | todo | P1 | fable | INFRA-037 |
+| UI-196 | Capture has no weight control while the Ask designates | done | P1 | fable | UI-192 |
+| UI-197 | An empty sublist sometimes degrades to trailing-space joins | todo | P2 | opus | — |

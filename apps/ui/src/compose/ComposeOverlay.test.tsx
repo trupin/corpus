@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { designationWeightSentence, ADDRESS_DESIGNATING_TITLE, type RowNotice } from "@corpus/kit";
+import { ADDRESS_RECIPIENT_TITLE, type RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness, docRowFixture, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
@@ -109,8 +109,8 @@ describe("ComposeOverlay", () => {
         "input",
         "hint",
         "spacer",
-        "btn-capture",
-        "btn-ask",
+        "btn btn-outline btn-capture",
+        "btn btn-primary btn-ask",
       ]);
       // Settings first: they are read before the send is pressed.
       const foot = [...(panel?.children ?? [])].map((node) => node.className);
@@ -510,12 +510,22 @@ describe("ComposeOverlay", () => {
     });
   });
 
+  /** Drives a kit `Select` (UI-191): open the pill, press the row by label. */
+  const pickFrom = (control: HTMLElement, label: string): void => {
+    fireEvent.click(control);
+    const option = [...document.querySelectorAll('[role="menuitemradio"]')].find(
+      (node) => node.textContent === label,
+    );
+    if (option === undefined) throw new Error(`no option ${label}`);
+    fireEvent.click(option);
+  };
+
   /**
    * Who will own the conversation (UI-173; SPEC.md §7's rider A, §10's rider B).
    */
   describe("the owner picker", () => {
-    const picker = (container: HTMLElement): HTMLSelectElement => {
-      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+    const picker = (container: HTMLElement): HTMLButtonElement => {
+      const found = container.querySelector<HTMLButtonElement>('[data-select="owner"]');
       if (found === null) throw new Error("no owner picker");
       return found;
     };
@@ -527,8 +537,7 @@ describe("ComposeOverlay", () => {
      */
     it("shows the default as the default, not as an empty choice", () => {
       const { container } = mount(composeTransport());
-      expect(picker(container).value).toBe("");
-      expect(picker(container).options[0]?.textContent).toBe("its own agent");
+      expect(picker(container).querySelector(".select-value")?.textContent).toBe("its own agent");
     });
 
     it("sends nothing at all when the default stands", async () => {
@@ -547,7 +556,7 @@ describe("ComposeOverlay", () => {
     it("sends an explicit null for no owner, which is a value and not an absence", async () => {
       const wire = composeTransport();
       const { container } = mount(wire);
-      fireEvent.change(picker(container), { target: { value: "@none" } });
+      pickFrom(picker(container), "no owner — the main agent");
       type(container, "a question");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -580,7 +589,7 @@ describe("ComposeOverlay", () => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "a question");
-      fireEvent.change(picker(container), { target: { value: "@none" } });
+      pickFrom(picker(container), "no owner — the main agent");
       fireEvent.click(button(container, "btn-ask"));
 
       await waitFor(() => {
@@ -610,20 +619,20 @@ describe("ComposeOverlay", () => {
         docs: { [ORCHESTRATE_SKILL_ID]: skillDoc() },
       });
 
-    const ownerPicker = (container: HTMLElement): HTMLSelectElement => {
-      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+    const ownerPicker = (container: HTMLElement): HTMLButtonElement => {
+      const found = container.querySelector<HTMLButtonElement>('[data-select="owner"]');
       if (found === null) throw new Error("no owner picker");
       return found;
     };
 
-    const levelPicker = (container: HTMLElement): HTMLSelectElement | null =>
-      container.querySelector<HTMLSelectElement>(".compose-resident-weight select");
+    const levelPicker = (container: HTMLElement): HTMLButtonElement | null =>
+      container.querySelector<HTMLButtonElement>('[data-select="resident-weight"]');
 
-    const shownLevels = async (container: HTMLElement): Promise<HTMLSelectElement> => {
+    const shownLevels = async (container: HTMLElement): Promise<HTMLButtonElement> => {
       await waitFor(() => {
         expect(levelPicker(container)).not.toBeNull();
       });
-      return levelPicker(container) as HTMLSelectElement;
+      return levelPicker(container) as HTMLButtonElement;
     };
 
     const askBody = async (wire: ComposeTransport): Promise<Record<string, unknown>> => {
@@ -639,15 +648,19 @@ describe("ComposeOverlay", () => {
       const level = await shownLevels(container);
       // The set is the parsed declaration's, in its order, behind the same
       // wording the thread menu's rows use — never a hardcoded list.
-      expect([...level.options].map((option) => option.textContent)).toEqual([
+      fireEvent.click(level);
+      expect(
+        [...document.querySelectorAll('[role="menuitemradio"]')].map((node) => node.textContent),
+      ).toEqual([
         LAUNCHER_DECIDES_LABEL,
         "Small and mechanical",
         "Standard",
         "Heavy or judgment-laden",
       ]);
+      fireEvent.keyDown(document.querySelector('[role="menu"]') as Element, { key: "Escape" });
       // The launcher's choice stands until somebody picks — an option, not an
       // unpressed state, so there is a way back once a level was picked.
-      expect(level.value).toBe("");
+      expect(level.querySelector(".select-value")?.textContent).toBe(LAUNCHER_DECIDES_LABEL);
       // Visibly its own control, in the settings row beside the owner it
       // refines — not inside the message's address.
       const names = [...(container.querySelector(".compose-settings")?.children ?? [])].map(
@@ -670,7 +683,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "a weighed question");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -685,8 +698,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "light" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Small and mechanical");
       type(container, "for the researcher");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -697,7 +710,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      pickFrom(ownerPicker(container), "researcher");
       type(container, "unweighed, on purpose");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -708,8 +721,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(level, { target: { value: "heavy" } });
-      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      pickFrom(level, "Heavy or judgment-laden");
+      pickFrom(ownerPicker(container), "no owner — the main agent");
       // Nothing to weigh on a thread with no resident — gone, not dimmed.
       expect(levelPicker(container)).toBeNull();
       type(container, "nobody owns this");
@@ -721,53 +734,123 @@ describe("ComposeOverlay", () => {
     });
 
     /**
-     * The two weights, together — the criterion this issue stands on. Neither
-     * choice lands on the other's field, and the overlay says which is which:
-     * the level rows the person might mistake for the resident's carry the
-     * boundary sentence, and the line's title names the split.
+     * **One editor per meaning** — the criterion UI-192 stands on, replacing
+     * UI-185's "two weights, together". While a designation stands (the
+     * default), the "at" pill is the surface's only weight editor: the address
+     * offers no level rows, carries no boundary sentence, and its tooltip
+     * reconciles nothing. The deleted assertions — `[data-designation-boundary]`
+     * text, `ADDRESS_DESIGNATING_TITLE` on the line, and a message weight
+     * riding beside the designation's — pinned exactly the duplicated-control
+     * design the 2026-09-06 report named as broken.
      */
-    it("keeps the message weight and the designation weight apart, and says which is which", async () => {
-      const wire = declaring();
+    it("offers one weight editor while designating, and sends only the designation's level", async () => {
+      // A designated lane on the roster, so the address has a recipient list
+      // to open to — without one a designating send's line has nothing behind
+      // it at all and renders as plain text (the case pinned in kit's own
+      // ComposerAddress.test.tsx).
+      const wire = composeTransport({
+        rows: [skillRow(), RESEARCHER],
+        docs: { [ORCHESTRATE_SKILL_ID]: skillDoc() },
+        lanes: [
+          {
+            lane: "th_parked",
+            resident: { name: "researcher", docId: "doc_res", weight: null, designationId: null },
+            live: false,
+            since: new Date().toISOString(),
+            pending: 0,
+            working: false,
+            summary: null,
+            origin: { id: "th_parked", title: "A parked conversation" },
+          },
+        ],
+      });
       const { container } = mount(wire);
       const level = await shownLevels(container);
 
-      // The message weight, from the address popover — openable, because the
-      // declared levels make the address a choice by the time the owner's own
-      // control has appeared.
+      // The address opens to the recipient alone: no second weight editor, no
+      // second owner editor, no clause reconciling it with the pill beside it.
       await waitFor(() => {
         expect(container.querySelector('button[data-address-line="compose"]')).not.toBeNull();
       });
+      const line = container.querySelector('button[data-address-line="compose"]') as HTMLElement;
+      expect(line.getAttribute("title")).toContain(ADDRESS_RECIPIENT_TITLE);
+      expect(line.getAttribute("title")).not.toMatch(/owner control|not from here/u);
+      fireEvent.click(line);
+      expect(container.querySelector("[data-weight-key]")).toBeNull();
+      expect(container.querySelector("[data-designation-boundary]")).toBeNull();
+      fireEvent.click(line);
+
+      // The one editor, and the one field its choice lands on.
+      pickFrom(level, "Heavy or judgment-laden");
+      type(container, "one weight, one home");
+      fireEvent.click(button(container, "btn-ask"));
+
+      const body = await askBody(wire);
+      // Inside the designation, where §7 puts the choice…
+      expect(body["resident"]).toEqual({ weight: "heavy" });
+      // …and never leaked onto the message's field: nothing was offered there,
+      // so nothing is sent there (§10).
+      expect("weight" in body).toBe(false);
+    });
+
+    /**
+     * The other state, so "one editor per meaning" is measured in both: with
+     * "no owner" picked nothing designates, the "at" pill leaves, and the
+     * address's rows return as the surface's single weight editor — the
+     * message's weight, on the message's field.
+     */
+    it("returns the weight to the address when no owner stands, on the message's field", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
+      pickFrom(ownerPicker(container), "no owner — the main agent");
+      expect(levelPicker(container)).toBeNull();
+
       const line = container.querySelector('button[data-address-line="compose"]') as HTMLElement;
       fireEvent.click(line);
       await waitFor(() => {
         expect(container.querySelector('[data-weight-key="light"]')).not.toBeNull();
       });
-      // Where the wrong weight would be picked, the overlay says what a level
-      // here governs and where the resident's own level lives.
-      const boundary = container.querySelector("[data-designation-boundary]");
-      expect(boundary?.textContent).toBe(designationWeightSentence("its own agent"));
-      expect(line.getAttribute("title")).toContain(ADDRESS_DESIGNATING_TITLE);
       fireEvent.click(container.querySelector('[data-weight-key="light"]') as HTMLElement);
-
-      // The designation weight, from the owner's own control.
-      fireEvent.change(level, { target: { value: "heavy" } });
-      type(container, "both weights stated");
+      type(container, "no owner, weighed");
       fireEvent.click(button(container, "btn-ask"));
 
       const body = await askBody(wire);
-      // The message's, on the message's field — it governs what the resident
-      // hands off, never the resident's own turn (§7).
       expect(body["weight"]).toBe("light");
-      // The resident's, inside the designation, where §7 puts the choice.
-      expect(body["resident"]).toEqual({ weight: "heavy" });
+      expect(body["resident"]).toBeNull();
     });
 
-    it("leaves Capture exactly as it was — a capture designates nothing", async () => {
+    /**
+     * UI-196, closing UI-192's recorded narrowing: §10's rider names "the
+     * global composer's Ask and its Capture", and while a designation stands
+     * the "at" pill is this surface's one weight editor — so its choice rides
+     * a Capture as the capture's own top-level weight (`POST /api/capture`
+     * carries the field; a capture designates nothing, so it has exactly one
+     * weight field to answer with). The earlier form of this test — "leaves
+     * Capture exactly as it was" — pinned the narrowing itself: it asserted
+     * the choice was silently dropped.
+     */
+    it("rides the 'at' choice as a Capture's own weight — a capture still designates nothing", async () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Heavy or judgment-laden");
+      type(container, "file this thought");
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
+
+      await waitFor(() => {
+        expect(wire.to("/api/capture")).toHaveLength(1);
+      });
+      const form = wire.to("/api/capture")[0]?.form ?? {};
+      expect("resident" in form).toBe(false);
+      expect(form["weight"]).toBe("heavy");
+    });
+
+    it("a Capture left at 'the launcher decides' states no weight at all", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
       type(container, "file this thought");
       fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
 
@@ -793,8 +876,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "look at this forecast");
       fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
         target: { files: [file("shot.png")] },
@@ -824,7 +907,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      pickFrom(ownerPicker(container), "no owner — the main agent");
       type(container, "nobody owns this");
       fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
         target: { files: [file("shot.png")] },

@@ -179,6 +179,33 @@
   color: var(--ink-2);
 }
 
+/* The visible way out (UI-193): a quiet ✕ over the grip's right end. Above the
+   grip in the stack, so a press on the corner closes rather than drags. */
+.cm-cancel {
+  position: absolute;
+  top: 5px;
+  right: 9px;
+  z-index: 1;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.cm-cancel:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.cm-cancel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .cm-drag:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

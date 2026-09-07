@@ -1,4 +1,4 @@
-import { ChangedMark } from "@corpus/kit";
+import { Button, ChangedMark, IconButton } from "@corpus/kit";
 import { useEffect, useRef, useState, type DragEvent, type ReactElement } from "react";
 import { useBoardSurface } from "../board/BoardsProvider";
 import type { Board } from "../board/boardDoc";
@@ -193,8 +193,7 @@ function BoardTab({
         onMenu(event.clientX, event.clientY, false);
       }}
     >
-      <button
-        type="button"
+      <Button
         className="board-tab-open"
         aria-current={isCurrent ? "true" : undefined}
         // The whole title, for a tab that truncated it (SPEC.md §10's reveal
@@ -244,22 +243,21 @@ function BoardTab({
             default
           </span>
         ) : null}
-      </button>
+      </Button>
       {/*
        * `×` is present only while more than one board shows (SPEC.md §10: "one
        * board is always showing"). The menu keeps Archive at all times, disabled
        * with its reason — an affordance may vanish, an answer may not.
        */}
       {count > 1 ? (
-        <button
-          type="button"
+        <IconButton
           className="board-tab-close"
-          aria-label={`Archive ${board.title}`}
+          label={`Archive ${board.title}`}
           title="Archive this board"
           onClick={onArchive}
         >
           ✕
-        </button>
+        </IconButton>
       ) : null}
     </div>
   );
@@ -399,10 +397,9 @@ export function BoardBar(): ReactElement {
        * trigger — which is why it reports its state with `aria-pressed` rather
        * than `aria-expanded`.
        */}
-      <button
-        type="button"
+      <IconButton
         className={`icon-btn explorer-toggle${explorer.open ? " on" : ""}`}
-        aria-label="Toggle explorer"
+        label="Toggle explorer"
         aria-pressed={explorer.open}
         title="Explorer (⌘B)"
         onClick={explorer.toggle}
@@ -419,7 +416,7 @@ export function BoardBar(): ReactElement {
           <rect x="3" y="4" width="18" height="16" rx="2.5" />
           <path d="M9 4v16" />
         </svg>
-      </button>
+      </IconButton>
       <div
         className="board-tabs"
         onDragOver={(event: DragEvent<HTMLDivElement>) => {
@@ -474,22 +471,21 @@ export function BoardBar(): ReactElement {
         ))}
 
         {boards.length === 0 && !surface.isPending && surface.error === null ? (
-          <button type="button" className="board-tab" disabled title={NO_BOARDS_TITLE}>
+          <Button className="board-tab" disabled title={NO_BOARDS_TITLE}>
             <span className="board-tab-title">{NO_BOARDS_LABEL}</span>
-          </button>
+          </Button>
         ) : null}
 
         {surface.error === null ? null : (
-          <button type="button" className="board-tab" disabled title={surface.error.message}>
+          <Button className="board-tab" disabled title={surface.error.message}>
             <span className="board-tab-title">Boards could not be loaded</span>
-          </button>
+          </Button>
         )}
       </div>
 
-      <button
-        type="button"
+      <IconButton
         className="board-add"
-        aria-label="New board"
+        label="New board"
         aria-haspopup="menu"
         title="New board — a document the agent can write too"
         onClick={(event) => {
@@ -498,7 +494,7 @@ export function BoardBar(): ReactElement {
         }}
       >
         ＋
-      </button>
+      </IconButton>
       {/*
        * Documents this board's scope holds and none of its columns draw
        * (UI-171). This is the one clause of the old board-wide hint that named
@@ -545,8 +541,7 @@ export function BoardBar(): ReactElement {
           </>
         )}
       </span>
-      <button
-        type="button"
+      <Button
         className="btn-ghost close-paths"
         title="Close every path on this board (⇧esc)"
         disabled={pathCount === 0}
@@ -555,7 +550,7 @@ export function BoardBar(): ReactElement {
         }}
       >
         close paths <kbd>⇧esc</kbd>
-      </button>
+      </Button>
       <span className="boardbar-spacer" />
       {/* The right of the bar is the corpus, not this board (SPEC.md §7). */}
       <ReflectControl />

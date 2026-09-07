@@ -7,14 +7,16 @@ import {
   type ReactElement,
   type RefObject,
 } from "react";
+import { Button } from "../components/Controls/Button.js";
+import { Popover } from "../components/Controls/Popover.js";
+import { MIN_USABLE_HEIGHT_PX, ScrollArea } from "../components/Controls/ScrollArea.js";
 import { LaneDot } from "../recipient/LaneDot.js";
 import type { LaneRow } from "../recipient/laneRows.js";
 import { DEFAULT_ROW_NOTE, statementFor } from "../recipient/statement.js";
 import {
-  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
-  designationWeightSentence,
+  ADDRESS_RECIPIENT_TITLE,
   residentWeightSentence,
   type ComposerAddress as Address,
 } from "./addressModel.js";
@@ -33,12 +35,15 @@ import {
  *   address is one short sentence until somebody asks for more.
  * - **The popover offers only what can act.** The recipient rows appear when
  *   the roster names more than one lane; the weight levels appear when the
- *   composer reaches the agent *and* the orchestrator answers. For a
- *   **resident** recipient the weight section is one sentence naming the
- *   resident's weight — the rider signed 2026-08-19 — and no level is offered,
- *   because a choice there would be discarded in silence. On the **floor** (a
- *   send that will not reach the agent) there is no weight section at all:
- *   nothing to weigh.
+ *   composer reaches the agent *and* the orchestrator answers *and* no other
+ *   control on the surface already asks the question. For a **resident**
+ *   recipient the weight section is one sentence naming the resident's weight
+ *   — the rider signed 2026-08-19 — and no level is offered, because a choice
+ *   there would be discarded in silence. For a **designating** send the whole
+ *   section is absent (UI-192): the surface's own owner/"at" controls are the
+ *   one home of the weight, and a second editor here — reconciled by a
+ *   tooltip — was the reported defect. On the **floor** (a send that will not
+ *   reach the agent) there is no weight section at all: nothing to weigh.
  * - **Nothing preselected, nothing invented.** The rows and levels are the same
  *   derivations the old controls read (`useComposerRecipient`,
  *   `useComposerWeight`), untouched: the default travels by absence, a pick
@@ -56,17 +61,33 @@ import {
  *   put an ordinary nine-lane roster behind a scrollbar with 502px of window
  *   above it. Where the roster really does outrun the room the list scrolls and
  *   says so — see {@link lanesCappedNote} and `address.css`, which carries the
- *   measurements.
+ *   measurements. **The roster's floor is `--min-usable-height`, never one
+ *   row** (UI-192, UI-193): the pre-rebuild floor was a single lane row, which
+ *   over a crowded roster in a short room rendered a 25px sliver that was
+ *   nearly impossible to scroll or to recognise as scrollable. The kit
+ *   `ScrollArea` clamps the region at `min(content, token)` — a short roster
+ *   takes its own height, never the token's (phase-60's FAIL-1) — and the fit
+ *   below pays for the clamp by shifting the card down into its scrollport,
+ *   or, where the whole box that bounds it is shorter than even the floored
+ *   card, by capping the card at that box and scrolling it as one piece.
  *
- * ## Keys
+ * ## Exits and keys (rebuilt on the kit `Popover`, UI-192)
  *
- * It claims none — §10's composer key contract is untouched, and the popover
- * adds no binding of its own. Everything here is an ordinary `<button>`: the
- * line toggles on click, `↵` or `space`, and closes on a click outside; every
- * row and level is tabbable while open. Escape is deliberately not handled —
- * the app's escape chain owns that key at the surface grain, and a kit
- * component cannot register in it (`RecipientPicker` learned this; the reason
- * survives it).
+ * The card is a kit {@link Popover}, so its exits are the primitive's
+ * unconditional set: a **visible ✕**, **Escape** (consumed on the card's own
+ * subtree, focus returned to the line), and an outside press — three paths
+ * where the old card offered only the guessable third. This file used to state
+ * "Escape is deliberately not handled — the app's escape chain owns that key
+ * and a kit component cannot register in it". The layering half of that
+ * sentence survives: kit still imports nothing from the app. What changed is
+ * the contract's shape — the chain yields close keys aimed inside any
+ * `[data-kit-menu]` surface, the `Popover` renders that marker, and opening
+ * moves focus into the card, so the key lands where the chain yields. One
+ * press closes the card and nothing behind it.
+ *
+ * §10's composer key contract is otherwise untouched: the line toggles on
+ * click, `↵` or `space`, and every row and level is reachable by keyboard
+ * while open (Tab cycles inside the card, the `Popover` trap).
  */
 
 export interface ComposerAddressProps {
@@ -78,6 +99,9 @@ export interface ComposerAddressProps {
 
 export const RECIPIENT_GROUP_LABEL = "Recipient";
 export const WEIGHT_GROUP_LABEL = "Weight";
+
+/** The popover's accessible name, and half of its close control's. */
+export const ADDRESS_POP_LABEL = "Address";
 
 /** The dim lead-ins, in the mono voice the composer feet speak in. */
 export const RECIPIENT_LEAD = "to";
@@ -132,9 +156,15 @@ export function lanesCappedNote(count: number): string {
  * and a person whose pointer landed on that padding would get the explanation
  * where the sentence should have been. Nested titles do not merge, so the outer
  * one has to be the complete answer.
+ *
+ * **The explanation matches what the popover offers** (UI-192). While the card
+ * carries the level rows it says "change either"; while it carries the
+ * recipient alone — a designating send, a resident recipient — it says only
+ * that, because a clause reconciling this control with another one is the
+ * defect UI-192 removed (`ADDRESS_DESIGNATING_TITLE`, deleted).
  */
-function lineTitle(line: string, live: boolean, designating: boolean): string {
-  const explains = designating ? ADDRESS_DESIGNATING_TITLE : ADDRESS_OPEN_TITLE;
+function lineTitle(line: string, live: boolean, editsWeight: boolean): string {
+  const explains = editsWeight ? ADDRESS_OPEN_TITLE : ADDRESS_RECIPIENT_TITLE;
   return `${line} — ${live ? explains : ADDRESS_FLOOR_TITLE}`;
 }
 
@@ -199,28 +229,6 @@ function clipperOf(node: HTMLElement): HTMLElement | null {
 }
 
 /**
- * The room the card has, in both axes — SPEC.md §10's rider of 2026-08-21
- * (SHARED-061): *"a bound is derived from the room, not chosen as a number."*
- *
- * Two readings, and each answers a different question the layout asks.
- *
- * **`ceiling` — how high the card may reach.** The top of the nearest box that
- * bounds it — a scrollport or a clip — or the top of the window where there is
- * none. See {@link clipperOf}, which records why the walk stops at both.
- *
- * **`right` — how wide it may be drawn.** The trailing edge of `host`, which is
- * the element the address line was placed in: a composer foot, the global
- * panel's action bar, the comment popover's foot. That row **is** the card's
- * place, in the sense §10 gives the word — a property of the layout, never of
- * the roster — so a card as wide as its row is as wide as the surface it
- * belongs to, and a column dragged wider or a window that narrows the panel
- * moves it. It is clamped by the room's own right edge so a host wider than the
- * box that bounds it cannot push the card under a scrollbar or past a clip.
- *
- * `clientWidth` rather than the border-box right, because a scrollport's
- * scrollbar is room the card does not have.
- */
-/**
  * How tall the statement box has to be to hold **any** sentence this roster can
  * put in it, at the width the card currently has — in lines, and `null` where
  * there is no layout to ask (UI-143).
@@ -284,18 +292,55 @@ function reserveLines(says: HTMLElement, statements: readonly string[]): number 
   }
 }
 
-function roomFor(card: HTMLElement, host: HTMLElement | null): { ceiling: number; right: number } {
+/**
+ * The room the card has, in both axes — SPEC.md §10's rider of 2026-08-21
+ * (SHARED-061): *"a bound is derived from the room, not chosen as a number."*
+ *
+ * Two readings, and each answers a different question the layout asks.
+ *
+ * **`ceiling` — how high the card may reach.** The top of the nearest box that
+ * bounds it — a scrollport or a clip — or the top of the window where there is
+ * none. See {@link clipperOf}, which records why the walk stops at both.
+ *
+ * **`floor` — how low its bottom edge may land.** The bottom of the same box,
+ * clamped by the window. It exists because the ceiling alone answered only
+ * half the question (the phase-60 evaluation's FAIL-1): a card whose floored
+ * parts outran the room above the line was *shifted down* into its box, and a
+ * box shorter than the card — the global composer's `overflow: hidden` panel,
+ * 192px against a 229px card — clipped the shifted bottom, where the "no
+ * owner" state's only weight editor sat, unpainted and unpressable at every
+ * window size. What a clip cuts off was never available (SHARED-061), and
+ * that is as true of a bottom edge as of a top one.
+ *
+ * **`right` — how wide it may be drawn.** The trailing edge of `host`, which is
+ * the element the address line was placed in: a composer foot, the global
+ * panel's action bar, the comment popover's foot. That row **is** the card's
+ * place, in the sense §10 gives the word — a property of the layout, never of
+ * the roster — so a card as wide as its row is as wide as the surface it
+ * belongs to, and a column dragged wider or a window that narrows the panel
+ * moves it. It is clamped by the room's own right edge so a host wider than the
+ * box that bounds it cannot push the card under a scrollbar or past a clip.
+ *
+ * `clientWidth` rather than the border-box right, because a scrollport's
+ * scrollbar is room the card does not have.
+ */
+function roomFor(
+  card: HTMLElement,
+  host: HTMLElement | null,
+): { ceiling: number; floor: number; right: number } {
   const clip = clipperOf(card);
   if (clip === null) {
     const width = document.documentElement.clientWidth;
     return {
       ceiling: 0,
+      floor: document.documentElement.clientHeight,
       right: Math.min(host?.getBoundingClientRect().right ?? width, width - POP_MARGIN),
     };
   }
   const box = clip.getBoundingClientRect();
   return {
     ceiling: Math.max(box.top, 0),
+    floor: Math.min(box.bottom, document.documentElement.clientHeight),
     right: Math.min(
       host?.getBoundingClientRect().right ?? box.left + clip.clientWidth,
       box.left + clip.clientWidth - POP_MARGIN,
@@ -314,8 +359,6 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
   /** True once the lane list has more rows than the ceiling lets it show. */
   const [capped, setCapped] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const pop = useRef<HTMLDivElement>(null);
-  const lanes = useRef<HTMLDivElement>(null);
   const effectiveRow = useRef<HTMLButtonElement>(null);
 
   const offers = address.offers;
@@ -324,22 +367,6 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
   useEffect(() => {
     if (!offers) setOpen(false);
   }, [offers]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDown = (event: PointerEvent): void => {
-      const host = box.current;
-      if (host === null || !(event.target instanceof Node) || host.contains(event.target)) return;
-      setOpen(false);
-    };
-    // Capture, so a click that some surface swallows in the bubble phase still
-    // closes the popover: an open card floating over a composer whose host ate
-    // the click would need a second click to dismiss.
-    document.addEventListener("pointerdown", onDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-    };
-  }, [open]);
 
   const { recipient, weight } = address;
   const rows = recipient.rows ?? [];
@@ -404,9 +431,16 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
    * one thing CSS cannot ask is how much room this composer actually has,
    * because the answer is a scrollport's top edge and not the window's. So this
    * measures it and hands the fitted bound back as `--address-pop-max`. Where
-   * even one row will not fit in that room — a 187px scrollport at 1280×400 —
-   * `--address-pop-shift` moves the card down until its top is inside the
-   * scrollport instead of behind the reader's head.
+   * the room will not take the fixed parts and a usable list — a 187px
+   * scrollport at 1280×400 — `--address-pop-shift` moves the card down until
+   * its top is inside the scrollport instead of behind the reader's head. And
+   * where the *whole* box that bounds the card will not take them — the
+   * global composer's 192px `overflow: hidden` panel under a crowded no-owner
+   * roster — the card is capped at that box's height and scrolls as one piece
+   * (`data-address-pop-scrolls`), because a shift into a box shorter than the
+   * card just moved the clipped edge from its top to its bottom, and what sat
+   * past it — that state's only weight editor — was unpaintable and
+   * unpressable at every window size (the phase-60 evaluation's FAIL-1).
    *
    * **It runs on opening and never on previewing.** Its dependencies are the
    * open flag, the roster's length and the sentences the roster can say:
@@ -419,11 +453,15 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
    * it is a height at the card's own width, and the width is a reading of the
    * room that CSS cannot take. See {@link reserveLines} for what is measured and
    * why measuring it is not the content-driven sizing SHARED-057 forbids.
+   *
+   * The card and the list are reached by query rather than by ref, because both
+   * are the kit's now (`Popover`, `ScrollArea`) and neither primitive forwards
+   * one — the class names are this file's own and stable.
    */
   useLayoutEffect(() => {
-    const card = pop.current;
+    const card = box.current?.querySelector<HTMLElement>(".address-pop") ?? null;
     if (!open || card === null) return undefined;
-    const list = lanes.current;
+    const list = card.querySelector<HTMLElement>(".recipient-lanes");
     const says = card.querySelector<HTMLElement>(".recipient-says");
     const clip = clipperOf(card);
     // The row the address line was placed in — a composer foot, an action bar.
@@ -431,10 +469,43 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
     // ships this to five hosts whose foot markup is not the same (SPEC.md §10).
     const host = box.current?.parentElement ?? null;
 
+    /**
+     * What a card that scrolls as one piece owes the person reading it — the
+     * two things the phase-60 re-check found missing (OBS-A, OBS-B). Both are
+     * readings of one number, `scrollTop`, so they are taken together and on
+     * every scroll of the card itself.
+     *
+     * - **`data-address-pop-more`** — "there is content below this edge".
+     *   `address.css` hangs the bottom fade on it, so the cut is announced
+     *   while it is a cut and is gone at the bottom, where the last line
+     *   really is the last line. The re-check's wording: the card "carries no
+     *   affordance for it: `mask-image: none` … no gradient at the cut", and
+     *   the roster's "N lanes · scroll for the rest" names the *roster*.
+     * - **`--address-pop-scroll`** — how far the content has moved under the
+     *   card's own box. The ✕ is positioned against the card's padding box,
+     *   whose origin is the top of the *scrolled content*, so at any offset
+     *   but zero it rides up past the clip (the re-check measured it at
+     *   y 49–67 against a panel whose top edge is 86, "clipped and not
+     *   hit-testable"). The stylesheet translates it back down by exactly
+     *   this, which pins it to the visible corner at every offset.
+     *
+     * Written as attribute and custom property rather than as React state on
+     * purpose: a scroll must not re-render the card, and {@link fit} must
+     * never run from one — it is the loop UI-127 closed.
+     */
+    const track = (): void => {
+      const scrolls = card.getAttribute("data-address-pop-scrolls") === "true";
+      const below = card.scrollHeight - card.clientHeight - card.scrollTop;
+      card.setAttribute("data-address-pop-more", scrolls && below > 1 ? "true" : "false");
+      card.style.setProperty("--address-pop-scroll", `${String(Math.round(card.scrollTop))}px`);
+    };
+
     const fit = (): void => {
-      // Measured unbounded and unshifted, so no previous fit can bias this one.
+      // Measured unbounded, unshifted and unscrolled, so no previous fit can
+      // bias this one.
       card.style.setProperty("--address-pop-shift", "0px");
       card.style.setProperty("--address-pop-max", "none");
+      card.setAttribute("data-address-pop-scrolls", "false");
 
       // **The width first**, because the height depends on it: a wider card
       // re-wraps the lane list and changes what the room has to hold. Its left
@@ -445,18 +516,44 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       card.style.setProperty("--address-pop-w", `${String(Math.round(width))}px`);
 
       /*
+       * **The list's own floor** — `--min-usable-height`, the kit token, and
+       * never one row (UI-192). The pre-rebuild floor was a single lane row:
+       * "a card squeezed until its list was 0px high would clear the head and
+       * offer nothing" was the argument, and it stopped one pixel past its own
+       * conclusion — a 25px list over a ten-lane roster *is* a control that
+       * offers nothing, it merely renders one row of it. The `ScrollArea`
+       * clamps the region at the token in CSS (its dev build throws below it),
+       * so the fit reserves the same number, and where the room cannot pay it
+       * the card comes down over its own composer instead — the shift below.
+       */
+      // `+ 1` mirrors the `ScrollArea`'s own clamp: the overflow border is
+      // sized into the box, so the usable inside costs the token plus the
+      // border's pixel. The `min` against the content is the same reading the
+      // primitive takes since the phase-60 fix — a roster shorter than the
+      // token reserves its own height and no more, so a short list never
+      // spends room the card does not have.
+      const listFloor = Math.min(list?.scrollHeight ?? 0, MIN_USABLE_HEIGHT_PX + 1);
+
+      /*
+       * **The room's whole height** — ceiling to floor, less the margin at
+       * each edge: the most card the box that bounds it can show at all
+       * (the phase-60 evaluation's FAIL-1). The headroom below is how much of
+       * it sits *above* the line; this is the cap on the card whatever the
+       * shift moves it down over.
+       */
+      const available = Math.max(0, room.floor - room.ceiling - 2 * POP_MARGIN);
+
+      /*
        * **Then the statement's reserve, at the width just set** (UI-143).
        *
        * Two readings, and both are the room's rather than the content's:
        *
        * - *What the sentences need* — {@link reserveLines}, the tallest of the
-       *   closed set at this width. Below UI-127's old four on a wide card,
-       *   above it on a narrow one, and right at both.
+       *   closed set at this width.
        * - *What the card can spare* — the room, minus everything in the card
-       *   that cannot shrink, minus one lane row. It is the same floor the
-       *   height fit takes below, for the same reason: a card that gave the
-       *   statement every line it wanted could squeeze the list to nothing, and
-       *   a list with no rows is a recipient control that offers no recipients.
+       *   that cannot shrink, minus the list's floor above. A card that gave
+       *   the statement every line it wanted could squeeze the list under its
+       *   minimum, and the minimum is the point of UI-192.
        *
        * The smaller wins, and a statement past it truncates in place with the
        * whole of it on this element's title and the row's — SHARED-057's
@@ -473,8 +570,10 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           const one = says.getBoundingClientRect().height;
           const bare = card.getBoundingClientRect();
           const fixed = bare.height - (list?.scrollHeight ?? 0);
-          const bareRow = list?.firstElementChild?.getBoundingClientRect().height ?? 0;
-          const spare = bare.bottom - room.ceiling - POP_MARGIN - fixed - bareRow;
+          // Budgeted against the room above the line *and* the room's whole
+          // height: a statement line the clip cannot show is not affordable.
+          const budget = Math.min(bare.bottom - room.ceiling - POP_MARGIN, available);
+          const spare = budget - fixed - listFloor;
           const affordable = one > 0 ? 1 + Math.max(0, Math.floor(spare / one)) : want;
           card.style.setProperty("--says-lines", String(Math.min(want, affordable)));
         }
@@ -482,7 +581,6 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
 
       const free = card.getBoundingClientRect();
       const listFull = list?.scrollHeight ?? 0;
-      const row = list?.firstElementChild?.getBoundingClientRect().height ?? 0;
 
       // The card's bottom edge is `calc(100% + 6px)` above the line and never
       // moves. Everything above it, up to the top of the box that bounds it, is
@@ -490,21 +588,37 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       // it is what put an ordinary roster behind a scrollbar with the window
       // half empty.
       const headroom = Math.max(0, free.bottom - room.ceiling - POP_MARGIN);
-      // **One row is the floor**, and it is measured rather than declared: the
-      // parts that cannot shrink are not all the same height — a resident's
-      // weight sentence is three lines where a level row is one — so the
-      // smallest useful card is a reading and not a constant. A card squeezed
-      // until its list was 0px high would clear the head and offer nothing,
-      // which is this defect wearing different clothes.
-      const floor = free.height - listFull + row;
-      const height = Math.max(floor, headroom);
+      // **The floor is the fixed parts plus a usable list** — measured, because
+      // the parts that cannot shrink are not all the same height (a resident's
+      // weight sentence is three lines where a level row is one).
+      const floor = free.height - listFull + listFloor;
+      // …and the cap is the room's whole height. A card past the headroom
+      // comes down over its own composer (the shift below); a card past
+      // `available` has nowhere left to come down *to*, so it is capped there
+      // and scrolls as one piece instead — see the attribute below.
+      const height = Math.min(Math.max(floor, headroom), available);
       card.style.setProperty("--address-pop-max", `${String(Math.round(height))}px`);
 
+      /*
+       * Where even the floored parts outrun the whole box that bounds the card
+       * — the global composer's 192px panel under a crowded no-owner roster, a
+       * 1280×400 scrollport — the card scrolls as one piece rather than
+       * letting the clip hide what falls past its edge (the phase-60
+       * evaluation's FAIL-1: the "no owner" state's only weight editor laid
+       * out 11px past the panel, hit-testing to the scrim). Set by this fit
+       * and never at rest, so a card that fits keeps `overflow: visible` and
+       * byte-identical geometry.
+       */
+      card.setAttribute("data-address-pop-scrolls", floor > available + 1 ? "true" : "false");
+
       // Whatever the floor took beyond the room, the card gives back by coming
-      // down — so its top lands inside the scrollport instead of behind the head.
+      // down — so its top lands inside the scrollport instead of behind the
+      // head. With the height capped at `available`, the shifted bottom lands
+      // at most `POP_MARGIN` inside the room's floor, never past it.
       const over = card.getBoundingClientRect().height - headroom;
       card.style.setProperty("--address-pop-shift", `${String(Math.max(0, Math.round(over)))}px`);
       if (list !== null) setCapped(list.scrollHeight > list.clientHeight + 1);
+      track();
     };
 
     fit();
@@ -524,11 +638,41 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
 
     window.addEventListener("resize", fit);
     clip?.addEventListener("scroll", fit, { passive: true });
+    // The card's own scroll re-reads the two markers and nothing else: no
+    // re-fit, no re-render, no measurement a row could move under a pointer.
+    card.addEventListener("scroll", track, { passive: true });
     return () => {
       window.removeEventListener("resize", fit);
       clip?.removeEventListener("scroll", fit);
+      card.removeEventListener("scroll", track);
     };
   }, [open, rows.length, saysKey]);
+
+  /**
+   * Focus moves into the card the moment it opens — the effective row where
+   * the roster shows, else the ✕ — and only on the open *transition*, so a
+   * re-render while it is up never yanks focus back.
+   *
+   * This is what makes the `Popover`'s Escape unconditional in practice: its
+   * listener lives on the card's own subtree (kit cannot register in the
+   * app's escape chain — the dependency direction), so the key must land
+   * inside for the card to answer it. It is also the ordinary dialog
+   * behaviour §10 asks of every menu in the product. `preventScroll`, because
+   * the browser would otherwise scroll every ancestor scrollport to reveal
+   * the focused row — the fit has already placed the card inside its room,
+   * and a reader that lurched under it would move the very line it anchors to.
+   */
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const opened = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (!opened) return;
+    const into =
+      effectiveRow.current ??
+      box.current?.querySelector<HTMLElement>(".address-pop .kit-popover-close") ??
+      null;
+    into?.focus({ preventScroll: true });
+  }, [open]);
 
   return (
     <div
@@ -539,17 +683,16 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       data-recipient-refused={recipient.refused ?? ""}
     >
       {offers ? (
-        <button
-          type="button"
+        <Button
           className="address-line"
           data-address-line={surface}
           aria-expanded={open}
-          title={lineTitle(
-            address.line,
-            address.live,
-            address.weight.kind === "choice" && address.weight.designating !== undefined,
-          )}
+          title={lineTitle(address.line, address.live, weight.kind === "choice")}
           onClick={() => {
+            // A plain toggle, and it can be one because the whole control is
+            // the card's `anchor`: the Popover's outside-press dismissal
+            // ignores this press, so the toggle and the dismissal never race
+            // on one mousedown/click pair.
             setOpen((current) => !current);
           }}
         >
@@ -557,7 +700,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           <span className="address-caret" aria-hidden="true">
             ▾
           </span>
-        </button>
+        </Button>
       ) : (
         // §10's recipient statement with nothing to change behind it: said, not
         // offered. Plain text so it neither focuses nor pretends to open — and
@@ -573,7 +716,15 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       )}
 
       {open && offers ? (
-        <div className="address-pop" data-address-pop={surface} ref={pop}>
+        <Popover
+          label={ADDRESS_POP_LABEL}
+          className="address-pop"
+          data-address-pop={surface}
+          anchor={box}
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
           {showRows ? (
             <div
               className="address-section address-recipient"
@@ -592,7 +743,10 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   </span>
                 ) : null}
               </div>
-              <div className="recipient-lanes" ref={lanes}>
+              {/* The kit region (UI-193): clamped at `--min-usable-height`, so
+               * the crowded roster that rendered a 25px sliver cannot be
+               * expressed, and `data-overflowing` corroborates the note. */}
+              <ScrollArea className="recipient-lanes">
                 {rows.map((row) => (
                   <LaneButton
                     key={row.lane}
@@ -602,7 +756,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                     innerRef={row.lane === recipient.effective ? effectiveRow : undefined}
                   />
                 ))}
-              </div>
+              </ScrollArea>
               {/* The box is reserved (SPEC.md §10's rider signed 2026-08-20):
                * previewing a lane changes these words and never this height,
                * because a popover anchored by its bottom edge that grew on
@@ -632,9 +786,8 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   const chosen = weight.weight.chosen === level.key;
                   const known = weight.weight.levels.some((have) => have.key === level.key);
                   return (
-                    <button
+                    <Button
                       key={level.key}
-                      type="button"
                       className={chosen ? "weight-opt on" : "weight-opt"}
                       aria-pressed={chosen}
                       data-weight-key={level.key}
@@ -649,21 +802,10 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                       }}
                     >
                       {level.label}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
-              {weight.designating !== undefined ? (
-                /* The rider of 2026-08-19, met the other way round (UI-185):
-                 * here the rows stay live — the choice rides the message,
-                 * which §7 gives a real job and Capture shares — so the
-                 * section says out loud what they do not govern: the resident
-                 * this send designates, whose own level is the owner
-                 * control's. */
-                <p className="address-resident" data-designation-boundary={weight.designating}>
-                  {designationWeightSentence(weight.designating)}
-                </p>
-              ) : null}
             </div>
           ) : null}
 
@@ -674,7 +816,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
               {residentWeightSentence(weight.name, weight.weight)}
             </p>
           ) : null}
-        </div>
+        </Popover>
       ) : null}
     </div>
   );
@@ -696,8 +838,7 @@ function LaneButton({ row, recipient, onPreview, innerRef }: LaneButtonProps): R
   // default, the only row on which pressing could otherwise mean nothing.
   const picked = row.lane === recipient.chosen;
   return (
-    <button
-      type="button"
+    <Button
       ref={innerRef}
       className={effective ? "recipient-opt on" : "recipient-opt"}
       aria-pressed={effective}
@@ -733,6 +874,6 @@ function LaneButton({ row, recipient, onPreview, innerRef }: LaneButtonProps): R
       {/* §7's missing-profile report at row width; the sentence is on the
        * statement line and this row's own title. */}
       {row.mark === "" ? null : <span className="recipient-mark">{row.mark}</span>}
-    </button>
+    </Button>
   );
 }

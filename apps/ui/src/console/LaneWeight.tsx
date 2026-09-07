@@ -1,4 +1,12 @@
-import { useSetResident, weightLabel, type LaneRow, type WeightLevel } from "@corpus/kit";
+import {
+  Button,
+  Select,
+  useSetResident,
+  weightLabel,
+  type LaneRow,
+  type SelectItem,
+  type WeightLevel,
+} from "@corpus/kit";
 import { useState, type ReactElement } from "react";
 import { LAUNCHER_DECIDES_LABEL } from "../thread/residentActions";
 import { useToast } from "../shell/Toasts";
@@ -130,24 +138,21 @@ export function LaneWeight({ row, levels, reading }: LaneWeightProps): ReactElem
       ) : levels.length === 0 ? null : (
         <>
           <div className="lane-weight-control">
-            <select
-              aria-label={WEIGHT_CONTROL_ARIA}
-              value={chosen ?? ""}
+            <Select<string | undefined>
+              name="lane-weight"
+              label={WEIGHT_CONTROL_ARIA}
+              value={chosen}
               disabled={setResident.isPending}
-              onChange={(event) => {
-                const picked = event.currentTarget.value;
-                setChosen(picked === "" ? undefined : picked);
-              }}
-            >
-              <option value="">{LAUNCHER_DECIDES_LABEL}</option>
-              {options.map((level) => (
-                <option key={level.key} value={level.key}>
-                  {level.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
+              onChange={setChosen}
+              items={[
+                { value: undefined, label: LAUNCHER_DECIDES_LABEL },
+                ...options.map((level): SelectItem<string | undefined> => ({
+                  value: level.key,
+                  label: level.label,
+                })),
+              ]}
+            />
+            <Button
               data-lane-weight-apply={row.lane}
               disabled={!changed || setResident.isPending}
               title={WEIGHT_CHANGE_COST}
@@ -176,7 +181,7 @@ export function LaneWeight({ row, levels, reading }: LaneWeightProps): ReactElem
               }}
             >
               {WEIGHT_CHANGE_LABEL}
-            </button>
+            </Button>
           </div>
           {changed ? (
             <p className="lane-note lane-weight-cost" data-lane-weight-cost={row.lane}>

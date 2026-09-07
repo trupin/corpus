@@ -106,8 +106,24 @@ export function topLayer(candidates: Iterable<Layer>): Layer | null {
   return best;
 }
 
+/**
+ * Whether the key is aimed inside a kit-owned menu surface (UI-191).
+ *
+ * `@corpus/kit`'s `Select` menu (and `Popover`) handle Escape on their own
+ * subtree and stop its propagation — one press closes the innermost surface,
+ * never the layer behind it. The kit cannot register in this chain (the
+ * dependency direction forbids the import — the reason recorded at
+ * `ComposerAddress.tsx`), so the contract is the DOM, both ways: kit renders
+ * `data-kit-menu` on exactly the surfaces that consume close keys, and this
+ * capture listener yields to them the way it already yields to a field.
+ */
+function isInsideKitMenu(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest("[data-kit-menu]") !== null;
+}
+
 function onKeyDown(event: KeyboardEvent): void {
   if (!CLOSE_KEYS.has(event.key) || isEditing(event.target)) return;
+  if (isInsideKitMenu(event.target)) return;
   const layer = topLayer(layers);
   if (layer === null) return;
   event.preventDefault();

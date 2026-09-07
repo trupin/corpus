@@ -1,3 +1,4 @@
+import { Button } from "@corpus/kit";
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { edgesToText, textToEdges, textToScope, textToStages } from "./kanban";
@@ -118,6 +119,19 @@ export function KanbanDialog({ mode, kanban, onSubmit, onClose }: KanbanDialogPr
         aria-modal="true"
         aria-label={TITLES[mode]}
         onSubmit={submit}
+        // The escape layer below never hears a key typed inside a field
+        // (`useEscapeStack`'s `isEditing` carve-out), and this dialog *opens*
+        // with focus in its first field — so without this, Escape was dead in
+        // exactly the state the dialog starts in (found by UI-193's overlay
+        // battery). The field-owning surface answers Escape itself, the same
+        // arrangement CommentPopover documents; stopPropagation keeps the
+        // consumed press from also reaching the board.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }}
       >
         <h2>{TITLES[mode]}</h2>
 
@@ -189,12 +203,12 @@ export function KanbanDialog({ mode, kanban, onSubmit, onClose }: KanbanDialogPr
         )}
 
         <div className="kanban-actions">
-          <button type="button" className="kanban-cancel" onClick={onClose}>
+          <Button className="kanban-cancel" onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="kanban-save">
+          </Button>
+          <Button type="submit" className="kanban-save">
             {mode === "create" ? "Create the board" : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

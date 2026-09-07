@@ -333,6 +333,14 @@ describe("liveness is presentation only", () => {
       );
     }
     render(<ComposeHost />);
+    // The no-owner state (UI-192): the overlay's default Ask designates, and a
+    // designating send's weight editor is the owner row's "at" pill rather
+    // than the address. "No owner" is the state where the address carries the
+    // levels this test opens to.
+    const owner = document.querySelector<HTMLElement>('[data-select="owner"]');
+    if (owner === null) throw new Error("no owner picker");
+    fireEvent.click(owner);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "no owner — the main agent" }));
     await drawn();
     expect(pickers()[0]?.dataset["addressLive"]).toBe("true");
   });

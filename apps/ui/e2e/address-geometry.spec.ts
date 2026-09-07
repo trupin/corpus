@@ -1,5 +1,10 @@
 import type { AgentLane } from "@corpus/contract";
-import { DEFAULT_ROW_NOTE, lanesCappedNote, MISSING_PROFILE_NOTE } from "@corpus/kit";
+import {
+  DEFAULT_ROW_NOTE,
+  lanesCappedNote,
+  MIN_USABLE_HEIGHT_PX,
+  MISSING_PROFILE_NOTE,
+} from "@corpus/kit";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
@@ -579,23 +584,20 @@ test.describe("the address popover has a ceiling", () => {
         // with 782px of room above it.
         //
         // The one case where the card is allowed past the room is the floor
-        // `ComposerAddress` documents: a room that will not take the fixed parts
-        // and **one** row leaves a card that would otherwise offer nothing, so
-        // it keeps one row and comes down instead. 1280×400, whose reader
-        // scrollport is 187px, is that case — and the test says which case it is
-        // in rather than widening the bound until both pass.
-        const list = await page.locator(LIST).evaluate((element) => ({
-          client: element.clientHeight,
-          // The row's border box: `clientHeight` would drop its 1px border
-          // either side and make a list showing exactly one row look like a
-          // list showing more than one.
-          row: element.children[0]?.getBoundingClientRect().height ?? 0,
-        }));
+        // `ComposerAddress` documents — and since UI-192 that floor is the
+        // fixed parts plus a **usable** list, `--min-usable-height`, never one
+        // row. The one-row bound that stood here (`list.client <= row + 1`)
+        // pinned the rejected design: a room that would not take the fixed
+        // parts and one row got a card whose list was a 25px sliver, which is
+        // the 2026-09-06 report. 1280×400, whose reader scrollport is 187px,
+        // is the floor case — and the test says which case it is in rather
+        // than widening the bound until both pass.
+        const list = await page.locator(LIST).evaluate((element) => element.clientHeight);
         if (card.height > scroll.height)
           expect(
-            list.client,
-            `the card outgrew its room without being at its floor (${JSON.stringify(card)})`,
-          ).toBeLessThanOrEqual(list.row + 1);
+            list,
+            `the card outgrew its room without its list at the usable floor (${JSON.stringify(card)})`,
+          ).toBeGreaterThanOrEqual(MIN_USABLE_HEIGHT_PX - 1);
         else expect(card.height).toBeLessThanOrEqual(scroll.height);
       });
     }
@@ -670,9 +672,13 @@ test.describe("the address popover has a ceiling", () => {
     const count = await rows.count();
     const head = await boxOf(page.locator(".reader-head"));
 
-    // From the line, one Tab reaches the first row: the popover binds no keys,
-    // so the keyboard path through it is the browser's (SPEC.md §10).
+    // From the line, the first Tab reaches the card's ✕ — the kit `Popover`'s
+    // always-rendered exit (UI-192) — and the second reaches the first row.
+    // Arrow keys stay unbound: the path through the rows is still the
+    // browser's own tab order (SPEC.md §10), now cycling inside the card.
     await page.locator('button[data-address-line="th_host"]').focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('[data-address-pop="th_host"] .kit-popover-close')).toBeFocused();
     await page.keyboard.press("Tab");
 
     for (let index = 0; index < count; index += 1) {
@@ -721,20 +727,24 @@ test.describe("the address popover has a ceiling", () => {
 /**
  * The other two hosts, whose ceiling is **not** a scrollport.
  *
- * `clipperOf` walks for the nearest scrolling ancestor and finds none at either:
- * the global composer's panel and the comment popover are both `overflow:
- * hidden` boxes over a `body` that does not scroll, so the window itself is the
- * ceiling. That path is worth a measurement of its own, because a walk that
- * answered the wrong box would bound these cards to nothing.
+ * Since UI-142 `clipperOf` stops at a clip as well as a scrollport, and the two
+ * hosts here answer differently: the global composer's card is bounded by
+ * `.search-panel`'s `overflow: hidden` box, while the comment popover is
+ * portaled to `document.body` and has the window. Both paths are worth a
+ * measurement of their own, because a walk that answered the wrong box would
+ * bound these cards to nothing.
  *
- * **A residual, stated rather than implied.** `.search-panel` clips with
- * `overflow: hidden`, and the compose card has always been drawn taller than the
- * panel has room for above the line — 157px against 132px, measured — so its top
- * padding and lead are cropped there. That is a different defect from this one
- * and is left alone deliberately: bounding to a clip rather than a scrollport
- * would squeeze a three-lane list to one visible row, and what leaves a clip is
- * cropped where what leaves a scrollport is *unreachable*. UI-127's own compose
- * test is what measures the change in that card's behaviour, and it is green.
+ * **The residual this block used to state is repaid.** The compose card was
+ * "always drawn taller than the panel has room for above the line — 157px
+ * against 132px, measured — so its top padding and lead are cropped there",
+ * and the crop was left alone because bounding harder would have squeezed a
+ * three-lane list to one visible row. The phase-60 evaluation found the same
+ * crop at the card's *bottom* edge hiding the no-owner state's only weight
+ * editor (FAIL-1), and the trade the old note refused is no longer the trade
+ * on offer: the `ScrollArea`'s floor is `min(content, token)` now, so a short
+ * roster costs its own height, and where even the floored card outruns the
+ * panel the fit caps it there and the card scrolls as one piece
+ * (`data-address-pop-scrolls`). The card fits its clip whole, in every state.
  */
 test.describe("a host the window bounds", () => {
   test("the global composer's card is capped, and the cap is the only thing bounding it", async ({
@@ -1240,9 +1250,15 @@ test.describe("the address line has a slot, and Send stays where it is", () => {
     await line.click();
     await page.locator(`${picker("compose")} [data-recipient-lane="th_gone"]`).click();
     await expect(line).toContainText(`· ${HEAVY_KEY}`);
-    // A second press on the line, never Escape: the app's escape chain owns
-    // that key at the surface grain and would close the whole panel.
-    await line.click();
+    // Escape, and it closes only the card (UI-192): the kit `Popover` consumes
+    // the key on its own subtree — focus moved into the card when it opened —
+    // so the compose panel underneath survives. The line itself cannot be the
+    // gesture here any more: in this cramped panel the usable-minimum floor
+    // makes the card come down over its own line (the designed trade — the ✕,
+    // Escape and an outside press are the exits).
+    await page.keyboard.press("Escape");
+    await expect(page.locator(popOf("compose"))).toBeHidden();
+    await expect(page.locator(".compose-panel")).toBeVisible();
 
     const ASK = ".compose-actions .btn-ask";
     await settled(page, page.locator(ASK));

@@ -1,4 +1,5 @@
 import type { Job } from "@corpus/contract";
+import { Button } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { JobMenuItems } from "../menu/JobMenuItems";
@@ -36,9 +37,8 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
       {jobs.map((job) => {
         const blocker = blockedOn(job);
         return (
-          <button
+          <Button
             key={job.eventId}
-            type="button"
             className={job.eventId === selectedId ? "job sel" : "job"}
             aria-current={job.eventId === selectedId}
             onClick={() => {
@@ -76,7 +76,7 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
               </span>
             )}
             <span className="job-meta">{job.status}</span>
-          </button>
+          </Button>
         );
       })}
     </div>

@@ -1,6 +1,78 @@
 // @ts-check
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
+
+// ---- The raw-control ratchet (INFRA-040) ---------------------------------
+// UI-191 gave the product one button and one dropdown, in
+// `packages/kit/src/components/Controls/`. This keeps it that way.
+//
+// It is a `no-restricted-syntax` rule and NOT a bespoke scanner, because
+// ESLint already runs diff-scoped over the staged TypeScript in
+// `.githooks/pre-commit` and whole-repo as `npm run lint` in CI. The check
+// therefore rides both gates and adds **zero** hook steps and **zero** CI
+// steps — sprint-026 P6, which fails any implementation that adds one.
+//
+// REJECTED, recorded because the filing asked that one alternative be weighed:
+// a small custom rule reading the baseline itself. It would buy per-file
+// occurrence *counts* — a file allowed exactly N raw buttons — and cost a
+// plugin module plus its own RuleTester suite. The ratchet is file-grained,
+// not occurrence-grained, and `no-restricted-syntax` already carries a
+// per-selector `message`, which was the only thing that might have forced a
+// custom rule.
+//
+// The whole definition — banned tags, scope, permanent exemptions and the
+// grandfathered files — lives in `scripts/raw-controls-baseline.json`, so the
+// rule and its baseline cannot drift apart.
+// `scripts/raw-controls-ratchet.test.ts` holds the closed census the baseline
+// may never exceed, and proves the rule fires with the right message.
+//
+/**
+ * @typedef {{ tag: string, selector: string, message: string }} BannedTag
+ * @typedef {{
+ *   scope: string[],
+ *   outOfScope: string[],
+ *   banned: BannedTag[],
+ *   primitives: string[],
+ *   baseline: Record<string, string[]>,
+ * }} RawControlRatchet
+ */
+/** @type {RawControlRatchet} */
+const rawControls = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "scripts/raw-controls-baseline.json"), "utf8"),
+);
+
+/**
+ * The rule value banning every tag except the ones a file is grandfathered
+ * for. `no-restricted-syntax` validates its options strictly, so the `tag` key
+ * the JSON carries for grouping is dropped here.
+ *
+ * @param {readonly string[]} allowed
+ */
+const banEveryTagExcept = (allowed) => [
+  "error",
+  ...rawControls.banned
+    .filter((entry) => !allowed.includes(entry.tag))
+    .map(({ selector, message }) => ({ selector, message })),
+];
+
+/**
+ * Flat config resolves a rule by last match, so one block per distinct
+ * grandfathered tag-set is the only shape that lets a baselined file keep its
+ * `<button>` while still being refused a `<select>`. Two tag-sets exist today
+ * — `button` (UI-191's leftovers) and `role-dialog` (the overlays predating
+ * kit's Modal/Popover, UI-193 criterion 2) — so this produces two blocks.
+ *
+ * @type {Map<string, { allowed: string[], files: string[] }>}
+ */
+const baselineGroups = new Map();
+for (const [file, tags] of Object.entries(rawControls.baseline)) {
+  const allowed = [...tags].sort();
+  const group = baselineGroups.get(allowed.join(",")) ?? { allowed, files: [] };
+  group.files.push(file);
+  baselineGroups.set(allowed.join(","), group);
+}
 
 // Lint philosophy (see docs/TS_GUIDELINES.md): only rules with a real risk of
 // shipping a bug are errors (blocking). Style and taste belong to the
@@ -96,6 +168,25 @@ export default tseslint.config(
       ],
     },
   },
+  // ---- The raw-control ratchet (INFRA-040) -------------------------------
+  // Built from `scripts/raw-controls-baseline.json` above. Test files are out
+  // of scope on purpose: a fixture that renders a bare `<button>` to drive a
+  // roving-focus hook is not product chrome, and banning it would push tests
+  // into the kit's styling for no gain.
+  {
+    name: "corpus/raw-controls",
+    files: rawControls.scope,
+    ignores: [...rawControls.outOfScope, ...rawControls.primitives],
+    rules: { "no-restricted-syntax": banEveryTagExcept([]) },
+  },
+  // The grandfathered files. Listed last so this rule value wins over the
+  // block above for exactly these paths. Deleting an entry from the JSON is
+  // what locks a migrated file out for good.
+  ...[...baselineGroups.values()].map((group) => ({
+    name: `corpus/raw-controls-baseline (grandfathered: ${group.allowed.join(", ")})`,
+    files: group.files,
+    rules: { "no-restricted-syntax": banEveryTagExcept(group.allowed) },
+  })),
   // Type-aware rules need a tsconfig project; JS config files have none.
   {
     files: ["**/*.js", "**/*.cjs", "**/*.mjs"],

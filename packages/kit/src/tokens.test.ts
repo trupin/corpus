@@ -85,6 +85,7 @@ const EXPECTED_TOKENS = [
   "--ink-3",
   "--line",
   "--line-strong",
+  "--min-usable-height",
   "--mono",
   "--sans",
   "--sepia",

@@ -1,4 +1,4 @@
-import type { RevealTarget, RowNotice } from "@corpus/kit";
+import { Button, type RevealTarget, type RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import type { Editor } from "@tiptap/react";
 import { createPortal } from "react-dom";
@@ -203,9 +203,9 @@ function FocusReader({
           hint={FOCUS_HINT}
           variant="focus"
           leading={
-            <button type="button" className="back" data-close-focus onClick={onClose}>
+            <Button className="back" data-close-focus onClick={onClose}>
               ✕ Close
-            </button>
+            </Button>
           }
           onBack={(toList) => {
             if (toList) stack.toList();

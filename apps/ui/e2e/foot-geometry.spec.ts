@@ -323,9 +323,9 @@ test.describe("the global composer's foot", () => {
   });
 
   /**
-   * "The drop downs aren't even consistent." They are two different kinds of
-   * element — a kit pill and a native `<select>` — which is exactly why they
-   * have to be told to agree.
+   * "The drop downs aren't even consistent." Both are pills now — the kit
+   * address line and the kit `Select` (UI-191) — and this is what holds them
+   * to one register.
    */
   test("the two pickers share one visual register", async ({ page }) => {
     await openComposer(page);
@@ -344,7 +344,7 @@ test.describe("the global composer's foot", () => {
       };
       return {
         address: read('[data-address-line="compose"]'),
-        owner: read(".compose-resident select"),
+        owner: read(".compose-resident .select-trigger"),
       };
     });
 

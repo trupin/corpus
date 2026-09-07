@@ -24,12 +24,11 @@
 export {
   answeringRow,
   composerAddress,
-  designationWeightSentence,
   residentWeightSentence,
   weightLabel,
-  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
+  ADDRESS_RECIPIENT_TITLE,
   ADDRESSED_TO,
   LAUNCH_WEIGHT_CLAUSE,
   LINE_SEPARATOR,
@@ -44,6 +43,7 @@ export type {
 export {
   ComposerAddress,
   lanesCappedNote,
+  ADDRESS_POP_LABEL,
   RECIPIENT_GROUP_LABEL,
   RECIPIENT_LEAD,
   WEIGHT_GROUP_LABEL,

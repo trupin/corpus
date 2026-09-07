@@ -1,0 +1,331 @@
+/*
+ * The control primitives (UI-191), ported from `design/index.html`'s
+ * "control primitives" block — SPEC.md §10 names that file authoritative for
+ * look & feel, and every value here is transcribed verbatim from it. Consumed
+ * as a stylesheet subpath, like the tokens:
+ *
+ *     import "@corpus/kit/controls.css";
+ *
+ * RADIUS DECISION (P4, orchestrator ruling recorded 2026-09-07, in the mockup
+ * beside the source of these classes): `Button` keeps the mockup's 8px
+ * rectangle; the fully-rounded 99px pill is the chip family — `.chip`, and
+ * every dropdown trigger (`.select-trigger`), which is a chip that opens a
+ * menu. The rejected direction — rounding `Button` to 99px — is written down
+ * there.
+ *
+ * `.chip` is also declared by `apps/ui` surfaces that ported it before this
+ * layer existed (board/Column.css, search/search.css). The declarations are
+ * the same mockup lines, so the duplication cannot disagree; the app sheets
+ * win ties by loading later, which preserves their contextual variants.
+ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 6px 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: var(--accent-ink);
+}
+
+.btn-outline {
+  border: 1px solid var(--line-strong);
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.btn-outline:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-quiet {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.btn-quiet:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.btn-outline:disabled:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-2);
+}
+
+.btn-quiet:disabled:hover {
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+.btn-primary:disabled:hover {
+  background: var(--accent);
+}
+
+/* The chip pill — the mockup's `.chip` family, with the interactive states
+   the primitives block adds for chips that are controls. */
+.chip {
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2.5px 9px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.chip.on {
+  background: var(--accent-wash);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+.chip.warn {
+  background: var(--sepia-wash-2);
+  border-color: transparent;
+  color: var(--sepia-ink);
+}
+
+.chip.good {
+  background: var(--good-wash);
+  border-color: transparent;
+  color: var(--good);
+}
+
+.chip.ghost {
+  border-style: dashed;
+  color: var(--ink-3);
+  background: none;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+/* The hover affordance belongs to the quiet pill only: a tinted chip's
+   border is transparent by design (`.chip.on`), and repainting it on hover
+   would flash a box around a state that has none. */
+button.chip:not(.on):not(.warn):not(.good):hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chip:disabled:hover {
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+/* The one dropdown: a chip-shaped trigger with a chevron over a CUSTOM
+   popover menu — never a native <select>, whose popup is native chrome too.
+   The closed label ellipsises inside the pill and carries the full value on
+   `title`; the menu may be wider than its trigger and shows the whole option
+   text. */
+.select {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2.5px 9px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.select-trigger:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.select-trigger[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.select-trigger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.select-trigger:disabled:hover {
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-chevron {
+  color: var(--ink-3);
+  font-size: 9px;
+  flex: none;
+}
+
+/*
+ * The open menu is positioned `fixed` by an inline style Select measures from
+ * its trigger (see Select.tsx — an absolute menu was clipped by scrollable
+ * ancestors, UI-193). The absolute rules below are only the unpainted
+ * pre-measure frame; position, offsets, min-width and max-height are all
+ * overridden inline while the menu is up.
+ */
+.select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  min-width: 100%;
+  width: max-content;
+  max-width: 320px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.select-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: var(--sans);
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-option:hover,
+.select-option:focus-visible {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.select-option[aria-checked="true"] {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+/* The popover and modal surfaces (UI-193's guarantees live in the components;
+   these are the mockup's floating-surface and overlay values). */
+.kit-popover {
+  position: fixed;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+
+.kit-popover-close,
+.kit-modal-close {
+  color: var(--ink-2);
+  font-size: 14px;
+  padding: 2px 6px;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.kit-modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  backdrop-filter: blur(3px);
+  z-index: 40;
+  display: block;
+}
+
+.kit-modal-panel {
+  width: min(760px, calc(100vw - 48px));
+  margin: 7vh auto 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+}
+
+/* A scroll region never renders shorter than its floor: `min(content,
+   --min-usable-height)` (tokens.css). CSS cannot express that minimum, so the
+   component measures it and writes it as an inline `min-height` — content
+   shorter than the token takes its own height and no more (UI-192, phase-60:
+   a region that spent the full token on a short roster pushed its card past
+   the clip that bounds it). The token below is the fallback that stands
+   wherever there is no layout to measure. */
+.scroll-region {
+  position: relative;
+  overflow-y: auto;
+  min-height: var(--min-usable-height);
+}
+
+.scroll-region::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll-region::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+}
+
+.scroll-region[data-overflowing="true"] {
+  border-bottom: 1px solid var(--line-strong);
+  /* The app sizes borders into the box (`box-sizing: border-box`), so the
+     affordance border would bite 1px out of the guaranteed region — an
+     overflowing region measured 119px of clientHeight against the 120px token
+     (UI-192, found by the battery). The minimum is a promise about the usable
+     inside, so the border pays for itself. */
+  min-height: calc(var(--min-usable-height) + 1px);
+}

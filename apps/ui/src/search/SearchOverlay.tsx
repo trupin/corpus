@@ -1,5 +1,5 @@
 import type { SearchHit } from "@corpus/contract";
-import { useTree } from "@corpus/kit";
+import { Chip, useTree } from "@corpus/kit";
 import {
   useCallback,
   useEffect,
@@ -221,9 +221,9 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
               setQuery((current) => ({ ...current, text: event.target.value }));
             }}
           />
-          <button type="button" className="chip ghost" data-save-view="" onClick={saveView}>
+          <Chip variant="ghost" data-save-view="" onClick={saveView}>
             save as view
-          </button>
+          </Chip>
         </div>
 
         <FilterChips

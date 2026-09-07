@@ -1,10 +1,12 @@
 import {
   AttachButton,
+  Button,
   COMPOSER_PRIMARY_KEY,
   composerAddress,
   ComposerAddress,
   composerReachesAgent,
   handleComposerKeyDown,
+  IconButton,
   PendingAttachments,
   useAttachmentIntake,
   useComposerRecipient,
@@ -83,6 +85,15 @@ export const COMMENT_SUBMIT_LABEL = `Comment ${COMPOSER_PRIMARY_KEY}`;
  */
 export const COMMENT_MOVE_LABEL = "Move this composer";
 export const COMMENT_MOVE_HINT = "Move this composer — drag it, or use the arrow keys";
+
+/**
+ * The visible way out (UI-193's overlay battery: an exit affordance on every
+ * overlay). Escape and an outside click closed this composer all along, but
+ * neither is a thing a person can *see* — the popover offered no control that
+ * leaves it. Named without the word "Comment" for the reason the grip's label
+ * documents above: `getByLabel("Comment")` is a substring match.
+ */
+export const COMMENT_CANCEL_LABEL = "Close this composer";
 
 /**
  * What a refused send hands back, so the composer that re-opens is the one that
@@ -275,17 +286,25 @@ export function CommentPopover({
         if (event.target === event.currentTarget) event.preventDefault();
       }}
     >
-      <button
-        type="button"
+      <IconButton
         className="cm-drag"
         data-comment-drag
-        aria-label={COMMENT_MOVE_LABEL}
+        label={COMMENT_MOVE_LABEL}
         title={COMMENT_MOVE_HINT}
         onPointerDown={drag.onPointerDown}
         onKeyDown={drag.onKeyDown}
       >
         <span aria-hidden="true">⠿</span>
-      </button>
+      </IconButton>
+      <IconButton
+        className="cm-cancel"
+        data-comment-cancel
+        label={COMMENT_CANCEL_LABEL}
+        title={`${COMMENT_CANCEL_LABEL} — esc does too`}
+        onClick={onClose}
+      >
+        <span aria-hidden="true">✕</span>
+      </IconButton>
       <div className="cm-quote">“{quotePreview(quote)}”</div>
       <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
       <textarea
@@ -314,8 +333,7 @@ export function CommentPopover({
       <div className="composer-foot">
         <AttachButton surface="comment" onFiles={intake.add} />
         <ComposerAddress address={address} surface="comment" />
-        <button
-          type="button"
+        <Button
           className={asking ? "toggle on" : "toggle"}
           aria-pressed={asking}
           onClick={() => {
@@ -323,10 +341,10 @@ export function CommentPopover({
           }}
         >
           {asking ? ASK_AGENT_LABEL : NOTE_ONLY_LABEL}
-        </button>
-        <button type="button" className="send" disabled={!canSend} data-comment-send onClick={send}>
+        </Button>
+        <Button className="send" disabled={!canSend} data-comment-send onClick={send}>
           {COMMENT_SUBMIT_LABEL}
-        </button>
+        </Button>
       </div>
     </div>,
     document.body,

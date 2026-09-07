@@ -138,37 +138,9 @@
   flex: 1;
 }
 
-.btn-ask {
-  background: var(--accent);
-  color: var(--bg);
-  border-radius: 8px;
-  padding: 6px 16px;
-  font-weight: 600;
-}
-
-.btn-capture {
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  padding: 6px 16px;
-  color: var(--ink-2);
-  font-weight: 500;
-}
-
-.btn-capture:hover {
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.btn-ask:disabled,
-.btn-capture:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.btn-capture:disabled:hover {
-  border-color: var(--line-strong);
-  color: var(--ink-2);
-}
+/* `.btn-ask` and `.btn-capture` are the kit's `.btn-primary` and
+   `.btn-outline` since UI-191 (`@corpus/kit/controls.css`); the class names
+   stay in the markup as selector hooks only. */
 
 /*
  * Who will own the conversation (UI-173; SPEC.md §7's rider A, §10's rider B).
@@ -196,21 +168,15 @@
 }
 
 /*
- * **The owner picker wears the address line's register** (UI-180). The two sit
- * side by side and are the same kind of thing to a person — *pick who* — while
- * being two different kinds of thing to the DOM: one is `@corpus/kit`'s pill
- * (`button.address-line`) and this is a native `<select>`. Nothing makes them
- * agree except saying so, and they did not: 11px against 10.5px, a 6px radius
- * against a pill, different padding, different heights in the same row. A
- * person said "the drop downs aren't even consistent" and that was the whole of
- * it.
- *
- * Every value below is `button.address-line`'s, read from
- * `packages/kit/src/address/address.css`. `foot-geometry.spec.ts` asserts the
- * two **against each other** rather than against these literals, so the day the
- * kit's pill changes, this goes red instead of quietly drifting again.
+ * **The pickers wear the address line's register** (UI-180, kept through
+ * UI-191). The native `<select>` is gone — both pickers are the kit `Select`
+ * now — and what remains here is the row-local register: this row's three
+ * pill controls sit beside `@corpus/kit`'s address pill and match it, in the
+ * values `foot-geometry.spec.ts` asserts **against each other** rather than
+ * against these literals, so the day the kit's pill changes, this goes red
+ * instead of quietly drifting again.
  */
-.compose-resident select {
+.compose-resident .select-trigger {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-2);
@@ -221,7 +187,20 @@
   max-width: 16ch;
 }
 
-.compose-resident select:hover {
+/*
+ * No geometry rules for `.select-menu` here — the kit `Select` owns its open
+ * menu's box (PR #77 review, finding 1). An override lived here once, from
+ * the era when the menu was `position: absolute` and had to flip above
+ * `.search-panel`'s `overflow: hidden`: `top: auto; bottom: calc(100% + 4px)`.
+ * The menu went `position: fixed` in UI-193 (and flips upward on its own when
+ * the room below is short), and against a fixed box that `bottom` resolves on
+ * the *viewport* — both edges pinned, the box over-constrained into an 8px
+ * sliver whose rows hit-tested to the panel behind them. The class is guarded
+ * by the overlay battery's `lane-weight-menu [compose-*]` states and its
+ * menu-row probe, which reproduce exactly this before touching any fix.
+ */
+
+.compose-resident .select-trigger:hover {
   border-color: var(--accent);
   color: var(--ink);
 }

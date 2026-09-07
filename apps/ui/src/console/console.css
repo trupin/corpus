@@ -1105,10 +1105,12 @@
   align-items: center;
 }
 
-/* The console's own register — `.job-detail-head`'s controls, one pane over. */
-.lane-weight-control select,
-.lane-weight-control button,
-.lane-release-control button {
+/* The console's own register — `.job-detail-head`'s controls, one pane over.
+   Direct children only: the kit `Select` beside these buttons (UI-191) wraps
+   its own trigger and menu rows, and they wear the one dropdown's pill —
+   never this rectangle. */
+.lane-weight-control > button,
+.lane-release-control > button {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-2);
@@ -1119,9 +1121,8 @@
   flex: none;
 }
 
-.lane-weight-control select:hover,
-.lane-weight-control button:not(:disabled):hover,
-.lane-release-control button:not(:disabled):hover {
+.lane-weight-control > button:not(:disabled):hover,
+.lane-release-control > button:not(:disabled):hover {
   border-color: var(--accent);
   color: var(--accent-ink);
 }
@@ -1129,8 +1130,8 @@
 /* A press that would change nothing is offered and dimmed rather than removed:
    a control that vanishes reads as a bug, and one that is disabled with its
    cost still on the screen reads as an answer (`JobDetail`'s `↗ open`). */
-.lane-weight-control button:disabled,
-.lane-release-control button:disabled {
+.lane-weight-control > button:disabled,
+.lane-release-control > button:disabled {
   opacity: 0.45;
 }
 

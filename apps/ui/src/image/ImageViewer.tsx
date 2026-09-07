@@ -1,4 +1,4 @@
-import type { ViewableImage } from "@corpus/kit";
+import { Button, type ViewableImage } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -70,9 +70,9 @@ export function ImageViewer({ image, onClose }: ImageViewerProps): ReactElement 
     >
       <div className="image-viewer-bar">
         <span className="image-viewer-hint">{IMAGE_VIEWER_HINT}</span>
-        <button ref={close} type="button" className="image-viewer-close" onClick={onClose}>
+        <Button ref={close} className="image-viewer-close" onClick={onClose}>
           ✕ Close
-        </button>
+        </Button>
       </div>
       <img className="image-viewer-img" src={image.src} alt={image.alt} />
       {image.alt === "" ? null : <p className="image-viewer-caption">{image.alt}</p>}

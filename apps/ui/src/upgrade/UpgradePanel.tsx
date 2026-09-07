@@ -1,4 +1,10 @@
-import { CorpusRequestError, useCheckUpgrade, useHealth, useStartUpgrade } from "@corpus/kit";
+import {
+  Button,
+  CorpusRequestError,
+  useCheckUpgrade,
+  useHealth,
+  useStartUpgrade,
+} from "@corpus/kit";
 import type { UpgradeCheck } from "@corpus/contract";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -196,18 +202,17 @@ export function UpgradePanel({
         />
         <div className="upgrade-actions">
           {phase === "checked" && result !== null && canUpgrade(result) ? (
-            <button type="button" className="btn-upgrade" onClick={onUpgrade}>
+            <Button className="btn-upgrade" onClick={onUpgrade}>
               Upgrade &amp; restart
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
+          <Button
             className="btn-close"
             disabled={phase === "upgrading" || phase === "starting"}
             onClick={onClose}
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

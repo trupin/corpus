@@ -233,6 +233,20 @@ const RUNTIME_SURFACE = [
   // scale, which the panel does not need but a test of the drawing does.
   "CostChart",
   "costDomainMax",
+  // The control primitives (UI-191): one button, one dropdown, everywhere.
+  "Button",
+  "buttonClassName",
+  "IconButton",
+  "Chip",
+  "chipClassName",
+  "Select",
+  "Popover",
+  "trapTab",
+  "Modal",
+  "ScrollArea",
+  "ScrollAreaTooShortError",
+  "MIN_USABLE_HEIGHT_PX",
+  "MIN_USABLE_HEIGHT_TOKEN",
   "chooseWeight",
   "weightChoice",
   "subscribeWeightChoices",
@@ -252,17 +266,20 @@ const RUNTIME_SURFACE = [
   "composerAddress",
   "answeringRow",
   "residentWeightSentence",
-  // The sentence the weight rows carry where a send also designates a resident
-  // (UI-185): the rows stay live — the choice is the message's, which §7 gives
-  // a real job — and this is what says they never govern the resident's own
-  // turn, whose level is the owner control's.
-  "designationWeightSentence",
+  // UI-192 deleted `designationWeightSentence` and `ADDRESS_DESIGNATING_TITLE`
+  // with the second weight editor they apologised for: a designating send's
+  // one weight control is the surface's own "at" pill, so the popover offers
+  // no level rows there and needs no boundary sentence and no reconciling
+  // tooltip. `ADDRESS_RECIPIENT_TITLE` is what the line explains instead.
   "weightLabel",
   // What a lane list says when it reached the card's ceiling (UI-130): a capped
   // list that looked complete would be a silent cap.
   "lanesCappedNote",
   "ADDRESS_OPEN_TITLE",
-  "ADDRESS_DESIGNATING_TITLE",
+  "ADDRESS_RECIPIENT_TITLE",
+  // The popover's accessible name (UI-192) — the kit `Popover`'s label, and
+  // half of its ✕'s.
+  "ADDRESS_POP_LABEL",
   "ADDRESS_FLOOR_TITLE",
   "ADDRESSED_TO",
   "LAUNCH_WEIGHT_CLAUSE",

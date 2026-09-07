@@ -337,11 +337,21 @@ test.describe("the weight a composer may state", () => {
    * both submits are covered surface by surface in
    * `apps/ui/src/weight/everyComposer.test.tsx` and both are exercised against
    * the real server in the issue's E2E log.
+   *
+   * **In the no-owner state, since UI-192.** This test used to open the
+   * address popover of the overlay's *default* Ask — a designating send — and
+   * pick a message weight there. Those rows are gone from that state: a
+   * designating send's one weight editor is the owner row's "at" pill
+   * (`ask-designation-weight.spec.ts` owns that wire), and the address's rows
+   * return as the surface's single editor exactly when no owner stands. That
+   * is the state this test now measures §10's sentence in.
    */
   test("is offered by the global composer, live, with nothing preselected", async ({ page }) => {
     const corpus = await board(page, THREE);
     await page.keyboard.press("c");
     await expect(page.locator(".compose-panel")).toBeVisible();
+    await page.locator('[data-select="owner"]').click();
+    await page.getByRole("menuitemradio", { name: "no owner — the main agent" }).click();
 
     const address = page.locator('.compose-panel [data-composer-address="compose"]');
     await expect(address).toBeVisible();

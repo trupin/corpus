@@ -1,3 +1,4 @@
+import { Button } from "@corpus/kit";
 import { createContext, useContext, useState, type ReactElement, type ReactNode } from "react";
 import type { SaveState } from "./useAutosave.js";
 
@@ -209,15 +210,14 @@ export function SaveChipView({ state, onRetry, surface }: SaveChipViewProps): Re
       {retry === null ? (
         <span className="save-chip-text">{text}</span>
       ) : (
-        <button
-          type="button"
+        <Button
           className="save-chip-text save-chip-retry"
           title={retry.message}
           onClick={retry.run}
         >
           {text}
           {RETRY_SUFFIX}
-        </button>
+        </Button>
       )}
     </span>
   );

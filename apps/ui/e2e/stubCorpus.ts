@@ -762,6 +762,106 @@ export interface StubOptions {
 /** The clock a stub reports unless a spec moves it — after every seeded write. */
 export const STUB_REFLECTED_AT = "2026-08-01T09:00:00.000Z";
 
+/*
+ * ── The crowded fixture (UI-193, sprint-026 seam 3) ──
+ *
+ * One definition of "crowded", used by the overlay battery
+ * (`overlay-battery.spec.ts`) and by UI-192's roster test — never two, so the
+ * two suites cannot drift on what a crowded workspace looks like. The shape is
+ * the sprint's, verbatim: **at least nine lanes, long lane names, long agent
+ * profile names, long weight-level labels** — because the empty case is how
+ * the reported defects shipped: no spec in the tree had ever opened the
+ * designation popover over nine lanes.
+ */
+
+/**
+ * The workspace's declared weight tiers, with labels long enough to fight the
+ * boxes that hold them. Keys stay the shipped vocabulary; only the labels — the
+ * cells a person reads and a pill truncates — are stretched.
+ */
+export const CROWDED_LEVELS = [
+  { key: "light", label: "Small, mechanical, and safe to run without review" },
+  { key: "standard", label: "Standard weight for everyday drafting and correspondence" },
+  { key: "heavy", label: "Heavy, judgment-laden, or irreversible without a sign-off" },
+] as const;
+
+/**
+ * The orchestrate skill declaring {@link CROWDED_LEVELS} — SHARED-022's one
+ * table, at the path and header `useWeightLevels` reads it by.
+ */
+export const CROWDED_SKILL: StubRow = {
+  id: "doc_orchestrate",
+  type: "skill",
+  title: "orchestrate",
+  path: ".claude/skills/orchestrate/SKILL.md",
+  body: [
+    "## Delegation",
+    "",
+    "| Weight | Key | Model | What falls here |",
+    "| ------ | --- | ----- | --------------- |",
+    ...CROWDED_LEVELS.map((level) => `| ${level.label} | ${level.key} | **A model** | Guidance. |`),
+    "",
+    "Nothing outside this table declares a level.",
+  ].join("\n"),
+};
+
+/** Ten conversations somebody actually has: titles that outrun every pill. */
+const CROWDED_LANE_TITLES: readonly string[] = [
+  "The refinance of the Maple Street fourplex — escrow, appraisal dispute, and the January amendment",
+  "Quarterly estimated taxes for the S-corp, and whether the safe harbor still holds after the sale",
+  "The kitchen renovation: three contractor bids, the permit timeline, and the tile that never shipped",
+  "Grandmother's estate — the probate filings, the storage unit inventory, and the disputed painting",
+  "Insurance claim for the February water damage, including the adjuster's second visit",
+  "The school district transfer application and its appeals calendar",
+  "Vendor contract renewals for the studio — the photography retainer and the print-shop terms",
+  "Travel planning for the October conference, visas included",
+  "The long-running dispute with the HOA about the fence line survey",
+  "Migrating the family archive from the failing NAS to something a person can actually search",
+];
+
+/** Profile names sized like the real ones people write, not like fixtures. */
+const CROWDED_PROFILE_NAMES: readonly (string | null)[] = [
+  "long-horizon-research-and-diligence-specialist",
+  "correspondence-and-filing-assistant-for-the-family-office",
+  null,
+  "quarterly-tax-preparation-and-safe-harbor-analyst",
+  "insurance-claims-follow-up-and-escalation-agent",
+  null,
+  "contract-renewal-negotiation-and-terms-reviewer",
+  "travel-logistics-and-visa-paperwork-coordinator",
+  null,
+  "archival-ingest-and-metadata-normalization-agent",
+];
+
+/**
+ * The crowded roster: {@link CROWDED_LANE_TITLES}' lanes, every third one a
+ * launcher-decides designation (`resident.name: null` — SHARED-048's real
+ * member), the rest naming a long profile, weights cycling through
+ * {@link CROWDED_LEVELS} and `null`.
+ *
+ * A function rather than a constant because presence is a park held **now**
+ * (SPEC.md §7): `since` must be fresh against the wall clock at the moment a
+ * spec seeds it, not at the moment a module loaded.
+ */
+export function crowdedLanes(): readonly AgentLane[] {
+  const now = Date.now();
+  return CROWDED_LANE_TITLES.map((title, index) => ({
+    lane: `th_crowd_${String(index)}`,
+    resident: {
+      name: CROWDED_PROFILE_NAMES[index] ?? null,
+      docId: CROWDED_PROFILE_NAMES[index] === null ? null : `doc_profile_${String(index)}`,
+      weight: CROWDED_LEVELS[index % (CROWDED_LEVELS.length + 1)]?.key ?? null,
+      designationId: null,
+    },
+    live: index % 2 === 0,
+    since: new Date(now - (index + 1) * 60_000).toISOString(),
+    pending: index % 3,
+    working: index % 4 === 0,
+    summary: null,
+    origin: { id: `th_crowd_${String(index)}`, title },
+  }));
+}
+
 export interface StubCorpus {
   /** Every `/api` request the page made, in order. */
   readonly requests: () => Promise<readonly StubRequest[]>;
