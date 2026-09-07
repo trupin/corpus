@@ -1,4 +1,5 @@
 import type { AgentLane } from "@corpus/contract";
+import { MIN_USABLE_HEIGHT_PX } from "@corpus/kit";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
@@ -421,7 +422,9 @@ test.describe("scrolling is for content that cannot fit", () => {
     await expect(page.locator('[data-address-more="th_host"]')).toHaveCount(0);
   });
 
-  test("a roster that outruns even the room says so", async ({ page }) => {
+  test("a roster that outruns even the room says so, from a region a person can use", async ({
+    page,
+  }) => {
     // The honest end of the rule (SHARED-061's last sentence): where a surface
     // cannot be given the room its content needs, it states the bound rather
     // than ending quietly. Thirty lanes at 1280×400 is that case.
@@ -433,6 +436,14 @@ test.describe("scrolling is for content that cannot fit", () => {
       .evaluate((element) => ({ client: element.clientHeight, scroll: element.scrollHeight }));
     expect(list.scroll).toBeGreaterThan(list.client);
     await expect(page.locator('[data-address-more="th_host"]')).toHaveText(/30 lanes/);
+    // …and the region that scrolls is at least the one minimum (UI-192,
+    // UI-193's token — read from kit, never a literal). The pre-rebuild floor
+    // was one lane row, which at exactly this window rendered the sliver the
+    // 2026-09-06 report called nearly impossible to scroll.
+    expect(
+      list.client,
+      `${String(list.client)}px of scroll region — below --min-usable-height`,
+    ).toBeGreaterThanOrEqual(MIN_USABLE_HEIGHT_PX - 1);
   });
 });
 

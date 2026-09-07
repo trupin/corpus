@@ -102,6 +102,17 @@ function composeProbe(body: string, mode: "ask" | "capture"): Probe {
     docs: { [ORCHESTRATE_SKILL_ID]: skillDoc(body) },
   });
   render(<ComposeHost transport={transport} />);
+  // **The no-owner state, deliberately** (UI-192). The overlay's default Ask
+  // designates a resident, and a designating send's one weight editor is the
+  // owner row's "at" pill — the address then offers no levels at all, which
+  // is the redesign's point (one editor per meaning; the designating state's
+  // own pins live in ComposeOverlay.test.tsx). Picking "no owner" is what
+  // puts this surface in the state §10's table describes here: the address
+  // is the single weight editor, for Ask and Capture alike.
+  const owner = document.querySelector<HTMLElement>('[data-select="owner"]');
+  if (owner === null) throw new Error("no owner picker");
+  fireEvent.click(owner);
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "no owner — the main agent" }));
   const field = (): HTMLTextAreaElement =>
     screen.getByLabelText<HTMLTextAreaElement>("Ask the agent, or capture a thought");
   const path = mode === "ask" ? "/api/threads" : "/api/capture";
@@ -219,7 +230,12 @@ function commentPopoverProbe(body: string): Probe {
   };
 }
 
-/** §10's enumeration, in §10's order — every composer whose send reaches the agent. */
+/**
+ * §10's enumeration, in §10's order — every composer whose send reaches the
+ * agent. The global composer's rows run in its **no-owner** state since
+ * UI-192: its default Ask designates, and a designating send's weight lives on
+ * the owner row's "at" pill instead of behind the address (see `composeProbe`).
+ */
 const SURFACES: readonly Surface[] = [
   { name: "the global composer — Ask", mount: (body) => composeProbe(body, "ask") },
   { name: "the global composer — Capture", mount: (body) => composeProbe(body, "capture") },
@@ -377,6 +393,44 @@ describe.each(SURFACES)("$name", (surface) => {
  * control that used to stand here is exactly what the issue removed — a choice
  * it accepted was a choice nothing would read.
  */
+/**
+ * The global composer's **default** state (UI-192): its Ask designates a
+ * resident, so the one weight editor is the owner row's "at" pill and the
+ * address offers no levels — nothing is stated on the message's field, because
+ * nothing is offered there. The full designating pins (the "at" pill's wire,
+ * the tooltip, the roster-only popover) are `ComposeOverlay.test.tsx`'s; this
+ * row exists so the enumeration above cannot silently forget the state the
+ * surface actually opens in.
+ */
+describe("the global composer while designating — the default", () => {
+  it("offers no weight behind the address, and states none on the wire", async () => {
+    const transport = composeTransport({
+      rows: [skillRow()],
+      docs: { [ORCHESTRATE_SKILL_ID]: skillDoc(THREE_LEVELS) },
+    });
+    render(<ComposeHost transport={transport} />);
+    // The owner is untouched: the default designation stands.
+    await waitFor(() => {
+      expect(transport.to(`/api/docs/${ORCHESTRATE_SKILL_ID}`).length).toBeGreaterThan(0);
+    });
+    // With the roster naming one lane and no levels offered, there is nothing
+    // behind the line at all — it is said, not offered.
+    await waitFor(() => {
+      expect(addressLine().tagName).toBe("SPAN");
+    });
+    expect(optionKeys()).toEqual([]);
+
+    const field = screen.getByLabelText<HTMLTextAreaElement>("Ask the agent, or capture a thought");
+    fireEvent.change(field, { target: { value: "something to do" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Ask/u }));
+    await waitFor(() => {
+      expect(transport.to("/api/threads")).toHaveLength(1);
+    });
+    const sent = transport.to("/api/threads")[0]?.json ?? {};
+    expect("weight" in sent).toBe(false);
+  });
+});
+
 describe("a comment on a turn — the floor", () => {
   it("offers no weight, says nobody is asked, and states none on the wire", async () => {
     const probe = childThreadProbe(THREE_LEVELS);

@@ -1,4 +1,12 @@
-import { useEffect, useRef, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  type ComponentPropsWithoutRef,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 /**
  * A dismissable floating surface (UI-191, guarantees per UI-193's filing).
@@ -19,13 +27,24 @@ import { useEffect, useRef, type CSSProperties, type ReactElement, type ReactNod
  * what it is. Positioning is the caller's (`style`), because where a popover
  * belongs is the one thing only its surface knows.
  */
-export interface PopoverProps {
+export interface PopoverProps extends ComponentPropsWithoutRef<"div"> {
   /** The accessible name. Required — there is no unlabelled surface. */
   readonly label: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
   readonly className?: string;
   readonly style?: CSSProperties;
+  /**
+   * The control that anchors and toggles this popover, where one exists — a
+   * `Select`'s trigger is the in-built precedent. A press inside it is the
+   * toggle's own business, so the outside-press dismissal ignores it: without
+   * this the dismissal and the toggle race on the same `mousedown`/`click`
+   * pair, and whether a press on the trigger closes or re-opens depends on
+   * when the state flush lands between the two events (UI-192, found against
+   * the real browser). No exit is lost — every press genuinely outside still
+   * dismisses, and the ✕ and Escape are untouched.
+   */
+  readonly anchor?: RefObject<HTMLElement | null>;
 }
 
 const FOCUSABLE =
@@ -61,14 +80,26 @@ export function Popover({
   children,
   className,
   style,
+  anchor,
+  ...rest
 }: PopoverProps): ReactElement {
   const panel = useRef<HTMLDivElement>(null);
   /** Whatever had focus when this mounted — where Escape and ✕ return it. */
   const opener = useRef<Element | null>(null);
 
   useEffect(() => {
-    opener.current = document.activeElement;
+    // Recorded once: a StrictMode replay re-runs this effect after a consumer
+    // may have moved focus *into* the surface (ComposerAddress does, UI-192),
+    // and re-reading activeElement then would make "the opener" an inner row.
+    opener.current ??= document.activeElement;
+    const surface = panel.current;
     return () => {
+      // A real close has already detached the surface by the time passive
+      // cleanups run; a StrictMode replay runs this with it still in the
+      // document, and returning focus there would yank it back out of the
+      // surface the instant it opened (found by the overlay battery under the
+      // dev build, UI-192).
+      if (surface?.isConnected === true) return;
       const back = opener.current;
       if (back instanceof HTMLElement && back.isConnected) back.focus();
     };
@@ -97,6 +128,9 @@ export function Popover({
   useEffect(() => {
     const onPointerDown = (event: MouseEvent): void => {
       if (panel.current?.contains(event.target as Node) === true) return;
+      // The anchor's presses are the toggle's, never a dismissal — see
+      // `PopoverProps.anchor`.
+      if (anchor?.current?.contains(event.target as Node) === true) return;
       onClose();
     };
     // Capture, so a press that also opens something else still closes this.
@@ -104,10 +138,14 @@ export function Popover({
     return () => {
       document.removeEventListener("mousedown", onPointerDown, true);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   return (
     <div
+      // The caller's own attributes (a `data-*` hook, an aria detail) spread
+      // first, so nothing can overwrite the guaranteed contract below — the
+      // markers and the role are exactly what UI-193 forbids switching off.
+      {...rest}
       ref={panel}
       className={className === undefined ? "kit-popover" : `kit-popover ${className}`}
       role="dialog"

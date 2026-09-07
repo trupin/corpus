@@ -33,9 +33,8 @@ import {
  * `lane-weight-menu` entry, in the tightest clipping context the product puts
  * it in (the console's 210px drawer) — because every `Select` menu is the same
  * primitive and its geometry defects reproduce wherever the primitive is
- * squeezed hardest. `ComposerAddress`'s popover renders no `role="dialog"`
- * today; it is pinned by explicit registration until UI-192 rebuilds it on kit
- * `Popover`, after which the scan covers it like everything else.
+ * squeezed hardest. `ComposerAddress`'s popover is a kit `Popover` since
+ * UI-192, so the scan covers it like everything else.
  *
  * ## What an entry declares, honestly
  *
@@ -401,9 +400,11 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     id: "designation-popover",
     sources: ["packages/kit/src/address/ComposerAddress.tsx"],
     surface: '[data-address-pop="th_host"]',
-    // Pre-UI-192 the popover has no close control at all — the entry declares
-    // the control UI-192 owes, and the exit check is expected-fail until then.
-    exit: { kind: "control", selector: '[data-address-pop="th_host"] [data-address-close]' },
+    // The kit `Popover`'s always-rendered ✕ (UI-192 rebuilt the card on it;
+    // the three expected failures that stood here — exit, escape, scroll —
+    // were TEST-1269's reproduction of the reported defect, and they flipped
+    // to passes when the rebuild landed).
+    exit: { kind: "control", selector: '[data-address-pop="th_host"] .kit-popover-close' },
     opener: 'button[data-address-line="th_host"]',
     scrollRegions: [
       {
@@ -420,37 +421,6 @@ export const OVERLAYS: readonly OverlayEntry[] = [
       await page.locator('[data-address-pop="th_host"]').waitFor();
       await page.mouse.move(4, 4);
     },
-    /**
-     * TEST-1269: the battery reproduces the reported defect — these three stay
-     * red until UI-192 rebuilds the popover on kit `Popover`, and the moment
-     * that lands they pass "unexpectedly" and force this block's removal.
-     * Failure text recorded from the 2026-09-07 run, in UI-193's E2E log.
-     */
-    expectedFailures: [
-      {
-        check: "exit",
-        issue: "UI-192",
-        reason:
-          "the pre-rebuild popover renders no close control — an outside press was the only " +
-          'exit (battery: "no visible exit control at [data-address-pop=\\"th_host\\"] ' +
-          '[data-address-close]")',
-      },
-      {
-        check: "escape",
-        issue: "UI-192",
-        reason:
-          "ComposerAddress.tsx deliberately leaves Escape to the app's chain, and the chain " +
-          "closes the whole reader out from under it: after Escape the opener itself is gone " +
-          '(battery: toBeFocused found no button[data-address-line="th_host"])',
-      },
-      {
-        check: "scroll",
-        issue: "UI-192",
-        reason:
-          "the roster region is an unusable sliver over the crowded fixture (battery: " +
-          '".recipient-lanes overflows at 25px — below --min-usable-height (120px)")',
-      },
-    ],
   },
   {
     id: "lane-weight-menu",

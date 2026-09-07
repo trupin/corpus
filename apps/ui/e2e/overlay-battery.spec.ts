@@ -24,10 +24,10 @@ import { OVERLAYS, type BatteryCheck, type OverlayEntry } from "./overlayRegistr
  * minimum).
  *
  * **What this battery cannot catch, honestly** (sprint-026 seam 2): meaning.
- * Two controls that edit the same thing — the "at" pill and the popover's
- * WEIGHT rows — pass every check here. That class is the evaluator's, as one
- * checklist item in `.claude/agents/evaluator.md`, and claiming it here would
- * be the check lying about its coverage.
+ * Two controls that edit the same thing — as the pre-UI-192 "at" pill and the
+ * popover's WEIGHT rows did — pass every check here. That class is the
+ * evaluator's, as one checklist item in `.claude/agents/evaluator.md`, and
+ * claiming it here would be the check lying about its coverage.
  *
  * A registered failure is pinned, not skipped: `expectedFailures` runs the
  * check under `test.fail()`, so the battery stays the reproduction of the

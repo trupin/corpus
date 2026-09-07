@@ -4,18 +4,22 @@ import { expect, test } from "./coverage";
 import { stubCorpus, type MultipartBody, type StubCorpus, type StubRow } from "./stubCorpus";
 
 /**
- * UI-185 in a real browser: **Ask can state the weight of the resident it
- * designates**, and the two weights the overlay now holds — the designation's
- * and the message's — leave on the wire in their own places.
+ * UI-185 in a real browser, redrawn by UI-192: **Ask can state the weight of
+ * the resident it designates**, and the overlay holds **one weight editor per
+ * state** — the "at" pill while a designation stands, the address's rows only
+ * when no owner does. UI-185's design kept both live at once with a boundary
+ * sentence between them, and that pairing is the duplication the 2026-09-06
+ * report named as broken.
  *
  * The half that is honest to assert here is the wire and the surface: the
  * levels come from the workspace's own orchestrate skill (SHARED-022 Decision
  * 1), the choice rides **inside** the `resident` object (`CreateThreadResident`
- * — three states, and a weight is never a fourth), and the message-weight rows
- * say out loud what they do not govern. The disk half — `resident.weight` in
- * the created thread's frontmatter, `Resident.weight` echoed by
- * `GET /api/agents` — is the issue's real-workspace drill, recorded in its E2E
- * Verification Log; this suite's Vite has no server behind it (INFRA-028).
+ * — three states, and a weight is never a fourth), and a designating Ask
+ * states no message weight at all, because none is offered (§10). The disk
+ * half — `resident.weight` in the created thread's frontmatter,
+ * `Resident.weight` echoed by `GET /api/agents` — is the issue's
+ * real-workspace drill, recorded in its E2E Verification Log; this suite's
+ * Vite has no server behind it (INFRA-028).
  */
 
 const THREADS_VIEW: StubRow = {
@@ -186,26 +190,56 @@ test.describe("the weight Ask designates a resident at", () => {
     expect("weight" in body).toBe(false);
   });
 
-  test("keeps the two weights apart on the wire, and says which is which first", async ({
+  /**
+   * **One editor per meaning** (UI-192), replacing the deleted "keeps the two
+   * weights apart on the wire, and says which is which first". That test
+   * pinned the rejected design: it opened the address popover of a designating
+   * Ask, found live message-weight rows and a `[data-designation-boundary]`
+   * sentence reconciling them with the "at" pill, chose in both, and asserted
+   * both fields left together. Deleted with reasons, per sprint-026 P7:
+   *
+   * - "the popover offers `[data-weight-key]` rows while designating" — the
+   *   rows are gone: two adjacent editors offering the same levels was the
+   *   2026-09-06 report's defect, and the "at" pill is the one editor now.
+   * - "the boundary sentence explains what the rows govern" — nothing to
+   *   explain once there is no second editor; the sentence is deleted.
+   * - "`body.weight` and `body.resident.weight` travel together" — a
+   *   designating Ask offers no message weight, so it states none (§10: a
+   *   value the surface no longer shows must not be sent). The designation's
+   *   level inside `resident` is pinned above; the message field's emptiness
+   *   is pinned here.
+   */
+  test("offers no second weight editor while designating, and the choice stays put", async ({
     page,
   }) => {
     const corpus = await openComposer(page);
     await expect(page.locator(LEVEL)).toBeVisible();
 
-    // The message weight, one gesture behind the address line — whose rows now
-    // carry the boundary: a level here rides the message and governs only what
-    // the resident hands off.
+    // A standing message weight, chosen in the one state that offers it —
+    // "no owner", where the "at" pill leaves and the address's rows return.
+    await pick(page, OWNER, "no owner — the main agent");
+    await expect(page.locator(LEVEL)).toHaveCount(0);
     await page.locator('button[data-address-line="compose"]').click();
     const pop = page.locator('[data-address-pop="compose"]');
     await pop.waitFor();
-    await expect(pop.locator("[data-designation-boundary]")).toContainText(
-      "governs only what its own agent hands off",
-    );
     await pop.locator('[data-weight-key="light"]').click();
+
+    // Back to a designating Ask: the address closes its weight section — one
+    // editor per meaning — and the standing "light" is unshown from here on.
+    // With this roster naming a single lane, that leaves nothing behind the
+    // line at all: it renders as plain text, and no popover opens. (The
+    // rebuilt popover itself — the roster, the ✕, Escape — is the overlay
+    // battery's designation-popover entry, over the crowded fixture.)
+    await pick(page, OWNER, "researcher");
+    await expect(pop).toBeHidden();
+    await expect(page.locator('[data-address-line="compose"]')).toBeVisible();
+    await expect(page.locator('button[data-address-line="compose"]')).toHaveCount(0);
+    await expect(page.locator("[data-weight-key]")).toHaveCount(0);
+    await expect(page.locator("[data-designation-boundary]")).toHaveCount(0);
 
     // The designation's own level, on the owner control.
     await pick(page, LEVEL, "Heavy or judgment-laden");
-    await page.locator(".compose-panel textarea").fill("Both weights, both stated.");
+    await page.locator(".compose-panel textarea").fill("One weight, one home.");
     await page.locator(".btn-ask").click();
 
     await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
@@ -213,11 +247,30 @@ test.describe("the weight Ask designates a resident at", () => {
       resident?: unknown;
       weight?: unknown;
     };
-    // Each on its own field: the message's at top level, where §7 gives it the
-    // hand-off job — the resident's inside the designation, where §7 puts the
-    // only place the choice exists.
+    // The resident's level, inside the designation, where §7 puts the choice…
+    expect(body.resident).toEqual({ name: "researcher", weight: "heavy" });
+    // …and the unshown standing "light" did NOT ride the message's field: a
+    // value the surface no longer shows must not act (§10).
+    expect("weight" in body).toBe(false);
+  });
+
+  test("states the message weight from the address when no owner stands", async ({ page }) => {
+    const corpus = await openComposer(page);
+    await pick(page, OWNER, "no owner — the main agent");
+    await page.locator('button[data-address-line="compose"]').click();
+    const pop = page.locator('[data-address-pop="compose"]');
+    await pop.waitFor();
+    await pop.locator('[data-weight-key="light"]').click();
+    await page.locator(".compose-panel textarea").fill("No owner, weighed.");
+    await page.locator(".btn-ask").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const body = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      resident?: unknown;
+      weight?: unknown;
+    };
     expect(body.weight).toBe("light");
-    expect(body.resident).toEqual({ weight: "heavy" });
+    expect(body.resident).toBeNull();
   });
 });
 

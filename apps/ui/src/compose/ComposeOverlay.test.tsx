@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { designationWeightSentence, ADDRESS_DESIGNATING_TITLE, type RowNotice } from "@corpus/kit";
+import { ADDRESS_RECIPIENT_TITLE, type RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness, docRowFixture, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
@@ -734,45 +734,90 @@ describe("ComposeOverlay", () => {
     });
 
     /**
-     * The two weights, together — the criterion this issue stands on. Neither
-     * choice lands on the other's field, and the overlay says which is which:
-     * the level rows the person might mistake for the resident's carry the
-     * boundary sentence, and the line's title names the split.
+     * **One editor per meaning** — the criterion UI-192 stands on, replacing
+     * UI-185's "two weights, together". While a designation stands (the
+     * default), the "at" pill is the surface's only weight editor: the address
+     * offers no level rows, carries no boundary sentence, and its tooltip
+     * reconciles nothing. The deleted assertions — `[data-designation-boundary]`
+     * text, `ADDRESS_DESIGNATING_TITLE` on the line, and a message weight
+     * riding beside the designation's — pinned exactly the duplicated-control
+     * design the 2026-09-06 report named as broken.
      */
-    it("keeps the message weight and the designation weight apart, and says which is which", async () => {
-      const wire = declaring();
+    it("offers one weight editor while designating, and sends only the designation's level", async () => {
+      // A designated lane on the roster, so the address has a recipient list
+      // to open to — without one a designating send's line has nothing behind
+      // it at all and renders as plain text (the case pinned in kit's own
+      // ComposerAddress.test.tsx).
+      const wire = composeTransport({
+        rows: [skillRow(), RESEARCHER],
+        docs: { [ORCHESTRATE_SKILL_ID]: skillDoc() },
+        lanes: [
+          {
+            lane: "th_parked",
+            resident: { name: "researcher", docId: "doc_res", weight: null, designationId: null },
+            live: false,
+            since: new Date().toISOString(),
+            pending: 0,
+            working: false,
+            summary: null,
+            origin: { id: "th_parked", title: "A parked conversation" },
+          },
+        ],
+      });
       const { container } = mount(wire);
       const level = await shownLevels(container);
 
-      // The message weight, from the address popover — openable, because the
-      // declared levels make the address a choice by the time the owner's own
-      // control has appeared.
+      // The address opens to the recipient alone: no second weight editor, no
+      // second owner editor, no clause reconciling it with the pill beside it.
       await waitFor(() => {
         expect(container.querySelector('button[data-address-line="compose"]')).not.toBeNull();
       });
+      const line = container.querySelector('button[data-address-line="compose"]') as HTMLElement;
+      expect(line.getAttribute("title")).toContain(ADDRESS_RECIPIENT_TITLE);
+      expect(line.getAttribute("title")).not.toMatch(/owner control|not from here/u);
+      fireEvent.click(line);
+      expect(container.querySelector("[data-weight-key]")).toBeNull();
+      expect(container.querySelector("[data-designation-boundary]")).toBeNull();
+      fireEvent.click(line);
+
+      // The one editor, and the one field its choice lands on.
+      pickFrom(level, "Heavy or judgment-laden");
+      type(container, "one weight, one home");
+      fireEvent.click(button(container, "btn-ask"));
+
+      const body = await askBody(wire);
+      // Inside the designation, where §7 puts the choice…
+      expect(body["resident"]).toEqual({ weight: "heavy" });
+      // …and never leaked onto the message's field: nothing was offered there,
+      // so nothing is sent there (§10).
+      expect("weight" in body).toBe(false);
+    });
+
+    /**
+     * The other state, so "one editor per meaning" is measured in both: with
+     * "no owner" picked nothing designates, the "at" pill leaves, and the
+     * address's rows return as the surface's single weight editor — the
+     * message's weight, on the message's field.
+     */
+    it("returns the weight to the address when no owner stands, on the message's field", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
+      pickFrom(ownerPicker(container), "no owner — the main agent");
+      expect(levelPicker(container)).toBeNull();
+
       const line = container.querySelector('button[data-address-line="compose"]') as HTMLElement;
       fireEvent.click(line);
       await waitFor(() => {
         expect(container.querySelector('[data-weight-key="light"]')).not.toBeNull();
       });
-      // Where the wrong weight would be picked, the overlay says what a level
-      // here governs and where the resident's own level lives.
-      const boundary = container.querySelector("[data-designation-boundary]");
-      expect(boundary?.textContent).toBe(designationWeightSentence("its own agent"));
-      expect(line.getAttribute("title")).toContain(ADDRESS_DESIGNATING_TITLE);
       fireEvent.click(container.querySelector('[data-weight-key="light"]') as HTMLElement);
-
-      // The designation weight, from the owner's own control.
-      pickFrom(level, "Heavy or judgment-laden");
-      type(container, "both weights stated");
+      type(container, "no owner, weighed");
       fireEvent.click(button(container, "btn-ask"));
 
       const body = await askBody(wire);
-      // The message's, on the message's field — it governs what the resident
-      // hands off, never the resident's own turn (§7).
       expect(body["weight"]).toBe("light");
-      // The resident's, inside the designation, where §7 puts the choice.
-      expect(body["resident"]).toEqual({ weight: "heavy" });
+      expect(body["resident"]).toBeNull();
     });
 
     it("leaves Capture exactly as it was — a capture designates nothing", async () => {

@@ -114,18 +114,19 @@ const RESIDENT_TITLE =
   "recipient beside it: a recipient routes this one message and changes nothing else.";
 
 /**
- * What the designation's weight control is, and what it is not (UI-185).
+ * What the designation's weight control is (UI-185).
  *
  * The two metas are `residentActions.ts`'s own, joined — one declaration of
  * what a level row means and what leaving the set alone means, shared with the
- * thread menu's rows rather than reworded here. The last sentence is this
- * surface's alone, because only this surface has a second weight beside it to
- * be mistaken for.
+ * thread menu's rows rather than reworded here. The sentence this constant
+ * used to end with — "This is not the weight in the address beside it" — is
+ * deleted (UI-192): while this control shows, the address offers no weight at
+ * all, so there is no second control left to be mistaken for and a tooltip
+ * reconciling two controls was the reported defect stating itself.
  */
 const RESIDENT_WEIGHT_TITLE =
   `${LEVEL_WEIGHT_META} (SPEC.md §7: a resident's weight is set when it is designated, ` +
-  `not per message). Left alone, ${LAUNCHER_WEIGHT_META}. ` +
-  "This is not the weight in the address beside it: that one rides this message.";
+  `not per message). Left alone, ${LAUNCHER_WEIGHT_META}.`;
 
 /** Names the control for the DOM and the suites. */
 export const RESIDENT_WEIGHT_ARIA = "The weight this conversation's resident works at";
@@ -254,12 +255,16 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
    * therefore its one statement.
    *
    * `designating` is what tells the address a resident is being **created**
-   * (UI-185): its weight section then says its levels ride the message and
-   * govern only what that resident hands off — the resident's own level is the
-   * owner control's, one label to the right. The choice still travels, as the
-   * *message* weight, because §7 gives it that job and Capture reads the same
-   * control; what changes is that the overlay now says which weight went
-   * where, instead of letting the one visible control read as the resident's.
+   * (UI-185, redrawn by UI-192): the address then offers **no weight editor**
+   * and states no weight — the "at" pill beside the owner is the one home of
+   * the question, because the resident being designated is who answers this
+   * turn and its level is the choice that matters. UI-185's design kept the
+   * message-weight rows live beside the "at" pill with a boundary sentence
+   * under them, and that pairing — two adjacent editors offering the same
+   * levels, reconciled by a tooltip — is the defect the 2026-09-06 report
+   * named. With "no owner" picked nothing designates, the "at" pill leaves,
+   * and the address's rows return as the surface's single weight editor —
+   * one editor per meaning, in every state.
    */
   const address = composerAddress({
     weight,
@@ -492,18 +497,21 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
            * per message — and Ask is where most designations are made, so this
            * is where the choice must exist).
            *
-           * Beside the owner and *not* inside the address, because the two
-           * weights are different things: the address's rides this message and
-           * governs only hand-offs, this one is what the resident **is** for
-           * as long as the conversation lives. `at` is the lead
-           * `residentActions.ts` gives an act's level ("— at heavy"), so the
-           * pair reads as one designation: *owner researcher, at heavy*.
+           * **The one weight editor while a designation stands** (UI-192).
+           * While this pill shows, the address beside it offers no weight —
+           * the resident being designated answers this turn, so this level is
+           * the answer to "how much thought does the work get", and a second
+           * editor whose choice governed only hand-offs was the reported
+           * duplication. `at` is the lead `residentActions.ts` gives an act's
+           * level ("— at heavy"), so the pair reads as one designation:
+           * *owner researcher, at heavy*.
            *
            * Offered only where there is a resident to weigh — with "no owner"
            * picked it disappears rather than dims, and any standing choice is
            * then not sent, because a value the surface no longer shows must
-           * not act (§10). A workspace declaring no levels gets no control at
-           * all, exactly as the thread menu's rows behave.
+           * not act (§10); the address's own rows return in that state as the
+           * surface's single weight editor. A workspace declaring no levels
+           * gets no control at all, exactly as the thread menu's rows behave.
            */}
           {levels.length > 0 && resident !== null ? (
             <span className="compose-resident compose-resident-weight">

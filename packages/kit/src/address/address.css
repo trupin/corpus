@@ -310,16 +310,18 @@ button.address-line:focus-visible {
  *   is for content that cannot fit and never for content that was not given
  *   room. Where the roster genuinely outruns the room the list still scrolls and
  *   still says so — that is the honest, unsatisfiable end of the rule.
- * - **One row is the floor**, measured rather than declared, because the parts
- *   above and below the list are not all the same height (a resident's weight
- *   sentence is three lines where a level row is one). A card squeezed until the
- *   list was 0px high would clear the head and offer nothing, which is the
- *   defect wearing different clothes — so where the room will not take the fixed
- *   parts and one row, `--address-pop-shift` moves the card *down* until its top
- *   is 6px inside the scrollport. A clamp and never a flip: the card stays where
- *   a person looks for it, and in the one viewport where it cannot fit at all
- *   (1280×400, whose reader scrollport is 187px) it covers its own composer
- *   rather than the head.
+ * - **`--min-usable-height` is the list's floor** (UI-192; the kit token,
+ *   `tokens.css`). It used to be one row, measured — "a card squeezed until the
+ *   list was 0px high would clear the head and offer nothing" — and that
+ *   argument stopped one pixel past its own conclusion: over the crowded
+ *   fixture a one-row floor rendered a 25px sliver of a ten-lane roster, which
+ *   *is* a control that offers nothing. The list is a kit `ScrollArea` now, so
+ *   the clamp is the primitive's, and where the room will not take the fixed
+ *   parts and that minimum, `--address-pop-shift` moves the card *down* until
+ *   its top is 6px inside the scrollport. A clamp and never a flip: the card
+ *   stays where a person looks for it, and in the one viewport where it cannot
+ *   fit at all (1280×400, whose reader scrollport is 187px) it covers its own
+ *   composer rather than the head.
  *
  * ## It is still not allowed to grow for what it holds
  *
@@ -333,11 +335,23 @@ button.address-line:focus-visible {
  *
  * Only the lane list scrolls. The statement and the weight section are the parts
  * UI-127 stabilised, and a scroll offset must never be able to move them.
+ *
+ * ## The card is a kit `Popover` since UI-192
+ *
+ * It carries `.kit-popover` (controls.css: `position: fixed`, 4px padding, the
+ * floating-surface paint) under this class. The selector below is scoped to
+ * `.composer-address` for specificity, not taste: the card is the one kit
+ * popover that anchors to its own line and grows upward, so this block must
+ * win the position and the padding whatever order the two sheets load in.
+ * What it deliberately does NOT override is the primitive's contract — the ✕,
+ * the Escape handling and the focus trap are the component's, not styleable
+ * away.
  */
-.address-pop {
+.composer-address .address-pop {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
+  top: auto;
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -357,6 +371,32 @@ button.address-line:focus-visible {
      never a number, because a number is what this issue removed. */
   max-height: var(--address-pop-max, none);
   transform: translateY(var(--address-pop-shift, 0px));
+}
+
+/* The exit the card never had (UI-192): the primitive's ✕, pinned to the top
+   right corner rather than taking a row of the card's height. It floats over
+   the head line, so the first section clears it below. */
+.composer-address .address-pop > .kit-popover-close {
+  position: absolute;
+  top: 4px;
+  right: 7px;
+  z-index: 1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 6px;
+}
+
+.composer-address .address-pop > .kit-popover-close:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* Whatever renders first under the ✕ keeps out of its corner — the head's
+   "N lanes · scroll for the rest" note, or a headless card's weight lead. */
+.address-pop > .kit-popover-close + * {
+  padding-right: 28px;
 }
 
 /*
@@ -418,29 +458,19 @@ button.address-line:focus-visible {
   gap: 5px;
 }
 
+/* The lane list is a kit `ScrollArea` since UI-192, so `.scroll-region`
+   (controls.css) owns its overflow, its scrollbar and — the point — its floor:
+   `min-height: var(--min-usable-height)`. The `min-height: 0` that used to
+   stand here is exactly what let the flex column squeeze a crowded roster to
+   a 25px sliver, and it must never come back. */
 .recipient-lanes {
   flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   /* A wrap container given a height distributes its lines by default; the rows
      belong at the top of the list, not spread down it. */
   align-content: flex-start;
   /* Reserved always, so the roster that grows past the ceiling does not re-wrap
      the rows that were already there. */
   scrollbar-gutter: stable;
-}
-
-/* The board's own scrollbar vocabulary (`design/index.html`: `.col-list`,
-   `.reader-scroll`). Styling it also takes the list off macOS's overlay
-   scrollbars, which are invisible until you already scrolled — exactly the
-   affordance a capped list cannot afford to hide. */
-.recipient-lanes::-webkit-scrollbar {
-  width: 8px;
-}
-
-.recipient-lanes::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 99px;
 }
 
 /* ── Row anatomy, shared by both sections ── */

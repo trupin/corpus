@@ -8,15 +8,19 @@ import { DEFAULT_ROW_NOTE } from "../recipient/statement.js";
 import type { ComposerRecipient } from "../recipient/useComposerRecipient.js";
 import type { ComposerWeight } from "../weight/weightChoice.js";
 import {
-  ADDRESS_DESIGNATING_TITLE,
   ADDRESS_FLOOR_TITLE,
   ADDRESS_OPEN_TITLE,
+  ADDRESS_RECIPIENT_TITLE,
   composerAddress,
-  designationWeightSentence,
   residentWeightSentence,
   NOBODY_ASKED,
 } from "./addressModel.js";
-import { ComposerAddress, lanesCappedNote, WEIGHT_GROUP_LABEL } from "./ComposerAddress.js";
+import {
+  ADDRESS_POP_LABEL,
+  ComposerAddress,
+  lanesCappedNote,
+  WEIGHT_GROUP_LABEL,
+} from "./ComposerAddress.js";
 
 /**
  * The control (UI-126): the line, the popover, and what the popover refuses to
@@ -140,14 +144,32 @@ describe("the line", () => {
     expect(pop()).toBeNull();
   });
 
-  it("closes on a pointer landing outside, and not on one inside", () => {
+  it("closes on the real press sequence too — mousedown, then click", () => {
+    // A browser press is `mousedown` then `click`. The control is the card's
+    // `anchor`, so the kit `Popover`'s outside-press dismissal ignores the
+    // `mousedown` half and the `click` half toggles — without the anchor the
+    // two race on one press, and whether the line closed or re-opened its own
+    // card depended on when the state flush landed between the events (found
+    // against the real browser, UI-192).
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    expect(pop()).not.toBeNull();
+    fireEvent.mouseDown(line());
+    expect(pop()).not.toBeNull();
+    fireEvent.click(line());
+    expect(pop()).toBeNull();
+  });
+
+  it("closes on a press landing outside, and not on one inside", () => {
     render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
     fireEvent.click(line());
     const inside = document.querySelector('[data-recipient-lane="orchestrator"]');
     if (inside === null) throw new Error("no row");
-    fireEvent.pointerDown(inside);
+    // `mousedown`, because that is the event the kit `Popover`'s outside-press
+    // dismissal listens for (capture, on the document).
+    fireEvent.mouseDown(inside);
     expect(pop()).not.toBeNull();
-    fireEvent.pointerDown(document.body);
+    fireEvent.mouseDown(document.body);
     expect(pop()).toBeNull();
   });
 
@@ -170,9 +192,7 @@ describe("the line", () => {
  */
 describe("the line's title", () => {
   it("leads with the whole statement, then says what pressing it does", () => {
-    // A resident recipient, whose line carries a weight clause and so is the
-    // statement the 22ch slot actually truncates.
-    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} computed="th_a" />);
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
     const title = line().getAttribute("title") ?? "";
     // The caret is not part of the sentence, so the text element is the one
     // compared: it is what the slot truncates and what the title stands in for.
@@ -180,6 +200,16 @@ describe("the line's title", () => {
     expect(said).not.toBe("");
     expect(title.startsWith(said)).toBe(true);
     expect(title).toContain(ADDRESS_OPEN_TITLE);
+  });
+
+  it("promises only the recipient where the popover offers no weight editor", () => {
+    // A resident recipient: the weight there is a fact, not a choice, so a
+    // title reading "change either" would promise a control the card refuses
+    // to offer (rider signed 2026-08-19; wording per UI-192).
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} computed="th_a" />);
+    const title = line().getAttribute("title") ?? "";
+    expect(title).toContain(ADDRESS_RECIPIENT_TITLE);
+    expect(title).not.toContain(ADDRESS_OPEN_TITLE);
   });
 
   it("says the floor's own explanation there instead", () => {
@@ -297,30 +327,84 @@ describe("the resident rule (SPEC.md §7 and §10, rider signed 2026-08-19)", ()
 });
 
 /**
- * A send that also designates a resident (UI-185): the rows stay — the choice
- * is the message's, which §7 gives a real job — and the section says out loud
- * what they do not govern.
+ * A send that also designates a resident (UI-185, redrawn by UI-192): **one
+ * editor per meaning.** The surface's own owner/"at" controls are the single
+ * home of the weight, so the popover offers no level rows, no boundary
+ * sentence, and no tooltip reconciling two controls — the popover shrinks to
+ * the one thing the surface's row cannot do, choosing the recipient lane.
  */
 describe("a designating send", () => {
-  it("keeps the level rows and adds the boundary sentence under them", () => {
-    render(<Host lanes={[ORCHESTRATOR]} designating="its own agent" />);
+  it("offers no weight editor — the roster is the whole card", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} designating="its own agent" />);
     fireEvent.click(line());
-    expect(weightKeys()).toEqual(["light", "standard", "heavy"]);
-    const boundary = document.querySelector("[data-designation-boundary]");
-    expect(boundary?.textContent).toBe(designationWeightSentence("its own agent"));
-  });
-
-  it("explains itself on the line's title, not with the ordinary sentence", () => {
-    render(<Host lanes={[ORCHESTRATOR]} designating="researcher" />);
-    const title = line().getAttribute("title") ?? "";
-    expect(title).toContain(ADDRESS_DESIGNATING_TITLE);
-    expect(title).not.toContain(ADDRESS_OPEN_TITLE);
-  });
-
-  it("says nothing extra when the send designates nobody", () => {
-    render(<Host lanes={[ORCHESTRATOR]} />);
-    fireEvent.click(line());
+    expect(pop()).not.toBeNull();
+    expect(document.querySelectorAll("[data-recipient-lane]")).toHaveLength(2);
+    expect(weightKeys()).toEqual([]);
+    expect(screen.queryByRole("group", { name: WEIGHT_GROUP_LABEL })).toBeNull();
     expect(document.querySelector("[data-designation-boundary]")).toBeNull();
+  });
+
+  it("does not pretend to open when the roster alone offers nothing", () => {
+    // One lane and no weight editor: nothing behind the line, so it is said
+    // rather than offered — the same rule the no-levels case already follows.
+    render(<Host lanes={[ORCHESTRATOR]} designating="researcher" />);
+    expect(line().tagName).toBe("SPAN");
+  });
+
+  it("carries no reconciling clause on the line's title", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} designating="researcher" />);
+    const title = line().getAttribute("title") ?? "";
+    expect(title).toContain(ADDRESS_RECIPIENT_TITLE);
+    expect(title).not.toContain(ADDRESS_OPEN_TITLE);
+    expect(title).not.toMatch(/owner control|not from here/u);
+  });
+});
+
+/**
+ * The exits (UI-192): the card is a kit `Popover`, so a person can always see
+ * how to leave — the ✕, Escape with focus returned, and the outside press the
+ * old card offered as its only, guessable path.
+ */
+describe("the exits", () => {
+  it("renders a visible close control that closes and returns focus", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    line().focus();
+    fireEvent.click(line());
+    const close = screen.getByRole("button", { name: `Close ${ADDRESS_POP_LABEL}` });
+    fireEvent.click(close);
+    expect(pop()).toBeNull();
+    expect(document.activeElement).toBe(line());
+  });
+
+  it("closes on Escape, returns focus, and lets no layer behind act on the key", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    line().focus();
+    fireEvent.click(line());
+    // Opening moved focus into the card — that is what puts the key on the
+    // card's own subtree, where the kit `Popover` consumes it and the app's
+    // escape chain yields (`data-kit-menu`).
+    const within = document.activeElement;
+    expect(pop()?.contains(within)).toBe(true);
+    const outside = vi.fn();
+    document.addEventListener("keydown", outside);
+    try {
+      fireEvent.keyDown(within ?? document.body, { key: "Escape" });
+    } finally {
+      document.removeEventListener("keydown", outside);
+    }
+    expect(pop()).toBeNull();
+    expect(document.activeElement).toBe(line());
+    // stopPropagation: the press never bubbled past the card to the document.
+    expect(outside).not.toHaveBeenCalled();
+  });
+
+  it("marks the card for the app's escape chain, and names it for everyone", () => {
+    render(<Host lanes={[ORCHESTRATOR, RESIDENT]} />);
+    fireEvent.click(line());
+    const card = pop();
+    expect(card?.hasAttribute("data-kit-menu")).toBe(true);
+    expect(card?.getAttribute("role")).toBe("dialog");
+    expect(card?.getAttribute("aria-label")).toBe(ADDRESS_POP_LABEL);
   });
 });
 

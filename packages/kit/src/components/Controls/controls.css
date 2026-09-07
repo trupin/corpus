@@ -317,4 +317,10 @@ button.chip:not(.on):not(.warn):not(.good):hover {
 
 .scroll-region[data-overflowing="true"] {
   border-bottom: 1px solid var(--line-strong);
+  /* The app sizes borders into the box (`box-sizing: border-box`), so the
+     affordance border would bite 1px out of the guaranteed region — an
+     overflowing region measured 119px of clientHeight against the 120px token
+     (UI-192, found by the battery). The minimum is a promise about the usable
+     inside, so the border pays for itself. */
+  min-height: calc(var(--min-usable-height) + 1px);
 }
