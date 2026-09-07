@@ -1,3 +1,4 @@
+import { Button } from "@corpus/kit";
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { edgesToText, textToEdges, textToScope, textToStages } from "./kanban";
@@ -189,12 +190,12 @@ export function KanbanDialog({ mode, kanban, onSubmit, onClose }: KanbanDialogPr
         )}
 
         <div className="kanban-actions">
-          <button type="button" className="kanban-cancel" onClick={onClose}>
+          <Button className="kanban-cancel" onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="kanban-save">
+          </Button>
+          <Button type="submit" className="kanban-save">
             {mode === "create" ? "Create the board" : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

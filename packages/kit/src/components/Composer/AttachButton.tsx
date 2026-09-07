@@ -1,4 +1,5 @@
 import { useRef, type ReactElement } from "react";
+import { IconButton } from "../Controls/IconButton.js";
 
 /**
  * The 📎 of SPEC.md §6's three routes — the one that needs markup rather than
@@ -31,17 +32,16 @@ export function AttachButton({ surface, onFiles }: AttachButtonProps): ReactElem
 
   return (
     <>
-      <button
-        type="button"
+      <IconButton
         className="clip"
+        label="Attach files"
         title="Attach files from disk"
-        aria-label="Attach files"
         onClick={() => {
           picker.current?.click();
         }}
       >
         📎
-      </button>
+      </IconButton>
       <input
         ref={picker}
         type="file"

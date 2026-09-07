@@ -1,10 +1,12 @@
 import {
   AttachButton,
+  Button,
   COMPOSER_PRIMARY_KEY,
   composerAddress,
   ComposerAddress,
   composerReachesAgent,
   handleComposerKeyDown,
+  IconButton,
   PendingAttachments,
   useAttachmentIntake,
   useComposerRecipient,
@@ -275,17 +277,16 @@ export function CommentPopover({
         if (event.target === event.currentTarget) event.preventDefault();
       }}
     >
-      <button
-        type="button"
+      <IconButton
         className="cm-drag"
         data-comment-drag
-        aria-label={COMMENT_MOVE_LABEL}
+        label={COMMENT_MOVE_LABEL}
         title={COMMENT_MOVE_HINT}
         onPointerDown={drag.onPointerDown}
         onKeyDown={drag.onKeyDown}
       >
         <span aria-hidden="true">⠿</span>
-      </button>
+      </IconButton>
       <div className="cm-quote">“{quotePreview(quote)}”</div>
       <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
       <textarea
@@ -314,8 +315,7 @@ export function CommentPopover({
       <div className="composer-foot">
         <AttachButton surface="comment" onFiles={intake.add} />
         <ComposerAddress address={address} surface="comment" />
-        <button
-          type="button"
+        <Button
           className={asking ? "toggle on" : "toggle"}
           aria-pressed={asking}
           onClick={() => {
@@ -323,10 +323,10 @@ export function CommentPopover({
           }}
         >
           {asking ? ASK_AGENT_LABEL : NOTE_ONLY_LABEL}
-        </button>
-        <button type="button" className="send" disabled={!canSend} data-comment-send onClick={send}>
+        </Button>
+        <Button className="send" disabled={!canSend} data-comment-send onClick={send}>
           {COMMENT_SUBMIT_LABEL}
-        </button>
+        </Button>
       </div>
     </div>,
     document.body,

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type MultipartBody, type StubCorpus, type StubRow } from "./stubCorpus";
 
@@ -62,10 +63,15 @@ async function openComposer(page: import("@playwright/test").Page): Promise<Stub
   return corpus;
 }
 
-// The weight label reuses `.compose-resident`'s register, so the owner is the
-// one that is not it.
-const OWNER = ".compose-resident:not(.compose-resident-weight) select";
-const LEVEL = ".compose-resident-weight select";
+// The kit `Select` pills (UI-191), reached by the hook each one declares.
+const OWNER = '[data-select="owner"]';
+const LEVEL = '[data-select="resident-weight"]';
+
+/** Drives a kit `Select`: open the pill, press the row by its visible label. */
+async function pick(page: Page, control: string, label: string): Promise<void> {
+  await page.locator(control).click();
+  await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+}
 
 /** A file with a distinguishable name and length, so "which file" is answerable. */
 const SHOT = {
@@ -79,6 +85,65 @@ function textPart(body: MultipartBody | undefined, field: string): string | unde
   return body?.text.find((part) => part.field === field)?.value;
 }
 
+test.describe("the one dropdown (UI-191)", () => {
+  test("the owner control is fully operable from the keyboard", async ({ page }) => {
+    await openComposer(page);
+    await page.locator(OWNER).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("menu")).toBeVisible();
+    // Type-ahead lands on the first label starting with what was typed…
+    await page.keyboard.press("r");
+    // …and Enter chooses it, with no pointer event anywhere in the gesture.
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(page.locator(`${OWNER} .select-value`)).toHaveText("researcher");
+
+    // Escape closes with the value unchanged and focus on the trigger.
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(page.locator(OWNER)).toBeFocused();
+    await expect(page.locator(`${OWNER} .select-value`)).toHaveText("researcher");
+  });
+
+  test("a long owner label ellipsises on the pill and is whole in the menu", async ({ page }) => {
+    const LONG_NAME = "a-methodical-researcher-of-long-standing";
+    await stubCorpus(page, [
+      THREADS_VIEW,
+      PROFILE,
+      SKILL,
+      {
+        id: "doc_long",
+        type: "agent-def",
+        title: LONG_NAME,
+        path: `.claude/agents/${LONG_NAME}.md`,
+      },
+    ]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.keyboard.press("c");
+    await expect(page.locator(".compose-panel textarea")).toBeVisible();
+
+    await pick(page, OWNER, LONG_NAME);
+    const value = page.locator(`${OWNER} .select-value`);
+    // Truncated with an affordance, never cut mid-word without one: the full
+    // value rides the ellipsised span's own title.
+    await expect(value).toHaveAttribute("title", LONG_NAME);
+    expect(await value.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+
+    // The popover is free to be wider than its trigger, and shows the whole
+    // option text.
+    await page.locator(OWNER).click();
+    const option = page.getByRole("menuitemradio", { name: LONG_NAME });
+    await expect(option).toBeVisible();
+    expect(await option.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    const menuBox = await page.getByRole("menu").boundingBox();
+    const triggerBox = await page.locator(OWNER).boundingBox();
+    expect(menuBox?.width ?? 0).toBeGreaterThan(triggerBox?.width ?? 0);
+  });
+});
+
 test.describe("the weight Ask designates a resident at", () => {
   test("offers the workspace's own levels behind the owner, launcher-first", async ({ page }) => {
     await openComposer(page);
@@ -88,13 +153,15 @@ test.describe("the weight Ask designates a resident at", () => {
     // the same wording the thread menu's rows carry.
     const level = page.locator(LEVEL);
     await expect(level).toBeVisible();
-    await expect(level.locator("option")).toHaveText([
+    await level.click();
+    await expect(page.getByRole("menuitemradio")).toHaveText([
       "the launcher decides",
       "Small and mechanical",
       "Standard",
       "Heavy or judgment-laden",
     ]);
-    await expect(level).toHaveValue("");
+    await page.keyboard.press("Escape");
+    await expect(level.locator(".select-value")).toHaveText("the launcher decides");
   });
 
   test("sends the level inside the designation — a profile at heavy, and no message weight", async ({
@@ -102,8 +169,8 @@ test.describe("the weight Ask designates a resident at", () => {
   }) => {
     const corpus = await openComposer(page);
 
-    await page.locator(OWNER).selectOption("researcher");
-    await page.locator(LEVEL).selectOption("heavy");
+    await pick(page, OWNER, "researcher");
+    await pick(page, LEVEL, "Heavy or judgment-laden");
     await page.locator(".compose-panel textarea").fill("Take the forecast apart.");
     await page.locator(".btn-ask").click();
 
@@ -137,7 +204,7 @@ test.describe("the weight Ask designates a resident at", () => {
     await pop.locator('[data-weight-key="light"]').click();
 
     // The designation's own level, on the owner control.
-    await page.locator(LEVEL).selectOption("heavy");
+    await pick(page, LEVEL, "Heavy or judgment-laden");
     await page.locator(".compose-panel textarea").fill("Both weights, both stated.");
     await page.locator(".btn-ask").click();
 
@@ -172,8 +239,8 @@ test.describe("an Ask that carries an attachment", () => {
   test("sends the owner and the level as one encoded part, beside the file", async ({ page }) => {
     const corpus = await openComposer(page);
 
-    await page.locator(OWNER).selectOption("researcher");
-    await page.locator(LEVEL).selectOption("heavy");
+    await pick(page, OWNER, "researcher");
+    await pick(page, LEVEL, "Heavy or judgment-laden");
     await page.locator('[data-attach-input="compose"]').setInputFiles([SHOT]);
     // The chip first: it is the precondition, so a request carrying no file is a
     // loss between the composer and the wire rather than a file never taken.
@@ -211,7 +278,7 @@ test.describe("an Ask that carries an attachment", () => {
   }) => {
     const corpus = await openComposer(page);
 
-    await page.locator(OWNER).selectOption("@none");
+    await pick(page, OWNER, "no owner — the main agent");
     await page.locator('[data-attach-input="compose"]').setInputFiles([SHOT]);
     await page.locator(".compose-panel textarea").fill("Nobody owns this.");
     await page.locator(".btn-ask").click();

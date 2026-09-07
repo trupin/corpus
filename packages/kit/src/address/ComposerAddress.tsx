@@ -1,3 +1,4 @@
+import { Button } from "../components/Controls/Button.js";
 import {
   useEffect,
   useLayoutEffect,
@@ -61,7 +62,8 @@ import {
  * ## Keys
  *
  * It claims none — §10's composer key contract is untouched, and the popover
- * adds no binding of its own. Everything here is an ordinary `<button>`: the
+ * adds no binding of its own. Everything here is the kit `Button`, a plain
+ * `<button>` under its skin: the
  * line toggles on click, `↵` or `space`, and closes on a click outside; every
  * row and level is tabbable while open. Escape is deliberately not handled —
  * the app's escape chain owns that key at the surface grain, and a kit
@@ -539,8 +541,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       data-recipient-refused={recipient.refused ?? ""}
     >
       {offers ? (
-        <button
-          type="button"
+        <Button
           className="address-line"
           data-address-line={surface}
           aria-expanded={open}
@@ -557,7 +558,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           <span className="address-caret" aria-hidden="true">
             ▾
           </span>
-        </button>
+        </Button>
       ) : (
         // §10's recipient statement with nothing to change behind it: said, not
         // offered. Plain text so it neither focuses nor pretends to open — and
@@ -632,9 +633,8 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                   const chosen = weight.weight.chosen === level.key;
                   const known = weight.weight.levels.some((have) => have.key === level.key);
                   return (
-                    <button
+                    <Button
                       key={level.key}
-                      type="button"
                       className={chosen ? "weight-opt on" : "weight-opt"}
                       aria-pressed={chosen}
                       data-weight-key={level.key}
@@ -649,7 +649,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
                       }}
                     >
                       {level.label}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -696,8 +696,7 @@ function LaneButton({ row, recipient, onPreview, innerRef }: LaneButtonProps): R
   // default, the only row on which pressing could otherwise mean nothing.
   const picked = row.lane === recipient.chosen;
   return (
-    <button
-      type="button"
+    <Button
       ref={innerRef}
       className={effective ? "recipient-opt on" : "recipient-opt"}
       aria-pressed={effective}
@@ -733,6 +732,6 @@ function LaneButton({ row, recipient, onPreview, innerRef }: LaneButtonProps): R
       {/* §7's missing-profile report at row width; the sentence is on the
        * statement line and this row's own title. */}
       {row.mark === "" ? null : <span className="recipient-mark">{row.mark}</span>}
-    </button>
+    </Button>
   );
 }

@@ -67,6 +67,7 @@
   --style-warning-wash: rgba(196, 85, 46, 0.22);
   --style-positive-wash: rgba(78, 122, 70, 0.22);
   --style-muted-wash: rgba(86, 93, 102, 0.16);
+  --min-usable-height: 120px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -103,6 +104,7 @@
     --style-warning-wash: rgba(217, 120, 83, 0.28);
     --style-positive-wash: rgba(127, 168, 119, 0.28);
     --style-muted-wash: rgba(166, 171, 179, 0.2);
+    --min-usable-height: 120px;
   }
 }
 
@@ -139,6 +141,7 @@
   --style-warning-wash: rgba(196, 85, 46, 0.22);
   --style-positive-wash: rgba(78, 122, 70, 0.22);
   --style-muted-wash: rgba(86, 93, 102, 0.16);
+  --min-usable-height: 120px;
 }
 
 :root[data-theme="dark"] {
@@ -174,4 +177,5 @@
   --style-warning-wash: rgba(217, 120, 83, 0.28);
   --style-positive-wash: rgba(127, 168, 119, 0.28);
   --style-muted-wash: rgba(166, 171, 179, 0.2);
+  --min-usable-height: 120px;
 }

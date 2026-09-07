@@ -1,6 +1,9 @@
 import {
   AttachButton,
   AutocompleteMenu,
+  Button,
+  Select,
+  type SelectItem,
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
   COMPOSER_SECONDARY_KEY,
@@ -95,18 +98,6 @@ export interface ComposeOverlayProps {
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
-
-/**
- * The sentinel for *no resident at all* in the `<select>`'s value space
- * (UI-173).
- *
- * A `<select>` value is a string and cannot be `null`, so the three states need
- * three strings: `""` is the default, this is nobody, and anything else is a
- * profile name. The value is chosen to be one no profile can have —
- * `AgentNameSchema` refuses a blank or whitespace-only name, and a leading
- * `@` is not part of the invocable name it validates.
- */
-const NO_RESIDENT_VALUE = "@none";
 
 /** The same bound the `@` menu uses, for the same directory. */
 const RESIDENT_CHOICE_LIMIT = 50;
@@ -470,28 +461,31 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
            * Ask only. A capture's thread has a parent, and §7 lets only a
            * standalone thread designate (SHARED-073).
            */}
-          <label className="compose-resident">
+          <span className="compose-resident">
             <span className="compose-resident-label">owner</span>
-            <select
-              aria-label="Who will own this conversation"
-              value={resident === undefined ? "" : (resident ?? NO_RESIDENT_VALUE)}
+            {/*
+             * The kit `Select` takes the three contract states as themselves
+             * (UI-191): `undefined` is the default, `null` is nobody, a
+             * string is a profile name. The `"@none"` sentinel this control
+             * carried while it was a native `<select>` — whose value space is
+             * strings only — is deleted, not ported.
+             */}
+            <Select<string | null | undefined>
+              name="owner"
+              label="Who will own this conversation"
               title={RESIDENT_TITLE}
-              onChange={(event) => {
-                const picked = event.currentTarget.value;
-                setResident(
-                  picked === "" ? undefined : picked === NO_RESIDENT_VALUE ? null : picked,
-                );
-              }}
-            >
-              <option value="">{DEFAULT_RESIDENT_LABEL}</option>
-              <option value={NO_RESIDENT_VALUE}>{NO_RESIDENT_LABEL}</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.name}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              value={resident}
+              onChange={setResident}
+              items={[
+                { value: undefined, label: DEFAULT_RESIDENT_LABEL },
+                { value: null, label: NO_RESIDENT_LABEL },
+                ...profiles.map((profile): SelectItem<string | null | undefined> => ({
+                  value: profile.name,
+                  label: profile.name,
+                })),
+              ]}
+            />
+          </span>
           {/*
            * **The level that resident works at** (UI-185; §7's rider of
            * 2026-08-19: a resident's weight is set when it is designated, not
@@ -512,31 +506,29 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
            * all, exactly as the thread menu's rows behave.
            */}
           {levels.length > 0 && resident !== null ? (
-            <label className="compose-resident compose-resident-weight">
+            <span className="compose-resident compose-resident-weight">
               <span className="compose-resident-label">at</span>
-              <select
-                aria-label={RESIDENT_WEIGHT_ARIA}
-                value={residentWeight ?? ""}
+              {/*
+               * "The launcher decides" is an explicit member, worded as the
+               * thread menu words it: a real outcome the contract reports
+               * back (`Resident.weight` null), never merely an unpressed
+               * state — and it is the way back once a level was picked.
+               */}
+              <Select<string | undefined>
+                name="resident-weight"
+                label={RESIDENT_WEIGHT_ARIA}
                 title={RESIDENT_WEIGHT_TITLE}
-                onChange={(event) => {
-                  const picked = event.currentTarget.value;
-                  setResidentWeight(picked === "" ? undefined : picked);
-                }}
-              >
-                {/*
-                 * An explicit member, worded as the thread menu words it: "the
-                 * launcher decides" is a real outcome the contract reports
-                 * back (`Resident.weight` null), never merely an unpressed
-                 * state — and it is the way back once a level was picked.
-                 */}
-                <option value="">{LAUNCHER_DECIDES_LABEL}</option>
-                {levels.map((level) => (
-                  <option key={level.key} value={level.key}>
-                    {level.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                value={residentWeight}
+                onChange={setResidentWeight}
+                items={[
+                  { value: undefined, label: LAUNCHER_DECIDES_LABEL },
+                  ...levels.map((level): SelectItem<string | undefined> => ({
+                    value: level.key,
+                    label: level.label,
+                  })),
+                ]}
+              />
+            </span>
           ) : null}
         </div>
 
@@ -544,8 +536,8 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
           <AttachButton surface="compose" onFiles={intake.add} />
           <span className="hint">{COMPOSE_HINT}</span>
           <span className="spacer" />
-          <button
-            type="button"
+          <Button
+            variant="outline"
             className="btn-capture"
             disabled={!canCapture}
             title={
@@ -560,9 +552,9 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
             }}
           >
             {CAPTURE_LABEL}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             className="btn-ask"
             disabled={!canAsk}
             title="Start a standalone agent thread"
@@ -571,7 +563,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
             }}
           >
             {ASK_LABEL}
-          </button>
+          </Button>
         </div>
 
         <AutocompleteMenu

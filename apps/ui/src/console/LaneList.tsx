@@ -1,4 +1,4 @@
-import { LaneDot, type LaneRow, type WeightLevel } from "@corpus/kit";
+import { Button, LaneDot, type LaneRow, type WeightLevel } from "@corpus/kit";
 import type { ReactElement } from "react";
 import {
   laneRowTitle,
@@ -63,9 +63,8 @@ export function LaneList({ rows, levels, selectedLane, onSelect }: LaneListProps
       {rows.map((row) => {
         const weight = laneWeightLabel(row, levels);
         return (
-          <button
+          <Button
             key={row.lane}
-            type="button"
             className={row.lane === selectedLane ? "lane sel" : "lane"}
             aria-current={row.lane === selectedLane}
             data-lane={row.lane}
@@ -88,7 +87,7 @@ export function LaneList({ rows, levels, selectedLane, onSelect }: LaneListProps
               </span>
             )}
             <span className="lane-meta">{row.liveness}</span>
-          </button>
+          </Button>
         );
       })}
       {designated.length === 0 ? <div className="lane-empty">{NO_DESIGNATIONS_NOTE}</div> : null}

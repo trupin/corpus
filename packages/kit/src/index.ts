@@ -325,6 +325,38 @@ export {
 // subpath like the tokens: `import "@corpus/kit/cost.css"`.
 export { CostChart, costDomainMax, type CostChartProps } from "./components/Cost/CostChart.js";
 
+// The control primitives (UI-191): one button, one dropdown, everywhere.
+// `Button`/`IconButton`/`Chip`/`Select` are the whole of the product's
+// interactive-element language; `Popover`/`Modal`/`ScrollArea` carry the
+// overlay guarantees UI-193 builds its battery on. Their stylesheet is a
+// subpath, like the tokens: `import "@corpus/kit/controls.css"` — every value
+// in it transcribed from `design/index.html`'s primitives block.
+export {
+  Button,
+  buttonClassName,
+  Chip,
+  chipClassName,
+  IconButton,
+  MIN_USABLE_HEIGHT_PX,
+  MIN_USABLE_HEIGHT_TOKEN,
+  Modal,
+  Popover,
+  ScrollArea,
+  ScrollAreaTooShortError,
+  Select,
+  trapTab,
+  type ButtonProps,
+  type ButtonVariant,
+  type ChipProps,
+  type ChipVariant,
+  type IconButtonProps,
+  type ModalProps,
+  type PopoverProps,
+  type ScrollAreaProps,
+  type SelectItem,
+  type SelectProps,
+} from "./components/Controls/index.js";
+
 // SPEC.md §10's "smart input everywhere": one `@` / `/` / `[[` implementation,
 // shared by the thread composer, the document editor and the global composer.
 // Its stylesheet is a subpath, like the tokens: `import "@corpus/kit/autocomplete.css"`.

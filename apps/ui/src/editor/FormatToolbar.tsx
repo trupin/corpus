@@ -1,4 +1,5 @@
 import { ALIGN_VALUES, INDENT_LEVELS, STYLE_ROLES, type StyleRole } from "@corpus/contract";
+import { IconButton, Select, type SelectItem } from "@corpus/kit";
 import type { Editor } from "@tiptap/react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { HEADING_LEVELS, MARK, NODE } from "./markdown/schema.js";
@@ -54,6 +55,12 @@ export interface FormatToolbarProps {
 /** The block the heading control names, and the value it reports. */
 const PARAGRAPH_VALUE = "0";
 
+/** The heading menu's rows: Text, then the levels the schema round-trips. */
+const BLOCK_ITEMS: readonly SelectItem<string>[] = [
+  { value: PARAGRAPH_VALUE, label: "Text" },
+  ...HEADING_LEVELS.map((level) => ({ value: String(level), label: `Heading ${String(level)}` })),
+];
+
 /** How the four colour roles read in the menu. */
 const ROLE_LABELS: Readonly<Record<StyleRole, string>> = {
   accent: "Accent",
@@ -68,6 +75,22 @@ const ALIGN_LABELS: Readonly<Record<string, string>> = {
   right: "Right",
   justify: "Justify",
 };
+
+/** `""` is "none" in each of the three menus below, worded as the control. */
+const COLOR_ITEMS: readonly SelectItem<string>[] = [
+  { value: "", label: "Colour" },
+  ...STYLE_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] })),
+];
+
+const ALIGN_ITEMS: readonly SelectItem<string>[] = [
+  { value: "", label: "Align" },
+  ...ALIGN_VALUES.map((value) => ({ value, label: ALIGN_LABELS[value] ?? value })),
+];
+
+const INDENT_ITEMS: readonly SelectItem<string>[] = [
+  { value: "", label: "Indent" },
+  ...INDENT_LEVELS.map((level) => ({ value: String(level), label: String(level) })),
+];
 
 interface ToggleSpec {
   readonly name: string;
@@ -225,16 +248,12 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
   /**
    * The last range the document actually had selected.
    *
-   * A `<select>` cannot have its `mousedown` cancelled — cancelling it is what
-   * stops the menu from opening at all — so using one takes focus off the
-   * editor, the browser collapses the selection and ProseMirror adopts the
-   * collapse. By the time `change` fires the words the user had selected are no
-   * longer selected, and a mark command would apply to an empty caret.
-   *
-   * Mirroring the selection as it changes is what survives **every** way of
-   * reaching the control. Capturing it on `mousedown` would not: a keyboard user
-   * tabs to the select and changes it with the arrow keys, and no pointer event
-   * happens at all.
+   * The dropdowns are the kit `Select` (UI-191) — the native `<select>` whose
+   * uncancellable `mousedown` forced this mirror is gone — but the mirror
+   * stays: an open menu focuses its rows so the keyboard talks to them, which
+   * takes focus off the editor all the same. Mirroring the selection as it
+   * changes is what survives **every** way of reaching a control, pointer or
+   * Tab, menu or button.
    */
   const held = useRef<{ from: number; to: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -292,12 +311,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
   const toggleButton = (spec: ToggleSpec): ReactElement => {
     const on = editor.isActive(spec.name);
     return (
-      <button
+      <IconButton
         key={spec.name}
-        type="button"
         data-fmt={spec.name}
-        title={spec.label}
-        aria-label={spec.label}
+        label={spec.label}
         aria-pressed={on}
         className={on ? "on" : undefined}
         onClick={() => {
@@ -306,7 +323,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
         }}
       >
         {spec.glyph}
-      </button>
+      </IconButton>
     );
   };
 
@@ -321,61 +338,49 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
       // command's own `.focus()` then puts the caret back exactly where the user
       // left it.
       onMouseDown={(event) => {
-        // A `select` and an `input` must receive their own mousedown or they
-        // cannot be opened or typed into; everything else is cancelled so the
-        // caret never leaves the document in the first place.
-        if ((event.target as HTMLElement).closest("select, input") === null) {
+        // An `input` must receive its own mousedown or it cannot be typed
+        // into; everything else — the kit dropdowns included, which is what a
+        // custom trigger buys over the native `<select>` — is cancelled so
+        // the caret never leaves the document in the first place.
+        if ((event.target as HTMLElement).closest("input") === null) {
           event.preventDefault();
         }
       }}
     >
       <div className="fmt-group">
-        <select
-          data-fmt="block"
-          aria-label="Block style"
+        <Select
+          name="block"
+          label="Block style"
+          items={BLOCK_ITEMS}
           value={headingValue(editor)}
-          onChange={(event) => {
+          onChange={(value) => {
             closePopovers();
-            const level = headingLevel(event.target.value);
+            const level = headingLevel(value);
             withSelection((target) => {
               if (level === null) void target.chain().focus().setParagraph().run();
               else void target.chain().focus().setHeading({ level }).run();
             });
           }}
-        >
-          <option value={PARAGRAPH_VALUE}>Text</option>
-          {HEADING_LEVELS.map((level) => (
-            <option key={level} value={String(level)}>
-              Heading {level}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <span className="fmt-divider" />
 
       <div className="fmt-group">
         {MARK_BUTTONS.map(toggleButton)}
-        <select
-          data-fmt="color"
-          aria-label="Text colour"
+        <Select
+          name="color"
+          label="Text colour"
+          items={COLOR_ITEMS}
           value={roleValue(editor)}
-          onChange={(event) => {
+          onChange={(role) => {
             closePopovers();
-            const role = event.target.value;
             withSelection((target) => {
               if (role === "") void target.chain().focus().unsetMark(MARK.styleSpan).run();
               else void target.chain().focus().setMark(MARK.styleSpan, { color: role }).run();
             });
           }}
-        >
-          <option value="">Colour</option>
-          {STYLE_ROLES.map((role) => (
-            <option key={role} value={role}>
-              {ROLE_LABELS[role]}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <span className="fmt-divider" />
@@ -385,54 +390,38 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
       <span className="fmt-divider" />
 
       <div className="fmt-group">
-        <select
-          data-fmt="align"
-          aria-label="Alignment"
+        <Select
+          name="align"
+          label="Alignment"
+          items={ALIGN_ITEMS}
           value={alignValue(editor)}
-          onChange={(event) => {
+          onChange={(value) => {
             closePopovers();
-            const value = event.target.value;
             withSelection((target) => {
               setLayout(target, { align: value === "" ? null : value });
             });
           }}
-        >
-          <option value="">Align</option>
-          {ALIGN_VALUES.map((value) => (
-            <option key={value} value={value}>
-              {ALIGN_LABELS[value]}
-            </option>
-          ))}
-        </select>
-        <select
-          data-fmt="indent"
-          aria-label="Indent"
+        />
+        <Select
+          name="indent"
+          label="Indent"
+          items={INDENT_ITEMS}
           value={indentValue(editor)}
-          onChange={(event) => {
+          onChange={(value) => {
             closePopovers();
-            const value = event.target.value;
             withSelection((target) => {
               setLayout(target, { indent: value === "" ? null : Number(value) });
             });
           }}
-        >
-          <option value="">Indent</option>
-          {INDENT_LEVELS.map((level) => (
-            <option key={level} value={String(level)}>
-              {level}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <span className="fmt-divider" />
 
       <div className="fmt-group">
-        <button
-          type="button"
+        <IconButton
           data-fmt="link"
-          title="Link"
-          aria-label="Link"
+          label="Link"
           aria-pressed={editor.isActive(MARK.link)}
           className={editor.isActive(MARK.link) ? "on" : undefined}
           onClick={() => {
@@ -453,12 +442,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           }}
         >
           🔗
-        </button>
-        <button
-          type="button"
+        </IconButton>
+        <IconButton
           data-fmt="image"
-          title="Image"
-          aria-label="Image"
+          label="Image"
           onClick={() => {
             setLinkOpen(false);
             setImageValue("");
@@ -466,12 +453,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           }}
         >
           🖼
-        </button>
-        <button
-          type="button"
+        </IconButton>
+        <IconButton
           data-fmt="table"
-          title="Table"
-          aria-label="Table"
+          label="Table"
           onClick={() => {
             closePopovers();
             void editor
@@ -482,24 +467,20 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           }}
         >
           ▦
-        </button>
-        <button
-          type="button"
+        </IconButton>
+        <IconButton
           data-fmt="rule"
-          title="Divider"
-          aria-label="Divider"
+          label="Divider"
           onClick={() => {
             closePopovers();
             void editor.chain().focus().setHorizontalRule().run();
           }}
         >
           —
-        </button>
-        <button
-          type="button"
+        </IconButton>
+        <IconButton
           data-fmt="clear"
-          title="Clear formatting"
-          aria-label="Clear formatting"
+          label="Clear formatting"
           onClick={() => {
             closePopovers();
             // Marks only. Clearing the *nodes* as well would turn a heading the
@@ -509,7 +490,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps): ReactElement | nu
           }}
         >
           ⌫
-        </button>
+        </IconButton>
       </div>
 
       {linkOpen ? (

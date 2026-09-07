@@ -38,6 +38,9 @@ import "@corpus/kit/tokens.css";
 import "@corpus/kit/row.css";
 import "@corpus/kit/markdown.css";
 import "@corpus/kit/autocomplete.css";
+// The control primitives (UI-191), before every surface sheet: a surface's
+// own mockup-derived rules win ties over the kit's identical declarations.
+import "@corpus/kit/controls.css";
 import "@corpus/kit/composer.css";
 import "@corpus/kit/cost.css";
 import "@corpus/kit/address.css";

@@ -109,8 +109,8 @@ describe("ComposeOverlay", () => {
         "input",
         "hint",
         "spacer",
-        "btn-capture",
-        "btn-ask",
+        "btn btn-outline btn-capture",
+        "btn btn-primary btn-ask",
       ]);
       // Settings first: they are read before the send is pressed.
       const foot = [...(panel?.children ?? [])].map((node) => node.className);
@@ -510,12 +510,22 @@ describe("ComposeOverlay", () => {
     });
   });
 
+  /** Drives a kit `Select` (UI-191): open the pill, press the row by label. */
+  const pickFrom = (control: HTMLElement, label: string): void => {
+    fireEvent.click(control);
+    const option = [...document.querySelectorAll('[role="menuitemradio"]')].find(
+      (node) => node.textContent === label,
+    );
+    if (option === undefined) throw new Error(`no option ${label}`);
+    fireEvent.click(option);
+  };
+
   /**
    * Who will own the conversation (UI-173; SPEC.md §7's rider A, §10's rider B).
    */
   describe("the owner picker", () => {
-    const picker = (container: HTMLElement): HTMLSelectElement => {
-      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+    const picker = (container: HTMLElement): HTMLButtonElement => {
+      const found = container.querySelector<HTMLButtonElement>('[data-select="owner"]');
       if (found === null) throw new Error("no owner picker");
       return found;
     };
@@ -527,8 +537,7 @@ describe("ComposeOverlay", () => {
      */
     it("shows the default as the default, not as an empty choice", () => {
       const { container } = mount(composeTransport());
-      expect(picker(container).value).toBe("");
-      expect(picker(container).options[0]?.textContent).toBe("its own agent");
+      expect(picker(container).querySelector(".select-value")?.textContent).toBe("its own agent");
     });
 
     it("sends nothing at all when the default stands", async () => {
@@ -547,7 +556,7 @@ describe("ComposeOverlay", () => {
     it("sends an explicit null for no owner, which is a value and not an absence", async () => {
       const wire = composeTransport();
       const { container } = mount(wire);
-      fireEvent.change(picker(container), { target: { value: "@none" } });
+      pickFrom(picker(container), "no owner — the main agent");
       type(container, "a question");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -580,7 +589,7 @@ describe("ComposeOverlay", () => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "a question");
-      fireEvent.change(picker(container), { target: { value: "@none" } });
+      pickFrom(picker(container), "no owner — the main agent");
       fireEvent.click(button(container, "btn-ask"));
 
       await waitFor(() => {
@@ -610,20 +619,20 @@ describe("ComposeOverlay", () => {
         docs: { [ORCHESTRATE_SKILL_ID]: skillDoc() },
       });
 
-    const ownerPicker = (container: HTMLElement): HTMLSelectElement => {
-      const found = container.querySelector<HTMLSelectElement>(".compose-resident select");
+    const ownerPicker = (container: HTMLElement): HTMLButtonElement => {
+      const found = container.querySelector<HTMLButtonElement>('[data-select="owner"]');
       if (found === null) throw new Error("no owner picker");
       return found;
     };
 
-    const levelPicker = (container: HTMLElement): HTMLSelectElement | null =>
-      container.querySelector<HTMLSelectElement>(".compose-resident-weight select");
+    const levelPicker = (container: HTMLElement): HTMLButtonElement | null =>
+      container.querySelector<HTMLButtonElement>('[data-select="resident-weight"]');
 
-    const shownLevels = async (container: HTMLElement): Promise<HTMLSelectElement> => {
+    const shownLevels = async (container: HTMLElement): Promise<HTMLButtonElement> => {
       await waitFor(() => {
         expect(levelPicker(container)).not.toBeNull();
       });
-      return levelPicker(container) as HTMLSelectElement;
+      return levelPicker(container) as HTMLButtonElement;
     };
 
     const askBody = async (wire: ComposeTransport): Promise<Record<string, unknown>> => {
@@ -639,15 +648,19 @@ describe("ComposeOverlay", () => {
       const level = await shownLevels(container);
       // The set is the parsed declaration's, in its order, behind the same
       // wording the thread menu's rows use — never a hardcoded list.
-      expect([...level.options].map((option) => option.textContent)).toEqual([
+      fireEvent.click(level);
+      expect(
+        [...document.querySelectorAll('[role="menuitemradio"]')].map((node) => node.textContent),
+      ).toEqual([
         LAUNCHER_DECIDES_LABEL,
         "Small and mechanical",
         "Standard",
         "Heavy or judgment-laden",
       ]);
+      fireEvent.keyDown(document.querySelector('[role="menu"]') as Element, { key: "Escape" });
       // The launcher's choice stands until somebody picks — an option, not an
       // unpressed state, so there is a way back once a level was picked.
-      expect(level.value).toBe("");
+      expect(level.querySelector(".select-value")?.textContent).toBe(LAUNCHER_DECIDES_LABEL);
       // Visibly its own control, in the settings row beside the owner it
       // refines — not inside the message's address.
       const names = [...(container.querySelector(".compose-settings")?.children ?? [])].map(
@@ -670,7 +683,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "a weighed question");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -685,8 +698,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "light" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Small and mechanical");
       type(container, "for the researcher");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -697,7 +710,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
+      pickFrom(ownerPicker(container), "researcher");
       type(container, "unweighed, on purpose");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -708,8 +721,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(level, { target: { value: "heavy" } });
-      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      pickFrom(level, "Heavy or judgment-laden");
+      pickFrom(ownerPicker(container), "no owner — the main agent");
       // Nothing to weigh on a thread with no resident — gone, not dimmed.
       expect(levelPicker(container)).toBeNull();
       type(container, "nobody owns this");
@@ -750,7 +763,7 @@ describe("ComposeOverlay", () => {
       fireEvent.click(container.querySelector('[data-weight-key="light"]') as HTMLElement);
 
       // The designation weight, from the owner's own control.
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "both weights stated");
       fireEvent.click(button(container, "btn-ask"));
 
@@ -766,8 +779,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "file this thought");
       fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
 
@@ -793,8 +806,8 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "researcher" } });
-      fireEvent.change(level, { target: { value: "heavy" } });
+      pickFrom(ownerPicker(container), "researcher");
+      pickFrom(level, "Heavy or judgment-laden");
       type(container, "look at this forecast");
       fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
         target: { files: [file("shot.png")] },
@@ -824,7 +837,7 @@ describe("ComposeOverlay", () => {
       const wire = declaring();
       const { container } = mount(wire);
       await shownLevels(container);
-      fireEvent.change(ownerPicker(container), { target: { value: "@none" } });
+      pickFrom(ownerPicker(container), "no owner — the main agent");
       type(container, "nobody owns this");
       fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
         target: { files: [file("shot.png")] },

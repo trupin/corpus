@@ -418,7 +418,7 @@
   margin: 3px 6px;
 }
 
-.fmt-bar button {
+.fmt-bar .fmt-group > button {
   min-width: 26px;
   height: 26px;
   padding: 0 6px;
@@ -431,34 +431,29 @@
   cursor: pointer;
 }
 
-.fmt-bar button:hover {
+.fmt-bar .fmt-group > button:hover {
   background: var(--surface-2);
   color: var(--ink);
 }
 
 /* An active mark reads as active — the rider's own requirement, and the half a
    toolbar that only writes would skip. */
-.fmt-bar button.on {
+.fmt-bar .fmt-group > button.on {
   background: var(--accent-wash);
   color: var(--accent-ink);
 }
 
-.fmt-bar button:focus-visible,
-.fmt-bar select:focus-visible,
+.fmt-bar .fmt-group > button:focus-visible,
 .fmt-bar input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.fmt-bar select {
-  height: 26px;
-  padding: 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-family: var(--sans);
-  font-size: 12px;
+/* The bar's choices are the kit `Select` (UI-191): the pill wears the one
+   dropdown's own dress from `@corpus/kit/controls.css`, so the button rules
+   above are scoped to the bar's direct toggles and never reach inside it. */
+.fmt-bar .select {
+  margin: 0 2px;
 }
 
 .fmt-bar .fmt-link {

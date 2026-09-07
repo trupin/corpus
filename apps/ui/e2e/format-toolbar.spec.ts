@@ -47,6 +47,12 @@ const NOTE: StubRow = {
 
 const BAR = ".focus .fmt-bar";
 
+/** Drives a kit `Select` pill (UI-191): open it, press the row by its label. */
+async function pickPill(page: Page, name: string, label: string): Promise<void> {
+  await page.locator(`${BAR} [data-select="${name}"]`).click();
+  await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+}
+
 async function openFocus(page: Page, docId: string): Promise<StubCorpus> {
   const corpus = await stubCorpus(page, [VIEW, NOTE, THREAD]);
   await page.goto("/");
@@ -108,15 +114,23 @@ test.describe("the toolbar is there, and it says what the text is", () => {
     await expect(page.locator(BAR)).toBeVisible();
   });
 
+  test("the bar carries no native select chrome at all", async ({ page }) => {
+    // UI-191's reported offence, pinned: the choices are the kit dropdown,
+    // and no <select>/<option> exists anywhere in the editor surface.
+    await openFocus(page, "doc_fmt");
+    await expect(page.locator(`${BAR} [data-select="block"]`)).toBeVisible();
+    expect(await page.locator(".focus select, .focus option").count()).toBe(0);
+  });
+
   test("the heading control names the block the caret is in", async ({ page }) => {
     await openFocus(page, "doc_fmt");
-    const block = page.locator(`${BAR} select[data-fmt="block"]`);
+    const block = page.locator(`${BAR} [data-select="block"] .select-value`);
 
     await caretIn(page, 0); // "## A heading"
-    await expect(block).toHaveValue("2");
+    await expect(block).toHaveText("Heading 2");
 
     await caretIn(page, 1); // "A plain paragraph."
-    await expect(block).toHaveValue("0");
+    await expect(block).toHaveText("Text");
   });
 
   test("an active mark shows as active, and the caret moving is enough", async ({ page }) => {
@@ -166,7 +180,7 @@ test.describe("the toolbar writes what the file can hold", () => {
   test("a colour role reaches the file as a named role, never a colour", async ({ page }) => {
     const corpus = await openFocus(page, "doc_fmt");
     await selectBlock(page, 1);
-    await page.locator(`${BAR} select[data-fmt="color"]`).selectOption("warning");
+    await pickPill(page, "color", "Warning");
 
     await expect
       .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
@@ -181,12 +195,12 @@ test.describe("the toolbar writes what the file can hold", () => {
 
   test("alignment wraps the block, and clearing it removes the wrapper", async ({ page }) => {
     const corpus = await openFocus(page, "doc_fmt");
-    const align = page.locator(`${BAR} select[data-fmt="align"]`);
+    const align = page.locator(`${BAR} [data-select="align"] .select-value`);
 
     await caretIn(page, 1);
-    await expect(align).toHaveValue("");
-    await align.selectOption("center");
-    await expect(align).toHaveValue("center");
+    await expect(align).toHaveText("Align");
+    await pickPill(page, "align", "Centre");
+    await expect(align).toHaveText("Centre");
 
     await expect
       .poll(async () => (await corpus.of("PUT", "/api/docs/doc_fmt")).length, { timeout: 10_000 })
@@ -195,8 +209,8 @@ test.describe("the toolbar writes what the file can hold", () => {
 
     // Clearing the last property must remove the block, not leave `::: {}` —
     // which is not something the file can even spell.
-    await align.selectOption("");
-    await expect(align).toHaveValue("");
+    await pickPill(page, "align", "Align");
+    await expect(align).toHaveText("Align");
     // The wrapper is gone from the document too, not merely from the file: a
     // node the file cannot express has no business staying in the editor, where
     // the next layout change would silently re-use it.

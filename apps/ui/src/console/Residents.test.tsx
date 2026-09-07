@@ -867,7 +867,9 @@ describe("what the launch went out at", () => {
  */
 describe("changing a resident's weight", () => {
   const pick = async (label: string): Promise<void> => {
-    await userEvent.selectOptions(screen.getByLabelText(WEIGHT_CONTROL_ARIA), label);
+    // The kit `Select` (UI-191): open the pill, press the row by its label.
+    await userEvent.click(screen.getByLabelText(WEIGHT_CONTROL_ARIA));
+    await userEvent.click(await screen.findByRole("menuitemradio", { name: label }));
   };
   const apply = async (): Promise<void> => {
     await userEvent.click(screen.getByRole("button", { name: WEIGHT_CHANGE_LABEL }));
@@ -886,7 +888,7 @@ describe("changing a resident's weight", () => {
     const wire = renderResidents({ lanes: OPEN_ROSTER, launches: [] });
     await openLane("th_open", 2);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
 
     await pick("Heavy or judgment-laden");
@@ -907,7 +909,7 @@ describe("changing a resident's weight", () => {
     const wire = renderResidents();
     await openLane("th_claims", 5);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Small and mechanical" })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
 
     await pick("Small and mechanical");
@@ -929,7 +931,7 @@ describe("changing a resident's weight", () => {
     const wire = renderResidents();
     await openLane("th_claims", 5);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: LAUNCHER_DECIDES_LABEL })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
 
     await pick(LAUNCHER_DECIDES_LABEL);
@@ -945,7 +947,7 @@ describe("changing a resident's weight", () => {
     const wire = renderResidents();
     await openLane("th_claims", 5);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
 
     // Seeded from the level in force, so pressing would write the state that
@@ -967,7 +969,7 @@ describe("changing a resident's weight", () => {
     renderResidents({ lanes: OPEN_ROSTER, launches: [] });
     await openLane("th_open", 2);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Standard" })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
     // Nothing to change yet, so no price is quoted — and no act is offered
     // either, so nothing can be taken uninformed.
@@ -1028,7 +1030,7 @@ describe("changing a resident's weight", () => {
     renderResidents({ lanes: OPEN_ROSTER, launches: [] });
     await openLane("th_open", 2);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Heavy or judgment-laden" })).toBeTruthy();
+      expect(screen.getByLabelText(WEIGHT_CONTROL_ARIA)).toBeTruthy();
     });
 
     await pick("Heavy or judgment-laden");

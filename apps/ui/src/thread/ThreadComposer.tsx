@@ -1,6 +1,7 @@
 import {
   AttachButton,
   AutocompleteMenu,
+  Button,
   COMPOSER_PRIMARY_KEY,
   composerAddress,
   ComposerAddress,
@@ -216,8 +217,7 @@ export function ThreadComposer({
       <div className="composer-foot">
         <AttachButton surface={threadId} onFiles={intake.add} />
         <ComposerAddress address={address} surface={threadId} />
-        <button
-          type="button"
+        <Button
           className={asking ? "toggle on" : "toggle"}
           aria-pressed={asking}
           onClick={() => {
@@ -225,7 +225,7 @@ export function ThreadComposer({
           }}
         >
           {asking ? ASK_AGENT_LABEL : NOTE_ONLY_LABEL}
-        </button>
+        </Button>
         {/* The hint is the item the foot truncates when it runs out of room
             (`thread.css`), and neither of these two sentences is said anywhere
             else in the product — so the whole of it rides on a `title`, which
@@ -233,9 +233,9 @@ export function ThreadComposer({
         <span className="composer-hint" title={resolved ? RESOLVED_HINT : OPEN_HINT}>
           {resolved ? RESOLVED_HINT : OPEN_HINT}
         </span>
-        <button type="button" className="send" disabled={!canSend} onClick={send}>
+        <Button className="send" disabled={!canSend} onClick={send}>
           {SEND_LABEL}
-        </button>
+        </Button>
       </div>
 
       <AutocompleteMenu

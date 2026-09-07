@@ -1,4 +1,4 @@
-import { useSetResident, type LaneRow } from "@corpus/kit";
+import { Button, useSetResident, type LaneRow } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useToast } from "../shell/Toasts";
 import { RELEASED_NOTICE } from "../thread/residentActions";
@@ -131,8 +131,7 @@ export function LaneRelease({ row }: LaneReleaseProps): ReactElement | null {
       <div className="lane-release-control">
         {armed ? (
           <>
-            <button
-              type="button"
+            <Button
               data-lane-release-confirm={row.lane}
               disabled={setResident.isPending}
               title={RELEASE_CONSEQUENCE}
@@ -155,9 +154,8 @@ export function LaneRelease({ row }: LaneReleaseProps): ReactElement | null {
               }}
             >
               {RELEASE_CONFIRM_LABEL}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               data-lane-release-cancel={row.lane}
               disabled={setResident.isPending}
               onClick={() => {
@@ -165,11 +163,10 @@ export function LaneRelease({ row }: LaneReleaseProps): ReactElement | null {
               }}
             >
               {RELEASE_CANCEL_LABEL}
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
+          <Button
             data-lane-release={row.lane}
             disabled={setResident.isPending}
             title={RELEASE_CONSEQUENCE}
@@ -178,7 +175,7 @@ export function LaneRelease({ row }: LaneReleaseProps): ReactElement | null {
             }}
           >
             {RELEASE_LABEL}
-          </button>
+          </Button>
         )}
       </div>
     </div>
