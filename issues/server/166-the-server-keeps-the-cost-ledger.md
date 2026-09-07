@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done — 2026-09-07, committed on phase-59
 
 ## Priority
 

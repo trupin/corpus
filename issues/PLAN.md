@@ -2486,10 +2486,10 @@ SHARED-079: the panel lives with the document, not in the console. The §9 rider
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | SHARED-079 | What a document costs is measured, not felt — the token-accounting chain | done | P0 | fable | — |
-| CONTRACT-097 | Token measurements on the wire | todo | P0 | opus | SHARED-079 |
-| SERVER-166 | The server keeps the cost ledger | todo | P0 | opus | CONTRACT-097 |
-| CLI-085 | Every invocation weighs itself | todo | P0 | fable | SERVER-166 |
-| UI-190 | A document shows what it costs | todo | P0 | fable | CLI-085 |
+| CONTRACT-097 | Token measurements on the wire | done | P0 | opus | SHARED-079 |
+| SERVER-166 | The server keeps the cost ledger | done | P0 | opus | CONTRACT-097 |
+| CLI-085 | Every invocation weighs itself | done | P0 | fable | SERVER-166 |
+| UI-190 | A document shows what it costs | done | P0 | fable | CLI-085 |
 
 ## Phase 60 — The product has one button (2026-09-06, user directive, two screenshots)
 
