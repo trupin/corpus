@@ -147,6 +147,8 @@ function fixture(): Fixture {
             },
             {
               args: [{ name: "id", required: true, subject: true, description: "A document id." }],
+              // A text flag, so an entry can carry somebody's words by path.
+              flags: [{ name: "note", type: "string", valueName: "text", description: "A note." }],
             },
           ),
           verb("fail", async (context) => {
@@ -784,6 +786,31 @@ describe("what a batch costs, per entry", () => {
     // deliberately charged to no entry — see `byteLength`'s note in batch.ts.
     const stdinBytes = Buffer.byteLength(JSON.stringify(commands), "utf8");
     expect(h.costs.reduce((sum, cost) => sum + cost.wroteBytes, 0)).toBeLessThan(stdinBytes);
+  });
+
+  it("charges an entry the body its own --flag-file carried, and only that entry", async () => {
+    // The batch door has to agree with the standalone door (SPEC.md §9.4,
+    // PHASE-59 FAIL-1): an entry that carries 2 kB of somebody's words must not
+    // report the 30 bytes of the path that named them, and the entry beside it
+    // must not be charged for them either.
+    const { registry } = fixture();
+    const h = await harness(registry);
+    const body = "Somebody else's words, carried by path. ".repeat(50);
+    const commands = [
+      ["t", "show", "doc_a1b2c3", "--flag-file", "note=/note.txt"],
+      ["t", "quiet"],
+    ];
+
+    await runBatch(h.context, {
+      ...stdinWith(commands),
+      readTextFile: (path: string) =>
+        path === "/note.txt" ? Promise.resolve(body) : Promise.reject(new Error(path)),
+    });
+
+    expect(h.costs.map((cost) => cost.wroteBytes)).toEqual([
+      Buffer.byteLength(commands[0]?.join(" ") ?? "", "utf8") + Buffer.byteLength(body, "utf8"),
+      Buffer.byteLength("t quiet", "utf8"),
+    ]);
   });
 
   it("counts a human entry's own lines, which sum to less than the process printed", async () => {

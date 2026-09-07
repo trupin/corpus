@@ -43,6 +43,34 @@ export interface FlagSpec {
    * carries it names that document (SPEC.md §9.4). See {@link ArgSpec.subject}.
    */
   readonly subject?: true;
+  /**
+   * This flag names a **file whose contents the invocation carries** — so those
+   * bytes are part of what the caller wrote (SPEC.md §9.4), and the cost report
+   * counts them exactly as it counts the same text typed into the argv or piped
+   * on stdin.
+   *
+   * **The rule the marker states: a body costs what a body costs, whatever
+   * carried it.** `wroteBytes` was argv plus stdin only, so the identical
+   * 2100-byte reply measured 182 bytes through `--flag-file` and 2143 through a
+   * heredoc — the same write, twelve times apart (PHASE-59 evaluation, FAIL-1).
+   * That is not a bookkeeping detail: `--flag-file` is the CLI's injection-safe
+   * route and `corpus --help` sends the largest payloads down it, so the safest
+   * way to write was the least measured one, and an agent could halve a
+   * document's recorded cost by changing transport alone.
+   *
+   * **What earns the marker.** A flag whose *content* becomes a value of the
+   * request — `--file` (the body), `--old-file` and `--new-file` (a patch's two
+   * sides), and `--flag-file`, which substitutes for the argv itself and so
+   * counts whatever flag it fills. A flag whose path merely *names a target* —
+   * `--workspace <path>`, `--folder <path>` — reads nothing into the
+   * invocation and carries no marker: its argv bytes are its whole cost, as
+   * before.
+   *
+   * **Only on a string flag**, and `validateRegistry` refuses a `--…-file` flag
+   * that does not declare it — a file-reading flag added without the marker is
+   * silently uncounted, which is exactly how FAIL-1 happened.
+   */
+  readonly payload?: true;
   readonly description: string;
 }
 

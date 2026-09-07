@@ -292,10 +292,167 @@ not exist yet (UI-190).
   test pinning that the batch door and the standalone door agree.
 - **Finding 2**: sprint-025 O1's decision, recorded here as the sprint
   required: only argv and stdin count as "wrote" — what `--file` reads does
-  not. The help note now names it ("What `--file` reads is not counted;
-  stdin is."). The recommendation was declined because counting file reads
-  would price the same bytes differently by transport while measuring the
-  invocation, not the filesystem.
+  not. **Reversed on 2026-09-07** by the orchestrator, on the PHASE-59
+  evaluation's FAIL-1. See "The reversal" below.
 - **Finding 3**: the unit is now named in the same words on both surfaces —
   the panel's sentence ("Tokens are this workspace's estimate: bytes ÷ 4,
   rounded up.") is verbatim in `corpus --help`.
+
+## The reversal: a file flag's body counts (PHASE-59 FAIL-1, 2026-09-07)
+
+**Orchestrator ruling, reversing sprint-025 O1**: payload-bearing file flags
+count as written bytes, so stdin and file transports measure the same body the
+same.
+
+### What the evaluation measured
+
+`issues/evals/PHASE-59-eval.md` FAIL-1 (MAJOR). The identical 2100-byte reply
+body weighed **182 bytes** through `--flag-file` and **2143 bytes** through
+stdin — the same write, twelve times apart. A 5107-byte document body written
+with `--file` was recorded as its 224-byte argv.
+
+O1's argument was that the invocation is what is measured, and a `--file` names
+a path rather than carrying bytes. What that costs in practice is the thing the
+argument did not price: `--flag-file` is the CLI's injection-safe route, and
+`corpus --help` steers the largest payloads to it (_"Use it for words somebody
+else wrote."_). So the safest way to write was the least measured one, and an
+agent could halve a document's recorded cost by changing transport while doing
+identical work. SPEC.md §9.4 says the report counts "what the caller wrote", and
+the spec sentence is broader than the sprint's contract.
+
+### The marker
+
+`FlagSpec.payload?: true` — "this flag names a file whose contents the
+invocation carries" — declared beside `subject`, and enforced three ways:
+
+- **`validateRegistry` refuses** a flag named `file` or ending in `-file` that
+  does not declare `payload: true`, and refuses the marker on a flag that takes
+  no string. The refusal is what makes the next file-reading flag argue for
+  itself instead of going quietly uncounted, which is exactly how FAIL-1
+  happened. Globals are checked too, because `--flag-file` is one.
+- **The read funnel takes the declaration, not a name.** `input.ts#readFlagFile`
+  is the single site every file read passes — `--file`, `--old-file`,
+  `--new-file`, every `--flag-file` — and its signature is now
+  `Pick<FlagSpec, "name" | "payload">`. A call site cannot pass a name whose
+  flag it never looked at.
+- **`telemetry/payload-flags.test.ts` pins the inventory exhaustively**, in the
+  shape `subjects.test.ts` uses: eight verb flags (`doc create --file`, `doc
+  edit --file`, `doc patch --old-file`, `doc patch --new-file`, `skill create
+  --file`, `thread create --file`, `thread digest --file`, `thread reply
+  --file`) and one global (`--flag-file`).
+
+**Scope, precisely.** Only a flag whose *content* becomes a value of the request
+is marked. `--flag-file` counts whatever flag it fills, because the value it
+builds would have been argv in every other spelling and argv is counted
+unconditionally — that is what makes the two transports agree. A path that
+merely names a target (`--workspace <path>`, `--folder <path>`, `--to <path>`)
+reads nothing and carries no marker: its argv bytes are its whole cost, as
+before.
+
+`telemetry/stdin-bytes.ts` became `telemetry/carried-bytes.ts`
+(`countCarriedBytes` / `carriedBytes` / `resetCarriedBytes`): it is no longer
+stdin's counter, it is the counter for everything an invocation carried beside
+its argv. The bytes are counted **at the read**, so a file ending in a newline
+is charged one byte more than the value `--flag-file` builds from it (it drops
+one trailing newline). The caller wrote the file, and it is one byte against a
+figure reported in tokens of four.
+
+`corpus batch` brackets each entry's reads and charges the delta to that entry,
+so the batch door weighs a carried body exactly as the standalone door does.
+
+The help note's transport clause reversed with the behaviour:
+
+> Every command reports what it wrote and printed, in bytes. Tokens are this
+> workspace's estimate: bytes ÷ 4, rounded up. **A body is counted the same
+> however it arrives — argv, stdin, or a file flag.** `corpus init`,
+> `corpus upgrade` and `corpus server …` report nothing.
+
+The panel's unit sentence is unchanged and still verbatim on both surfaces.
+
+### E2E verification of the reversal
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Real `corpus`
+(`apps/cli/dist/bin/corpus.js`), real server, real workspace at
+`/tmp/corpus-e2e-fail1/ws` on port 8791, 2026-09-07.
+
+**The evaluator's own scenario, both arms.** `body.txt` is 2160 bytes
+(`'A reply. ' * 240`, `wc -c` = 2160).
+
+```
+$ node corpus.js thread reply th_svkzt64g --from user \
+    --flag-file message=/tmp/corpus-e2e-fail1/body.txt --json   # 2538 B printed
+$ node corpus.js thread reply th_svkzt64g --from user --json \
+    < /tmp/corpus-e2e-fail1/body.txt                            # 2538 B printed
+
+$ sqlite3 .corpus/cache.db "select command, subject, wrote_bytes, read_bytes from telemetry;"
+thread reply  th_svkzt64g  2254  2538   ← --flag-file
+thread reply  th_svkzt64g  2203  2538   ← stdin
+```
+
+Both arms counted the body at **exactly 2160**:
+
+- 2254 = 94 (`thread reply … --flag-file message=/tmp/…/body.txt --json`) + 2160
+- 2203 = 43 (`thread reply th_svkzt64g --from user --json`) + 2160
+
+The 51-byte gap between the rows is the argv difference and nothing else — the
+path is 51 bytes longer than no path. Before this change the first row read
+**94**. Compare the evaluation: 182 against 2143.
+
+**`--file`, the other arm of FAIL-1.** A 5292-byte body:
+
+```
+doc edit  doc_qv7ucfne  5439  6033
+```
+
+5439 = 147 (`doc edit doc_qv7ucfne --from user --key <64-hex> --file /tmp/…/big.md --json`)
++ 5292. The evaluation's equivalent recorded its 224-byte argv alone.
+
+**A `--flag-file` filling a flag that is not a body.**
+`doc create --type note --from user --flag-file title=/tmp/…/title.txt -m x --json`
+→ `doc create | | 111` = 96 (argv) + 15 (`title.txt`). It counts, because the
+same title typed as `--title 'A carried title'` would have been counted as argv.
+
+**A path that only names a target.**
+`corpus --workspace /tmp/corpus-e2e-fail1/ws doc show doc_qv7ucfne --json`
+→ `doc show | doc_qv7ucfne | 65` — 65 is the joined argv to the byte, and the
+workspace directory contributed nothing.
+
+**Batch, per entry.**
+
+```
+$ node corpus.js batch --from user --json <<'CORPUS_EOF'
+[["thread","reply","th_svkzt64g","--flag-file","message=/tmp/corpus-e2e-fail1/body.txt"],
+ ["doc","show","doc_qv7ucfne"]]
+CORPUS_EOF
+
+thread reply  th_svkzt64g  2235  2538
+doc show      doc_qv7ucfne   21  5971
+```
+
+2235 = 75 (the entry's own argv) + 2160. The second entry is charged its own 21
+bytes and none of the body. No row for `batch` itself.
+
+**Read back through the public API**, so the figure is the one the panel will
+plot:
+
+```
+$ curl -s -H "Authorization: Bearer …" http://127.0.0.1:8791/api/docs/th_svkzt64g/cost
+{"granularity":"day","sizeBytes":6826,"measuringSince":"2026-09-07T08:30:09.259Z",
+ "buckets":[{"from":"2026-09-07T00:00:00.000Z","to":"2026-09-08T00:00:00.000Z",
+   "wroteTokens":1673,"readTokens":1904,"invocations":3,
+   "byCommand":{"thread reply":3577}}],"total":1,"truncated":false}
+```
+
+`wroteTokens` 1673 = `ceil((2254 + 2203 + 2235) / 4)`. The three replies are
+within 2% of each other where they were 12× apart.
+
+**The help page.** `corpus --help` prints the new clause and is 4318 bytes,
+inside CLI-080's 8000-byte budget for the root page.
+
+### Checks
+
+- `npm run typecheck -w apps/cli` — clean.
+- `npx eslint apps/cli` — no issues, no suppressions added.
+- `npx prettier --check apps/cli docs/cli.md` — clean.
+- `npm test -w apps/cli` — **121 files, 2544 tests, all passing** (13 added).
+- `npm run docs:cli -w apps/cli` — regenerated; the help snapshot updated.

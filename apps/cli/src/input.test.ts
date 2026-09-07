@@ -10,6 +10,7 @@ import {
   parseTriStateBoolean,
   plural,
   readAll,
+  readFlagFile,
   requireBody,
   requireFlag,
   resolveActor,
@@ -23,7 +24,7 @@ import {
 } from "./input.js";
 import { ParsedFlags, type FlagValue } from "./parse-args.js";
 import { createTestContext } from "./registry/fixtures.js";
-import { resetStdinBytes, stdinBytesRead } from "./telemetry/stdin-bytes.js";
+import { carriedBytes, resetCarriedBytes } from "./telemetry/carried-bytes.js";
 import { connectedSocket, pipe, unreadable } from "./testing/stdin.js";
 
 const flagsOf = (values: Readonly<Record<string, FlagValue>>): ParsedFlags =>
@@ -329,19 +330,19 @@ describe("readAll", () => {
   it("counts what fd 0 handed the invocation, in bytes (SPEC.md §9.4)", async () => {
     // The other half of `wroteBytes`. It is counted here because this is the one
     // funnel every stdin read passes, thirty verbs below the dispatcher that
-    // composes the report (`telemetry/stdin-bytes.ts`).
-    resetStdinBytes();
-    expect(stdinBytesRead()).toBe(0);
+    // composes the report (`telemetry/carried-bytes.ts`).
+    resetCarriedBytes();
+    expect(carriedBytes()).toBe(0);
 
     await readAll(oneChunk("a body\n"));
-    expect(stdinBytesRead()).toBe(7);
+    expect(carriedBytes()).toBe(7);
 
     // Bytes, not characters, and cumulative across the reads one run performs.
     await readAll(oneChunk("héllo"));
-    expect(stdinBytesRead()).toBe(7 + 6);
+    expect(carriedBytes()).toBe(7 + 6);
 
-    resetStdinBytes();
-    expect(stdinBytesRead()).toBe(0);
+    resetCarriedBytes();
+    expect(carriedBytes()).toBe(0);
   });
 });
 
@@ -349,6 +350,61 @@ async function* oneChunk(text: string): AsyncGenerator<string> {
   await Promise.resolve();
   yield text;
 }
+
+/**
+ * The other carried route (SPEC.md §9.4, PHASE-59 FAIL-1). A body handed over in
+ * a file weighs what the same body weighs on stdin, and the marker on the flag
+ * is what decides it — so the two transports cannot drift apart again without a
+ * declaration changing.
+ */
+describe("readFlagFile — what a file flag carries", () => {
+  const payload = { name: "file", payload: true } as const;
+  const target = { name: "workspace" } as const;
+
+  it("counts a payload flag's bytes, exactly as stdin's are counted", async () => {
+    const body = "A reply body, with a multi-byte character: é\n";
+    const dir = await mkdtemp(join(tmpdir(), "corpus-085-payload-"));
+    await writeFile(join(dir, "body.md"), body, "utf8");
+    const { context } = createTestContext({ cwd: dir });
+
+    resetCarriedBytes();
+    await expect(readFlagFile(context, payload, "body.md", {})).resolves.toBe(body);
+    const throughAFile = carriedBytes();
+
+    resetCarriedBytes();
+    await readAll(oneChunk(body));
+    expect(throughAFile).toBe(carriedBytes());
+    expect(throughAFile).toBe(Buffer.byteLength(body, "utf8"));
+  });
+
+  it("counts nothing for a flag whose path only names a target", async () => {
+    // The scope of the reversal: a path that says *where* to act is argv and
+    // nothing more. Only a flag whose contents become the write is counted.
+    const dir = await mkdtemp(join(tmpdir(), "corpus-085-target-"));
+    await writeFile(join(dir, "elsewhere.md"), "a long body nobody wrote here\n", "utf8");
+    const { context } = createTestContext({ cwd: dir });
+
+    resetCarriedBytes();
+    await readFlagFile(context, target, "elsewhere.md", {});
+    expect(carriedBytes()).toBe(0);
+  });
+
+  it("counts nothing when the file could not be read, since nothing was carried", async () => {
+    const { context } = createTestContext({ cwd: await mkdtemp(join(tmpdir(), "corpus-085-x-")) });
+
+    resetCarriedBytes();
+    await expect(readFlagFile(context, payload, "absent.md", {})).rejects.toSatisfy(isCliError);
+    expect(carriedBytes()).toBe(0);
+  });
+
+  it("names the flag it could not read, so the caller knows which path was wrong", async () => {
+    const { context } = createTestContext({ cwd: await mkdtemp(join(tmpdir(), "corpus-085-n-")) });
+
+    await expect(readFlagFile(context, { name: "new-file" }, "absent.md", {})).rejects.toThrow(
+      /--new-file absent\.md/,
+    );
+  });
+});
 
 describe("requireBody", () => {
   it("rejects an absent body and an explicitly empty one with the same usage error", async () => {

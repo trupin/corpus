@@ -60,11 +60,17 @@ export function parseHelpMode(raw: string | undefined): HelpMode {
  * printed, divided by four, rounded up. It is on `corpus --help` alone — a
  * sentence repeated on every verb page would cost every reader of every page for
  * a fact about the tool rather than about the verb.
+ *
+ * The transport clause used to read "What `--file` reads is not counted; stdin
+ * is", and it now says the opposite because the behaviour reversed (PHASE-59
+ * FAIL-1). A reader who picks a transport for cost reasons is the reader this
+ * sentence exists for, and there is no longer a cheap one to pick.
  */
 export const MEASUREMENT_NOTE =
   `Every command reports what it wrote and printed, in bytes. Tokens are this workspace’s ` +
-  `estimate: bytes ÷ ${String(BYTES_PER_TOKEN)}, rounded up. What \`--file\` reads is not ` +
-  `counted; stdin is. \`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.`;
+  `estimate: bytes ÷ ${String(BYTES_PER_TOKEN)}, rounded up. A body is counted the same however ` +
+  `it arrives — argv, stdin, or a file flag. \`corpus init\`, \`corpus upgrade\` and ` +
+  `\`corpus server …\` report nothing.`;
 
 const noStyle = (text: string): string => text;
 

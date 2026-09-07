@@ -10,7 +10,7 @@ import { registry as defaultRegistry } from "./registry/index.js";
 import type { CommandSpec, CostLedger, Registry, SubInvocationCost } from "./registry/types.js";
 import { createOutput, type Output, type Writer } from "./output.js";
 import { sendInvocationReports, type ReportDependencies } from "./telemetry/report.js";
-import { resetStdinBytes, stdinBytesRead } from "./telemetry/stdin-bytes.js";
+import { carriedBytes, resetCarriedBytes } from "./telemetry/carried-bytes.js";
 import { collectSubjects } from "./telemetry/subjects.js";
 import { readPackageVersion } from "./version.js";
 import { resolveWorkspace, type Workspace } from "./workspace.js";
@@ -50,7 +50,7 @@ export interface RunOptions {
 export async function run(options: RunOptions): Promise<ExitCode> {
   const registry = options.registry ?? defaultRegistry;
   const hints = scanGlobalHints(options.argv);
-  resetStdinBytes();
+  resetCarriedBytes();
 
   let out = createOutput({
     json: hints.json,
@@ -236,7 +236,7 @@ function createMeasurement(options: RunOptions): Measurement {
         : [
             {
               command: path,
-              wroteBytes: Buffer.byteLength(options.argv.join(" "), "utf8") + stdinBytesRead(),
+              wroteBytes: Buffer.byteLength(options.argv.join(" "), "utf8") + carriedBytes(),
               readBytes: options.bytesWritten?.() ?? 0,
               subjects: [...subjects],
               at,

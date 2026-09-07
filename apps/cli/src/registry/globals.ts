@@ -6,6 +6,35 @@ import type { FlagSpec } from "./types.js";
  * and the docs generator. Registry validation rejects a topic flag that shadows
  * one of these names or aliases, so the merge can never be ambiguous.
  */
+/**
+ * `--flag-file <flag>=<path>` — exported by name because `flag-file.ts` reads
+ * this declaration at the point it opens the file, so the flag's cost marker
+ * and its help text are one object rather than two agreeing strings.
+ *
+ * It is marked `payload`: the bytes it reads become a flag's value, which is
+ * argv in every other spelling and counted there. Counting them here is what
+ * makes the safe transport cost the same as the shell one (SPEC.md §9.4).
+ */
+export const FLAG_FILE_FLAG: FlagSpec = {
+  // Spelled literally, not imported: `parse-args.ts` imports this module, so
+  // taking its constant here would be a cycle evaluated at module level.
+  // `globals.test.ts` asserts the two agree.
+  name: "flag-file",
+  type: "string",
+  repeated: true,
+  payload: true,
+  valueName: "flag=path",
+  description:
+    "Take a flag's value from a file, byte for byte: `--flag-file title=/tmp/title.txt`. " +
+    "Repeatable, and it works for any flag on any command that takes text. " +
+    "**Use it for words somebody else wrote.** A value passed this way never goes through a " +
+    "shell, so nothing in it can be expanded, quoted or run — including a line that happens to " +
+    "read like the end of a heredoc, which is how a pasted terminal transcript once executed " +
+    "its own commands and put their output in a document as though a person had written it " +
+    "(CLI-051). Giving both the flag and its `--flag-file` is refused rather than one silently " +
+    "winning.",
+};
+
 export const GLOBAL_FLAGS: readonly FlagSpec[] = [
   FROM_FLAG,
   {
@@ -17,24 +46,7 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
       "plus `details` and `changed` where they apply. `hint` is always present and is `null` when there is " +
       "no follow-up beyond the message, so absence never has to be guessed at.",
   },
-  {
-    // Spelled literally, not imported: `parse-args.ts` imports this module, so
-    // taking its constant here would be a cycle evaluated at module level.
-    // `globals.test.ts` asserts the two agree.
-    name: "flag-file",
-    type: "string",
-    repeated: true,
-    valueName: "flag=path",
-    description:
-      "Take a flag's value from a file, byte for byte: `--flag-file title=/tmp/title.txt`. " +
-      "Repeatable, and it works for any flag on any command that takes text. " +
-      "**Use it for words somebody else wrote.** A value passed this way never goes through a " +
-      "shell, so nothing in it can be expanded, quoted or run — including a line that happens to " +
-      "read like the end of a heredoc, which is how a pasted terminal transcript once executed " +
-      "its own commands and put their output in a document as though a person had written it " +
-      "(CLI-051). Giving both the flag and its `--flag-file` is refused rather than one silently " +
-      "winning.",
-  },
+  FLAG_FILE_FLAG,
   {
     name: "workspace",
     type: "string",

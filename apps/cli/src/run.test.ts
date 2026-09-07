@@ -604,6 +604,86 @@ describe("the invocation's own cost report", () => {
     expect(result.reports[0]?.wroteBytes).toBe(Buffer.byteLength("health --json", "utf8"));
   });
 
+  it("counts the body a file flag carried, not the path that named it", async () => {
+    // PHASE-59 FAIL-1, driven through the dispatcher. `--flag-file` is the
+    // CLI's injection-safe route and `corpus --help` sends the largest payloads
+    // down it, so before this it was the cheapest way to write: the body was
+    // weighed as the ~30 bytes of its own path.
+    const port = await healthServer(201, { id: "doc_a1b2c3", key: "k", warnings: [] });
+    const root = workspaceDir(port);
+    const body = `A reply body, repeated. `.repeat(90);
+    const path = join(root, "body.md");
+    writeFileSync(path, body, "utf8");
+
+    const argv = [
+      "doc",
+      "create",
+      "--type",
+      "note",
+      "--title",
+      "T",
+      "--flag-file",
+      `message=${path}`,
+    ];
+    const result = await invoke(argv, { cwd: root });
+
+    const argvBytes = Buffer.byteLength(argv.join(" "), "utf8");
+    expect(result.reports[0]?.wroteBytes).toBe(argvBytes + Buffer.byteLength(body, "utf8"));
+    // The defect, stated as the thing that must not happen again: the body is
+    // an order of magnitude larger than the invocation that named it.
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(argvBytes * 5);
+  });
+
+  it("weighs the same body the same through --file as through --flag-file", async () => {
+    // The transports must not price identical work differently, whichever one
+    // the agent picks (SPEC.md §9.4).
+    const port = await healthServer(201, { id: "doc_a1b2c3", key: "k", warnings: [] });
+    const root = workspaceDir(port);
+    const body = "The same body, twice.\n".repeat(20);
+    const path = join(root, "body.md");
+    writeFileSync(path, body, "utf8");
+
+    const viaFile = await invoke(
+      ["doc", "create", "--type", "note", "--title", "T", "--file", path],
+      {
+        cwd: root,
+      },
+    );
+    const viaFlagFile = await invoke(
+      ["doc", "create", "--type", "note", "--title", "T", "--flag-file", `message=${path}`],
+      { cwd: root },
+    );
+
+    const carried = (report: InvocationReport | undefined, argv: readonly string[]): number =>
+      (report?.wroteBytes ?? 0) - Buffer.byteLength(argv.join(" "), "utf8");
+
+    const bodyBytes = Buffer.byteLength(body, "utf8");
+    expect(
+      carried(viaFile.reports[0], [
+        "doc",
+        "create",
+        "--type",
+        "note",
+        "--title",
+        "T",
+        "--file",
+        path,
+      ]),
+    ).toBe(bodyBytes);
+    expect(
+      carried(viaFlagFile.reports[0], [
+        "doc",
+        "create",
+        "--type",
+        "note",
+        "--title",
+        "T",
+        "--flag-file",
+        `message=${path}`,
+      ]),
+    ).toBe(bodyBytes);
+  });
+
   it("counts a multi-byte argument in bytes, not characters", async () => {
     const port = await healthServer(404, { error: { code: "not_found", message: "gone" } });
     const argv = ["doc", "show", "doc_a1b2c3", "--section", "Café — notes"];

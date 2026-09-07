@@ -79,6 +79,48 @@ function flagGlossProblems(flag: FlagSpec, label: string): readonly string[] {
 }
 
 /**
+ * Whether the flag's name says it reads a file: `--file`, `--old-file`,
+ * `--new-file`, `--flag-file`. Every one of them today reads a caller's bytes,
+ * and the naming convention is the only signal available before the handler
+ * runs.
+ */
+function namesAFile(flag: FlagSpec): boolean {
+  return flag.name === "file" || flag.name.endsWith("-file");
+}
+
+/**
+ * The cost marker's two rules (SPEC.md §9.4, PHASE-59 FAIL-1).
+ *
+ * **A file-reading flag must declare `payload: true`.** A flag whose file is
+ * read but not counted is silent damage of the worst kind: the command works,
+ * nothing warns, and the document's series is quietly short by however much the
+ * caller wrote. That is how the identical reply body came to measure 182 bytes
+ * through `--flag-file` and 2143 through a heredoc. If a `--…-file` flag is
+ * ever added whose path merely *names* a target and whose contents the
+ * invocation never carries, this rule is what forces that difference to be
+ * argued for rather than assumed.
+ *
+ * **The marker belongs on a string flag.** A boolean or a number names no path,
+ * so it can carry no bytes.
+ */
+function payloadProblems(flag: FlagSpec, label: string): readonly string[] {
+  const problems: string[] = [];
+  if (flag.payload === true && flag.type !== "string") {
+    problems.push(
+      `${label} flag "--${flag.name}" is marked as carrying a caller's bytes but is a ` +
+        `${flag.type} flag, which names no file`,
+    );
+  }
+  if (namesAFile(flag) && flag.payload !== true) {
+    problems.push(
+      `${label} flag "--${flag.name}" reads a file but does not declare \`payload: true\`, so ` +
+        `what the caller wrote through it would go uncounted (SPEC.md §9.4)`,
+    );
+  }
+  return problems;
+}
+
+/**
  * Both registers of one help page measured against {@link HELP_BUDGET_BYTES},
  * rendered exactly as the dispatcher would render them (`color: false` — escape
  * codes are terminal dressing, not content a reader pays for).
@@ -106,9 +148,12 @@ export function collectRegistryProblems(registry: Registry): readonly string[] {
   if (registry.summary.trim() === "") problems.push("the registry has no summary");
 
   // Globals are merged into every command's help, brief included, so they are
-  // held to the same gloss rule even though no command declares them.
+  // held to the same gloss rule even though no command declares them — and to
+  // the same cost rule, since `--flag-file` is a global and is the flag that
+  // carries the most bytes on the whole surface (SPEC.md §9.4).
   for (const flag of GLOBAL_FLAGS) {
     problems.push(...flagGlossProblems(flag, "the global flag"));
+    problems.push(...payloadProblems(flag, "the global"));
   }
 
   const topLevel = new Set<string>();
@@ -246,6 +291,7 @@ function commandProblems(command: CommandSpec, label: string, topic?: string): r
           `${flag.type} flag, which carries no id`,
       );
     }
+    problems.push(...payloadProblems(flag, label));
     if (flag.type === "boolean" && flag.repeated === true) {
       problems.push(`${label} flag "--${flag.name}" is a repeated boolean, which has no meaning`);
     }

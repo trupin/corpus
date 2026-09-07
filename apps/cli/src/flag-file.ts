@@ -8,6 +8,7 @@ import {
   type ParsedFlagsAndPositionals,
   type ParseTarget,
 } from "./parse-args.js";
+import { FLAG_FILE_FLAG } from "./registry/globals.js";
 import type { FlagSpec } from "./registry/types.js";
 import { suggest } from "./suggest.js";
 
@@ -93,7 +94,7 @@ export async function resolveFlagFiles(
     seen.add(spec.name);
 
     const value = oneLessTrailingNewline(
-      await readFlagFile(context, FLAG_FILE, request.path, dependencies),
+      await readFlagFile(context, FLAG_FILE_FLAG, request.path, dependencies),
     );
     flags =
       spec.repeated === true

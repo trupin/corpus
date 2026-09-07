@@ -35,6 +35,7 @@ import type {
   WorkspaceCommandContext,
   WorkspaceCommandSpec,
 } from "../registry/types.js";
+import { carriedBytes } from "../telemetry/carried-bytes.js";
 import { collectSubjects } from "../telemetry/subjects.js";
 
 /**
@@ -135,6 +136,16 @@ interface PreparedEntry {
    * cost of that verb.
    */
   readonly path: string;
+  /**
+   * What this entry's `--flag-file` reads carried, in bytes (SPEC.md §9.4).
+   *
+   * The reads happen in one pre-flight pass over every entry, so the counter
+   * has to be bracketed per entry there and carried to the entry's own report —
+   * the entry's argv alone would charge a 2100-byte body as the path that named
+   * it, which is the standalone defect PHASE-59 found, reproduced at the batch
+   * door.
+   */
+  readonly carriedBytes: number;
 }
 
 /**
@@ -154,8 +165,11 @@ async function resolveEntryFiles(
 ): Promise<readonly PreparedEntry[]> {
   const out: PreparedEntry[] = [];
   for (const entry of prepared) {
+    // Bracketed rather than summed at the end: the entries are reported
+    // separately, so each one is charged what its own files carried.
+    const before = carriedBytes();
     const flags = await resolveFlagFiles(entry.command, entry.parsed, context, dependencies);
-    out.push({ ...entry, flags });
+    out.push({ ...entry, flags, carriedBytes: carriedBytes() - before });
   }
   return out;
 }
@@ -199,6 +213,10 @@ export async function runBatch(
     }
 
     const nested = createNestedOutput(context.out, "");
+    // What the entry's own handler carries in, on top of the files pre-flight
+    // read for it: an entry may name `--file`, and the read then happens here.
+    // The entries run one after another, so the difference is this entry's.
+    const carriedBefore = carriedBytes();
     // The entry's own measurement (SPEC.md §9.4). Recorded from inside each
     // branch, because what an entry printed is decided differently by each of
     // them — see `byteLength`'s note on what is counted and what is not.
@@ -209,7 +227,8 @@ export async function runBatch(
       if (entry.command.measured === false) return;
       context.costs?.record({
         command: entry.path,
-        wroteBytes: byteLength(entry.argv.join(" ")),
+        wroteBytes:
+          byteLength(entry.argv.join(" ")) + entry.carriedBytes + (carriedBytes() - carriedBefore),
         readBytes: printed.reduce((total, line) => total + byteLength(`${line}\n`), 0),
         subjects: collectSubjects(entry.command, entry.args, entry.flags),
       });
@@ -438,7 +457,19 @@ function prepareEntry(
   }
 
   const path = resolution.topic === undefined ? spec.name : `${resolution.topic} ${spec.name}`;
-  return { argv, command: spec, args, flags: parsed.flags, parsed, actor, label, path };
+  // Nothing has been read yet: `resolveEntryFiles` is the pass that reads, and
+  // it fills this in.
+  return {
+    argv,
+    command: spec,
+    args,
+    flags: parsed.flags,
+    parsed,
+    actor,
+    label,
+    path,
+    carriedBytes: 0,
+  };
 }
 
 /**
@@ -470,7 +501,11 @@ function prepareEntry(
  * Nobody should expect the two numbers to agree, and this is where it is said.
  *
  * `wroteBytes` splits the same way. Each entry is charged its own argv, joined,
- * and the JSON array that carried them on stdin is the batch's own framing.
+ * **plus whatever its own file flags carried** — a `--flag-file` read in
+ * pre-flight or a `--file` its handler opened — and the JSON array that carried
+ * the argvs on stdin is the batch's own framing, charged to nobody. An entry
+ * therefore weighs the same body the same whether the batch or a lone
+ * invocation ran it (SPEC.md §9.4).
  */
 function byteLength(text: string): number {
   return Buffer.byteLength(text, "utf8");
