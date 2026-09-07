@@ -244,6 +244,27 @@
  * §9.2 bullet has been drafted for them here: this package never edits
  * SPEC.md, and the amendment is the orchestrator's to take to the user.
  *
+ * `POST /api/telemetry/invocations` and `GET /api/docs/{id}/cost`
+ * (CONTRACT-097) are derived from SPEC.md **§9.4**, signed 2026-09-06, which
+ * names no endpoint and requires two. It says every `corpus` invocation
+ * *reports* what it wrote and printed, and the CLI reaches the workspace only
+ * through the server (Architecture Decision 2), so the report is a server
+ * endpoint by construction — one that §9.3 makes a route declared here rather
+ * than invented in the server. It also says each document's view *can show its
+ * own cost over time, beside its size*, and a view showing a series is a read:
+ * one endpoint, because the size and the series are read together and nothing
+ * else on the wire carries a document's byte size at all.
+ *
+ * Two routes rather than one because §9.4 describes two acts in opposite
+ * directions and gives them opposite guarantees: the report is advisory, never
+ * retried, and may never affect a verb's outcome, while the series is an
+ * ordinary bounded read. They sit apart in this list for the reason
+ * `./index.ts` records — the series is a document subresource and belongs with
+ * the document's other reads, the report is the whole of `/api/telemetry/*` and
+ * follows the index-maintenance pair, its nearest neighbour in kind. No §9.2
+ * bullet has been drafted for either: this package never edits SPEC.md, and the
+ * amendment is the orchestrator's to take to the user.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -265,6 +286,10 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/docs/{id}/related",
   "GET /api/docs/{id}/diff",
   "POST /api/docs/{id}/edit-session/flush",
+  // CONTRACT-097, SPEC.md §9.4: a document's own cost over time, tagged
+  // `telemetry` rather than `docs` because its subject is the ledger, the way
+  // `GET /api/docs/{id}/related` is tagged `search`.
+  "GET /api/docs/{id}/cost",
   "PUT /api/docs/{id}",
   "POST /api/docs/{id}/patch",
   "DELETE /api/docs/{id}",
@@ -331,6 +356,8 @@ export const ENDPOINT_INVENTORY = [
 
   "GET /api/index/status",
   "POST /api/index/rebuild",
+
+  "POST /api/telemetry/invocations",
 
   "POST /api/skills",
 

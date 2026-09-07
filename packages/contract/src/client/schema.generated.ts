@@ -757,6 +757,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/{id}/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What this document has cost over time
+         * @description This document's own cost over time, bucketed, beside its current size — the read behind §9.4's *"is working with this document getting more expensive as it grows?"*, answered by looking rather than by feeling.
+         *
+         *     **The series and the reference line are different kinds of number, and the response keeps them apart.** `buckets` is a history of what invocations naming this document wrote and printed. `sizeBytes` is what the document weighs **right now** — one present-tense number, never a second series — so a panel draws it as a horizontal line and labels it as today's size. Flat cost against a rising size is the shape the panel exists to show.
+         *
+         *     **The server chooses the bucket granularity and says which it chose.** A caller must not infer it from two boundaries: an empty bucket is a real answer, and reading one as a gap turns a quiet week into a hole.
+         *
+         *     **Bounded, with the bound stated.** `limit` caps the buckets returned (up to 500), the **newest** are the ones kept, and `total` with `truncated` says whether anything older was cut — the same two words `GET /api/jobs` uses, not a third spelling.
+         *
+         *     **Threads are documents, so a `th_*` id is legal here** and answers that thread's own series. A thread's cost is not rolled up into its parent: §9.4 attributes cost to what the invocation *named*, and a roll-up would be a second metric.
+         *
+         *     **An empty series is an honest answer, not an error.** A document nothing has been measured against answers `200` with no buckets, and `measuringSince` says whether this workspace has measured anything at all — telemetry is runtime state that a rebuild clears, and a panel that cannot tell *never measured* from *measured since Tuesday* would present a short history as a whole one.
+         *
+         *     **Nothing announces a new measurement.** The SSE key vocabulary is closed and gains no telemetry shape, so a report **does not update an open panel** — a frame per `corpus` invocation would put the telemetry channel on the hot path it exists to measure. A caller refetches this on the document frames it already receives, which is the right relationship between a measurement and the thing it measures.
+         *
+         *     Read-only; no acting party. The size comes from the projection, so this call performs no filesystem read of the document.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description How many buckets to return (1–500, default 180). The **newest** buckets are the ones kept, and `truncated` says whether anything older was cut. */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The document's cost series, oldest bucket first, with the granularity it is bucketed at and the document's current size. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentCost"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{id}/patch": {
         parameters: {
             query?: never;
@@ -4684,6 +4770,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/telemetry/invocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report what one `corpus` invocation cost
+         * @description Records what an invocation of the CLI wrote and printed, attributed to the documents and threads it named in its own input (SPEC.md §9.4). Bytes go in and nothing comes back: the workspace's token estimate is derived server-side at 4 bytes to a token, in one place, so the CLI counts and converts nothing.
+         *
+         *     **This channel is advisory, and every word of that is load-bearing (SPEC.md §9.4).** *A report that fails to arrive costs the command nothing and is never retried.* So: **loss is acceptable** — a caller drops a failed report on the floor rather than buffering it to disk, because a durable spool would give the channel the one property §9.4 defines it not to have. **Idempotency is not promised**: this route has no request id and no deduplication, a repeat is recorded a second time, and nothing here is safe to retry — which is the same sentence read from the other end. **No verb's outcome may depend on this route.** A caller that lets a `400`, a `401`, a timeout or a dead server change its exit code, its output, or its latency budget has broken §9.4 rather than found a bug here.
+         *
+         *     **Deliberately minimal.** The command path is the finest grain: no per-flag detail, no payload echo, no argv. The question the ledger answers is what a *document* costs, and a record of what was typed would be a different thing wearing the same name.
+         *
+         *     **Two request forms.** One invocation, or a batch under `invocations` — the batch exists so that a CLI which later buffers reports needs no second route, not because today's CLI batches. A body that is neither form is a `400` whose message names the key that decided it.
+         *
+         *     **Reads nothing and refuses almost nothing.** A subject naming no document is kept: the invocation happened, and a document deleted since is not a reason to lose the measurement. The refusals that remain are shape refusals — a malformed command path, a negative byte count, an array past its cap — and each of them is a client bug rather than a state conflict.
+         *
+         *     No acting party: the report authors nothing, commits nothing, and emits no queue event.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description One invocation's measurement, or a batch of them under `invocations`. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvocationReport"] | components["schemas"]["InvocationReportBatch"];
+                };
+            };
+            responses: {
+                /** @description Recorded. The answer carries no body and says nothing about what was stored — there is nothing a caller may act on, because §9.4 forbids any verb's outcome from depending on this call. A caller that ignores the response entirely is behaving correctly. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills": {
         parameters: {
             query?: never;
@@ -5631,6 +5787,52 @@ export interface components {
             insertions: number;
             /** @description Lines removed across the range, path-scoped to this document's file. */
             deletions: number;
+        };
+        DocumentCost: {
+            /**
+             * @description The span each bucket in this response covers, chosen by the server and stated rather than left to be inferred from `from` and `to` — a bucket may legitimately hold nothing, and an empty bucket read as a gap turns a quiet week into a hole in the chart.
+             * @example day
+             * @enum {string}
+             */
+            granularity: "hour" | "day" | "week";
+            /** @description The series, **oldest first**, so it reads left to right the way it is drawn. An empty array means nothing has been measured for this document — never that it cost nothing, and never a series of zeros to plot. */
+            buckets: components["schemas"]["CostBucket"][];
+            /** @description **How many buckets this document's series holds in total**, before `limit` bounded the response — equal to `buckets.length` whenever `truncated` is false. It is the `showing N of M` a windowed list owes its reader, spelled as `JobList.total` spells it. */
+            total: number;
+            /** @description True when `limit` cut the series — `total` is then greater than `buckets.length`, and the buckets that were cut are the **oldest** ones. Stated rather than left to be derived, the rule `JobList.truncated` sets: a window reads exactly like a whole history, and a panel that presents one as the other says the document has been cheap since a date it invented. */
+            truncated: boolean;
+            /** @description The document's **current** byte length on disk, frontmatter included — one present-tense number, not a history, and not a second series. It is the reference line §9.4 asks the panel to draw the cost against, so that flat cost against a growing document is visible at a glance. Read from the projection's per-file size, so this response performs no filesystem read. */
+            sizeBytes: number;
+            /**
+             * Format: date-time
+             * @description When this workspace's ledger started collecting, or `null` when it holds nothing at all. Telemetry is runtime state beside the queue (§9.4): it is absent after a rebuild and after a projection schema change, and none the worse for it — but a panel that cannot tell *never measured* from *measured since Tuesday* would present a short history as a whole one. It is the honest caption for an otherwise flattering chart, and it is a property of the workspace rather than of this document.
+             * @example 2026-07-19T10:05:00Z
+             */
+            measuringSince: string | null;
+        };
+        CostBucket: {
+            /**
+             * Format: date-time
+             * @description Start of the span, inclusive. Buckets are contiguous and aligned to `granularity`, so each bucket's `from` is the previous one's `to`.
+             * @example 2026-07-19T10:05:00Z
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description End of the span, **exclusive** — an invocation stamped exactly here belongs to the next bucket. The last bucket may still be filling.
+             * @example 2026-07-19T10:05:00Z
+             */
+            to: string;
+            /** @description The token estimate of what callers wrote into this bucket's invocations — argv and piped bodies. Summed from the per-command estimates rather than converted from the bucket's total bytes, so it agrees with `byCommand` exactly (see the component's own note on where the rounding happens). */
+            wroteTokens: number;
+            /** @description The token estimate of what this bucket's invocations printed. Usually the larger half, and the one that answers §9.4's question: reads growing while the document grows is what an unbounded read looks like on a chart. */
+            readTokens: number;
+            /** @description How many invocations named this document in this span. **Invocations, not ledger rows**: one invocation naming two documents counts once here and once in the other document's series, because each of them paid the whole command. */
+            invocations: number;
+            /** @description Tokens per resolved command path in this span — `{"thread show": 412}` — which is the finest grain this channel carries (there is no per-flag or per-payload detail, by design). Each value is that command's written **and** printed tokens together, so the values sum to `wroteTokens + readTokens` exactly. A command that spent nothing in this bucket has no key rather than a zero. */
+            byCommand: {
+                [key: string]: number;
+            };
         };
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
@@ -7042,6 +7244,32 @@ export interface components {
             state: "current" | "indexing" | "stale" | "disabled";
             /** @description One human sentence explaining the state, when there is something to explain — a model still downloading (`downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — semantic ranking starts once it is cached`), a model that has not been downloaded yet, a configured endpoint that did not answer, or an index whose vectors were produced by a model that is not the one resolving now. Without it a workspace whose model is 46% downloaded and one that will never have a model both read as a bare `disabled`, which is the same word for a wait and for a dead end. **Rendered, never parsed**: the wording is the server's, it changes with the reason, and nothing may branch on it — `state` is the field a client decides with. **Absent when there is nothing to add**, which is why it is optional rather than an empty string: a caught-up index explains itself through the counts, and a field that is always present has to invent something to say. */
             detail?: string;
+        };
+        InvocationReport: {
+            /** @description The **resolved command path** — `thread show`, `doc list`, `search` — composed of the topic and the verb exactly as `corpus --help` spells them, never the raw argv and never a truncated label. It is the key `DocumentCost` groups a bucket's breakdown by, so two spellings of one command would show as two lines that each look like the whole cost of that verb. */
+            command: string;
+            /** @description How many bytes the caller **wrote into** this invocation, counted as UTF-8 bytes — a body containing multi-byte characters counts its bytes, never its characters. Zero is legal and ordinary: a read verb with a short argv still writes a handful of bytes, and a verb invoked with nothing at all writes none. */
+            wroteBytes: number;
+            /** @description How many bytes this invocation **printed**, counted as UTF-8 bytes, as delivered — so `corpus … > out.json && wc -c < out.json` reproduces this number exactly. Bytes a closed pipe refused are not delivered and are not counted. */
+            readBytes: number;
+            /**
+             * @description The documents and threads this invocation **named in its own input** — positional or flag, never ids read back out of the response. Threads are documents, so a `th_*` id belongs here like any other.
+             *
+             *     **An empty array is legal and is the honest answer for a whole class of verbs.** `corpus search` and `corpus doc list` name no document: they take a query or filters and return ids in their output, and attributing a listing's cost to the documents it *returned* would be a different metric from the one §9.4 defines. Such an invocation reports zero subjects rather than guessing.
+             *
+             *     Each subject gets the whole invocation's figures, not a share of them: two subjects means both documents paid this command, which is what a per-document series is asked to show. An id naming no document is kept rather than refused — the invocation happened, and a document deleted since is not a reason to lose the measurement.
+             */
+            subjects: string[];
+            /**
+             * Format: date-time
+             * @description When the invocation finished. Carried by the report rather than stamped on arrival, because a batched report may be sent later than the invocations in it happened — that is the whole reason the batch form exists.
+             * @example 2026-07-19T10:05:00Z
+             */
+            at: string;
+        };
+        InvocationReportBatch: {
+            /** @description Several invocations in one request, each carrying its own `at`. An empty array is legal and records nothing. Order does not matter: the ledger is append-only and buckets are derived from `at`. */
+            invocations: components["schemas"]["InvocationReport"][];
         };
         SkillCreateRequest: {
             /**

@@ -5,6 +5,7 @@ import { CONTRACT_VERSION } from "../openapi.js";
 import { EMPTY_TREE_OBJECT_ID } from "../schemas/edit.js";
 import { FormSchema, validateFormAnswer } from "../schemas/form.js";
 import { HEADING_PATH_SEPARATOR } from "../schemas/retrieval.js";
+import { estimateTokens, type InvocationReport } from "../schemas/telemetry.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
 import { DEFAULT_REFLECT_QUIET_MINUTES } from "../schemas/reflect.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./inventory.js";
@@ -295,8 +296,15 @@ const indexStatus = {
  * is a compile error here, and the route table's ordering is exercised by real
  * requests rather than asserted in a comment.
  */
+/**
+ * What the telemetry stub parsed out of the last request, so a test can assert
+ * *which branch of the XOR arrived* — the one fact a canned `204` would hide.
+ */
+const reported: InvocationReport[] = [];
+
 function createStubApp() {
   const app = new OpenAPIHono();
+  reported.length = 0;
 
   app.openapi(contractRoutes.getHealth, (c) =>
     c.json(
@@ -507,6 +515,35 @@ function createStubApp() {
   app.openapi(contractRoutes.flushEditSession, (c) => {
     c.req.valid("param");
     return c.body(null, 204);
+  });
+  // Cost telemetry's read half (CONTRACT-097, SPEC.md §9.4). The echoed `limit`
+  // proves the query validator ran and which default it filled in, and the
+  // bucket is arithmetically consistent — `byCommand` sums to
+  // `wroteTokens + readTokens` — because that identity is the one a panel draws
+  // and the one no canned reply should be allowed to publish falsely.
+  app.openapi(contractRoutes.getDocCost, (c) => {
+    c.req.valid("param");
+    const { limit } = c.req.valid("query");
+    return c.json(
+      {
+        granularity: "day" as const,
+        buckets: [
+          {
+            from: "2026-09-05T00:00:00Z",
+            to: "2026-09-06T00:00:00Z",
+            wroteTokens: 3,
+            readTokens: estimateTokens(1600),
+            invocations: limit,
+            byCommand: { "thread show": 400, "doc show": 3 },
+          },
+        ],
+        total: 1,
+        truncated: false,
+        sizeBytes: 2048,
+        measuringSince: "2026-09-01T00:00:00Z",
+      },
+      200,
+    );
   });
   app.openapi(contractRoutes.searchCorpus, (c) => {
     const { q, limit, type } = c.req.valid("query");
@@ -995,6 +1032,16 @@ function createStubApp() {
   app.openapi(contractRoutes.rebuildIndex, (c) =>
     c.json({ ...indexStatus, pending: 12, rebuilding: true, state: "indexing" as const }, 202),
   );
+
+  // Cost telemetry's write half (CONTRACT-097). Body-less in the answer, so the
+  // status is the whole reply — §9.4 forbids a caller from acting on anything
+  // else. The handler still reads the body, because which branch of the XOR the
+  // validator saw is the one thing a canned `204` could hide.
+  app.openapi(contractRoutes.reportInvocations, (c) => {
+    const body = c.req.valid("json");
+    reported.push(...("invocations" in body ? body.invocations : [body]));
+    return c.body(null, 204);
+  });
 
   // The report echoes which branch of the XOR the validator actually saw: `ids`
   // reports nothing, `documents` reports one finding per submitted pair, so a

@@ -55,9 +55,35 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
           "contract — addresses and single lines, never bodies.",
       },
       { name: "tree", description: "The `data/docs/` folder hierarchy." },
+      // CONTRACT-097's tag sweep found these four in use and unregistered, so an
+      // operation rendered under a heading with no description. Registered here
+      // rather than left for a later issue: a tag list that is silently
+      // incomplete makes the sweep that found it read as noise.
+      {
+        name: "folders",
+        description:
+          "Acts on a folder — rename, archive, unarchive, delete — each moving every document " +
+          "under it in one commit (SPEC.md §9.2).",
+      },
+      {
+        name: "boards",
+        description: "Board order: the one act whose subject is every board at once (SPEC.md §10).",
+      },
       { name: "capture", description: "The composer's Capture action." },
       { name: "threads", description: "Threads and their turns." },
+      {
+        name: "agents",
+        description:
+          "The lane roster (SPEC.md §7): which threads hold a resident, who is listening, and " +
+          "since when.",
+      },
       { name: "queue", description: "The agent-side event queue." },
+      {
+        name: "workspace",
+        description:
+          "Acts and state that belong to the corpus as a whole rather than to one document — " +
+          "reflection and its quiet window (SPEC.md §7).",
+      },
       { name: "jobs", description: "Job rows and their log streams — the console feed." },
       { name: "db", description: "Projection maintenance: rebuild and drift check." },
       { name: "check", description: "The corpus validator behind `corpus doc check`." },
@@ -66,6 +92,15 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
         description:
           "The semantic index behind retrieval's second half (SPEC.md §9.1): its health, and the " +
           "rebuild that re-queues it. Derived runtime state only — no files, no commits.",
+      },
+      {
+        name: "telemetry",
+        description:
+          "Cost telemetry (SPEC.md §9.4): what each `corpus` invocation wrote and printed, and " +
+          "what one document has cost over time. Derived runtime state only — no files, no " +
+          "commits — kept beside the queue and absent after a rebuild. The reporting half is " +
+          "advisory: a report that fails to arrive is never retried, and no verb's outcome may " +
+          "depend on it.",
       },
       {
         name: "skills",
