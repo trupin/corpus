@@ -114,7 +114,7 @@ full one, and the registry refuses to load if any description opens with a sente
 to serve as a gloss. This reference always shows the full text, because the whole description
 is on the page already.
 
-Every command reports what it wrote and printed, in bytes, shown in the app as a token estimate at 4 bytes to a token. `corpus init`, `corpus upgrade` and `corpus server …` report nothing.
+Every command reports what it wrote and printed, in bytes, shown in the app as a token estimate at 4 bytes to a token, rounded up. `corpus init`, `corpus upgrade` and `corpus server …` report nothing.
 The measurement is advisory: a report that fails to arrive costs the command nothing, is
 never retried, and changes no command's output or exit code (SPEC.md §9.4).
 

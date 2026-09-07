@@ -63,7 +63,7 @@ export function parseHelpMode(raw: string | undefined): HelpMode {
  */
 export const MEASUREMENT_NOTE =
   `Every command reports what it wrote and printed, in bytes, shown in the app as a token ` +
-  `estimate at ${String(BYTES_PER_TOKEN)} bytes to a token. ` +
+  `estimate at ${String(BYTES_PER_TOKEN)} bytes to a token, rounded up. ` +
   `\`corpus init\`, \`corpus upgrade\` and \`corpus server …\` report nothing.`;
 
 const noStyle = (text: string): string => text;
