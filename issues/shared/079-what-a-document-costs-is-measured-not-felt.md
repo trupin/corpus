@@ -106,8 +106,9 @@ are the bookkeeping §9.2's history lands via sign-off. Drafted:
 >   or a batch of them (§9.4). Fire-and-forget from the caller's side: `204`
 >   with no body, and a report naming no known document is kept rather than
 >   refused.
-> - `GET /api/docs/{id}/cost` — a document's cost series (§9.4): daily
->   buckets of written/read token estimates and invocation counts, the
->   totals, the document's current size, and when measuring began.
+> - `GET /api/docs/{id}/cost` — a document's cost series (§9.4): buckets of
+>   written/read token estimates and invocation counts at a stated
+>   granularity (currently daily), the totals, the document's current size,
+>   and when measuring began.
 >
 > _(Amendment signed — date to be filled at signature.)_
