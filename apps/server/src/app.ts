@@ -106,6 +106,7 @@ import {
 import { createJobLookup } from "./queue/job-lookup.js";
 import { createLaneScopeLookup, createReleasedLaneLookup } from "./queue/scope.js";
 import { createHealthHandler } from "./routes/health.js";
+import { mountTelemetryRoutes } from "./telemetry/index.js";
 import { mountUpgradeRoutes } from "./upgrade/routes.js";
 import type { SpawnFn } from "./upgrade/trigger.js";
 import { mountStaticUi } from "./static-ui.js";
@@ -787,6 +788,15 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       announcer,
     });
     mountIndexRoutes(app, indexMaintenance);
+
+    // SPEC.md §9.4's cost ledger (SERVER-166). Two projection-only endpoints —
+    // an append that reads nothing, and a bounded read that touches no file — so
+    // they mount inside this block, where a database exists, and need nothing
+    // from the workspace, the mutex or the queue. Mounted before the document
+    // surface because one of the two hangs under `/api/docs/{id}`: Hono routes
+    // by declared path, so the order is presentation rather than precedence, and
+    // keeping the pair together says more than splitting them across two blocks.
+    mountTelemetryRoutes(app, deps.projection, { now });
 
     mountDocsRoutes(app, deps.projection, {
       now,

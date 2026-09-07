@@ -134,6 +134,13 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   chunk_embeddings: ["chunk_id", "identity", "dim", "vec", "state", "failures", "updated_ms"],
   meta: ["key", "value"],
   file_hashes: ["path", "hash", "size", "mtime_ms"],
+  // SPEC.md §9.4's cost ledger (SERVER-166) — past §9.1's list, and the one
+  // table here that no file can reconstruct. One row per **subject** of an
+  // invocation, so the same instant, command and byte counts appear once per
+  // document the invocation named; `subject` is nullable because a verb that
+  // named no document still reports, and that row is kept so a workspace-wide
+  // figure stays answerable later.
+  telemetry: ["at_ms", "command", "wrote_bytes", "read_bytes", "subject"],
 };
 
 /** Virtual tables, whose FTS5 shadow tables are the only extras the schema creates. */
