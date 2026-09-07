@@ -196,3 +196,13 @@ commit count unchanged.
 - `npx vitest run apps/server` — **4945 passed, 0 failed** (1108 suites).
 - `apps/server/src/json-body.test.ts`'s five previously-red tests are green: the
   ingestion route joins the inventory-driven sweep by being mounted.
+
+## Evaluation observations (phase-59 eval, 2026-09-07)
+
+- The E2E table's "rebuild -> measuringSince null" line holds only for the
+  instant of the read: the rebuild's own CLI invocation reports itself, so
+  the stamp returns with the first post-rebuild report. The series is
+  genuinely empty and a never-measured workspace answers null — the
+  behaviour is correct; the log line was a snapshot.
+- The panel's truncation notice is unreachable with defaults (90-day
+  retention under the 180-bucket cap) — by construction, not by accident.
