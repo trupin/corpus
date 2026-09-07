@@ -114,6 +114,10 @@ full one, and the registry refuses to load if any description opens with a sente
 to serve as a gloss. This reference always shows the full text, because the whole description
 is on the page already.
 
+Every command reports what it wrote and printed, in bytes. Tokens are this workspace’s estimate: bytes ÷ 4, rounded up. A body is counted the same however it arrives — argv, stdin, or a file flag. `corpus init`, `corpus upgrade` and `corpus server …` report nothing.
+The measurement is advisory: a report that fails to arrive costs the command nothing, is
+never retried, and changes no command's output or exit code (SPEC.md §9.4).
+
 ## Global flags
 
 These are merged into every command; a command may not declare a flag that shadows one.
@@ -261,6 +265,8 @@ corpus init [path] [flags]
 ```
 
 Runs outside a workspace: this command does not require one.
+
+Reports no cost: this command is absent from the workspace's measurements.
 
 **Arguments**
 
@@ -489,6 +495,8 @@ corpus upgrade [pr] [flags]
 ```
 
 Runs outside a workspace: this command does not require one.
+
+Reports no cost: this command is absent from the workspace's measurements.
 
 **Arguments**
 
@@ -2129,6 +2137,8 @@ Reads the end of `.corpus/server.log` without loading the whole file. Each `corp
 corpus server logs [flags]
 ```
 
+Reports no cost: this command is absent from the workspace's measurements.
+
 **Flags**
 
 | Flag                  | Type    | Default | Description                                 |
@@ -2168,6 +2178,8 @@ Spawns the server detached, with its output appended to `.corpus/server.log`, an
 corpus server start [flags]
 ```
 
+Reports no cost: this command is absent from the workspace's measurements.
+
 **Examples**
 
 Start the server for this workspace.
@@ -2191,6 +2203,8 @@ Combines the pidfile with a live `GET /api/health` so a stale or reused pid is n
 ```
 corpus server status [flags]
 ```
+
+Reports no cost: this command is absent from the workspace's measurements.
 
 **Examples**
 
@@ -2221,6 +2235,8 @@ Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it wi
 ```
 corpus server stop [flags]
 ```
+
+Reports no cost: this command is absent from the workspace's measurements.
 
 **Examples**
 

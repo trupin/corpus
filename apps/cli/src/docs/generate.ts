@@ -1,4 +1,4 @@
-import { commandSynopsis, flagUsage } from "../help.js";
+import { commandSynopsis, flagUsage, MEASUREMENT_NOTE } from "../help.js";
 import { GLOBAL_FLAGS } from "../registry/globals.js";
 import type { ArgSpec, CommandSpec, FlagSpec, Registry } from "../registry/types.js";
 import { validateRegistry } from "../registry/validate.js";
@@ -77,6 +77,10 @@ export function generateCliDocs(registry: Registry): string {
     "to serve as a gloss. This reference always shows the full text, because the whole description",
     "is on the page already.",
     "",
+    MEASUREMENT_NOTE,
+    "The measurement is advisory: a report that fails to arrive costs the command nothing, is",
+    "never retried, and changes no command's output or exit code (SPEC.md §9.4).",
+    "",
     "## Global flags",
     "",
     "These are merged into every command; a command may not declare a flag that shadows one.",
@@ -124,6 +128,13 @@ function commandSection(command: CommandSpec, topic: string | undefined): readon
     // generated sentence is read as a guarantee, so it may only assert the thing
     // the flag decides — whether the dispatcher requires a workspace.
     lines.push("Runs outside a workspace: this command does not require one.", "");
+  }
+
+  // The exclusion is declared on the command (SPEC.md §9.4), so it is rendered
+  // from the same declaration the dispatcher reads — a reader can see which
+  // verbs are absent from a document's cost series without reading the source.
+  if (command.measured === false) {
+    lines.push("Reports no cost: this command is absent from the workspace's measurements.", "");
   }
 
   if (command.args.length > 0) {

@@ -630,7 +630,7 @@ describe("the thread show command spec", () => {
   it("is a workspace command taking one required id and the five reading flags", () => {
     expect(showCommand.requiresWorkspace).not.toBe(false);
     expect(showCommand.args).toEqual([
-      { name: "id", required: true, description: "The thread's id." },
+      { name: "id", required: true, subject: true, description: "The thread's id." },
     ]);
     expect(showCommand.flags.map((flag) => flag.name)).toEqual([
       "index",

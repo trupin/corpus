@@ -95,3 +95,20 @@ For §9 (server) with §2/§10 cross-references:
 | UI-190 | ui | the per-document panel with the time series |
 
 Order: contract → server → cli → ui; the rider signs before any of it lands.
+
+## The §9.2 catalogue amendment, drafted for signature (PR #76 review, finding 4)
+
+§9.2's route catalogue does not yet list the two telemetry routes. The
+behaviour is fully covered by the signed §9.4 rider; the catalogue bullets
+are the bookkeeping §9.2's history lands via sign-off. Drafted:
+
+> - `POST /api/telemetry/invocations` — ingest one invocation's cost report,
+>   or a batch of them (§9.4). Fire-and-forget from the caller's side: `204`
+>   with no body, and a report naming no known document is kept rather than
+>   refused.
+> - `GET /api/docs/{id}/cost` — a document's cost series (§9.4): buckets of
+>   written/read token estimates and invocation counts at a stated
+>   granularity (currently daily), the totals, the document's current size,
+>   and when measuring began.
+>
+> _(Amendment signed — date to be filled at signature.)_

@@ -158,12 +158,14 @@ export const DOC_FILTER_FLAGS: readonly FlagSpec[] = [
     name: "parent",
     type: "string",
     valueName: "doc-id",
+    subject: true,
     description: "Threads whose parent is this document. Thread-only.",
   },
   {
     name: "references",
     type: "string",
     valueName: "id",
+    subject: true,
     description: "Bodies containing `[[<doc-id>]]`. The backlinks of that document.",
   },
   {

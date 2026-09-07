@@ -89,6 +89,7 @@ export const IDLE_LANE_FLAG: FlagSpec = {
   name: "thread",
   type: "string",
   valueName: "th_…",
+  subject: true,
   description:
     LANE_FLAG_COMMON +
     " **A thread that holds no resident is not a lane, and parking on one is refused** — exit 5, " +
@@ -113,6 +114,7 @@ export const CLAIM_ALL_LANE_FLAG: FlagSpec = {
   name: "thread",
   type: "string",
   valueName: "th_…",
+  subject: true,
   description:
     LANE_FLAG_COMMON +
     " **Here the thread need not still hold a resident**, which is a deliberate difference from " +

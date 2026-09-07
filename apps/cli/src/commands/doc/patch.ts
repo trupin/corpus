@@ -19,7 +19,11 @@ import {
   JOB_FLAG,
   resolveJob,
 } from "../../input.js";
-import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import type {
+  FlagSpec,
+  WorkspaceCommandContext,
+  WorkspaceCommandSpec,
+} from "../../registry/types.js";
 import { describeAnchors } from "./edit.js";
 import { keyLine } from "./render.js";
 
@@ -238,8 +242,39 @@ async function resolveSide(
     });
   }
   if (file === undefined) return literal;
-  return readFlagFile(context, `${side}-file`, file, dependencies);
+  return readFlagFile(context, SIDE_FILE_FLAGS[side], file, dependencies);
 }
+
+/**
+ * `--old-file` and `--new-file`, declared once each and referenced both by the
+ * command's flag list and by the read above.
+ *
+ * Both are marked `payload`: a patch's two sides are text the caller wrote into
+ * the invocation, and `--old '…'`/`--new '…'` are counted as argv, so the file
+ * form has to weigh the same or the cheaper measurement would be the one with
+ * no shell quoting in it (SPEC.md §9.4, PHASE-59 FAIL-1).
+ */
+const SIDE_FILE_FLAGS = {
+  old: {
+    name: "old-file",
+    payload: true,
+    type: "string",
+    valueName: "path",
+    description:
+      "Read the excerpt from this file, byte for byte — the route with no shell quoting and " +
+      "no JSON escaping in it at all. The file is only read. Its trailing newline is part of " +
+      "the excerpt.",
+  },
+  new: {
+    name: "new-file",
+    payload: true,
+    type: "string",
+    valueName: "path",
+    description:
+      "Read the replacement from this file, byte for byte. The file is only read, and its " +
+      "trailing newline is part of the replacement.",
+  },
+} as const satisfies Record<"old" | "new", FlagSpec>;
 
 /**
  * The request as JSON on stdin, parsed with the contract's own request schema —
@@ -454,7 +489,7 @@ export const patchCommand: WorkspaceCommandSpec = {
     "than a silent precedence: an ignored source would patch text you never quoted. Note that a " +
     "file and a heredoc both end in a newline and a newline is text like any other — an excerpt " +
     "that should obviously match and reports 0 matches is usually one trailing newline long.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [
     {
       name: "old",
@@ -476,23 +511,8 @@ export const patchCommand: WorkspaceCommandSpec = {
         "Equal to `--old` it is a no-op — answered normally, nothing written, no commit. Cannot " +
         "be combined with `--new-file`.",
     },
-    {
-      name: "old-file",
-      type: "string",
-      valueName: "path",
-      description:
-        "Read the excerpt from this file, byte for byte — the route with no shell quoting and " +
-        "no JSON escaping in it at all. The file is only read. Its trailing newline is part of " +
-        "the excerpt.",
-    },
-    {
-      name: "new-file",
-      type: "string",
-      valueName: "path",
-      description:
-        "Read the replacement from this file, byte for byte. The file is only read, and its " +
-        "trailing newline is part of the replacement.",
-    },
+    SIDE_FILE_FLAGS.old,
+    SIDE_FILE_FLAGS.new,
     {
       name: "stdin",
       type: "boolean",

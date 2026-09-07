@@ -107,6 +107,9 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 export const logsCommand: WorkspaceCommandSpec = {
   name: "logs",
+  // Server lifecycle, so unmeasured (SPEC.md §9.4): a crashed server's log is
+  // read exactly when nothing is listening, and it names no document.
+  measured: false,
   summary: "Print the tail of this workspace's server log.",
   description:
     "Reads the end of `.corpus/server.log` without loading the whole file. Each " +

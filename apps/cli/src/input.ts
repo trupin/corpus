@@ -6,6 +6,7 @@ import { UsageError } from "./errors.js";
 import type { ParsedFlags } from "./parse-args.js";
 import type { CommandContext, WorkspaceCommandContext } from "./registry/types.js";
 import type { FlagSpec } from "./registry/types.js";
+import { countCarriedBytes } from "./telemetry/carried-bytes.js";
 
 /**
  * The two inputs every mutating verb shares: **who is acting** and **where the
@@ -132,6 +133,19 @@ function validateActor(value: string, source: string): Actor {
   });
 }
 
+/**
+ * `--file`'s identity and its cost marker, in one place.
+ *
+ * The description is per-verb, so only the two words that are the same on every
+ * verb live here — and `readBodyFile` reads the marker from this constant
+ * rather than restating it. One declaration decides both what the help says the
+ * flag is and whether its bytes are counted (SPEC.md §9.4).
+ */
+const BODY_FILE_FLAG = { name: "file", payload: true } as const satisfies Pick<
+  FlagSpec,
+  "name" | "payload"
+>;
+
 /** The body flags shared by `doc create`, `doc edit` and `thread reply`. */
 export function bodyFlags(what: string): readonly FlagSpec[] {
   return [
@@ -143,7 +157,7 @@ export function bodyFlags(what: string): readonly FlagSpec[] {
       description: `${what} as a literal string. Wins over --file and stdin.`,
     },
     {
-      name: "file",
+      ...BODY_FILE_FLAG,
       type: "string",
       valueName: "path",
       description: `Read ${what.toLowerCase()} from this file. Wins over stdin; the file is only read.`,
@@ -396,7 +410,12 @@ export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promi
     chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
   }
   chunks.push(decoder.decode());
-  return chunks.join("");
+  const body = chunks.join("");
+  // The one funnel every stdin read goes through, so the invocation's
+  // `wroteBytes` is counted once, here (SPEC.md §9.4,
+  // `telemetry/carried-bytes.ts`).
+  countCarriedBytes(body);
+  return body;
 }
 
 /**
@@ -470,7 +489,7 @@ function readBodyFile(
   file: string,
   dependencies: InputDependencies,
 ): Promise<string> {
-  return readFlagFile(context, "file", file, dependencies);
+  return readFlagFile(context, BODY_FILE_FLAG, file, dependencies);
 }
 
 /**
@@ -489,23 +508,36 @@ function readBodyFile(
  * The failure is a **usage error**: a path that does not resolve is a malformed
  * invocation, and the cause's own message (`ENOENT`, `EISDIR`) is the hint,
  * because nothing this layer could add would be more specific.
+ *
+ * **It is also where a carried body is weighed.** Every file a flag names is
+ * read here — `--file`, `--old-file`, `--new-file` and every `--flag-file` —
+ * so the one funnel counts once, for the flags that declare
+ * `payload` (SPEC.md §9.4). It takes the *declaration* rather than a name
+ * string for exactly that reason: a call site that passed a name could pass a
+ * name whose flag it never looked at, and the bytes would go uncounted with
+ * nothing failing. The type makes the marker travel with the read.
  */
 export async function readFlagFile(
   context: Pick<CommandContext, "cwd">,
-  flag: string,
+  flag: Pick<FlagSpec, "name" | "payload">,
   file: string,
   dependencies: InputDependencies,
 ): Promise<string> {
   const path = isAbsolute(file) ? file : resolve(context.cwd, file);
   const read = dependencies.readTextFile ?? ((target: string) => readFile(target, "utf8"));
+  let text: string;
   try {
-    return await read(path);
+    text = await read(path);
   } catch (cause) {
-    throw new UsageError(`cannot read --${flag} ${file}.`, {
+    throw new UsageError(`cannot read --${flag.name} ${file}.`, {
       hint: cause instanceof Error ? cause.message : String(cause),
       cause,
     });
   }
+  // A file that failed to open carried nothing, so this is after the `catch`
+  // and not in a `finally`.
+  if (flag.payload === true) countCarriedBytes(text);
+  return text;
 }
 
 /** A flag the verb cannot act without; absence is a usage error, never a request. */

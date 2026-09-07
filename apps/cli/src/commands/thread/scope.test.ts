@@ -228,7 +228,7 @@ describe("the scope command spec", () => {
 
   it("takes one required thread id and no flags of its own", () => {
     expect(scopeCommand.args).toEqual([
-      { name: "id", required: true, description: "The designated thread's id." },
+      { name: "id", required: true, subject: true, description: "The designated thread's id." },
     ]);
     // The bound is the contract's, so there is nothing to widen it with: a
     // cursor here would turn it into the enumeration §7 forbids.

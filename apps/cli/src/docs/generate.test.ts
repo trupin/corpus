@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXIT_CODES } from "../errors.js";
+import { MEASUREMENT_NOTE } from "../help.js";
 import { fixtureRegistry } from "../registry/fixtures.js";
 import { registry } from "../registry/index.js";
 import { GLOBAL_FLAGS } from "../registry/globals.js";
@@ -46,6 +47,26 @@ describe("generateCliDocs", () => {
     expect(docs).toContain("`--tag <string>`");
     expect(docs).toContain("string (repeatable)");
     expect(docs).toContain("Runs outside a workspace: this command does not require one.");
+  });
+
+  it("names the measurement, and renders each exclusion from its own declaration", () => {
+    // SPEC.md §9.4. The exclusion is a declared property, so the reference is
+    // generated from the same word the dispatcher reads — a reader can see which
+    // verbs are absent from a document's cost series without reading the source.
+    const docs = generateCliDocs(registry);
+    expect(docs).toContain(MEASUREMENT_NOTE);
+    expect(docs).toContain("a report that fails to arrive costs the command nothing");
+
+    const excluded = "Reports no cost: this command is absent from the workspace's measurements.";
+    const measured = [
+      ...registry.commands,
+      ...registry.topics.flatMap((topic) => topic.commands),
+    ].filter((command) => command.measured === false);
+    expect(measured.length).toBeGreaterThan(0);
+    expect(docs.split(excluded).length - 1).toBe(measured.length);
+
+    // And nothing says it of a command that reports normally.
+    expect(generateCliDocs(fixtureRegistry).split(excluded).length - 1).toBe(1);
   });
 
   it("lists every global flag", () => {

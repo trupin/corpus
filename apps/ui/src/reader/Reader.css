@@ -931,6 +931,197 @@ button.fm-chip.on:focus-visible {
   color: var(--ink-3);
 }
 
+/* ── Measurements (SPEC.md §9.4) ── */
+
+/*
+ * The third of the below-the-body panels, and it wears the pair's anatomy on
+ * purpose: same hairline, same measure, same mono uppercase heading. It is a
+ * different *subject* — the two above answer questions about the corpus, this
+ * one about using the document — but a third visual language under one body
+ * would read as a different kind of surface rather than as one more section.
+ *
+ * The drawing's own rules live in `@corpus/kit/cost.css` beside the component.
+ */
+.cost {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-family: var(--sans);
+  max-width: var(--doc-measure, 62ch);
+}
+
+/* Stacked under the pair they read as one run of sections, not three slabs. */
+.related + .cost,
+.backlinks + .cost {
+  margin-top: 12px;
+}
+
+.cost h3 {
+  font-size: 11px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin: 0 0 8px;
+}
+
+/*
+ * The span's ends, under the chart. Mono at the chip scale and `aria-hidden`:
+ * the dates are a scale for the eye, and the sentence a screen reader needs is
+ * the chart's own label, which carries them in prose.
+ */
+.cost-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+/*
+ * The legend, doubling as the window's totals — one row rather than a key
+ * beside a separate figure, because a reader checking a colour and a reader
+ * checking a number are the same reader.
+ */
+.cost-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.cost-key {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.cost-key b {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* The swatch, matched to the mark it names in the drawing. */
+.cost-key::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  align-self: center;
+  flex: none;
+}
+
+.cost-key.read::before {
+  background: var(--accent);
+}
+
+.cost-key.wrote::before {
+  background: var(--sepia);
+}
+
+/*
+ * The reference line's swatch is a dash, not a block — the one mark on the
+ * chart that is a single present-tense number rather than a measured series,
+ * and the shape says so before the words do.
+ */
+.cost-key.size::before {
+  height: 0;
+  width: 12px;
+  border-radius: 0;
+  border-top: 2px dashed var(--signal);
+}
+
+/*
+ * Every sentence the panel says about itself: the empty states, the units, the
+ * truncation notice. Deliberately prose at the body's own scale — these are
+ * claims about what is and is not known, and setting them as fine print would
+ * invite skipping the one that matters.
+ */
+.cost-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.cost-note code {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/*
+ * The two admissions read as admissions. Warm ink and a rule down the side, so
+ * "nothing has been measured" is visibly a state of the instrument rather than
+ * a quiet caption somebody might read as a zero.
+ */
+.cost-note[data-state="unmeasured"],
+.cost-note[data-state="empty"],
+.cost-note[data-state="truncated"] {
+  padding-left: 9px;
+  border-left: 2px solid var(--sepia);
+  color: var(--ink-2);
+}
+
+.cost-note[data-state="error"] {
+  padding-left: 9px;
+  border-left: 2px solid var(--signal);
+}
+
+.cost-note[data-state="loading"] {
+  color: var(--ink-3);
+}
+
+/* Which verb paid, on demand — closed by default so it never competes with the
+   shape above it. */
+.cost-commands {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.cost-commands summary {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.cost-commands table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+}
+
+.cost-commands th {
+  text-align: left;
+  font-weight: 400;
+  padding: 3px 0;
+  color: var(--ink-2);
+}
+
+.cost-commands td {
+  text-align: right;
+  padding: 3px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* The sum, ruled off — the breakdown adds up to it exactly, and a reader who
+   checks that is the reader this row exists for. */
+.cost-commands .cost-commands-total th,
+.cost-commands .cost-commands-total td {
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+}
+
 /*
  * Which conversation this document came out of (SPEC.md §7's scope; UI-109).
  *

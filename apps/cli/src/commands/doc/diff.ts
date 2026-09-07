@@ -247,7 +247,14 @@ export const diffCommand: WorkspaceCommandSpec = {
     "contain is the server's `400` naming the parameter (exit 5). The `404` on this route means " +
     "the **document** is unknown, never the revision. `--json` emits the server's envelope " +
     "unchanged, whose `truncated` and `totalChars` are what a machine reader branches on.",
-  args: [{ name: "id", required: true, description: "The document whose change to read." }],
+  args: [
+    {
+      name: "id",
+      required: true,
+      subject: true,
+      description: "The document whose change to read.",
+    },
+  ],
   flags: [
     {
       name: FROM_FLAG,

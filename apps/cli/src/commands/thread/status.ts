@@ -72,7 +72,7 @@ export const resolveCommand: WorkspaceCommandSpec = {
     "reports “already resolved” and exits 0, having written and committed nothing. A real flip " +
     "rewrites the thread's frontmatter and commits it, so any SPEC.md §11 warning it raises " +
     "(`commit_failed`, say) is appended to the printed line.",
-  args: [{ name: "id", required: true, description: "The thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The thread's id." }],
   flags: [],
   examples: [
     {
@@ -100,7 +100,7 @@ export const reopenCommand: WorkspaceCommandSpec = {
     "thread reports “already open” and exits 0, " +
     "having written and committed nothing. A real flip rewrites the thread's frontmatter and " +
     "commits it, so any SPEC.md §11 warning it raises is appended to the printed line.",
-  args: [{ name: "id", required: true, description: "The thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The thread's id." }],
   flags: [],
   examples: [
     {

@@ -122,7 +122,7 @@ export const replyCommand: WorkspaceCommandSpec = {
     "usage error (exit 2) that lists the declared names, with nothing sent (AGENT-061). Omit it " +
     "and the turn carries no model at all, which reads as nothing rather than as a guess.\n\n" +
     BODY_SOURCES_HELP,
-  args: [{ name: "id", required: true, description: "The thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The thread's id." }],
   flags: [...bodyFlags("The turn body"), MODEL_FLAG, JOB_FLAG],
   examples: [
     {

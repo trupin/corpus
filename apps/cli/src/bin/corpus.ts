@@ -27,4 +27,6 @@ process.exitCode = await run({
   stdout: pipes.stdout,
   stderr: pipes.stderr,
   isTTY: process.stdout.isTTY === true,
+  // What this invocation printed, counted below the pipe guard (SPEC.md §9.4).
+  bytesWritten: () => pipes.bytesWritten(),
 });

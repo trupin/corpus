@@ -21,6 +21,7 @@ import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { readStateOf, type ThreadReadState } from "../thread/threadCollapse";
 import { Backlinks } from "./Backlinks";
+import { CostPanel } from "./CostPanel";
 import { BoardFrontmatter } from "./BoardFrontmatter";
 import { DocWidthHandle } from "./DocWidthContext";
 import { FrontmatterForm } from "./FrontmatterForm";
@@ -627,6 +628,25 @@ export function DocView({
 
           <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
           <RelatedPanel related={reader.related} onOpen={onNavigate} />
+
+          {/*
+           * What working with this document has cost, over time, beside what it
+           * currently weighs (SPEC.md §9.4, UI-190). **One insertion, four
+           * placements**: this call site is downstream of the document/thread
+           * branch, so an ordinary document and a `type: thread` document get
+           * the panel in the column reader and in full screen alike — threads
+           * are documents, and the series route takes a `th_*` id like any
+           * other.
+           *
+           * Last of the three, and below the body with them. The pair above it
+           * answer questions about the corpus — who links here, what resembles
+           * this — while this one answers a question about *using* the document,
+           * which is a different subject and reads better after them. Below the
+           * body for the reason recorded at the `Loading…` gate above: a panel
+           * that lands above it after the editor has painted drops everything
+           * under it by its own height, and this one arrives on its own request.
+           */}
+          <CostPanel docId={doc.frontmatter.id} />
         </div>
       </div>
 

@@ -35,6 +35,8 @@ import type {
   WorkspaceCommandContext,
   WorkspaceCommandSpec,
 } from "../registry/types.js";
+import { carriedBytes } from "../telemetry/carried-bytes.js";
+import { collectSubjects } from "../telemetry/subjects.js";
 
 /**
  * `corpus batch` — several commands, one process (CLI-064). A `corpus`
@@ -125,6 +127,25 @@ interface PreparedEntry {
    */
   readonly actor: WorkspaceCommandContext["actor"];
   readonly label: string;
+  /**
+   * The entry's **resolved command path** — `doc show`, `thread reply` — composed
+   * where the resolution still exists, for the entry's own cost report (SPEC.md
+   * §9.4). `label` is for a person reading the rule above an entry's output and
+   * is not this: the ledger's key must be the path `corpus --help` spells, or two
+   * spellings of one command show as two lines that each look like the whole
+   * cost of that verb.
+   */
+  readonly path: string;
+  /**
+   * What this entry's `--flag-file` reads carried, in bytes (SPEC.md §9.4).
+   *
+   * The reads happen in one pre-flight pass over every entry, so the counter
+   * has to be bracketed per entry there and carried to the entry's own report —
+   * the entry's argv alone would charge a 2100-byte body as the path that named
+   * it, which is the standalone defect PHASE-59 found, reproduced at the batch
+   * door.
+   */
+  readonly carriedBytes: number;
 }
 
 /**
@@ -144,8 +165,11 @@ async function resolveEntryFiles(
 ): Promise<readonly PreparedEntry[]> {
   const out: PreparedEntry[] = [];
   for (const entry of prepared) {
+    // Bracketed rather than summed at the end: the entries are reported
+    // separately, so each one is charged what its own files carried.
+    const before = carriedBytes();
     const flags = await resolveFlagFiles(entry.command, entry.parsed, context, dependencies);
-    out.push({ ...entry, flags });
+    out.push({ ...entry, flags, carriedBytes: carriedBytes() - before });
   }
   return out;
 }
@@ -189,6 +213,27 @@ export async function runBatch(
     }
 
     const nested = createNestedOutput(context.out, "");
+    // What the entry's own handler carries in, on top of the files pre-flight
+    // read for it: an entry may name `--file`, and the read then happens here.
+    // The entries run one after another, so the difference is this entry's.
+    const carriedBefore = carriedBytes();
+    // The entry's own measurement (SPEC.md §9.4). Recorded from inside each
+    // branch, because what an entry printed is decided differently by each of
+    // them — see `byteLength`'s note on what is counted and what is not.
+    const measure = (printed: readonly string[]): void => {
+      // A command that declares itself unmeasured stays unmeasured here too —
+      // the exclusion is a documented property of the verb, not of the door
+      // it was invoked through (PR #76 review, finding 1).
+      if (entry.command.measured === false) return;
+      context.costs?.record({
+        command: entry.path,
+        wroteBytes:
+          byteLength(entry.argv.join(" ")) + entry.carriedBytes + (carriedBytes() - carriedBefore),
+        readBytes: printed.reduce((total, line) => total + byteLength(`${line}\n`), 0),
+        subjects: collectSubjects(entry.command, entry.args, entry.flags),
+      });
+    };
+
     try {
       await entry.command.handler({
         args: entry.args,
@@ -202,12 +247,17 @@ export async function runBatch(
         client: clientFor(entry.actor),
         actor: entry.actor,
       });
-      reports.push({ command: entry.argv, ran: true, ok: true, value: nested.value() ?? null });
+      const value = nested.value() ?? null;
+      reports.push({ command: entry.argv, ran: true, ok: true, value });
+      measure(context.out.json ? [JSON.stringify(value)] : nested.lines());
     } catch (error) {
-      reports.push({ command: entry.argv, ran: true, ok: false, error: toProblem(error) });
-      for (const line of renderError(error, { verbose: false }).trimEnd().split("\n")) {
-        context.out.line(line);
-      }
+      const problem = toProblem(error);
+      reports.push({ command: entry.argv, ran: true, ok: false, error: problem });
+      const rendered = renderError(error, { verbose: false }).trimEnd().split("\n");
+      for (const line of rendered) context.out.line(line);
+      measure(
+        context.out.json ? [JSON.stringify({ error: problem })] : [...nested.lines(), ...rendered],
+      );
       if (endsTheBatch(error)) aborted = true;
     }
   }
@@ -406,7 +456,59 @@ function prepareEntry(
     }
   }
 
-  return { argv, command: spec, args, flags: parsed.flags, parsed, actor, label };
+  const path = resolution.topic === undefined ? spec.name : `${resolution.topic} ${spec.name}`;
+  // Nothing has been read yet: `resolveEntryFiles` is the pass that reads, and
+  // it fills this in.
+  return {
+    argv,
+    command: spec,
+    args,
+    flags: parsed.flags,
+    parsed,
+    actor,
+    label,
+    path,
+    carriedBytes: 0,
+  };
+}
+
+/**
+ * What one entry printed, as UTF-8 bytes — the entry's own `readBytes` (SPEC.md
+ * §9.4).
+ *
+ * ## Why this is computed rather than measured at the stream
+ *
+ * A batch entry's payload never reaches stdout. `createNestedOutput` **captures**
+ * the entry's JSON value for the composite report to fold in, and routes its
+ * human lines through the parent indented. So the seam in `pipe.ts` sees the
+ * batch's output and not the entries', and each entry has to be counted where
+ * its own output is produced.
+ *
+ * What is counted is what the entry would have printed **had it run alone**, in
+ * the mode the batch is running in: under `--json` its one JSON value, in human
+ * mode its lines, and in either mode the failure exactly as `Output.fail` would
+ * have rendered it. That makes an entry's figure comparable with the same verb
+ * run on its own, which is the only thing a per-document series can do with it.
+ *
+ * ## The entries do not add up to the process, and that is correct
+ *
+ * The sum of the entries' `readBytes` is **less** than what the process printed.
+ * The difference is the batch's own framing — the rule above each entry, the
+ * blank lines, the `all N commands succeeded` line, the JSON array brackets and
+ * the per-entry `command`/`ran`/`ok` keys — plus anything an aborted entry's
+ * `not run.` cost. That framing belongs to no document, so it is attributed to
+ * none: it is the price of batching, not the price of any entry's subject.
+ * Nobody should expect the two numbers to agree, and this is where it is said.
+ *
+ * `wroteBytes` splits the same way. Each entry is charged its own argv, joined,
+ * **plus whatever its own file flags carried** — a `--flag-file` read in
+ * pre-flight or a `--file` its handler opened — and the JSON array that carried
+ * the argvs on stdin is the batch's own framing, charged to nobody. An entry
+ * therefore weighs the same body the same whether the batch or a lone
+ * invocation ran it (SPEC.md §9.4).
+ */
+function byteLength(text: string): number {
+  return Buffer.byteLength(text, "utf8");
 }
 
 /**

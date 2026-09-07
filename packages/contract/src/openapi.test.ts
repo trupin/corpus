@@ -29,6 +29,7 @@ import {
   SEMANTIC_INDEX_STATES,
 } from "./schemas/retrieval.js";
 import { SKILL_NAME_MAX_LENGTH, SKILL_NAME_PATTERN } from "./schemas/skill.js";
+import { DEFAULT_COST_BUCKETS } from "./schemas/telemetry.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
 import { WARNING_CODES } from "./schemas/warning.js";
 import { REQUESTED_WEIGHT_MAX_LENGTH } from "./schemas/weight.js";
@@ -2164,6 +2165,13 @@ describe("author attribution", () => {
    *   process is not bound by. It stays additive if a later revision wires the
    *   attribution through to the spawn.
    *
+   * - `POST /api/telemetry/invocations` (CONTRACT-097) records a measurement in
+   *   runtime state beside the queue. SPEC.md §9.4 is explicit about what that
+   *   state is not: "telemetry about using the corpus, not part of it — never a
+   *   document, never committed". No file changes, no commit, no queue event —
+   *   so there is nothing for an author to be the author *of*, and the same
+   *   sentence that exempts `POST /api/index/rebuild` exempts this.
+   *
    * In every case declaring the header would advertise a commit that this
    * request never makes.
    */
@@ -2171,6 +2179,7 @@ describe("author attribution", () => {
     "POST /api/check",
     "POST /api/index/rebuild",
     "POST /api/docs/{id}/edit-session/flush",
+    "POST /api/telemetry/invocations",
     "POST /api/upgrade",
   ]);
 
@@ -4993,7 +5002,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(27);
+    expect(bodies).toHaveLength(28);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -5035,6 +5044,11 @@ describe("request bodies declare whether they are mandatory", () => {
     const branching = bodies.filter((body) => body.branching.length > 0);
     expect(branching.map((body) => `${body.signature}: ${body.branching.join(",")}`)).toEqual([
       "POST /api/check: anyOf",
+      // CONTRACT-097: one invocation, or a batch of them. The second branch
+      // exists for a CLI that later buffers reports, so that a buffering client
+      // needs no second route — the same request-level XOR `POST /api/check`
+      // uses, declared for a stated future rather than for today's caller.
+      "POST /api/telemetry/invocations: anyOf",
     ]);
   });
 
@@ -5058,6 +5072,9 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/threads/{id}/resident": false,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
+      // CONTRACT-097: a report with no body would be a measurement of nothing.
+      // The channel is advisory, but the request still has a subject.
+      "POST /api/telemetry/invocations": true,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
       "POST /api/threads/{id}/seen": false,
@@ -6802,5 +6819,81 @@ describe("a thread's digest (CONTRACT-096)", () => {
   it("lists both verbs in the endpoint inventory", () => {
     expect(ENDPOINT_INVENTORY).toContain("PUT /api/threads/{id}/digest");
     expect(ENDPOINT_INVENTORY).toContain("DELETE /api/threads/{id}/digest");
+  });
+});
+
+/**
+ * CONTRACT-097 — cost telemetry as the *generated document* publishes it
+ * (SPEC.md §9.4). The route definitions are asserted in
+ * `./routes/telemetry.test.ts`; what is checked here is only what a client
+ * author reading `openapi.json` sees, which is where the two shapes a generator
+ * can quietly change live: a `204` that grew a body, and a nullable field that
+ * stopped being one.
+ */
+describe("cost telemetry on the wire (CONTRACT-097)", () => {
+  const INGEST_PATH = "/api/telemetry/invocations";
+  const COST_PATH = "/api/docs/{id}/cost";
+
+  it("publishes both endpoints, each with a summary and the bearer refusal", () => {
+    for (const [path, method] of [
+      [INGEST_PATH, "post"],
+      [COST_PATH, "get"],
+    ] as const) {
+      const op = operation(path, method);
+      expect(op.summary, path).toBeTruthy();
+      expect(op.responses?.["401"], path).toBeDefined();
+      expect(op.responses?.["400"], path).toBeDefined();
+    }
+  });
+
+  it("publishes the 204 with no content, so no client generates a body type for it", () => {
+    const accepted = operation(INGEST_PATH, "post").responses?.["204"];
+    expect(accepted).toBeDefined();
+    expect(Object.keys(accepted ?? {})).toEqual(["description"]);
+  });
+
+  it("publishes the body as two closed branches, so neither form admits a stray key", () => {
+    const schema = (
+      operation(INGEST_PATH, "post").requestBody?.content?.["application/json"] as {
+        schema?: SchemaNode;
+      }
+    ).schema;
+    const names = (schema?.anyOf ?? []).map((branch) => branch.$ref?.split("/").pop());
+    expect(names).toEqual(["InvocationReport", "InvocationReportBatch"]);
+    for (const name of names) {
+      expect(componentSchemas?.[name ?? ""]?.additionalProperties, name).toBe(false);
+    }
+  });
+
+  it("keeps the breakdown an open map of command paths to whole tokens", () => {
+    const byCommand = componentSchemas?.CostBucket?.properties?.byCommand;
+    expect(byCommand?.type).toBe("object");
+    expect(byCommand?.additionalProperties).toMatchObject({ type: "integer", minimum: 0 });
+  });
+
+  /**
+   * `measuringSince` is the one nullable field here, spelled
+   * `IsoDateTimeSchema.nullable()` on an *unregistered* primitive — safe,
+   * because the corruption CONTRACT-037 records needs a registered name to
+   * propagate. Asserted from the document because that is where it would show:
+   * a nullable that lost its `null` reads as a promise the server cannot keep
+   * on a workspace that has measured nothing.
+   */
+  it("keeps `measuringSince` nullable, so a workspace that measured nothing can say so", () => {
+    const property = componentSchemas?.DocumentCost?.properties?.measuringSince;
+    expect(property?.type).toEqual(["string", "null"]);
+    expect(componentSchemas?.DocumentCost?.type).toBe("object");
+    expect(componentSchemas?.CostBucket?.type).toBe("object");
+  });
+
+  it("states the bucket bound as a query parameter with a default the caller need not send", () => {
+    const limit = parameter(COST_PATH, "get", "limit");
+    expect(limit?.required).toBe(false);
+    expect(limit?.schema?.default).toBe(DEFAULT_COST_BUCKETS);
+  });
+
+  it("names both endpoints in the pinned inventory", () => {
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/telemetry/invocations");
+    expect(ENDPOINT_INVENTORY).toContain("GET /api/docs/{id}/cost");
   });
 });

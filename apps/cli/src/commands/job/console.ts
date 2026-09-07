@@ -123,6 +123,7 @@ export const listCommand: WorkspaceCommandSpec = {
       name: "origin",
       type: "string",
       valueName: "doc-id",
+      subject: true,
       description:
         "Only jobs originating from this document or thread — the `originId` the console links " +
         "through. A predicate about one document rather than a narrowing of the list, so it is " +

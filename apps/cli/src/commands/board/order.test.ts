@@ -184,6 +184,7 @@ describe("the board topic", () => {
         name: "id",
         required: true,
         variadic: true,
+        subject: true,
         description:
           "The boards, in the order the bar should be in — first tab first. Each named once.",
       },

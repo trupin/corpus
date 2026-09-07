@@ -51,7 +51,7 @@ export const detachCommand: WorkspaceCommandSpec = {
     "An origin is never _set_ from here, or from anywhere else a caller can reach: the server " +
     "records it from the `job` a write names, which is why `--job` exists on the writing verbs " +
     "and no `--origin` exists anywhere.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [],
   examples: [
     {

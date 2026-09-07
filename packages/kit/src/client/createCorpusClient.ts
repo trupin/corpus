@@ -13,6 +13,7 @@ import type {
   Doc,
   DocList,
   DocMutationResponse,
+  DocumentCost,
   FolderStatusResult,
   FolderTree,
   FormAnswerResponse,
@@ -333,6 +334,20 @@ export interface CorpusClient {
    * semantic neighbours can join the same list without a shape change.
    */
   relatedDocs(id: string, params?: RelatedParams, options?: RequestOptions): Promise<RelatedDocs>;
+  /**
+   * `GET /api/docs/{id}/cost` — what this document has cost over time, beside
+   * what it currently weighs (SPEC.md §9.4).
+   *
+   * A thread is a document, so a `th_*` id is legal and answers the thread's
+   * own series — §9.4 attributes cost to what an invocation **named**, and a
+   * thread's cost is deliberately not rolled up into its parent.
+   *
+   * `limit` bounds the response to its **newest** buckets and the answer says
+   * whether anything older was cut. A caller that omits it takes the server's
+   * default and must still read `truncated`: a window and a whole history are
+   * the same shape on the wire, which is the reason the flag exists.
+   */
+  docCost(id: string, params?: CostParams, options?: RequestOptions): Promise<DocumentCost>;
   listJobs(params: JobsParams, options?: RequestOptions): Promise<JobList>;
   /**
    * `GET /api/jobs/{id}/log?cursor=` — the console's log pane (SPEC.md §7).
@@ -724,6 +739,7 @@ type SearchQueryParams = NonNullable<paths["/api/search"]["get"]["parameters"]["
 type RelatedQueryParams = NonNullable<
   paths["/api/docs/{id}/related"]["get"]["parameters"]["query"]
 >;
+type CostQueryParams = NonNullable<paths["/api/docs/{id}/cost"]["get"]["parameters"]["query"]>;
 type PutDocBody = NonNullable<
   paths["/api/docs/{id}"]["put"]["requestBody"]
 >["content"]["application/json"];
@@ -780,6 +796,9 @@ export type SearchParams = Clearable<Omit<SearchQueryParams, "q" | "tag" | "type
 
 /** `GET /api/docs/{id}/related`'s grammar — a cap and the archived flag, and nothing else. */
 export type RelatedParams = Clearable<RelatedQueryParams>;
+
+/** `GET /api/docs/{id}/cost`'s grammar — how many buckets, and nothing else. */
+export type CostParams = Clearable<CostQueryParams>;
 
 /**
  * The `PUT /api/docs/{id}` body, exactly as the contract declares it.
@@ -1138,6 +1157,17 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "GET /api/docs/{id}/related",
         await api.GET("/api/docs/{id}/related", {
+          params: { path: { id }, query },
+          ...signalOf(options),
+        }),
+      );
+    },
+
+    async docCost(id, params, options) {
+      const query = toQueryParams(params ?? {}) as CostQueryParams;
+      return unwrap(
+        "GET /api/docs/{id}/cost",
+        await api.GET("/api/docs/{id}/cost", {
           params: { path: { id }, query },
           ...signalOf(options),
         }),

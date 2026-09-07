@@ -47,7 +47,7 @@ export const archiveCommand: WorkspaceCommandSpec = {
     "Archiving a `type: skill` document also moves its folder to `.claude/skills-archived/`, " +
     "which disables the skill without unindexing it. Archiving **names its own delta**, so it " +
     "needs no key (SPEC.md §7) and is never refused for a document someone else is writing.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [JOB_FLAG],
   examples: [
     {

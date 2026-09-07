@@ -66,6 +66,10 @@ export { useVocabulary } from "./query/useVocabulary.js";
 // Ranked retrieval (SPEC.md §9.2) — a separate seam from `useDocs` on purpose:
 // which endpoint a surface reads from is a product decision, not a parameter.
 export { useRelatedDocs } from "./query/useRelatedDocs.js";
+// What one document has cost, over time, beside what it currently weighs
+// (SPEC.md §9.4). A read like any other: telemetry announces nothing of its own,
+// so this refreshes on the document frames the reader is already receiving.
+export { useDocCost } from "./query/useDocCost.js";
 export { useCorpusSearch } from "./query/useCorpusSearch.js";
 export { useJobs, type JobsQueryOptions } from "./query/useJobs.js";
 // The queue's unfinished work, as one query every surface shares (UI-075).
@@ -159,6 +163,7 @@ export {
   // could read the roster and had no supported way to say it had gone stale.
   AGENTS_KEY,
   canonicalFilter,
+  docCostKey,
   docKey,
   docsListKey,
   DOCS_KEY,
@@ -313,6 +318,12 @@ export {
   type ImageViewerProviderProps,
   type ViewableImage,
 } from "./markdown/imageViewer.js";
+
+// SPEC.md §9.4's cost series, drawn. This repository's first chart, and it
+// brings no charting dependency (sprint-025 E1) — see the component's own
+// docblock for the honesty rules the drawing follows. Its stylesheet is a
+// subpath like the tokens: `import "@corpus/kit/cost.css"`.
+export { CostChart, costDomainMax, type CostChartProps } from "./components/Cost/CostChart.js";
 
 // SPEC.md §10's "smart input everywhere": one `@` / `/` / `[[` implementation,
 // shared by the thread composer, the document editor and the global composer.

@@ -9,6 +9,7 @@
 
 import type { CorpusServer } from "../app.js";
 import type { Logger } from "../logger.js";
+import { startTelemetryRetention } from "../telemetry/index.js";
 import { openProjection, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { createProjectionQueueMirror } from "./queue-mirror.js";
 
@@ -43,6 +44,13 @@ export function attachProjection(server: CorpusServer): ProjectionDb {
   server.registerDisposer(() => {
     db.close();
   });
+  // SPEC.md §9.4's cost ledger ages out here rather than on either of its own
+  // two endpoints: ingestion is a channel §9.4 requires to cost the command
+  // nothing, and a `GET` that writes is a surprise. Boot is where the rows have
+  // been sitting longest, and the daily timer covers a server that never
+  // restarts. `retention.ts` carries the full argument.
+  const stopRetention = startTelemetryRetention({ db, logger: server.logger });
+  server.registerDisposer(stopRetention);
   // The queue's own reader has the last word on the `events` table it mirrors,
   // so this runs after `openProjection`'s repopulation, not instead of it.
   const scan = server.queue.attachMirror(createProjectionQueueMirror(db));

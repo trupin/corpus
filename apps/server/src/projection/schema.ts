@@ -217,14 +217,49 @@
  * projection written before this issue holds no digest at all, so an existing
  * database has to be rebuilt before a reader can ask about one, and the version
  * bump is what makes that happen by itself.
+ *
+ * **v25** adds `telemetry` — SPEC.md §9.4's cost ledger (rider signed
+ * 2026-09-06, SERVER-166). It is the first table here that is **not** derived
+ * from the workspace's files, and the invariant above still holds because §9.4
+ * says so in its own words: the measurements are "telemetry about using the
+ * corpus, not part of it — never a document, never committed, absent after a
+ * rebuild and none the worse for it". Nothing durable lives only in SQLite,
+ * because nothing in this table is durable.
+ *
+ * That has a consequence this bump makes true and every future bump repeats: a
+ * version change supersedes the database file, so **the cost series restarts on
+ * this release and on every later schema change.** It is accepted rather than
+ * engineered around (sprint-025, P9) — the alternative is carrying an
+ * unrebuildable table across replacements, which is exactly the property §9.4
+ * defines the ledger not to have. `DocumentCost.measuringSince` is the honest
+ * caption for it: a panel that cannot tell *never measured* from *wiped on
+ * Tuesday* would present a short history as a whole one.
  */
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
 export const META_REBUILT_AT = "rebuilt_at";
+/**
+ * When this workspace's cost ledger started collecting (SPEC.md §9.4), as an
+ * ISO instant — absent until the first invocation report is recorded, and gone
+ * again after any replacement of the database, because `meta` is created fresh
+ * by every one.
+ *
+ * Written by the ingestion path with `INSERT OR IGNORE`, so it is stamped once
+ * and never moved, and so the write path still issues **no `SELECT`**
+ * (sprint-025 R11). It lives in `meta` rather than being derived as `MIN(at)`
+ * over the ledger for one reason: retention prunes old rows, and `MIN(at)` over
+ * what survives would report the workspace as having started measuring on the
+ * day the window opens — the series would look complete forever.
+ */
+export const META_TELEMETRY_SINCE = "telemetry_since";
 
-/** The §9.1 tables, plus `file_hashes` (drift bookkeeping, not a queryable surface). */
+/**
+ * The §9.1 tables, plus `file_hashes` (drift bookkeeping, not a queryable
+ * surface) and `telemetry` (§9.4's cost ledger, runtime state with no files
+ * behind it).
+ */
 export const PROJECTION_TABLES = [
   "documents",
   "threads",
@@ -240,6 +275,7 @@ export const PROJECTION_TABLES = [
   "chunk_embeddings",
   "meta",
   "file_hashes",
+  "telemetry",
 ] as const;
 
 export type ProjectionTable = (typeof PROJECTION_TABLES)[number];
@@ -258,6 +294,21 @@ export type ProjectionTable = (typeof PROJECTION_TABLES)[number];
  * unchanged corpus therefore queues *nothing*. `corpus index rebuild` stays the
  * verb that genuinely discards them, and orphaned rows — embeddings whose chunk
  * no longer exists — are collected separately rather than by this wipe.
+ *
+ * **`telemetry` is deliberately absent too, and for the opposite reason**
+ * (SPEC.md §9.4, sprint-025 R9). Every other table here is *re-derivable*, so
+ * clearing it costs nothing. The cost ledger is re-derivable from nothing at
+ * all: no file records what an invocation printed, so a row cleared here is a
+ * measurement destroyed.
+ *
+ * The trap this avoids is that **this list is not rebuild-only.** A full
+ * repopulation also runs at every boot, so a telemetry table named here would
+ * be emptied by an ordinary `corpus server stop && corpus server start` — which
+ * §9.4 does not say and no test that only checks `db rebuild` would catch. §9.4
+ * says *rebuild*, and a rebuild delivers it without a line of code: it
+ * constructs a fresh database and carries nothing across but the embeddings, so
+ * the series is empty afterwards by construction rather than by a delete
+ * written for the purpose.
  */
 export const REPOPULATED_TABLES = [
   "chunk_search",
@@ -371,6 +422,28 @@ export const REPOPULATED_TABLES = [
  * positions. `ref` matches `search.ref` (`<id>` for a document or thread
  * preamble, `<id>#<ts>` for a turn) so both index structures name a passage the
  * same way.
+ *
+ * **`telemetry` is the cost ledger (SPEC.md §9.4, SERVER-166) and is unlike
+ * every other table here**: nothing in the workspace can reconstruct it, and
+ * nothing is supposed to. It is append-only, one row per **subject**, so an
+ * invocation naming two documents writes two rows carrying the same instant,
+ * command path and byte counts — each document paid the whole command, and a
+ * per-document series that showed a share of it would answer a question nobody
+ * asked. An invocation that named nothing writes one row with `subject` NULL,
+ * which no document's series reads, so that a workspace-wide figure stays
+ * answerable later without asking the CLI to report twice.
+ *
+ * `at_ms` is epoch milliseconds rather than the ISO text every other timestamp
+ * column here holds, because it is the only timestamp in this schema that gets
+ * **arithmetic** done to it: a bucket is a floor-division and retention is a
+ * range delete. Both are exact integer operations on this column and neither
+ * needs SQLite's date functions, which is what keeps retention's delete an
+ * index range rather than a scan that parses every row.
+ *
+ * Two indexes, one per question asked of it: `(subject, at_ms)` is the series
+ * read for one document, and `(at_ms)` is retention's range delete. There is no
+ * primary key, because there is no natural one and a synthetic rowid is what an
+ * append-only ledger wants anyway.
  */
 export const PROJECTION_DDL = `
 CREATE TABLE documents (
@@ -584,6 +657,14 @@ CREATE TABLE file_hashes (
   mtime_ms INTEGER NOT NULL
 );
 
+CREATE TABLE telemetry (
+  at_ms INTEGER NOT NULL,
+  command TEXT NOT NULL,
+  wrote_bytes INTEGER NOT NULL,
+  read_bytes INTEGER NOT NULL,
+  subject TEXT
+);
+
 CREATE VIRTUAL TABLE search USING fts5(
   ref UNINDEXED,
   kind UNINDEXED,
@@ -641,4 +722,6 @@ CREATE INDEX anchors_doc_id ON anchors (doc_id);
 CREATE INDEX events_status ON events (status);
 CREATE INDEX chunks_doc_id ON chunks (doc_id);
 CREATE INDEX chunks_chunk_id ON chunks (chunk_id);
+CREATE INDEX telemetry_subject_at ON telemetry (subject, at_ms);
+CREATE INDEX telemetry_at ON telemetry (at_ms);
 `;

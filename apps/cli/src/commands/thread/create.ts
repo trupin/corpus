@@ -196,6 +196,7 @@ export const createCommand: WorkspaceCommandSpec = {
       name: "parent",
       type: "string",
       valueName: "doc-id",
+      subject: true,
       description:
         "Document being commented on, which may itself be a thread. Omit it for a standalone thread.",
     },

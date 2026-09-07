@@ -1,3 +1,4 @@
+import type { InvocationReport } from "@corpus/contract";
 import { createClient } from "./client.js";
 import { resolveCommand } from "./dispatch.js";
 import { ExitCode, exitCodeFor } from "./errors.js";
@@ -6,10 +7,13 @@ import { resolveFlagFiles } from "./flag-file.js";
 import { resolveActor } from "./input.js";
 import { bindPositionals, parseFlags, type ParsedInput } from "./parse-args.js";
 import { registry as defaultRegistry } from "./registry/index.js";
-import type { CommandSpec, Registry } from "./registry/types.js";
+import type { CommandSpec, CostLedger, Registry, SubInvocationCost } from "./registry/types.js";
 import { createOutput, type Output, type Writer } from "./output.js";
+import { sendInvocationReports, type ReportDependencies } from "./telemetry/report.js";
+import { carriedBytes, resetCarriedBytes } from "./telemetry/carried-bytes.js";
+import { collectSubjects } from "./telemetry/subjects.js";
 import { readPackageVersion } from "./version.js";
-import { resolveWorkspace } from "./workspace.js";
+import { resolveWorkspace, type Workspace } from "./workspace.js";
 
 /**
  * One run of the CLI, as a function of its inputs. `bin/corpus.ts` is a shim
@@ -30,14 +34,24 @@ export interface RunOptions {
   readonly version?: string;
   /** Injectable transport, for tests that drive a real stub server. */
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * Bytes the two streams have delivered, read once the command's own output is
+   * flushed and its exit code is decided — the `readBytes` of the cost report
+   * (SPEC.md §9.4). `bin/corpus.ts` passes the pipe guard's counter, which is
+   * below the guard and therefore counts delivered bytes rather than attempted
+   * ones. Absent means nothing is measured, which is what a caller that owns its
+   * own writers is telling us.
+   */
+  readonly bytesWritten?: () => number;
+  /** Injected by tests only, so a report can be observed without a real server. */
+  readonly telemetry?: ReportDependencies;
 }
 
 export async function run(options: RunOptions): Promise<ExitCode> {
   const registry = options.registry ?? defaultRegistry;
   const hints = scanGlobalHints(options.argv);
+  resetCarriedBytes();
 
-  // Until argv parses, the rendering mode can only be guessed from raw tokens;
-  // once it parses, the parsed flags are authoritative and replace this.
   let out = createOutput({
     json: hints.json,
     color: options.isTTY && !hints.noColor,
@@ -45,6 +59,8 @@ export async function run(options: RunOptions): Promise<ExitCode> {
     stderr: options.stderr,
   });
   let verbose = hints.verbose;
+
+  const measurement = createMeasurement(options);
 
   try {
     const resolution = resolveCommand(registry, options.argv);
@@ -73,9 +89,8 @@ export async function run(options: RunOptions): Promise<ExitCode> {
       stderr: options.stderr,
     });
 
-    // Help is human text even under `--json`: help is not data (docs/cli.md).
-    // `--help` carries a mode rather than a boolean, so absence is `undefined`
-    // and bare `--help` is the flag's own `bareValue` — never the next token.
+    measurement.useWorkspace(flags.string("workspace"));
+
     const helpMode = flags.string("help");
     if (helpMode !== undefined) {
       out.write(
@@ -92,17 +107,143 @@ export async function run(options: RunOptions): Promise<ExitCode> {
       return ExitCode.success;
     }
 
-    // After `--help` and `--version`, which answer without reading anything, and
-    // before the handler, which must not be able to tell where a value came
-    // from (CLI-074).
+    // Past the help and version registers, so nothing that returns above is ever
+    // measured: `--help` is documentation, not work on a document (SPEC.md §9.4).
+    measurement.begin(resolution.command, commandPath(resolution.command, resolution.topic));
+
     flags = await resolveFlagFiles(resolution.command, parsed, { cwd: options.cwd });
+    // Again, because `--flag-file workspace=…` may have replaced the value the
+    // pre-flight above recorded. Nothing has resolved a workspace yet, so the
+    // report and the command still resolve exactly the same one.
+    measurement.useWorkspace(flags.string("workspace"));
 
     const args = bindPositionals(resolution.command, positionals);
-    await invoke(resolution.command, { args, flags }, out, options, registry);
+    measurement.name(collectSubjects(resolution.command, args, flags));
+    await invoke(resolution.command, { args, flags }, out, options, registry, measurement);
     return ExitCode.success;
   } catch (error) {
     out.fail(error, { verbose });
     return exitCodeFor(error);
+  } finally {
+    // After the catch, so the failure's own bytes are counted and the exit code
+    // is already decided. `settle` cannot throw: a report that could replace this
+    // function's return value would be the telemetry channel deciding an
+    // invocation's outcome, which is the one thing §9.4 forbids it.
+    await measurement.settle();
+  }
+}
+
+function commandPath(command: CommandSpec, topic: string | undefined): string {
+  return topic === undefined ? command.name : `${topic} ${command.name}`;
+}
+
+/**
+ * The invocation's own measurement (SPEC.md §9.4, CLI-085), collected as the run
+ * proceeds and sent once it is over.
+ *
+ * It is a small state machine rather than a value because the three facts it
+ * needs become available at three different moments: the command path as soon as
+ * the surface is settled, the subjects once the positionals are bound, and the
+ * printed bytes only after the failure has been rendered. `settle` is called
+ * from a `finally` and is the one place any of it is used.
+ *
+ * The workspace is resolved **lazily and once**, shared with `invoke`, so the
+ * report costs no second walk up the tree and — more importantly — the error a
+ * caller outside a workspace sees is still the one `invoke` would have raised,
+ * in the same order relative to `--flag-file` and the positional binding.
+ */
+interface Measurement {
+  /** The invocation is measured from here on, unless the command opts out. */
+  begin(command: CommandSpec, path: string): void;
+  name(subjects: readonly string[]): void;
+  /** The `--workspace` value the run parsed, before anything resolves one. */
+  useWorkspace(flag: string | undefined): void;
+  /** The workspace, resolved once for the command and reused by the report. */
+  workspace(): Workspace;
+  /** Handed to a composite verb, which reports its entries instead of itself. */
+  readonly ledger: CostLedger;
+  settle(): Promise<void>;
+}
+
+function createMeasurement(options: RunOptions): Measurement {
+  let path: string | undefined;
+  let subjects: readonly string[] = [];
+  let resolved: Workspace | undefined;
+  let workspaceFlag: string | undefined;
+  const parts: SubInvocationCost[] = [];
+
+  const workspace = (): Workspace =>
+    (resolved ??= resolveWorkspace({
+      cwd: options.cwd,
+      env: options.env,
+      workspaceFlag,
+    }));
+
+  return {
+    begin(command, commandName) {
+      if (command.measured === false) return;
+      path = commandName;
+    },
+    name(named) {
+      subjects = named;
+    },
+    useWorkspace(flag) {
+      workspaceFlag = flag;
+    },
+    workspace,
+    ledger: {
+      record(cost) {
+        parts.push(cost);
+      },
+    },
+    async settle() {
+      // Every line of the composition is inside this `try`, not only the send.
+      // `settle` runs from a `finally`, so anything it threw would replace the
+      // exit code the command earned — and "no verb's outcome may depend on the
+      // telemetry channel" (SPEC.md §9.4) has to be a property of the shape
+      // rather than a claim about three lines that happen not to throw today.
+      try {
+        await compose();
+      } catch {
+        // Nothing is printed and nothing is retried: a measurement is gone, and
+        // that is the whole of the event.
+      }
+    },
+  };
+
+  async function compose(): Promise<void> {
+    if (path === undefined) return;
+
+    let target: Workspace;
+    try {
+      target = workspace();
+    } catch {
+      // No workspace, so no base URL and no token. Nothing to report to, and
+      // the caller has already been told what is wrong by the run itself.
+      return;
+    }
+
+    const at = new Date().toISOString();
+    const reports: InvocationReport[] =
+      parts.length > 0
+        ? parts.map((part) => ({
+            command: part.command,
+            wroteBytes: part.wroteBytes,
+            readBytes: part.readBytes,
+            subjects: [...part.subjects],
+            at,
+          }))
+        : [
+            {
+              command: path,
+              wroteBytes: Buffer.byteLength(options.argv.join(" "), "utf8") + carriedBytes(),
+              readBytes: options.bytesWritten?.() ?? 0,
+              subjects: [...subjects],
+              at,
+            },
+          ];
+
+    await sendInvocationReports(target, reports, options.telemetry ?? {});
   }
 }
 
@@ -112,6 +253,7 @@ async function invoke(
   out: Output,
   options: RunOptions,
   registry: Registry,
+  measurement: Measurement,
 ): Promise<void> {
   const context = {
     args: input.args,
@@ -121,6 +263,7 @@ async function invoke(
     env: options.env,
     version: options.version ?? readPackageVersion(),
     registry,
+    costs: measurement.ledger,
   };
 
   if (command.requiresWorkspace === false) {
@@ -128,15 +271,9 @@ async function invoke(
     return;
   }
 
-  // Before the workspace is even located: a misspelled actor is a usage error
-  // (exit 2), and no request may leave the process carrying one.
   const actor = resolveActor(input.flags, options.env);
 
-  const workspace = resolveWorkspace({
-    cwd: options.cwd,
-    env: options.env,
-    workspaceFlag: input.flags.string("workspace"),
-  });
+  const workspace = measurement.workspace();
   const timeoutMs = input.flags.number("timeout");
   const client = createClient({
     workspace,

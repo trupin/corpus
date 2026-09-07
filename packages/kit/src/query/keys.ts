@@ -188,6 +188,33 @@ export function threadScopeKey(threadId: string): QueryKey {
 }
 
 /**
+ * One document's cost series: `["docs", <id>, "cost"]` — what
+ * `GET /api/docs/{id}/cost` answers (SPEC.md §9.4, CONTRACT-097).
+ *
+ * **Under `docKey(id)` for {@link relatedKey}'s reason, plus one of its own.**
+ * The contract's key vocabulary is closed, so a `["cost", id]` shape would be a
+ * contract change; and telemetry deliberately announces *nothing* (sprint-025
+ * R8). A frame per `corpus` invocation would put the telemetry channel on the
+ * hot path it exists to measure, so no `invalidate` will ever name this entry
+ * directly. Hanging it under the `["docs"]` prefix is what keeps it refreshing
+ * at all: the server emits that prefix on every document and thread mutation
+ * and on every watcher-projected change, and those are the frames a reader is
+ * already receiving while it looks at the document.
+ *
+ * The consequence is worth stating plainly, because it is a design choice and
+ * not an oversight: **the panel is not live to the ledger.** A `corpus` verb run
+ * in another terminal does not move the chart until something the server does
+ * announce moves it. That is the trade §9.4 asks for — the measurements are
+ * advisory, and nothing about them may cost the measured commands anything.
+ *
+ * A thread is a document (SPEC.md §6), so a `th_*` id is legal here, and the
+ * `"cost"` tail is what keeps this distinct from the reader's own `["docs", id]`.
+ */
+export function docCostKey(id: string): QueryKey {
+  return [...docKey(id), "cost"];
+}
+
+/**
  * A ranked search: `["docs", "search", { …canonical params }]`.
  *
  * Under the `["docs"]` prefix for {@link relatedKey}'s reason — ranked hits go

@@ -106,6 +106,7 @@ export const deferCommand: WorkspaceCommandSpec = {
       name: "blocked-on",
       type: "string",
       valueName: "doc-id",
+      subject: true,
       // One sentence for the requirement and the meaning: brief help renders the
       // first sentence only (CLI-056), and this flag's used to gloss as the bare
       // word "Required", which tells a reader nothing about what to write.

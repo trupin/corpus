@@ -386,6 +386,7 @@ export const showCommand: WorkspaceCommandSpec = {
       name: "id",
       required: true,
       variadic: true,
+      subject: true,
       description:
         "The document's id. Several read several documents in one call, in the order given.",
     },

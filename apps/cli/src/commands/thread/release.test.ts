@@ -193,7 +193,7 @@ describe("the release command spec", () => {
 
   it("takes one required thread id and no flags", () => {
     expect(releaseCommand.args).toEqual([
-      { name: "id", required: true, description: "The thread's id." },
+      { name: "id", required: true, subject: true, description: "The thread's id." },
     ]);
     expect(releaseCommand.flags).toEqual([]);
   });

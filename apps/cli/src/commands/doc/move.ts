@@ -60,7 +60,7 @@ export const moveCommand: WorkspaceCommandSpec = {
     "A move **names its own delta** and needs no " +
     "key (SPEC.md §7) — and because a key names the document's content rather than its path, a " +
     "key read before a move is still good after it.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [
     {
       name: "folder",

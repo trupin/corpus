@@ -39,6 +39,7 @@ import {
 } from "./queue.js";
 import { askReflection, getReflectStatus, setReflectQuiet } from "./reflect.js";
 import { searchCorpus } from "./search.js";
+import { getDocCost, reportInvocations } from "./telemetry.js";
 import { createSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { clearThreadDigest, writeThreadDigest } from "./thread-digest.js";
@@ -83,6 +84,7 @@ export * from "./dual-media.js";
 export * from "./responses.js";
 export * from "./search.js";
 export * from "./skills.js";
+export * from "./telemetry.js";
 export * from "./thread-create.js";
 export * from "./thread-digest.js";
 export * from "./thread-reattach.js";
@@ -177,6 +179,20 @@ export * from "./upgrade.js";
  * That is where they belong in both directions: an ask enqueues a queue event,
  * and the clock is the state the automatic path is decided against. They are one
  * path under two methods and compete with nothing.
+ *
+ * The two **telemetry** routes (CONTRACT-097, SPEC.md §9.4) sit in two places
+ * rather than together, and that is deliberate. `getDocCost` is a `GET` one
+ * segment deeper than `/api/docs/{id}`, like `related` and `diff`, so it belongs
+ * in the document group where a reader looks for a document's reads — but it is
+ * placed **after** `flushEditSession` rather than beside `getDocDiff`, because
+ * the paragraph above records why those two are adjacent (§4's edit-acknowledgment
+ * surface is that pair) and splitting them to save one line of scrolling would
+ * undo a stated reason. Nothing competes with `cost` for a position either: the
+ * routes at that depth are `POST`s with distinct static segments.
+ * `reportInvocations` is the whole of `/api/telemetry/*`, a fully static path
+ * competing with no parameter, and it follows the index-maintenance pair — its
+ * nearest neighbour in kind, being the other surface whose subject is derived
+ * runtime state with no files and no commits.
  */
 export const contractRoutes = {
   getHealth,
@@ -188,6 +204,7 @@ export const contractRoutes = {
   relatedDocs,
   getDocDiff,
   flushEditSession,
+  getDocCost,
   updateDoc,
   patchDoc,
   deleteDoc,
@@ -252,6 +269,8 @@ export const contractRoutes = {
 
   getIndexStatus,
   rebuildIndex,
+
+  reportInvocations,
 
   createSkill,
 

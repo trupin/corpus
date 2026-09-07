@@ -657,6 +657,7 @@ export const BOARD_KEY_FLAGS: readonly FlagSpec[] = [
     name: "columns",
     type: "string",
     valueName: "id,id",
+    subject: true,
     description:
       "**The columns of a `type: board` document.** The ids of the `type: view` documents " +
       "that render them, in display order (SPEC.md §10, rider 2) — one comma-separated list " +

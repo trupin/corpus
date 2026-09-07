@@ -1184,6 +1184,9 @@ export const upgradeCommand: StandaloneCommandSpec = {
   // once per machine, not once per workspace) and it must survive the server it
   // restarts, so it resolves the workspace itself and tolerates not finding one.
   requiresWorkspace: false,
+  // It replaces the running tool and restarts the server, so there is no stable
+  // server to report a cost to and no document the upgrade is about (SPEC.md §9.4).
+  measured: false,
   summary:
     "Install the latest release, bring this workspace's template files with it, and restart.",
   description:

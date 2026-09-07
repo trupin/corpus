@@ -74,6 +74,7 @@ export * from "./scope-listing.js";
 export * from "./skill.js";
 export * from "./sse.js";
 export * from "./thread.js";
+export * from "./telemetry.js";
 export * from "./time.js";
 export * from "./tree.js";
 export * from "./vocabulary.js";

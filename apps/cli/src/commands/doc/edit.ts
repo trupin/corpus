@@ -369,7 +369,7 @@ export const editCommand: WorkspaceCommandSpec = {
     "checked. The six board flags write SPEC.md §10's **board and view keys** — core fields, " +
     "not `extra` ones — and the board bar follows every write over SSE.\n\n" +
     BODY_SOURCES_HELP,
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [
     {
       name: "key",

@@ -460,3 +460,91 @@ describe("validateRegistry", () => {
     }
   });
 });
+
+/**
+ * The two declarations cost telemetry adds to the surface (SPEC.md §9.4,
+ * CLI-085), and the rules that keep each of them meaningful.
+ *
+ * Both are checked here rather than in the reporter for the same reason every
+ * other registry rule is: the dispatcher must not hold a second model of the
+ * command surface. A name list of excluded verbs inside the reporter would go
+ * stale the first time a verb was renamed, silently, and the symptom would be a
+ * measurement nobody was expecting.
+ */
+describe("the cost-telemetry declarations", () => {
+  it("refuses a workspace-less command that claims to be measured", () => {
+    // No workspace means no base URL and no token, so there is nowhere to send
+    // the report — a claim the dispatcher could not honour.
+    const problems = collectRegistryProblems(
+      registryOf([command({ name: "bootstrap", requiresWorkspace: false, handler: noopHandler })]),
+    );
+    expect(problems).toEqual([
+      "corpus bootstrap runs without a workspace, so it must declare `measured: false` — " +
+        "there is no server to report its cost to",
+    ]);
+  });
+
+  it("accepts one that declares the exclusion", () => {
+    expect(
+      collectRegistryProblems(
+        registryOf([
+          command({
+            name: "bootstrap",
+            requiresWorkspace: false,
+            measured: false,
+            handler: noopHandler,
+          }),
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a workspace command either way — the server may still be down", () => {
+    // `requiresWorkspace: false` does not express the excluded set: the server
+    // lifecycle verbs do resolve a workspace and are still excluded, which is
+    // why the exclusion is a field of its own.
+    expect(collectRegistryProblems(registryOf([command({ measured: false })]))).toEqual([]);
+    expect(collectRegistryProblems(registryOf([command()]))).toEqual([]);
+  });
+
+  it("refuses a subject marker on a flag that carries no value", () => {
+    const problems = collectRegistryProblems(
+      registryOf([
+        command({
+          flags: [{ name: "loud", type: "boolean", subject: true, description: "A boolean flag." }],
+        }),
+      ]),
+    );
+    expect(problems).toEqual([
+      'corpus probe flag "--loud" is marked as naming a document but is a boolean flag, ' +
+        "which carries no id",
+    ]);
+  });
+
+  it("refuses it on a number flag for the same reason", () => {
+    expect(
+      collectRegistryProblems(
+        registryOf([
+          command({
+            flags: [{ name: "nth", type: "number", subject: true, description: "A number." }],
+          }),
+        ]),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("accepts it on a string flag and on an argument", () => {
+    expect(
+      collectRegistryProblems(
+        registryOf([
+          command({
+            args: [{ name: "id", required: true, subject: true, description: "A document id." }],
+            flags: [
+              { name: "parent", type: "string", subject: true, description: "A document id." },
+            ],
+          }),
+        ]),
+      ),
+    ).toEqual([]);
+  });
+});

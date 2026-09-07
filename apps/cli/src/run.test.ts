@@ -3,9 +3,11 @@ import type { AddressInfo } from "node:net";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { InvocationReport } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, INTERNAL_ERROR_HINT } from "./errors.js";
 import { fixtureRegistry, noopHandler } from "./registry/fixtures.js";
+import { registry } from "./registry/index.js";
 import type { Registry } from "./registry/types.js";
 import { run } from "./run.js";
 
@@ -56,6 +58,15 @@ interface Invocation {
   readonly code: ExitCode;
   readonly stdout: string;
   readonly stderr: string;
+  /**
+   * Every cost report this run sent (SPEC.md §9.4), decoded from the body.
+   *
+   * The telemetry transport is injected rather than left on global `fetch`, so
+   * the stub servers below never see a report: a test counting a command's
+   * requests must not be counting this one, and one that reads the last request
+   * it received must not be reading this one.
+   */
+  readonly reports: readonly InvocationReport[];
 }
 
 async function invoke(
@@ -65,21 +76,44 @@ async function invoke(
     env?: Record<string, string | undefined>;
     isTTY?: boolean;
     registry?: Registry;
+    /** Replaces the capturing transport, for the failure cases. */
+    telemetryFetch?: typeof globalThis.fetch;
   } = {},
 ): Promise<Invocation> {
   const stdout: string[] = [];
   const stderr: string[] = [];
+  const reports: InvocationReport[] = [];
+  let bytes = 0;
+
+  const capture: typeof globalThis.fetch = (_input, init) => {
+    const body: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "null");
+    if (body !== null && typeof body === "object" && "invocations" in body) {
+      reports.push(...(body as { invocations: InvocationReport[] }).invocations);
+    } else {
+      reports.push(body as InvocationReport);
+    }
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+
   const code = await run({
     argv,
     cwd: overrides.cwd ?? outsideWorkspace(),
     env: overrides.env ?? {},
-    stdout: (text) => void stdout.push(text),
-    stderr: (text) => void stderr.push(text),
+    stdout: (text) => {
+      stdout.push(text);
+      bytes += Buffer.byteLength(text, "utf8");
+    },
+    stderr: (text) => {
+      stderr.push(text);
+      bytes += Buffer.byteLength(text, "utf8");
+    },
     isTTY: overrides.isTTY ?? false,
     version: "9.9.9",
+    bytesWritten: () => bytes,
+    telemetry: { fetch: overrides.telemetryFetch ?? capture },
     ...(overrides.registry === undefined ? {} : { registry: overrides.registry }),
   });
-  return { code, stdout: stdout.join(""), stderr: stderr.join("") };
+  return { code, stdout: stdout.join(""), stderr: stderr.join(""), reports };
 }
 
 afterEach(async () => {
@@ -517,5 +551,346 @@ describe("actor attribution, resolved once by the dispatcher", () => {
     expect(verb.stdout).toContain("--from");
     expect(verb.stdout).toContain("Global flags: --from,");
     expect(verb.stdout).toContain("(`corpus --help`)");
+  });
+});
+
+/**
+ * What every invocation weighs (SPEC.md §9.4, CLI-085), driven through the whole
+ * dispatcher rather than through the reporter alone — the report is composed
+ * from three facts that become available at three different moments, and it is
+ * the composition this describes.
+ */
+describe("the invocation's own cost report", () => {
+  it("reports the resolved command path, never the raw argv", async () => {
+    const port = await healthServer();
+    const result = await invoke(["health", "--json"], { cwd: workspaceDir(port) });
+
+    expect(result.code).toBe(ExitCode.success);
+    expect(result.reports).toHaveLength(1);
+    expect(result.reports[0]?.command).toBe("health");
+  });
+
+  it("composes topic and verb for a topic's verb", async () => {
+    const port = await healthServer(404, { error: { code: "not_found", message: "gone" } });
+    const result = await invoke(["doc", "show", "doc_a1b2c3"], { cwd: workspaceDir(port) });
+
+    expect(result.reports[0]?.command).toBe("doc show");
+  });
+
+  it("counts what the command printed, to the byte", async () => {
+    const port = await healthServer();
+    const result = await invoke(["health", "--json"], { cwd: workspaceDir(port) });
+
+    const printed = Buffer.byteLength(result.stdout + result.stderr, "utf8");
+    expect(printed).toBeGreaterThan(0);
+    expect(result.reports[0]?.readBytes).toBe(printed);
+  });
+
+  it("counts a failure's own output too, since the caller paid for it", async () => {
+    const port = await healthServer(500, { error: { code: "internal", message: "boom" } });
+    const result = await invoke(["health"], { cwd: workspaceDir(port) });
+
+    expect(result.code).not.toBe(ExitCode.success);
+    expect(result.stderr).not.toBe("");
+    expect(result.reports[0]?.readBytes).toBe(
+      Buffer.byteLength(result.stdout + result.stderr, "utf8"),
+    );
+  });
+
+  it("counts the joined argv as what the caller wrote", async () => {
+    const port = await healthServer();
+    const result = await invoke(["health", "--json"], { cwd: workspaceDir(port) });
+
+    expect(result.reports[0]?.wroteBytes).toBe(Buffer.byteLength("health --json", "utf8"));
+  });
+
+  it("counts the body a file flag carried, not the path that named it", async () => {
+    // PHASE-59 FAIL-1, driven through the dispatcher. `--flag-file` is the
+    // CLI's injection-safe route and `corpus --help` sends the largest payloads
+    // down it, so before this it was the cheapest way to write: the body was
+    // weighed as the ~30 bytes of its own path.
+    const port = await healthServer(201, { id: "doc_a1b2c3", key: "k", warnings: [] });
+    const root = workspaceDir(port);
+    const body = `A reply body, repeated. `.repeat(90);
+    const path = join(root, "body.md");
+    writeFileSync(path, body, "utf8");
+
+    const argv = [
+      "doc",
+      "create",
+      "--type",
+      "note",
+      "--title",
+      "T",
+      "--flag-file",
+      `message=${path}`,
+    ];
+    const result = await invoke(argv, { cwd: root });
+
+    const argvBytes = Buffer.byteLength(argv.join(" "), "utf8");
+    expect(result.reports[0]?.wroteBytes).toBe(argvBytes + Buffer.byteLength(body, "utf8"));
+    // The defect, stated as the thing that must not happen again: the body is
+    // an order of magnitude larger than the invocation that named it.
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(argvBytes * 5);
+  });
+
+  it("weighs the same body the same through --file as through --flag-file", async () => {
+    // The transports must not price identical work differently, whichever one
+    // the agent picks (SPEC.md §9.4).
+    const port = await healthServer(201, { id: "doc_a1b2c3", key: "k", warnings: [] });
+    const root = workspaceDir(port);
+    const body = "The same body, twice.\n".repeat(20);
+    const path = join(root, "body.md");
+    writeFileSync(path, body, "utf8");
+
+    const viaFile = await invoke(
+      ["doc", "create", "--type", "note", "--title", "T", "--file", path],
+      {
+        cwd: root,
+      },
+    );
+    const viaFlagFile = await invoke(
+      ["doc", "create", "--type", "note", "--title", "T", "--flag-file", `message=${path}`],
+      { cwd: root },
+    );
+
+    const carried = (report: InvocationReport | undefined, argv: readonly string[]): number =>
+      (report?.wroteBytes ?? 0) - Buffer.byteLength(argv.join(" "), "utf8");
+
+    const bodyBytes = Buffer.byteLength(body, "utf8");
+    expect(
+      carried(viaFile.reports[0], [
+        "doc",
+        "create",
+        "--type",
+        "note",
+        "--title",
+        "T",
+        "--file",
+        path,
+      ]),
+    ).toBe(bodyBytes);
+    expect(
+      carried(viaFlagFile.reports[0], [
+        "doc",
+        "create",
+        "--type",
+        "note",
+        "--title",
+        "T",
+        "--flag-file",
+        `message=${path}`,
+      ]),
+    ).toBe(bodyBytes);
+  });
+
+  it("counts a multi-byte argument in bytes, not characters", async () => {
+    const port = await healthServer(404, { error: { code: "not_found", message: "gone" } });
+    const argv = ["doc", "show", "doc_a1b2c3", "--section", "Café — notes"];
+    const result = await invoke(argv, { cwd: workspaceDir(port) });
+
+    const joined = argv.join(" ");
+    expect(Buffer.byteLength(joined, "utf8")).toBeGreaterThan(joined.length);
+    expect(result.reports[0]?.wroteBytes).toBe(Buffer.byteLength(joined, "utf8"));
+  });
+
+  it("names the documents the invocation itself named, positionally", async () => {
+    const port = await healthServer(404, { error: { code: "not_found", message: "gone" } });
+    const result = await invoke(["doc", "show", "doc_a1b2c3", "doc_d4e5f6"], {
+      cwd: workspaceDir(port),
+    });
+
+    expect(result.reports[0]?.subjects).toEqual(["doc_a1b2c3", "doc_d4e5f6"]);
+  });
+
+  it("names a document that arrived in a flag", async () => {
+    const port = await healthServer(200, { documents: [], total: 0, truncated: false });
+    const result = await invoke(["doc", "list", "--parent", "doc_a1b2c3"], {
+      cwd: workspaceDir(port),
+    });
+
+    expect(result.reports[0]?.subjects).toEqual(["doc_a1b2c3"]);
+  });
+
+  it("reports no subject for a verb that names none", async () => {
+    // §9.4 attributes to the documents an invocation *named*. A search and a
+    // listing name none: they take a query or filters, and the ids in their
+    // output are the answer rather than the question.
+    const port = await healthServer(200, { results: [], total: 0, truncated: false });
+    const root = workspaceDir(port);
+
+    const searched = await invoke(["search", "anything"], { cwd: root });
+    expect(searched.reports).toHaveLength(1);
+    expect(searched.reports[0]?.subjects).toEqual([]);
+
+    const listed = await invoke(["doc", "list"], { cwd: root });
+    expect(listed.reports).toHaveLength(1);
+    expect(listed.reports[0]?.subjects).toEqual([]);
+  });
+
+  it("stamps when the invocation finished", async () => {
+    const port = await healthServer();
+    const result = await invoke(["health"], { cwd: workspaceDir(port) });
+
+    const at = result.reports[0]?.at ?? "";
+    expect(new Date(at).toISOString()).toBe(at);
+  });
+
+  it("sends exactly one report per invocation, and never one about itself", async () => {
+    const port = await healthServer();
+    const result = await invoke(["health"], { cwd: workspaceDir(port) });
+
+    expect(result.reports).toHaveLength(1);
+    expect(result.reports.map((one) => one.command)).toEqual(["health"]);
+  });
+});
+
+describe("what is never measured", () => {
+  it("reports nothing for help, at any level, in either register", async () => {
+    const port = await healthServer();
+    const root = workspaceDir(port);
+
+    for (const argv of [
+      [],
+      ["--help"],
+      ["--help=brief"],
+      ["--version"],
+      ["doc"],
+      ["doc", "--help"],
+      ["doc", "show", "--help"],
+      ["health", "--version"],
+    ]) {
+      const result = await invoke(argv, { cwd: root });
+      expect(result.reports, argv.join(" ")).toEqual([]);
+    }
+  });
+
+  it("reports nothing for the commands that declare themselves unmeasured", async () => {
+    // Declared on the command rather than listed in the dispatcher (SPEC.md
+    // §9.4): the set is read off the registry here, so a verb added to it is
+    // covered without touching this test.
+    const excluded = [
+      ...registry.commands.filter((command) => command.measured === false).map((c) => [c.name]),
+      ...registry.topics.flatMap((topic) =>
+        topic.commands
+          .filter((command) => command.measured === false)
+          .map((command) => [topic.name, command.name]),
+      ),
+    ];
+    expect(excluded.map((argv) => argv.join(" "))).toEqual([
+      "init",
+      "upgrade",
+      "server start",
+      "server status",
+      "server stop",
+      "server logs",
+    ]);
+
+    const port = await healthServer();
+    const root = workspaceDir(port);
+    for (const argv of excluded) {
+      const result = await invoke([...argv, "--help"], { cwd: root });
+      expect(result.reports, argv.join(" ")).toEqual([]);
+    }
+  });
+
+  it("reports nothing when there is no workspace to report to", async () => {
+    const result = await invoke(["health"], { cwd: outsideWorkspace() });
+    expect(result.code).toBe(ExitCode.noWorkspace);
+    expect(result.reports).toEqual([]);
+  });
+});
+
+/**
+ * TEST-1202, and the reason §9.4 says what it says: the measurement is advisory,
+ * so with nothing listening every verb must behave exactly as it did before this
+ * feature existed. Asserted as an **absence** — no warning, no mention, no
+ * second exit code — rather than as a tolerated diagnostic.
+ */
+describe("a server that is not running", () => {
+  const deadTelemetry: typeof globalThis.fetch = () =>
+    Promise.reject(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }));
+
+  async function bothWays(
+    argv: readonly string[],
+    cwd: string,
+  ): Promise<{ readonly quiet: Invocation; readonly dead: Invocation }> {
+    return {
+      quiet: await invoke(argv, { cwd, telemetryFetch: () => Promise.reject(new Error("off")) }),
+      dead: await invoke(argv, { cwd, telemetryFetch: deadTelemetry }),
+    };
+  }
+
+  it("changes no verb's stdout, stderr or exit code", async () => {
+    // A port with nothing behind it, so the command's own request fails exactly
+    // as it does in the field — and the report's does too.
+    const root = workspaceDir(1);
+
+    for (const argv of [
+      ["health"],
+      ["doc", "show", "doc_a1b2c3"],
+      ["doc", "edit", "doc_a1b2c3", "-m", "text"],
+      ["doc", "show"],
+      ["--help"],
+      ["--version"],
+    ]) {
+      const { quiet, dead } = await bothWays(argv, root);
+      expect(dead.code, argv.join(" ")).toBe(quiet.code);
+      expect(dead.stdout, argv.join(" ")).toBe(quiet.stdout);
+      expect(dead.stderr, argv.join(" ")).toBe(quiet.stderr);
+    }
+  });
+
+  it("says nothing anywhere about telemetry, a report, or a measurement", async () => {
+    const root = workspaceDir(1);
+    const result = await invoke(["health"], { cwd: root, telemetryFetch: deadTelemetry });
+
+    const everything = `${result.stdout}${result.stderr}`.toLowerCase();
+    for (const word of ["telemetry", "report", "measure", "cost", "invocations"]) {
+      expect(everything, word).not.toContain(word);
+    }
+  });
+
+  it("cannot replace the exit code, even when composing the report throws", async () => {
+    // `settle` runs from a `finally`, so anything it threw would become this
+    // function's answer. The guarantee is structural rather than a claim about
+    // three lines that happen not to throw today.
+    const port = await healthServer();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const code = await run({
+      argv: ["health"],
+      cwd: workspaceDir(port),
+      env: {},
+      stdout: (text) => void stdout.push(text),
+      stderr: (text) => void stderr.push(text),
+      isTTY: false,
+      version: "9.9.9",
+      bytesWritten: () => {
+        throw new Error("the counter itself failed");
+      },
+    });
+
+    expect(code).toBe(ExitCode.success);
+    expect(stdout.join("")).toContain("ok — corpus");
+    expect(stderr.join("")).toBe("");
+  });
+
+  it("still exits when the report's transport never settles", async () => {
+    // The hazard sprint-025 P5 identifies: the bin sets `process.exitCode` and
+    // never calls `process.exit`, so an unbounded request would hold the process
+    // open. The cap is what stops that, and this is it exercised end to end.
+    const port = await healthServer();
+    const result = await invoke(["health"], {
+      cwd: workspaceDir(port),
+      telemetryFetch: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    });
+
+    expect(result.code).toBe(ExitCode.success);
+    expect(result.stderr).toBe("");
   });
 });

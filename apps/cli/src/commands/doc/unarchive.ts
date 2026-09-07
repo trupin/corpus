@@ -60,7 +60,7 @@ export const unarchiveCommand: WorkspaceCommandSpec = {
     "real and this verb repairs it. If a folder is already sitting at the destination path the " +
     "server refuses rather than merging the two, and its message names the directory to move or " +
     "remove first.",
-  args: [{ name: "id", required: true, description: "The document's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The document's id." }],
   flags: [JOB_FLAG],
   examples: [
     {

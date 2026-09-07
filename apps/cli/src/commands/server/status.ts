@@ -134,6 +134,9 @@ export function renderReport(report: ServerStatusReport): string {
 
 export const statusCommand: WorkspaceCommandSpec = {
   name: "status",
+  // Server lifecycle, so unmeasured (SPEC.md §9.4): answering when the server is
+  // down is the whole point of it, and it names no document.
+  measured: false,
   summary: "Report whether this workspace's server is running, and how it is doing.",
   description:
     "Combines the pidfile with a live `GET /api/health` so a stale or reused pid is never " +

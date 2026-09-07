@@ -163,6 +163,7 @@ export const checkCommand: WorkspaceCommandSpec = {
       name: "id",
       required: false,
       variadic: true,
+      subject: true,
       description: "Documents to check. Omit them to check the whole workspace.",
     },
   ],

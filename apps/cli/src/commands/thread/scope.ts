@@ -149,7 +149,7 @@ export const scopeCommand: WorkspaceCommandSpec = {
     "empty one, and the refusal names the remedy. A thread id that names nothing, or a document " +
     "that is not a thread, is the server's `404`. Read-only: nothing here writes, and `--from` " +
     "changes nothing about the answer.",
-  args: [{ name: "id", required: true, description: "The designated thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The designated thread's id." }],
   flags: [],
   examples: [
     {

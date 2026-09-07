@@ -290,7 +290,7 @@ export const showCommand: WorkspaceCommandSpec = {
     "request either way, and the saving is in the reader's context. The index's byte counts are " +
     "the turn's body in UTF-8, heading line excluded, so the header's total is exactly the sum " +
     "of the rows and a row predicts what `--turn <n>` will print.",
-  args: [{ name: "id", required: true, description: "The thread's id." }],
+  args: [{ name: "id", required: true, subject: true, description: "The thread's id." }],
   flags: [
     {
       name: "index",
