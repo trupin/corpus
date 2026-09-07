@@ -469,6 +469,37 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
     // ships this to five hosts whose foot markup is not the same (SPEC.md §10).
     const host = box.current?.parentElement ?? null;
 
+    /**
+     * What a card that scrolls as one piece owes the person reading it — the
+     * two things the phase-60 re-check found missing (OBS-A, OBS-B). Both are
+     * readings of one number, `scrollTop`, so they are taken together and on
+     * every scroll of the card itself.
+     *
+     * - **`data-address-pop-more`** — "there is content below this edge".
+     *   `address.css` hangs the bottom fade on it, so the cut is announced
+     *   while it is a cut and is gone at the bottom, where the last line
+     *   really is the last line. The re-check's wording: the card "carries no
+     *   affordance for it: `mask-image: none` … no gradient at the cut", and
+     *   the roster's "N lanes · scroll for the rest" names the *roster*.
+     * - **`--address-pop-scroll`** — how far the content has moved under the
+     *   card's own box. The ✕ is positioned against the card's padding box,
+     *   whose origin is the top of the *scrolled content*, so at any offset
+     *   but zero it rides up past the clip (the re-check measured it at
+     *   y 49–67 against a panel whose top edge is 86, "clipped and not
+     *   hit-testable"). The stylesheet translates it back down by exactly
+     *   this, which pins it to the visible corner at every offset.
+     *
+     * Written as attribute and custom property rather than as React state on
+     * purpose: a scroll must not re-render the card, and {@link fit} must
+     * never run from one — it is the loop UI-127 closed.
+     */
+    const track = (): void => {
+      const scrolls = card.getAttribute("data-address-pop-scrolls") === "true";
+      const below = card.scrollHeight - card.clientHeight - card.scrollTop;
+      card.setAttribute("data-address-pop-more", scrolls && below > 1 ? "true" : "false");
+      card.style.setProperty("--address-pop-scroll", `${String(Math.round(card.scrollTop))}px`);
+    };
+
     const fit = (): void => {
       // Measured unbounded, unshifted and unscrolled, so no previous fit can
       // bias this one.
@@ -587,6 +618,7 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       const over = card.getBoundingClientRect().height - headroom;
       card.style.setProperty("--address-pop-shift", `${String(Math.max(0, Math.round(over)))}px`);
       if (list !== null) setCapped(list.scrollHeight > list.clientHeight + 1);
+      track();
     };
 
     fit();
@@ -606,9 +638,13 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
 
     window.addEventListener("resize", fit);
     clip?.addEventListener("scroll", fit, { passive: true });
+    // The card's own scroll re-reads the two markers and nothing else: no
+    // re-fit, no re-render, no measurement a row could move under a pointer.
+    card.addEventListener("scroll", track, { passive: true });
     return () => {
       window.removeEventListener("resize", fit);
       clip?.removeEventListener("scroll", fit);
+      card.removeEventListener("scroll", track);
     };
   }, [open, rows.length, saysKey]);
 

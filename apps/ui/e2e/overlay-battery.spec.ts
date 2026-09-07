@@ -402,3 +402,118 @@ test.describe("overlay: designation-popover [no-owner] — the weight editor is 
     await expect(heavy).toHaveAttribute("aria-pressed", "true");
   });
 });
+
+/* ── The two the phase-60 re-check recorded (OBS-A, OBS-B) ──────────────── */
+
+/**
+ * The same state, and the two things the re-check found the scrolling repair
+ * had not paid for:
+ *
+ * - **OBS-A** — "the card gives no visual cue that it scrolls … `mask-image:
+ *   none`, `::before` and `::after` `content: none`, no gradient at the cut",
+ *   with the card's last visible line reading "as a natural end". The roster's
+ *   own "N lanes · scroll for the rest" names the roster and not the card, so
+ *   the WEIGHT section below the cut could go unlearned.
+ * - **OBS-B** — "with the card scrolled to its bottom the close button sits at
+ *   y 49–67, above the panel's top edge at 86, clipped and not hit-testable".
+ *   The battery's own exit check never saw it: it presses the ✕ at scroll 0,
+ *   which is the one offset where the defect is invisible.
+ *
+ * Both are asserted at the offsets that separate them from a permanent
+ * decoration: the fade at the top *and* at the bottom, the ✕ at full scroll.
+ */
+test.describe("overlay: designation-popover [no-owner] — a scrolling card says so and stays exitable", () => {
+  const CARD = '[data-address-pop="compose"]';
+
+  /** Opens the state and reports whether the card really scrolls as one piece. */
+  async function openScrolled(page: Page): Promise<boolean> {
+    if (NO_OWNER === undefined) throw new Error("the no-owner state left the registry");
+    await NO_OWNER.open(page);
+    return page.locator(CARD).evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+  }
+
+  /** Wheels the card to its own bottom, aiming below the roster's region. */
+  async function wheelToBottom(page: Page): Promise<void> {
+    const card = page.locator(CARD);
+    const box = await card.boundingBox();
+    if (box === null) throw new Error("the card has no box to aim the wheel at");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 12);
+    for (let turn = 0; turn < 12; turn += 1) {
+      const end = await card.evaluate(
+        (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
+      );
+      if (end) return;
+      await page.mouse.wheel(0, 200);
+      await page.waitForTimeout(60);
+    }
+    throw new Error("the card never reached its own bottom under a real wheel");
+  }
+
+  /** The card's bottom fade, as the browser resolves it. */
+  async function fadeOf(page: Page): Promise<string> {
+    return page.locator(CARD).evaluate((el) => {
+      const style = getComputedStyle(el);
+      const mask = style.maskImage;
+      return mask === "" || mask === "none" ? style.webkitMaskImage : mask;
+    });
+  }
+
+  test("the bottom fade is present exactly while content remains below", async ({ page }) => {
+    const scrolls = await openScrolled(page);
+    expect(
+      scrolls,
+      "the crowded no-owner card no longer outruns the compose panel — this " +
+        "check needs a card that scrolls as one piece to mean anything",
+    ).toBe(true);
+
+    expect(await fadeOf(page), "the card is cut and announces nothing (OBS-A)").toContain(
+      "linear-gradient",
+    );
+
+    await wheelToBottom(page);
+    expect(
+      await fadeOf(page),
+      "the fade survives the bottom of the scroll, where the last line really " +
+        "is the last line",
+    ).toBe("none");
+
+    // …and it comes back, so the fade tracks the offset rather than a
+    // one-way flag flipped by the first gesture.
+    await page.locator(CARD).evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await expect
+      .poll(() => fadeOf(page), { message: "the fade never returned after scrolling back up" })
+      .toContain("linear-gradient");
+  });
+
+  test("the ✕ is hit-testable at the bottom of the scroll", async ({ page }) => {
+    const scrolls = await openScrolled(page);
+    expect(scrolls, "the crowded no-owner card no longer scrolls as one piece").toBe(true);
+    await wheelToBottom(page);
+
+    const close = page.locator(`${CARD} .kit-popover-close`);
+    const verdict = await close.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const clip = el.closest(".search-panel")?.getBoundingClientRect() ?? null;
+      if (clip !== null && rect.top < clip.top)
+        return `the ✕ is at y ${String(Math.round(rect.top))}, above its clip's top edge ${String(Math.round(clip.top))}`;
+      const found = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return found !== null && (found === el || el.contains(found))
+        ? "the ✕"
+        : `<${found?.tagName.toLowerCase() ?? "nothing"} .${found?.className ?? ""}>`;
+    });
+    expect(verdict, `at the bottom of the scroll, ${verdict} (OBS-B)`).toBe("the ✕");
+
+    // A real press, at the coordinates the hit-test just answered for: the
+    // battery's exit check presses at scroll 0, and this state is the one
+    // where those are different points.
+    const box = await close.boundingBox();
+    if (box === null) throw new Error("the ✕ has no box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.locator(CARD)).toBeHidden();
+  });
+});

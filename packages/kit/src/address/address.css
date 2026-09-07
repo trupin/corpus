@@ -384,11 +384,61 @@ button.address-line:focus-visible {
    (the phase-60 evaluation's FAIL-1: a card taller than its clip hid that
    state's only weight editor past an edge no gesture could reach). The fit
    sets this attribute, never a stylesheet at rest, so a card that fits keeps
-   `overflow: visible` and its geometry untouched. The ✕ scrolls with the
-   content it closes — Escape and the outside press stay reachable from any
-   scroll offset. */
+   `overflow: visible` and its geometry untouched. Escape and the outside press
+   stay reachable from any scroll offset, and since the phase-60 re-check so
+   does the ✕ — see the two rules below. */
 .composer-address .address-pop[data-address-pop-scrolls="true"] {
   overflow-y: auto;
+}
+
+/* **The cut says it is a cut** (the phase-60 re-check's OBS-A).
+
+   A card capped at its clip ends mid-content, and the re-check found nothing
+   announcing it: `mask-image: none`, no gradient, and the only scroll wording
+   on the surface — "N lanes · scroll for the rest" — naming the *roster*
+   rather than the card. The last visible line was the statement sentence,
+   which "reads as a natural end", so the WEIGHT section below it could go
+   unlearned by a mouse user who never wheels over the card.
+
+   The affordance is a bottom fade, the mockup's own language for a cut edge
+   (`markdown.css`'s collapsed fence paints the same transparent-to-surface
+   ramp). It is a mask rather than an overlay because the card *is* the scroll
+   container: a mask is painted in the element's border box, which does not
+   move with the content, so one declaration fades whatever happens to be at
+   the edge — and no extra element enters a card whose flex column the fit
+   measures.
+
+   `data-address-pop-more` is `ComposerAddress.tsx`'s reading of `scrollTop`,
+   refreshed on every scroll of the card. So the fade is present exactly while
+   content remains below and gone at the bottom, where the last line really is
+   the last line — a permanent fade would be the same lie in the other
+   direction. 22px is the ramp: shorter than a lane row, so it never hides a
+   whole one, and long enough to read as a fade rather than a border. */
+.composer-address .address-pop[data-address-pop-scrolls="true"][data-address-pop-more="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+}
+
+/* **The exit stays where the eye is** (the phase-60 re-check's OBS-B).
+
+   The ✕ below is absolutely positioned, and inside a scroll container its
+   containing block is the padding box — whose origin is the top of the
+   *scrolled content*, not the top of the visible card. So every pixel of
+   scroll carried it up past the clip: the re-check measured it at y 49–67
+   against a panel edge at 86, "clipped and not hit-testable", with Escape
+   left as the only exit in that one state.
+
+   `--address-pop-scroll` is that same offset, written by the fit's tracker,
+   and translating by it puts the button back in the visible top-right corner
+   at every position. A transform rather than a `top` so nothing re-lays out
+   on a scroll, and the button's hit rectangle follows it — which is what the
+   battery asserts at full scroll. Sticky is not an option here: the ✕ is out
+   of flow, and putting it back in would cost the card a row of height the fit
+   has already spent. */
+.composer-address .address-pop[data-address-pop-scrolls="true"] > .kit-popover-close {
+  transform: translateY(var(--address-pop-scroll, 0px));
+  /* Opaque under the ✕: the content it pins over scrolls beneath it. */
+  background: var(--surface);
 }
 
 /* Inside a card that scrolls as one piece, the roster holds at exactly its

@@ -350,3 +350,129 @@ needed less — the token was spent as a tax, not a guarantee.
   The prescribed verification for this pass was the battery + the address
   specs against the suite's standing Vite + Chromium arrangement; the panel
   geometry the defect lives in is the same markup in both.
+
+---
+
+## Follow-up fix: OBS-A and OBS-B of the phase-60 re-check (2026-09-07)
+
+**Model**: Opus 5 (`claude-opus-5[1m]`).
+
+The re-check (`issues/evals/sprint-026-phase-60-eval.md`) recorded two items
+against the scrolling repair above. Neither failed a stated criterion, and
+both are paid here — CSS-level, in the kit address popover only, with no
+change to the fit's arithmetic or to any measured bound.
+
+### OBS-A — the card gives no visual cue that it scrolls
+
+Recorded: *"`mask-image: none`, `::before` and `::after` `content: none`, no
+gradient at the cut … The only scroll wording on the surface is `"14 lanes ·
+scroll for the rest"`, which names the **roster**, not the card."*
+
+**The mechanism.** `ComposerAddress.tsx` now writes a second marker beside
+`data-address-pop-scrolls`: `data-address-pop-more`, set from `scrollTop`
+on the card's own `scroll` event and at the end of every fit. `address.css`
+hangs a bottom fade on the pair —
+
+```css
+.composer-address .address-pop[data-address-pop-scrolls="true"][data-address-pop-more="true"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+}
+```
+
+A mask rather than an overlay element, because the card **is** the scroll
+container: a mask is painted in the element's border box and does not move
+with the content, so one declaration fades whatever is at the edge and no
+new child enters the flex column the fit measures. The ramp is the mockup's
+own language for a cut edge (`markdown.css`'s collapsed fence paints the
+same transparent-to-surface gradient). 22px is shorter than a lane row, so
+it never hides a whole one.
+
+The fade is present **exactly** while content remains below, and gone at the
+bottom, where the last line really is the last line.
+
+### OBS-B — the visible ✕ scrolls out of the clip
+
+Recorded: *"With the card scrolled to its bottom the close button sits at
+y 49–67, above the panel's top edge at 86, clipped and not hit-testable."*
+
+**The cause.** `.kit-popover-close` is absolutely positioned, and inside a
+scroll container its containing block is the padding box — whose origin is
+the top of the *scrolled content*, not the top of the visible card. Every
+pixel of scroll carried it up past the clip.
+
+**The mechanism.** The same tracker writes `--address-pop-scroll` (the card's
+`scrollTop`), and the stylesheet translates the button back down by exactly
+it, in the scrolling state only:
+
+```css
+.composer-address .address-pop[data-address-pop-scrolls="true"] > .kit-popover-close {
+  transform: translateY(var(--address-pop-scroll, 0px));
+  background: var(--surface);
+}
+```
+
+A transform rather than a `top`, so a scroll re-lays out nothing and the
+button's hit rectangle follows it. Sticky was rejected: the ✕ is out of flow
+and putting it back would cost the card a row of height the fit has spent.
+The opaque background is new and scoped to this state — content now scrolls
+beneath the button.
+
+Neither the fade nor the pin fires at rest: a card that fits keeps
+`overflow: visible`, `mask-image: none` and an untranslated ✕.
+
+### The two assertions (`apps/ui/e2e/overlay-battery.spec.ts`)
+
+A new describe over the `designation-popover [no-owner]` state, beside the
+weight-editor probe — the state where the crowded card really scrolls:
+
+1. **"the bottom fade is present exactly while content remains below"** —
+   asserts the card overflows at all, reads the computed mask at scroll 0
+   (must be a `linear-gradient`), wheels to the card's own bottom (must be
+   `none`), then scrolls back up (must return). The third step is what stops
+   a one-way flag passing.
+2. **"the ✕ is hit-testable at the bottom of the scroll"** — wheels to the
+   bottom, then checks the button's rect against its clip's top edge, that
+   `elementFromPoint` at its centre answers the button, and that a real
+   `page.mouse.click` at those coordinates dismisses the card. The battery's
+   standing exit check presses the ✕ at scroll 0, which is the one offset
+   where OBS-B is invisible — so it stays meaningful and this adds the offset
+   it never reached.
+
+### E2E verification (real Chromium, Vite dev server, `CORPUS_UI_PORT=5673`, kit `dist/` rebuilt first)
+
+**Measured in the running app**, crowded fixture, no-owner state, 1280×720
+(`.search-panel` clip top = 86, card `scrollHeight` 281 / `clientHeight` 180):
+
+| offset            | `data-address-pop-more` | computed `mask-image`                    | ✕ rect (top/bottom) |
+| ----------------- | ----------------------- | ---------------------------------------- | ------------------- |
+| `scrollTop` 0     | `true`                  | `linear-gradient(rgb(0,0,0) calc(100% - 22px), rgba(0,0,0,0) 100%)` | 97 / 115 |
+| `scrollTop` 101   | `false`                 | `none`                                   | 97 / 115            |
+
+The ✕ does not move: 11px inside the clip at both ends. Screenshots in the
+scratchpad (`obs-top.png`, `obs-bottom.png`) show the faded cut over the
+statement line at the top, and the three WEIGHT rows crisp to the edge with
+the ✕ still in the corner at the bottom.
+
+**Both assertions falsified by mutation** (each reverted in source, kit
+`dist/` rebuilt, spec re-run — the dist trap):
+
+- `mask-image: none` in place of the gradient → *"the card is cut and
+  announces nothing (OBS-A) … Expected substring: `linear-gradient`,
+  Received: `none`"*.
+- The fade made permanent (`data-address-pop-more` dropped from the
+  selector) → red at the bottom: *"the fade survives the bottom of the
+  scroll … Received: `linear-gradient(...)`"*. So the assertion bites in
+  both directions.
+- `transform: none` in place of the pin → *"at the bottom of the scroll, the
+  ✕ is at y -4, above its clip's top edge 86 (OBS-B)"* — the re-check's own
+  measurement class, reproduced.
+
+**Runs (all green):**
+
+- `overlay-battery` + `address-geometry` + `address-room-geometry` +
+  `ask-designation-weight` + `recipient` in one run — **106/106 PASS**
+  (73s). The battery alone is 53 (51 before, plus the two added here).
+- `packages/kit` unit suites — **1126/1126 PASS**.
+- `eslint` on the two touched TypeScript files, `prettier --check` on all
+  three touched files, `tsc --noEmit` in `packages/kit` and `apps/ui` —
+  clean.
