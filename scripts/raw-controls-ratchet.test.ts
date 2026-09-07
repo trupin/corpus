@@ -18,8 +18,8 @@ import { z } from "zod";
  *
  * Three records must agree:
  *
- *   1. the tree — which files actually carry a raw `<button>`, `<select>` or
- *      `<option>` today;
+ *   1. the tree — which files actually carry a raw `<button>`, `<select>`,
+ *      `<option>` or hand-written `role="dialog"` today;
  *   2. `scripts/raw-controls-baseline.json` — the grandfathered list, which
  *      must name exactly those files and no others;
  *   3. `CLOSED_CENSUS` below — the census taken the day the ratchet landed,
@@ -44,26 +44,40 @@ const UI_191_PATH = join(REPO_ROOT, "issues", "ui", "191-one-button-one-dropdown
  * UI-191 migrated the sprint's enumerated 22 files and recorded, in its own
  * Census discrepancy paragraph, that more files carried raw `<button>` than
  * the sprint had counted. These are those files, enumerated exactly.
+ *
+ * A second census joined on 2026-09-07 with the `role-dialog` ban (UI-193
+ * criterion 2, landed via PR #77 finding 3): the nine product overlays that
+ * predate kit's `Modal`/`Popover` and hand-write the role, from
+ * `CommentPopover.tsx` to `UpgradePanel.tsx` below. Each ban's census is
+ * closed the day the ban lands, and this list is their union — still closed:
+ * a NEW overlay wants a kit primitive, never a baseline entry.
  */
 const CLOSED_CENSUS: readonly string[] = [
+  "apps/ui/src/anchors/CommentPopover.tsx",
   "apps/ui/src/board/Column.tsx",
   "apps/ui/src/board/ColumnHead.tsx",
   "apps/ui/src/board/ColumnStrip.tsx",
+  "apps/ui/src/board/KanbanDialog.tsx",
   "apps/ui/src/board/NewListGhost.tsx",
   "apps/ui/src/board/NewListPicker.tsx",
   "apps/ui/src/board/PathColumn.tsx",
   "apps/ui/src/board/query/QueryEditor.tsx",
+  "apps/ui/src/board/query/QueryHelp.tsx",
   "apps/ui/src/comments/CommentsSwitch.tsx",
   "apps/ui/src/comments/CommentsTab.tsx",
   "apps/ui/src/comments/NewCommentComposer.tsx",
+  "apps/ui/src/compose/ComposeOverlay.tsx",
   "apps/ui/src/console/Console.tsx",
   "apps/ui/src/console/JobDetail.tsx",
   "apps/ui/src/console/LaneScope.tsx",
   "apps/ui/src/dev/DataProbe.tsx",
   "apps/ui/src/editor/SelectionToolbar.tsx",
   "apps/ui/src/explorer/ExplorerTree.tsx",
+  "apps/ui/src/image/ImageViewer.tsx",
+  "apps/ui/src/keyboard/CheatSheet.tsx",
   "apps/ui/src/menu/MenuItems.tsx",
   "apps/ui/src/reader/Backlinks.tsx",
+  "apps/ui/src/reader/FocusMode.tsx",
   "apps/ui/src/reader/FrontmatterForm.tsx",
   "apps/ui/src/reader/ReaderHead.tsx",
   "apps/ui/src/reader/RelatedPanel.tsx",
@@ -72,6 +86,7 @@ const CLOSED_CENSUS: readonly string[] = [
   "apps/ui/src/reflect/ReflectControl.tsx",
   "apps/ui/src/search/CreateRow.tsx",
   "apps/ui/src/search/FilterChips.tsx",
+  "apps/ui/src/search/SearchOverlay.tsx",
   "apps/ui/src/search/SearchResults.tsx",
   "apps/ui/src/shell/Toasts.tsx",
   "apps/ui/src/shell/Topbar.tsx",
@@ -80,6 +95,7 @@ const CLOSED_CENSUS: readonly string[] = [
   "apps/ui/src/thread/NewChildThread.tsx",
   "apps/ui/src/thread/ThreadCard.tsx",
   "apps/ui/src/thread/Turn.tsx",
+  "apps/ui/src/upgrade/UpgradePanel.tsx",
   "packages/kit/src/components/Autocomplete/AutocompleteMenu.tsx",
   "packages/kit/src/components/Composer/PendingAttachments.tsx",
   "packages/kit/src/markdown/CodeFence.tsx",
@@ -164,7 +180,7 @@ describe("the raw-control ratchet fires (INFRA-040)", () => {
       [
         "export function RawControlsProbe(): JSX.Element {",
         "  return (",
-        "    <div>",
+        '    <div role="dialog">',
         '      <button type="button">raw</button>',
         "      <select>",
         '        <option value="a">a</option>',
@@ -172,6 +188,7 @@ describe("the raw-control ratchet fires (INFRA-040)", () => {
         '      <input type="text" />',
         '      <a href="#anchor">link</a>',
         "      <textarea />",
+        '      <span role="tooltip">not a dialog</span>',
         "    </div>",
         "  );",
         "}",
@@ -217,11 +234,24 @@ describe("the raw-control ratchet fires (INFRA-040)", () => {
     expect(message).toContain("Select from @corpus/kit");
   });
 
+  it('refuses a hand-written role="dialog" and names the kit overlay primitives', () => {
+    // UI-193 criterion 2 (landed via PR #77 finding 3): an overlay outside
+    // kit's Controls is refused at the role, so it is built on Modal/Popover
+    // or it does not lint.
+    const message = refusals().find((text) => text.includes('role="dialog"'));
+    expect(message).toBeDefined();
+    expect(message).toContain("Modal");
+    expect(message).toContain("Popover");
+    expect(message).toContain("@corpus/kit");
+  });
+
   it("leaves the elements the kit does not replace alone", () => {
-    // <input>, <a> and <textarea> are in the probe too. Three refusals means
-    // the rule banned exactly what UI-191 replaced and nothing beyond it
-    // (sprint-026 → Out of scope: "a text input is not a button").
-    expect(refusals()).toHaveLength(3);
+    // <input>, <a>, <textarea> and a `role="tooltip"` are in the probe too.
+    // Four refusals means the rule banned exactly what UI-191 replaced plus
+    // UI-193's overlay role, and nothing beyond them (sprint-026 → Out of
+    // scope: "a text input is not a button"; a non-dialog role is not an
+    // overlay).
+    expect(refusals()).toHaveLength(4);
   });
 });
 
@@ -240,12 +270,15 @@ describe("the raw-control ratchet's exemptions (INFRA-040)", () => {
     ).toEqual(allSelectors);
   }, 120_000);
 
-  it("grandfathers <button> alone — a baselined file is still refused a native dropdown", async () => {
-    const kept = ratchet.banned
-      .filter((entry) => entry.tag !== "button")
-      .map((entry) => entry.selector)
-      .sort();
-    for (const path of Object.keys(ratchet.baseline)) {
+  it("grandfathers exactly the listed tags — a baselined file is still refused every other", async () => {
+    // A `<button>` file keeps its buttons and is still refused a `<select>`
+    // and a hand-written `role="dialog"`; a `role-dialog` overlay keeps its
+    // role and is still refused a raw `<button>`. Per file, never per tag-set.
+    for (const [path, tags] of Object.entries(ratchet.baseline)) {
+      const kept = ratchet.banned
+        .filter((entry) => !tags.includes(entry.tag))
+        .map((entry) => entry.selector)
+        .sort();
       expect(await selectorsAppliedTo(eslint, path), path).toEqual(kept);
     }
   }, 300_000);

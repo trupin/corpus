@@ -2547,5 +2547,5 @@ written.
 | AGENT-074 | Listeners still write workspace files by hand | todo | P0 | fable | — |
 | AGENT-075 | The runner stops with work still on the queue | todo | P0 | fable | — |
 | INFRA-042 | A budget-stopped run still testifies against the product | todo | P1 | fable | INFRA-037 |
-| UI-196 | Capture has no weight control while the Ask designates | todo | P1 | fable | UI-192 |
+| UI-196 | Capture has no weight control while the Ask designates | done | P1 | fable | UI-192 |
 | UI-197 | An empty sublist sometimes degrades to trailing-space joins | todo | P2 | opus | — |

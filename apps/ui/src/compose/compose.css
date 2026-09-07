@@ -188,15 +188,17 @@
 }
 
 /*
- * The settings row sits at the panel's bottom edge and `.search-panel` clips
- * (`overflow: hidden`), so a menu that dropped downward would lose its tail
- * off the panel. These menus open upward instead, into the panel's own room
- * over the textarea.
+ * No geometry rules for `.select-menu` here — the kit `Select` owns its open
+ * menu's box (PR #77 review, finding 1). An override lived here once, from
+ * the era when the menu was `position: absolute` and had to flip above
+ * `.search-panel`'s `overflow: hidden`: `top: auto; bottom: calc(100% + 4px)`.
+ * The menu went `position: fixed` in UI-193 (and flips upward on its own when
+ * the room below is short), and against a fixed box that `bottom` resolves on
+ * the *viewport* — both edges pinned, the box over-constrained into an 8px
+ * sliver whose rows hit-tested to the panel behind them. The class is guarded
+ * by the overlay battery's `lane-weight-menu [compose-*]` states and its
+ * menu-row probe, which reproduce exactly this before touching any fix.
  */
-.compose-settings .select-menu {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
 
 .compose-resident .select-trigger:hover {
   border-color: var(--accent);

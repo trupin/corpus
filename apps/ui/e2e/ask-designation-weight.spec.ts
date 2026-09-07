@@ -204,8 +204,9 @@ test.describe("the weight Ask designates a resident at", () => {
    * - "the boundary sentence explains what the rows govern" — nothing to
    *   explain once there is no second editor; the sentence is deleted.
    * - "`body.weight` and `body.resident.weight` travel together" — a
-   *   designating Ask offers no message weight, so it states none (§10: a
-   *   value the surface no longer shows must not be sent). The designation's
+   *   designating Ask offers no message weight, so it states none (nothing
+   *   offered, nothing sent — an inference from §10's resident-recipient
+   *   rider, not quoted spec text). The designation's
    *   level inside `resident` is pinned above; the message field's emptiness
    *   is pinned here.
    */
@@ -249,8 +250,9 @@ test.describe("the weight Ask designates a resident at", () => {
     };
     // The resident's level, inside the designation, where §7 puts the choice…
     expect(body.resident).toEqual({ name: "researcher", weight: "heavy" });
-    // …and the unshown standing "light" did NOT ride the message's field: a
-    // value the surface no longer shows must not act (§10).
+    // …and the unshown standing "light" did NOT ride the message's field:
+    // nothing offered, nothing sent (the inference from §10's
+    // resident-recipient rider — not quoted spec text).
     expect("weight" in body).toBe(false);
   });
 
@@ -353,5 +355,71 @@ test.describe("an Ask that carries an attachment", () => {
     const sent = (await corpus.of("POST", "/api/threads"))[0];
     expect(textPart(sent?.multipart, "resident")).toBeUndefined();
     expect((sent?.multipart?.files ?? []).length).toBe(1);
+  });
+});
+
+/**
+ * UI-196: §10's rider names "the global composer's Ask and its Capture", and
+ * UI-192's one-editor rule left Capture without a weight control while a
+ * designation stands. The completion: the "at" pill — the surface's one
+ * weight editor in that state — rides a Capture as the capture's own
+ * top-level `weight` (`POST /api/capture` has carried the field since
+ * CONTRACT-088's schema; a capture designates nothing, so it has exactly one
+ * weight field to answer with). One control, one question; which field
+ * carries the answer is the submit's business.
+ */
+test.describe("the weight a Capture states (UI-196)", () => {
+  test("rides the 'at' choice as the capture's own weight, and designates nothing", async ({
+    page,
+  }) => {
+    const corpus = await openComposer(page);
+
+    // The designating default — the state UI-192's narrowing left Capture
+    // weightless in. The "at" pill is the one editor on the surface.
+    await expect(page.locator(LEVEL)).toBeVisible();
+    await pick(page, LEVEL, "Heavy or judgment-laden");
+    await page.locator(".compose-panel textarea").fill("Keep this, and think hard about it.");
+    await page.locator(".btn-capture").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/capture")).length).toBe(1);
+    const sent = (await corpus.of("POST", "/api/capture"))[0];
+    expect(textPart(sent?.multipart, "weight")).toBe("heavy");
+    // A capture carries no designation (CONTRACT-088): the same choice that
+    // would ride inside `resident` on an Ask is this capture's own weight,
+    // and nothing else about the pick leaks onto the wire.
+    expect(textPart(sent?.multipart, "resident")).toBeUndefined();
+  });
+
+  test("left alone, states nothing — the launcher decides stays an absence", async ({ page }) => {
+    const corpus = await openComposer(page);
+
+    await expect(page.locator(LEVEL)).toBeVisible();
+    await page.locator(".compose-panel textarea").fill("Keep this.");
+    await page.locator(".btn-capture").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/capture")).length).toBe(1);
+    expect(textPart((await corpus.of("POST", "/api/capture"))[0]?.multipart, "weight")).toBe(
+      undefined,
+    );
+  });
+
+  test("with no owner standing, the address's choice rides the capture as before", async ({
+    page,
+  }) => {
+    const corpus = await openComposer(page);
+
+    await pick(page, OWNER, "no owner — the main agent");
+    await expect(page.locator(LEVEL)).toHaveCount(0);
+    await page.locator('button[data-address-line="compose"]').click();
+    const pop = page.locator('[data-address-pop="compose"]');
+    await pop.waitFor();
+    await pop.locator('[data-weight-key="light"]').click();
+    await page.locator(".compose-panel textarea").fill("Keep this, lightly.");
+    await page.locator(".btn-capture").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/capture")).length).toBe(1);
+    expect(textPart((await corpus.of("POST", "/api/capture"))[0]?.multipart, "weight")).toBe(
+      "light",
+    );
   });
 });

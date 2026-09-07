@@ -78,16 +78,21 @@ lying about its coverage.
 
 ## Acceptance Criteria
 
-- [ ] The three primitives exist with the unconditional behaviours above;
+- [x] The three primitives exist with the unconditional behaviours above;
       unit + e2e coverage for each guarantee
-- [ ] The ESLint extension bans raw overlays outside kit; zero violations,
-      zero inline disables
-- [ ] The battery runs over the overlay registry; unregistered overlay =
+- [x] The ESLint extension bans raw overlays outside kit; zero violations,
+      zero inline disables — landed via PR #77 finding 3 (see the log's
+      third pass): a `role-dialog` ban in `scripts/raw-controls-baseline.json`,
+      permanent exemptions only for kit's own `Modal.tsx`/`Popover.tsx` (the
+      `primitives` list), the nine pre-existing product overlays grandfathered
+      shrink-only. Zero lint errors on the tree, and the ratchet suite's
+      inline-disable sweep holds "zero inline disables".
+- [x] The battery runs over the overlay registry; unregistered overlay =
       failing test; the designation popover's pre-UI-192 state would fail
       at least three battery assertions (demonstrated against the old
       component before it is deleted, recorded in the log)
-- [ ] The evaluator checklist item lands in `.claude/agents/evaluator.md`
-- [ ] The minimum-usable-height token recorded and spent from tokens.css
+- [x] The evaluator checklist item lands in `.claude/agents/evaluator.md`
+- [x] The minimum-usable-height token recorded and spent from tokens.css
 
 ## E2E Verification Log
 
@@ -242,3 +247,71 @@ which deliberately contributes no class so the surface's mockup CSS draws
 them. `className === ""` in the rendered DOM is that contract working, not a
 census gap; DOM-level demonstrability of "every control is a kit primitive"
 remains review-by-source, as `Button.tsx`'s own comment records.
+
+## E2E Verification Log — third pass: PR #77's review, findings 3 and 5
+
+**Model**: Fable 5 (`claude-fable-5`). **Date**: 2026-09-07.
+
+### Finding 3 — criterion 2's lintable half, landed
+
+The overlay ban fell between lanes: INFRA-040 shipped the three element tags
+and this issue's filing named the extension without either lane writing it.
+Landed here, inside the existing mechanism (zero new rules, zero new steps —
+sprint-026 P6 still holds):
+
+- `scripts/raw-controls-baseline.json` gains a fourth banned tag,
+  `role-dialog`, selector `JSXAttribute[name.name="role"][value.value="dialog"]`,
+  message naming kit `Modal`/`Popover` and UI-193. Permanent exemptions stay
+  kit's own Controls files (the `primitives` list already carried `Modal.tsx`
+  and `Popover.tsx`). The nine product overlays that predate the primitives
+  (CommentPopover, KanbanDialog, QueryHelp, ComposeOverlay, ImageViewer,
+  CheatSheet, FocusMode, SearchOverlay, UpgradePanel) are grandfathered
+  shrink-only, and `CLOSED_CENSUS` in `scripts/raw-controls-ratchet.test.ts`
+  records them as a second closed census (2026-09-07) — a NEW overlay wants a
+  kit primitive, never a baseline entry.
+- The ratchet suite grew the ban's teeth: the probe file now carries
+  `role="dialog"` (refused, message checked for Modal/Popover) and a
+  `role="tooltip"` (not refused — the ban is the dialog role, not roles);
+  the per-file exemption test generalised from "button alone" to "exactly
+  the listed tags", so a role-dialog file is still refused a raw `<button>`
+  and vice versa.
+- **The honesty note, written where the rule lives** (the review's required
+  half): the baseline's `$comment` now states that a fixed-position overlay
+  WITHOUT the role is invisible to this rule — that class belongs to the
+  overlay battery's completeness scan (which also matches kit Modal/Popover
+  imports) and to review. Same note here, as the issue's own record: **the
+  lint tier catches the role as syntax and nothing more.** Sprint-026 seam
+  2's table is unchanged by this ban.
+- Verified: `vitest run scripts/raw-controls-ratchet.test.ts` — **16/16
+  PASS** (census === baseline === tree, both directions; the probe's four
+  refusals; exemptions exact per file; no inline disables anywhere in
+  tracked TS). `npm run typecheck` clean. `eslint`/`prettier` clean on every
+  touched file.
+
+### Finding 5 — the Backspace trade, recorded as accepted (no code change)
+
+§10's keyboard scheme gives `esc`/`⌫` "close/back" at the app grain, and the
+app's escape chain honours both. Kit's menu surfaces (`Select`'s menu, the
+kit `Popover`) consume **Escape only**: Backspace inside an open menu is
+inert — it neither closes the menu (kit does not claim the key) nor reaches
+the app chain as "back" (the chain yields to `[data-kit-menu]` surfaces).
+Accepted, per the review: Backspace is an editing key on every surface that
+takes text, and a menu that closed on it would eat the keystroke a person
+aimed at a type-ahead correction; the cost — one redundant close key missing
+inside menus, with Escape, ✕, outside-press and the trigger all standing —
+is smaller than the ambiguity. This is a recorded trade, not an oversight;
+revisiting it means deciding it for every `[data-kit-menu]` surface at once.
+
+### The battery's growth in this pass (PR #77 findings 1 and 4, for the record)
+
+- `lane-weight-menu` gained two states (`compose-owner`, `compose-at`) and a
+  dedicated row-operability probe, because finding 1 falsified the entry's
+  "one context suffices for one primitive" reasoning: a *surface* stylesheet
+  (`compose.css`'s stale pre-fixed-positioning override) re-geometried one
+  instance of the fixed menu into an 8px sliver. Reproduced red before the
+  fix (rows hit-testing to `.hint` and the Capture button), green after the
+  override's removal. Battery now 64 tests.
+- A designation-popover prose-press test asserts finding 4's guarantee: a
+  click on the card's non-interactive statement keeps focus inside, and
+  Escape closes the card only — red against the pre-fix kit `Popover`
+  (mutation-verified), green with `tabIndex={-1}` + the mousedown fallback.

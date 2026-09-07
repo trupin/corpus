@@ -114,7 +114,7 @@ const RESIDENT_TITLE =
   "recipient beside it: a recipient routes this one message and changes nothing else.";
 
 /**
- * What the designation's weight control is (UI-185).
+ * What the "at" control is (UI-185, redrawn by UI-192, extended by UI-196).
  *
  * The two metas are `residentActions.ts`'s own, joined — one declaration of
  * what a level row means and what leaving the set alone means, shared with the
@@ -123,13 +123,23 @@ const RESIDENT_TITLE =
  * deleted (UI-192): while this control shows, the address offers no weight at
  * all, so there is no second control left to be mistaken for and a tooltip
  * reconciling two controls was the reported defect stating itself.
+ *
+ * The Capture sentence is UI-196's: §10's rider names "the global composer's
+ * Ask and its Capture", and while a designation stands this is the surface's
+ * one weight editor — so for a Capture, which has no resident to designate,
+ * the same choice rides as the capture's own weight. One control, one
+ * question ("how much thought does the work get"); which field carries the
+ * answer is the submit's business, exactly as the address's one editor
+ * already means different fields for a resident recipient and a lane.
  */
 const RESIDENT_WEIGHT_TITLE =
-  `${LEVEL_WEIGHT_META} (SPEC.md §7: a resident's weight is set when it is designated, ` +
-  `not per message). Left alone, ${LAUNCHER_WEIGHT_META}.`;
+  `How much thought the work gets (SPEC.md §10). For Ask, ${LEVEL_WEIGHT_META} ` +
+  `(§7: a resident's weight is set when it is designated, not per message); for ` +
+  `Capture — always the orchestrator's — it is the capture's own weight. ` +
+  `Left alone, ${LAUNCHER_WEIGHT_META}.`;
 
 /** Names the control for the DOM and the suites. */
-export const RESIDENT_WEIGHT_ARIA = "The weight this conversation's resident works at";
+export const RESIDENT_WEIGHT_ARIA = "The weight the work is done at";
 
 /**
  * The `resident` the submit carries (UI-185) — the three contract states, with
@@ -141,8 +151,10 @@ export const RESIDENT_WEIGHT_ARIA = "The weight this conversation's resident wor
  *   that level; the contract makes `name` and `weight` independent.
  * - A profile: `{resident: {name}}`, with the level beside it when one stands.
  * - Nobody: `{resident: null}`, and no weight rides — there is no resident to
- *   run at one, the control is not shown in that state, and a value the
- *   surface no longer shows must not be sent (§10).
+ *   run at one, and the control is not shown in that state. Nothing offered,
+ *   nothing sent — an inference from §10's resident-recipient rider (a
+ *   composer whose surface withdraws a choice must not act on the withdrawn
+ *   value), not quoted spec text.
  */
 export function designationRequest(
   resident: string | null | undefined,
@@ -310,6 +322,32 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   const canAsk = (trimmed !== "" || intake.pending.length > 0) && !compose.isPending;
   const canCapture = trimmed !== "" && !compose.isPending;
 
+  /**
+   * Whether the "at" pill is on the surface — a designation stands and the
+   * workspace declares levels. One name for one condition, because the pill's
+   * visibility is also what decides which field a Capture's weight rides on
+   * (below) and the two must never disagree: a control that shows without
+   * acting, or acts without showing, is the §10 inference stated at
+   * {@link designationRequest} broken in one direction or the other.
+   */
+  const atPillShown = levels.length > 0 && resident !== null;
+
+  /**
+   * What a Capture states as its own weight (UI-196; §10's rider names "the
+   * global composer's Ask and its Capture"). While the "at" pill stands it is
+   * this surface's one weight editor, so its choice is the capture's weight —
+   * `POST /api/capture` carries a top-level `weight` and no designation, so
+   * the same answer to "how much thought" rides the one field that surface
+   * has. With no owner picked the address's rows are the editor and their
+   * choice rides, exactly as before. Spelled `{}`/`{weight}` like every
+   * weight on this body, so absence has one spelling on the way out.
+   */
+  const captureWeight = atPillShown
+    ? residentWeight === undefined
+      ? {}
+      : { weight: residentWeight }
+    : address.weightRequest;
+
   const submit = useCallback(
     (mode: ComposeMode) => {
       if (mode === "ask" ? !canAsk : !canCapture) return;
@@ -321,7 +359,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         const outcome = await compose.submit(mode, {
           text: body,
           files: attachments.map((attachment) => attachment.file),
-          weight: address.weightRequest,
+          weight: mode === "capture" ? captureWeight : address.weightRequest,
           recipient: recipient.request,
           // Absence is the default, so it is spelled by leaving the key out —
           // and `null` is a value here rather than another absence. The
@@ -358,6 +396,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
       address.weightRequest,
       canAsk,
       canCapture,
+      captureWeight,
       compose,
       intake,
       onClose,
@@ -506,14 +545,22 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
            * level ("— at heavy"), so the pair reads as one designation:
            * *owner researcher, at heavy*.
            *
-           * Offered only where there is a resident to weigh — with "no owner"
-           * picked it disappears rather than dims, and any standing choice is
-           * then not sent, because a value the surface no longer shows must
-           * not act (§10); the address's own rows return in that state as the
-           * surface's single weight editor. A workspace declaring no levels
-           * gets no control at all, exactly as the thread menu's rows behave.
+           * **Capture reads it too** (UI-196): while this pill stands it is
+           * the surface's one weight editor, and §10's rider names Ask *and*
+           * Capture — so the same choice rides a Capture as its own top-level
+           * weight (`captureWeight` above), since a capture designates
+           * nothing and has exactly one weight field to answer with.
+           *
+           * Offered only while a designation stands — with "no owner" picked
+           * it disappears rather than dims, and any standing choice is then
+           * not sent by Ask: nothing offered, nothing sent (the inference
+           * from §10's resident-recipient rider recorded at
+           * `designationRequest`); the address's own rows return in that
+           * state as the surface's single weight editor. A workspace
+           * declaring no levels gets no control at all, exactly as the
+           * thread menu's rows behave.
            */}
-          {levels.length > 0 && resident !== null ? (
+          {atPillShown ? (
             <span className="compose-resident compose-resident-weight">
               <span className="compose-resident-label">at</span>
               {/*

@@ -476,3 +476,56 @@ the ✕ still in the corner at the bottom.
 - `eslint` on the two touched TypeScript files, `prettier --check` on all
   three touched files, `tsc --noEmit` in `packages/kit` and `apps/ui` —
   clean.
+
+---
+
+## Follow-up: PR #77's review, finding 2 — the Capture narrowing closed, and a citation corrected
+
+**Model**: Fable 5 (`claude-fable-5`). **Date**: 2026-09-07.
+
+### The decision (resolves UI-196, which the Known narrowing above filed)
+
+The review declined the waiver and asked for the design's completion, and the
+completion is this issue's own principle extended: **one editor, its meaning
+set by what the surface sends.** While a designation stands, the composer
+row's "at" `Select` is the surface's one weight editor — and a Capture, which
+designates nothing (CONTRACT-088: `POST /api/capture` carries no `resident`),
+now rides that same choice as **the capture's own top-level `weight`**. The
+wire half already existed: `CaptureRequestSchema` has carried
+`weight: requestedWeightField` since the §10 rider's plumbing, and
+`useCompose`'s capture branch already spreads `input.weight` — so the whole
+change is `ComposeOverlay.tsx` choosing the field per submit
+(`captureWeight`), plus the honest tooltip. No contract or server change; no
+second editor anywhere (the one-editor e2e still passes untouched).
+
+- Ask, designating: the choice rides inside `resident` (unchanged).
+- Capture, designating: the same choice rides as the capture's `weight` (new).
+- Either submit, no owner: the address's rows ride the top-level `weight`
+  (unchanged).
+- "The launcher decides", anywhere: nothing is sent (unchanged).
+
+Rejected: a capture-scoped second control (the duplication again, aimed at
+the other submit), and a rider narrowing §10's "its Capture" (the review's
+instruction was to complete the design, and completing it cost one
+conditional).
+
+Verified: `ComposeOverlay.test.tsx` — the "leaves Capture exactly as it was"
+pin, which asserted the dropped choice, rewritten to assert the ride, plus a
+launcher-decides absence pin (55/55; the ride falsified by mutation — reverting
+the submit's field choice sent it red). E2E `ask-designation-weight.spec.ts`
+grew "the weight a Capture states (UI-196)": the multipart `weight` part is
+`"heavy"` after picking the at pill, absent when left alone, and `"light"`
+from the address in the no-owner state — **12/12 PASS** in real Chromium
+(`CORPUS_UI_PORT=5773`).
+
+### The citation, corrected
+
+This issue's record and its tests cited *"a value the surface no longer shows
+must not act"* with a bare “(§10)”, as though quoting spec. It is an
+**inference** from §10's resident-recipient rider (the composer *"names that
+resident's designation-time weight instead of offering a choice it would
+discard"* — nothing offered, nothing sent), not spec text. Reworded wherever
+it wore quotation's clothes: `ComposeOverlay.tsx` (the `designationRequest`
+contract note and the at-pill comment) and `ask-designation-weight.spec.ts`
+(two comments). Test titles that state the maxim without a citation were left
+— a maxim is not a quote.

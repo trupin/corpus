@@ -60,8 +60,9 @@ const banEveryTagExcept = (allowed) => [
 /**
  * Flat config resolves a rule by last match, so one block per distinct
  * grandfathered tag-set is the only shape that lets a baselined file keep its
- * `<button>` while still being refused a `<select>`. Every entry allows
- * `button` alone today, so this produces exactly one block.
+ * `<button>` while still being refused a `<select>`. Two tag-sets exist today
+ * — `button` (UI-191's leftovers) and `role-dialog` (the overlays predating
+ * kit's Modal/Popover, UI-193 criterion 2) — so this produces two blocks.
  *
  * @type {Map<string, { allowed: string[], files: string[] }>}
  */

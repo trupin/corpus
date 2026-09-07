@@ -820,12 +820,37 @@ describe("ComposeOverlay", () => {
       expect(body["resident"]).toBeNull();
     });
 
-    it("leaves Capture exactly as it was — a capture designates nothing", async () => {
+    /**
+     * UI-196, closing UI-192's recorded narrowing: §10's rider names "the
+     * global composer's Ask and its Capture", and while a designation stands
+     * the "at" pill is this surface's one weight editor — so its choice rides
+     * a Capture as the capture's own top-level weight (`POST /api/capture`
+     * carries the field; a capture designates nothing, so it has exactly one
+     * weight field to answer with). The earlier form of this test — "leaves
+     * Capture exactly as it was" — pinned the narrowing itself: it asserted
+     * the choice was silently dropped.
+     */
+    it("rides the 'at' choice as a Capture's own weight — a capture still designates nothing", async () => {
       const wire = declaring();
       const { container } = mount(wire);
       const level = await shownLevels(container);
       pickFrom(ownerPicker(container), "researcher");
       pickFrom(level, "Heavy or judgment-laden");
+      type(container, "file this thought");
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
+
+      await waitFor(() => {
+        expect(wire.to("/api/capture")).toHaveLength(1);
+      });
+      const form = wire.to("/api/capture")[0]?.form ?? {};
+      expect("resident" in form).toBe(false);
+      expect(form["weight"]).toBe("heavy");
+    });
+
+    it("a Capture left at 'the launcher decides' states no weight at all", async () => {
+      const wire = declaring();
+      const { container } = mount(wire);
+      await shownLevels(container);
       type(container, "file this thought");
       fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
 

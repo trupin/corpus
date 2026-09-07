@@ -159,6 +159,40 @@ describe("Popover", () => {
     fireEvent.keyDown(last, { key: "Tab" });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close Send options" }));
   });
+
+  /**
+   * PR #77 review, finding 4. The Escape guarantee above lives on the panel's
+   * own subtree, so it holds only while focus is inside — and a click on the
+   * panel's non-interactive prose used to blur the focused row to `body`,
+   * handing the next Escape to whatever surface stands behind the card. The
+   * browser half (the mousedown default walking up to the `tabIndex={-1}`
+   * panel) is real-Chromium behaviour the overlay battery asserts; what jsdom
+   * can pin is the contract that makes it work, plus the handler's own
+   * fallback and the trap's new edge.
+   */
+  it("keeps focus inside on a press on non-interactive content (tabIndex, fallback, trap edge)", async () => {
+    render(
+      <Popover label="Send options" onClose={() => undefined}>
+        <p>just prose</p>
+      </Popover>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Send options" });
+    // The click-focus target the browser walks up to, and no caller can unset it.
+    expect(dialog.getAttribute("tabindex")).toBe("-1");
+
+    // The handler's fallback: focus parked outside + a mousedown on prose →
+    // focus returns to the panel (jsdom runs no focus default of its own, so
+    // this exercises the microtask path directly).
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.mouseDown(screen.getByText("just prose"));
+    await Promise.resolve();
+    expect(document.activeElement).toBe(dialog);
+
+    // …and a shift-Tab from the panel itself stays trapped: it wraps to the
+    // last focusable instead of walking out behind the card.
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close Send options" }));
+  });
 });
 
 describe("Modal", () => {

@@ -101,22 +101,28 @@ value is a string and cannot be `null`"). The kit `Select` takes real values,
 
 ## Acceptance Criteria
 
-- [ ] `design/index.html` carries the primitives in all states; tokens.css
+- [x] `design/index.html` carries the primitives in all states; tokens.css
       ports any new values verbatim, per its own header rule
-- [ ] The format toolbar renders zero native select chrome — Playwright
+- [x] The format toolbar renders zero native select chrome — Playwright
       asserts the absence of `<select>` in the editor DOM
 - [ ] `grep -rE "<(select|button)\b" apps/ui/src packages/kit/src` returns
       only the primitives' own internals (the exact allowed list recorded
-      here for INFRA-040 to encode)
-- [ ] Keyboard: every dropdown fully operable without a mouse — e2e-tested
-- [ ] Both themes (§10's dark and light) — verified in the mockup and the
+      here for INFRA-040 to encode) — **not met as written, deliberately**:
+      the `<select>` half holds (zero outside the primitives), but 38 files
+      keep raw `<button>` per the Census discrepancy paragraph below (the
+      binding scope was the sprint's enumerated 22). INFRA-040 encodes the
+      leftover set as its shrink-only baseline, so the criterion's intent is
+      enforced as a ratchet rather than satisfied as a grep. Left unticked
+      so the record does not claim a state the tree is not in.
+- [x] Keyboard: every dropdown fully operable without a mouse — e2e-tested
+- [x] Both themes (§10's dark and light) — verified in the mockup and the
       product
-- [ ] The composer's designation row renders one language: pill dropdowns for
+- [x] The composer's designation row renders one language: pill dropdowns for
       recipient, owner and weight, no truncated closed labels, the null
       sentinel workaround deleted (`ComposeOverlay.tsx:100-103`)
-- [ ] `Select` states its long-label behaviour and an e2e proves a long
+- [x] `Select` states its long-label behaviour and an e2e proves a long
       option readable
-- [ ] Full e2e suite green with assertion semantics unchanged
+- [x] Full e2e suite green with assertion semantics unchanged
 
 ## Implementation Record (2026-09-07, implementing agent)
 
@@ -315,3 +321,28 @@ light and dark, screenshots in the session scratchpad:
 
 The temporary screenshot spec was deleted after the run; the suite is
 unchanged by it.
+
+## Checkbox audit (2026-09-07, PR #77 finding 3; auditing agent: Fable 5, `claude-fable-5`)
+
+The boxes above were ticked in this pass, each against evidence, per the
+review's instruction to make them match the issue's done status:
+
+- **Mockup + token**: `design/index.html#primitives` exists (line 790, with
+  the state rows the log photographed); `--min-usable-height: 120px` present
+  in all four blocks of `packages/kit/src/tokens.css`.
+- **Format toolbar**: `format-toolbar.spec.ts` carries "the bar carries no
+  native select chrome at all" (line 117); green in UI-193's regression run
+  and in the full-suite runs recorded in UI-192's log.
+- **Keyboard / long label**: both pins live in
+  `ask-designation-weight.spec.ts` and passed today's run of that spec
+  (12/12, `CORPUS_UI_PORT=5773`).
+- **Themes**: the log's photographed run (`app-*-{light,dark}.png`,
+  `mockup-primitives-{light,dark}.png`); mechanism re-verified via the token
+  blocks above.
+- **Designation row / sentinel**: `NO_RESIDENT_VALUE` greps to nothing in
+  `apps/ui/src`; `foot-geometry.spec.ts` passed today's run.
+- **Full suite**: this log's 690+71 accounting, then UI-192's two full runs
+  (741/741) on the same primitives.
+- **The grep criterion stays unticked**, with its reason written beside it:
+  the tree keeps 38 grandfathered raw-`<button>` files and the criterion's
+  intent lives in INFRA-040's shrink-only ratchet instead.

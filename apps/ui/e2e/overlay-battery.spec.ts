@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import {
+  openComposeMenu,
   OVERLAYS,
   type BatteryCheck,
   type ExitAffordance,
@@ -515,5 +516,94 @@ test.describe("overlay: designation-popover [no-owner] — a scrolling card says
     if (box === null) throw new Error("the ✕ has no box");
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(page.locator(CARD)).toBeHidden();
+  });
+});
+
+/* ── A surface stylesheet cannot re-geometry the fixed menu (PR #77, №1) ─── */
+
+/**
+ * The kit `Select` menu went `position: fixed` in UI-193, and a surface
+ * stylesheet kept a pre-fixed override for it: `compose.css`'s
+ * `.compose-settings .select-menu { bottom: calc(100% + 4px) }`, written when
+ * the absolute menu had to flip above the panel's clip. Against a fixed box
+ * that `bottom` resolves on the **viewport** — the box gets both edges pinned,
+ * over-constrains into a blank sliver, and its rows hit-test to whatever
+ * paints behind them. The registry's "every `Select` menu is the same
+ * primitive" reasoning could not see this class: the primitive was fine, the
+ * *scope* around one instance was not. So the composer's two menus run the
+ * four generic checks as `lane-weight-menu` states, and this probe is the
+ * class's real test, in the weight-row probe's own mechanism: the centre of
+ * every row answers for itself, and a real click chooses.
+ */
+test.describe("overlay: lane-weight-menu [compose-*] — the composer's menus are operable", () => {
+  for (const select of ["owner", "resident-weight"] as const) {
+    test(`the ${select} menu's rows hit-test as themselves and a real click chooses`, async ({
+      page,
+    }) => {
+      await openComposeMenu(page, select);
+      const rows = page.locator(".compose-settings .select-menu .select-option");
+      const count = await rows.count();
+      expect(count, "a menu with fewer than two rows tests nothing").toBeGreaterThan(1);
+
+      for (let index = 0; index < count; index += 1) {
+        const hit = await rows.nth(index).evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const found = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return found !== null && (found === el || el.contains(found))
+            ? "the row"
+            : `<${found?.tagName.toLowerCase() ?? "nothing"} .${found?.className ?? ""}>`;
+        });
+        expect(hit, `option ${String(index)} hit-tests to ${hit}`).toBe("the row");
+      }
+
+      // …and a real click at those coordinates chooses: the menu closes and
+      // the pill shows the chosen label (its full text survives truncation in
+      // the DOM, so the ellipsised pill still answers for it).
+      const target = rows.nth(count - 1);
+      const label = ((await target.textContent()) ?? "").trim();
+      const box = await target.boundingBox();
+      if (box === null) throw new Error("the last option has no box");
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(page.locator(".compose-settings .select-menu")).toHaveCount(0);
+      await expect(page.locator(`[data-select="${select}"] .select-value`)).toHaveText(label);
+    });
+  }
+});
+
+/* ── Escape after a press on the card's own prose (PR #77, №4) ──────────── */
+
+/**
+ * The kit `Popover`'s Escape listener lives on the card's own subtree, so the
+ * guarantee holds only while the key lands inside. Clicking the card's
+ * non-interactive prose (the statement line) used to blur the focused row to
+ * `body`, and the next Escape then reached the app's chain and closed the
+ * surface *behind* the open card — the reader, with the card dying alongside
+ * it. The panel is `tabIndex={-1}` now and a mousedown on its prose keeps or
+ * returns focus to the card, so Escape closes the CARD only.
+ */
+test.describe("overlay: designation-popover — Escape after a press on the card's prose", () => {
+  test("clicking the statement text keeps focus inside, and Escape closes the card only", async ({
+    page,
+  }) => {
+    if (DESIGNATION === undefined) throw new Error("the designation entry left the registry");
+    await DESIGNATION.open(page);
+    const card = page.locator('[data-address-pop="th_host"]');
+    await expect(card).toBeVisible();
+
+    // A real press on the card's non-interactive prose.
+    await page.locator('[data-recipient-statement="th_host"]').click();
+    const inside = await card.evaluate((el) => el.contains(document.activeElement));
+    expect(inside, "the press parked focus outside the card").toBe(true);
+
+    await page.keyboard.press("Escape");
+    await expect(card).toBeHidden();
+    // The surface behind the card survived the key: the reader and its
+    // composer line are still there, and focus went back to the line.
+    const line = page.locator('button[data-address-line="th_host"]');
+    await expect(line, "Escape closed the reader behind the card").toBeVisible();
+    await expect(line).toBeFocused();
   });
 });

@@ -544,7 +544,40 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "trigger", selector: '[data-select="lane-weight"]' },
     opener: '[data-select="lane-weight"]',
     scrollRegions: [],
-    furtherStates: [],
+    /*
+     * The header's "every `Select` menu is the same primitive" reasoning held
+     * for the primitive and not for the stylesheets around it: a *surface*
+     * CSS rule can re-geometry one instance of the fixed menu, and one did —
+     * `compose.css` kept a pre-fixed-positioning `.compose-settings
+     * .select-menu { bottom: calc(100% + 4px) }` override whose `bottom`,
+     * against a `position: fixed` box, resolves on the viewport and
+     * over-constrains the menu into a blank sliver (PR #77 review, finding 1;
+     * the kit `Select` flips upward on its own since UI-193, which was the
+     * override's whole purpose). So the composer's two menus are opened as
+     * states of their own: same primitive, different stylesheet scope — the
+     * class this guards against is per-surface geometry overrides, which no
+     * one-context entry can witness.
+     */
+    furtherStates: [
+      {
+        id: "compose-owner",
+        surface: ".compose-settings .select-menu",
+        exit: { kind: "trigger", selector: '[data-select="owner"]' },
+        opener: '[data-select="owner"]',
+        open: async (page) => {
+          await openComposeMenu(page, "owner");
+        },
+      },
+      {
+        id: "compose-at",
+        surface: ".compose-settings .select-menu",
+        exit: { kind: "trigger", selector: '[data-select="resident-weight"]' },
+        opener: '[data-select="resident-weight"]',
+        open: async (page) => {
+          await openComposeMenu(page, "resident-weight");
+        },
+      },
+    ],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator(".console-strip").click();
@@ -557,3 +590,22 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
   },
 ];
+
+/**
+ * Opens the global composer over the crowded fixture and one of its settings
+ * row's `Select` menus — `owner`, or `resident-weight` (the "at" pill, shown
+ * while a designation stands). The row re-words itself while the roster and
+ * the tier table land, so the trigger is clicked only once its box has
+ * settled, the address-line rule.
+ */
+export async function openComposeMenu(
+  page: Page,
+  select: "owner" | "resident-weight",
+): Promise<void> {
+  await bootCrowded(page);
+  await page.keyboard.press("c");
+  await page.locator(".compose-panel textarea").waitFor();
+  await settled(page, `[data-select="${select}"]`);
+  await page.locator(`[data-select="${select}"]`).click();
+  await page.locator(".compose-settings .select-menu").waitFor();
+}

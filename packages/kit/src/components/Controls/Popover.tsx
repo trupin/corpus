@@ -66,7 +66,10 @@ export function trapTab(surface: HTMLElement, event: KeyboardEvent): boolean {
     first.focus();
     return true;
   }
-  if (event.shiftKey && (active === first || !surface.contains(active))) {
+  // `active === surface`: the panel itself holds focus after a press on its
+  // non-interactive content (it is `tabIndex={-1}`), and a shift-Tab from
+  // there would otherwise walk out of the trap to whatever precedes the panel.
+  if (event.shiftKey && (active === first || active === surface || !surface.contains(active))) {
     event.preventDefault();
     last.focus();
     return true;
@@ -153,6 +156,30 @@ export function Popover({
       data-kit-popover=""
       data-kit-menu=""
       style={style}
+      /*
+       * A press inside can never park focus outside (PR #77 review, finding
+       * 4). The Escape guarantee above lives on this panel's own subtree —
+       * kit cannot register in the app's escape chain — so it holds only
+       * while the key lands inside. A click on the panel's non-interactive
+       * prose used to blur the focused row to `body`, and the next Escape
+       * then reached the app's chain and closed the surface *behind* the
+       * open card. `tabIndex={-1}` makes the panel the element the browser's
+       * own mousedown default walks up to and focuses on such a press, and
+       * the handler is the belt to that suspender: wherever the default
+       * still lands focus outside (it runs after this handler, hence the
+       * microtask), it puts focus back on the panel.
+       */
+      tabIndex={-1}
+      onMouseDown={(event) => {
+        rest.onMouseDown?.(event);
+        const surface = panel.current;
+        if (surface === null) return;
+        if ((event.target as HTMLElement).closest(FOCUSABLE) !== null) return;
+        queueMicrotask(() => {
+          if (!surface.isConnected || surface.contains(document.activeElement)) return;
+          surface.focus({ preventScroll: true });
+        });
+      }}
     >
       <button
         type="button"
