@@ -1,0 +1,70 @@
+{
+  "$comment": "INFRA-040 — the raw-control ratchet. This file is the WHOLE definition of the check: what is banned, where it is banned, who is permanently exempt, and who is grandfathered. `eslint.config.js` reads it and builds `no-restricted-syntax` blocks from it, so the rule and its baseline can never disagree. It rides the gates that already exist — `npx eslint $staged_ts` in .githooks/pre-commit and `npm run lint` in CI — and adds no hook step and no CI step (sprint-026 P6). `baseline` is a RATCHET: an entry may shrink or disappear, never appear. The closed census it may not exceed is pinned in scripts/raw-controls-ratchet.test.ts. Migrating a file means DELETING its entry here — the test fails on an entry whose file no longer carries a raw control, and once the entry is gone the file is locked out and can never take one back.",
+  "scope": ["apps/ui/src/**/*.tsx", "packages/kit/src/**/*.tsx"],
+  "outOfScope": ["**/*.test.tsx"],
+  "banned": [
+    {
+      "tag": "button",
+      "selector": "JSXOpeningElement[name.name=\"button\"]",
+      "message": "A raw <button> is not the product's button. Use Button, IconButton or Chip from @corpus/kit — one shape, one focus ring, one set of tokens (INFRA-040). The grandfathered files are listed in scripts/raw-controls-baseline.json, and that list may only shrink."
+    },
+    {
+      "tag": "select",
+      "selector": "JSXOpeningElement[name.name=\"select\"]",
+      "message": "A raw <select> renders native chrome the product does not use. Use Select from @corpus/kit — the pill trigger with the custom menu (INFRA-040). No file is grandfathered for <select>."
+    },
+    {
+      "tag": "option",
+      "selector": "JSXOpeningElement[name.name=\"option\"]",
+      "message": "A raw <option> only exists inside a native dropdown. Pass the choices to Select from @corpus/kit as its `items` prop instead (INFRA-040). No file is grandfathered for <option>."
+    }
+  ],
+  "primitives": [
+    "packages/kit/src/components/Controls/Button.tsx",
+    "packages/kit/src/components/Controls/Chip.tsx",
+    "packages/kit/src/components/Controls/IconButton.tsx",
+    "packages/kit/src/components/Controls/Modal.tsx",
+    "packages/kit/src/components/Controls/Popover.tsx",
+    "packages/kit/src/components/Controls/Select.tsx"
+  ],
+  "baseline": {
+    "apps/ui/src/board/Column.tsx": ["button"],
+    "apps/ui/src/board/ColumnHead.tsx": ["button"],
+    "apps/ui/src/board/ColumnStrip.tsx": ["button"],
+    "apps/ui/src/board/NewListGhost.tsx": ["button"],
+    "apps/ui/src/board/NewListPicker.tsx": ["button"],
+    "apps/ui/src/board/PathColumn.tsx": ["button"],
+    "apps/ui/src/board/query/QueryEditor.tsx": ["button"],
+    "apps/ui/src/comments/CommentsSwitch.tsx": ["button"],
+    "apps/ui/src/comments/CommentsTab.tsx": ["button"],
+    "apps/ui/src/comments/NewCommentComposer.tsx": ["button"],
+    "apps/ui/src/console/Console.tsx": ["button"],
+    "apps/ui/src/console/JobDetail.tsx": ["button"],
+    "apps/ui/src/console/LaneScope.tsx": ["button"],
+    "apps/ui/src/dev/DataProbe.tsx": ["button"],
+    "apps/ui/src/editor/SelectionToolbar.tsx": ["button"],
+    "apps/ui/src/explorer/ExplorerTree.tsx": ["button"],
+    "apps/ui/src/menu/MenuItems.tsx": ["button"],
+    "apps/ui/src/reader/Backlinks.tsx": ["button"],
+    "apps/ui/src/reader/FrontmatterForm.tsx": ["button"],
+    "apps/ui/src/reader/ReaderHead.tsx": ["button"],
+    "apps/ui/src/reader/RelatedPanel.tsx": ["button"],
+    "apps/ui/src/reader/ScopeProvenance.tsx": ["button"],
+    "apps/ui/src/reattach/ReattachOffer.tsx": ["button"],
+    "apps/ui/src/reflect/ReflectControl.tsx": ["button"],
+    "apps/ui/src/search/CreateRow.tsx": ["button"],
+    "apps/ui/src/search/FilterChips.tsx": ["button"],
+    "apps/ui/src/search/SearchResults.tsx": ["button"],
+    "apps/ui/src/shell/Toasts.tsx": ["button"],
+    "apps/ui/src/shell/Topbar.tsx": ["button"],
+    "apps/ui/src/thread/CollapsedThread.tsx": ["button"],
+    "apps/ui/src/thread/FormBlock.tsx": ["button"],
+    "apps/ui/src/thread/NewChildThread.tsx": ["button"],
+    "apps/ui/src/thread/ThreadCard.tsx": ["button"],
+    "apps/ui/src/thread/Turn.tsx": ["button"],
+    "packages/kit/src/components/Autocomplete/AutocompleteMenu.tsx": ["button"],
+    "packages/kit/src/components/Composer/PendingAttachments.tsx": ["button"],
+    "packages/kit/src/markdown/CodeFence.tsx": ["button"],
+    "packages/kit/src/row/Row.tsx": ["button"]
+  }
+}
