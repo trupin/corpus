@@ -21,6 +21,7 @@
     "./markdown.css": "./src/markdown/markdown.css",
     "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
     "./composer.css": "./src/components/Composer/composer.css",
+    "./cost.css": "./src/components/Cost/cost.css",
     "./address.css": "./src/address/address.css",
     "./package.json": "./package.json"
   },
@@ -31,6 +32,7 @@
     "src/markdown/markdown.css",
     "src/components/Autocomplete/autocomplete.css",
     "src/components/Composer/composer.css",
+    "src/components/Cost/cost.css",
     "src/address/address.css"
   ],
   "scripts": {

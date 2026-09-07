@@ -1,6 +1,7 @@
 import type {
   AgentRoster,
   DocRow,
+  DocumentCost,
   QueueStatus,
   ReflectStatus,
   WorkspaceVocabulary,
@@ -322,6 +323,23 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
      * inside the mutation's own `then` — which surfaced as a refused delete
      * and, in focus mode, as an excursion that never emptied (UI-031).
      */
+    /*
+     * `GET …/cost` (SPEC.md §9.4, UI-190). The reader's measurements panel reads
+     * this for every open document, so the `{}` catch-all below used to reach it
+     * as a `DocumentCost` with every field undefined. Answered here as an empty
+     * ledger, which is the truth about a suite that runs no `corpus` invocation:
+     * `measuringSince: null`, no buckets, nothing to draw.
+     */
+    if (/^\/api\/docs\/[^/]+\/cost$/.test(url.pathname)) {
+      return json({
+        granularity: "day",
+        buckets: [],
+        total: 0,
+        truncated: false,
+        sizeBytes: 0,
+        measuringSince: null,
+      } satisfies DocumentCost);
+    }
     if (url.pathname.startsWith("/api/docs/") && request.method === "DELETE") {
       return json({
         deletedId: url.pathname.slice("/api/docs/".length),

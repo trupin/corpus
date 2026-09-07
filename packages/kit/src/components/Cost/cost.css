@@ -1,0 +1,61 @@
+/*
+ * `CostChart` — the drawing only. The panel around it (`.cost`) is the
+ * consumer's, and its rules live beside `.related` in the reader's own
+ * stylesheet, because the panel is one of the reader's below-the-body pair and
+ * shares their anatomy.
+ *
+ * Everything here is a design token (`@corpus/kit/tokens.css`), so the chart
+ * follows light and dark with the rest of the surface and nothing hard-codes a
+ * colour a theme cannot move.
+ */
+
+.cost-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  /*
+   * The viewBox is a constant 600×140, so the rendered height follows the
+   * width. Bounded at both ends: a narrow column must still show a shape, and
+   * a wide reading measure must not turn a small panel into a poster.
+   */
+  min-height: 96px;
+  max-height: 180px;
+  overflow: visible;
+}
+
+/*
+ * What commands **printed** out of this document — normally the larger half,
+ * and the one §9.4's question is about. It takes the accent so the eye lands on
+ * it first.
+ */
+.cost-chart .cost-read {
+  fill: var(--accent);
+}
+
+/*
+ * What callers **wrote into** commands naming this document. Stacked above the
+ * read half in the sepia wash: present, countable, and visibly the minor term,
+ * which is what it almost always is.
+ */
+.cost-chart .cost-wrote {
+  fill: var(--sepia);
+}
+
+/*
+ * The document's current size. Dashed, because it is not a series — a solid
+ * rule at this height would read as a measured constant rather than as today's
+ * one number projected across a history it was not part of.
+ */
+.cost-chart .cost-size {
+  stroke: var(--signal);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  opacity: 0.85;
+}
+
+/* The floor the bars stand on, drawn across the whole span so a day nobody
+   touched reads as a quiet day rather than as missing data. */
+.cost-chart .cost-baseline {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}

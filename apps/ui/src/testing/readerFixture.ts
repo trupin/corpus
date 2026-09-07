@@ -1,7 +1,9 @@
 import type {
   AgentLane,
   AgentRoster,
+  CostBucket,
   Doc,
+  DocumentCost,
   DocRow,
   DocStatus,
   Job,
@@ -80,6 +82,22 @@ export interface ReaderTransportOptions {
    * relates to.
    */
   readonly related?: Readonly<Record<string, readonly RelatedDoc[]>>;
+  /**
+   * `GET /api/docs/{id}/cost` (SPEC.md §9.4), keyed by document id — the series
+   * behind the reader's measurements panel (UI-190).
+   *
+   * A document with no entry gets {@link UNMEASURED_COST}: an empty ledger,
+   * never a 404 and never a series of zeros. That is the honest default for a
+   * suite that runs no `corpus` invocation, and it is the state the panel must
+   * name in words rather than draw.
+   *
+   * A real handler rather than the `{}` fallback below, on purpose. An untyped
+   * `{}` reaches the panel as a `DocumentCost` with every field undefined, and
+   * the first surface to read a new field turns a silent stub gap into a
+   * `TypeError` in a component that always renders — the trap this repository's
+   * transports have been caught by twice.
+   */
+  readonly cost?: Readonly<Record<string, DocumentCost>>;
   /**
    * The console's job rows `GET /api/jobs` answers with — the queue, which is
    * where "does the agent still owe this thread an answer?" is decided (SPEC.md
@@ -411,6 +429,18 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
        */
       if (verb === "related") {
         return json({ related: options.related?.[docId] ?? [], semanticIndex: "current" });
+      }
+      /*
+       * `GET …/cost` (SPEC.md §9.4, UI-190), matched here for `related`'s
+       * reason. A document this transport does not hold is a `404`, as
+       * `apps/server/src/telemetry/series.ts` answers one: the series is an
+       * ordinary bounded subresource read, and a stub that answered an empty
+       * ledger for a document that does not exist would make the panel's
+       * failure path unreachable from a test.
+       */
+      if (verb === "cost") {
+        if (!docs.has(docId)) return json({ code: "not_found", message: `no ${docId}` }, 404);
+        return json(options.cost?.[docId] ?? UNMEASURED_COST);
       }
       if (verb === "archive" || verb === "unarchive") {
         const subject = docs.get(docId);
@@ -832,5 +862,63 @@ export function relatedFixture(overrides: Partial<RelatedDoc> = {}): RelatedDoc 
     excerpt: "One line, never a body.",
     relation: "linked",
     ...overrides,
+  };
+}
+
+/**
+ * What `GET /api/docs/{id}/cost` answers for a workspace whose ledger holds
+ * nothing — the default every document gets here, because a suite runs no
+ * `corpus` invocation and therefore measures nothing.
+ *
+ * `measuringSince: null` is the whole of it. The panel must say that
+ * measurement has not started rather than draw an empty chart, and a fixture
+ * seeding a plausible-looking zero series would let that distinction rot
+ * untested.
+ */
+export const UNMEASURED_COST: DocumentCost = {
+  granularity: "day",
+  buckets: [],
+  total: 0,
+  truncated: false,
+  sizeBytes: 0,
+  measuringSince: null,
+};
+
+/** The cost read a reader issues for the document it has open. */
+export function costPath(docId: string): string {
+  return `/api/docs/${docId}/cost`;
+}
+
+/**
+ * One bucket of a cost series.
+ *
+ * `byCommand` defaults to a single command carrying the bucket's whole cost,
+ * because the contract requires the breakdown to sum to `wroteTokens +
+ * readTokens` exactly. A fixture that quietly broke that would make the panel's
+ * own arithmetic look wrong for a reason no test named.
+ */
+export function costBucketFixture(overrides: Partial<CostBucket> = {}): CostBucket {
+  const readTokens = overrides.readTokens ?? 100;
+  const wroteTokens = overrides.wroteTokens ?? 10;
+  return {
+    from: overrides.from ?? "2026-09-01T00:00:00.000Z",
+    to: overrides.to ?? "2026-09-02T00:00:00.000Z",
+    readTokens,
+    wroteTokens,
+    invocations: overrides.invocations ?? 1,
+    byCommand: overrides.byCommand ?? { "doc show": readTokens + wroteTokens },
+  };
+}
+
+/** A measured series, with the totals and the flags the panel reads. */
+export function costFixture(overrides: Partial<DocumentCost> = {}): DocumentCost {
+  const buckets = overrides.buckets ?? [costBucketFixture()];
+  return {
+    granularity: overrides.granularity ?? "day",
+    buckets,
+    total: overrides.total ?? buckets.length,
+    truncated: overrides.truncated ?? false,
+    sizeBytes: overrides.sizeBytes ?? 4000,
+    measuringSince: overrides.measuringSince ?? "2026-08-28T00:00:00.000Z",
   };
 }

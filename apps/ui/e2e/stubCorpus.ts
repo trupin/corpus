@@ -18,7 +18,9 @@ import {
   type CaptureResult,
   type Actor,
   type ConflictError,
+  type CostBucket,
   type CreateThreadResponse,
+  type DocumentCost,
   type DeleteDocResult,
   type DeleteFolderResult,
   type DeleteTurnResult,
@@ -147,6 +149,7 @@ type StubPayload =
   | Doc
   | DocList
   | DocMutationResponse
+  | DocumentCost
   | FolderTree
   | FormAnswerResponse
   | Health
@@ -312,6 +315,23 @@ export interface StubRow {
    * directions, which is what the projection's `links` table does.
    */
   readonly related?: readonly SeedRelated[];
+  /**
+   * What `GET /api/docs/{id}/cost` answers for this document (SPEC.md §9.4,
+   * UI-190) — the series behind the reader's measurements panel.
+   *
+   * Seeded whole rather than derived, and there is nothing to derive it from: a
+   * browser stub runs no `corpus` invocation, so every figure a real workspace
+   * would measure is absent here. With no seed the stub answers
+   * {@link UNMEASURED_COST} — an empty ledger, which is the honest state of a
+   * workspace nothing has been run against, and the state the panel must name
+   * in words rather than draw as a flat line at zero.
+   *
+   * **This half of the evidence is the rendering only.** The numbers themselves
+   * — that a bucket's tokens are `wc -c` divided by four — are checked against a
+   * real server by hand, in UI-190's E2E Verification Log. A stub proves the
+   * shape of the panel and nothing about the measurement.
+   */
+  readonly cost?: DocumentCost;
 }
 
 /** One row of a seeded related set: which document, and why it is related. */
@@ -380,6 +400,8 @@ interface StoredDoc {
   anchors: StoredAnchor[];
   /** A seeded related answer, or `null` to derive one from the ref graph. */
   related: readonly SeedRelated[] | null;
+  /** A seeded cost series, or `null` for the empty ledger a stub honestly has. */
+  cost: DocumentCost | null;
   /** Holds a turn nobody has displayed yet; cleared by the seen route. */
   unread: boolean;
 }
@@ -405,6 +427,58 @@ interface StoredAnchor {
 /** The seeded instant every document starts at, and the clock a write advances. */
 const SEEDED_AT = "2026-07-01T09:00:00.000Z";
 let writes = 0;
+
+/**
+ * What the cost route answers for a document nothing has measured — the default
+ * every seeded document gets (SPEC.md §9.4, UI-190).
+ *
+ * `measuringSince: null` is the honest answer for a browser stub: no `corpus`
+ * invocation has ever run against it, so the workspace's ledger holds nothing.
+ * A stub seeding a plausible zero series instead would let the panel's whole
+ * empty-state distinction go untested.
+ */
+export const UNMEASURED_COST: DocumentCost = {
+  granularity: "day",
+  buckets: [],
+  total: 0,
+  truncated: false,
+  sizeBytes: 0,
+  measuringSince: null,
+};
+
+/**
+ * One bucket of a seeded cost series.
+ *
+ * `byCommand` defaults to one command carrying the whole bucket, because the
+ * contract requires the breakdown to sum to `wroteTokens + readTokens` exactly.
+ * A stub quietly breaking that would make the panel's arithmetic look wrong for
+ * a reason no spec named.
+ */
+export function stubCostBucket(overrides: Partial<CostBucket> = {}): CostBucket {
+  const readTokens = overrides.readTokens ?? 100;
+  const wroteTokens = overrides.wroteTokens ?? 10;
+  return {
+    from: overrides.from ?? "2026-09-01T00:00:00.000Z",
+    to: overrides.to ?? "2026-09-02T00:00:00.000Z",
+    readTokens,
+    wroteTokens,
+    invocations: overrides.invocations ?? 1,
+    byCommand: overrides.byCommand ?? { "doc show": readTokens + wroteTokens },
+  };
+}
+
+/** A seeded series, with the totals and the flags the panel reads. */
+export function stubCost(overrides: Partial<DocumentCost> = {}): DocumentCost {
+  const buckets = overrides.buckets ?? [stubCostBucket()];
+  return {
+    granularity: overrides.granularity ?? "day",
+    buckets,
+    total: overrides.total ?? buckets.length,
+    truncated: overrides.truncated ?? false,
+    sizeBytes: overrides.sizeBytes ?? 4000,
+    measuringSince: overrides.measuringSince ?? "2026-08-28T00:00:00.000Z",
+  };
+}
 
 /**
  * A fresh, well-formed document key (SPEC.md §7): 64 lowercase hex characters,
@@ -797,6 +871,7 @@ function seeded(row: StubRow): StoredDoc {
     lastActor: row.lastActor ?? "user",
     agent: "none",
     related: row.related ?? null,
+    cost: row.cost ?? null,
     unread: row.unread ?? false,
     unreadThreads: row.unreadThreads ?? 0,
     anchors: (row.anchors ?? []).map((anchor) => ({
@@ -2860,6 +2935,31 @@ export async function stubCorpus(
           snippet: (doc.body.split("\n").find((line) => line.trim() !== "") ?? "").slice(0, 120),
         }));
       return json(route, { hits, semanticIndex: "current" } satisfies SearchResults);
+    }
+
+    /*
+     * `GET /api/docs/{id}/cost` — SPEC.md §9.4's series (UI-190), matched here
+     * for the same reason as `/related` below: `rest` would otherwise be
+     * `"<id>/cost"`, miss the store, and 404.
+     *
+     * A document this stub does not hold is a `404`, as the real route answers
+     * one. The default for a document it does hold is an **empty ledger**, not
+     * an empty object: an untyped `{}` would reach the panel as a
+     * `DocumentCost` with every field undefined, and a surface reading a new
+     * field would throw rather than render — which is exactly how a stub gap
+     * has bitten this suite before.
+     */
+    const costRead = /^\/api\/docs\/([^/]+)\/cost$/.exec(url.pathname);
+    if (costRead !== null && method === "GET") {
+      const subject = store.get(decodeURIComponent(costRead[1] ?? ""));
+      if (subject === undefined) {
+        return json(
+          route,
+          { code: "not_found", message: url.pathname } satisfies NotFoundError,
+          404,
+        );
+      }
+      return json(route, (subject.cost ?? UNMEASURED_COST) satisfies DocumentCost);
     }
 
     /*

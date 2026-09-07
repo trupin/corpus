@@ -6,11 +6,16 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   backlinksSearch,
+  costFixture,
+  costPath,
   docFixture,
   readerTransport,
+  relatedFixture,
+  threadFixture,
   threadsSearch,
   type ReaderTransport,
 } from "../testing/readerFixture";
+import { docRowFixture } from "@corpus/kit/testing";
 import { Reader } from "./Reader";
 import { REVEAL_SETTLED_ATTRIBUTE } from "./reveal";
 import { resetEscapeLayers } from "./useEscapeStack";
@@ -161,5 +166,94 @@ describe("a reader whose document has not arrived", () => {
     await waitFor(() => {
       expect(document.querySelector(`[${REVEAL_SETTLED_ATTRIBUTE}]`)).not.toBeNull();
     });
+  });
+});
+
+/**
+ * SPEC.md §9.4's measurements panel, at its one call site (UI-190).
+ *
+ * Asserted here rather than only in `CostPanel.test.tsx` because the placement
+ * claim is that **one insertion serves every document**, and that is a property
+ * of where `DocView` calls it rather than of the component. A second call site
+ * added for conversations would pass every panel test and fail the second case
+ * below in the way it is meant to.
+ */
+describe("where the measurements panel renders", () => {
+  it("renders below the body, after the two link panels", async () => {
+    const doc = docFixture({ frontmatter: { id: "doc_x", type: "note", title: "A note" } });
+    /*
+     * Both link panels are seeded with something to show, and that is what
+     * makes the ordering assertion below mean anything: `Backlinks` and
+     * `RelatedPanel` render `null` when empty, so against the default fixture
+     * the filtered list holds one name and any order passes it. Verified by
+     * moving the call site above `Backlinks` — the test only goes red with
+     * these two seeded.
+     */
+    const wire = readerTransport({
+      docs: [doc, docFixture({ frontmatter: { id: "doc_ref", title: "Refers here" } })],
+      rows: {
+        [threadsSearch("doc_x")]: [],
+        [backlinksSearch("doc_x")]: [
+          docRowFixture({ id: "doc_ref", title: "Refers here", type: "note" }),
+        ],
+      },
+      related: { doc_x: [relatedFixture()] },
+    });
+    render(open(doc, wire));
+
+    const panel = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(".doc-body-slot .cost");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    // Last of the three, and inside the document half — never above the body,
+    // where a late-arriving panel once moved it 77.86px mid-selection.
+    const names = [...(panel.parentElement?.children ?? [])]
+      .map((child) => child.className)
+      .filter((name) => name === "backlinks" || name === "related" || name === "cost");
+    expect(names).toEqual(["backlinks", "related", "cost"]);
+
+    const editor = document.querySelector('[data-doc-editor="doc_x"]');
+    expect(editor).not.toBeNull();
+    expect(editor?.compareDocumentPosition(panel) ?? 0).toBeGreaterThan(0);
+    expect(
+      ((editor?.compareDocumentPosition(panel) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    ).toBe(true);
+  });
+
+  /**
+   * Threads are documents (SPEC.md §6) and the series route takes a `th_*` id,
+   * so the conversation view gets the panel from the same call site — no second
+   * component and no thread-specific branch.
+   */
+  it("renders on a conversation too, from the same call site", async () => {
+    const threadDoc = docFixture({
+      frontmatter: { id: "th_c", type: "thread", title: "A conversation" },
+      body: "",
+    });
+    const wire = readerTransport({
+      docs: [threadDoc],
+      threads: [
+        threadFixture({
+          id: "th_c",
+          title: "A conversation",
+          turns: [
+            { author: "user", ts: "2026-09-01T10:00:00.000Z", body: "one turn", model: null },
+          ],
+        }),
+      ],
+      rows: { [threadsSearch("th_c")]: [], [backlinksSearch("th_c")]: [] },
+      cost: { th_c: costFixture() },
+    });
+    render(open(threadDoc, wire));
+
+    await waitFor(() => {
+      expect(document.querySelector(".doc-body-slot .cost")).not.toBeNull();
+    });
+    // The conversation's own series, keyed on the thread id — never rolled up
+    // into a parent's, which §9.4 deliberately does not do.
+    expect(wire.calls.some((call) => call.path === costPath("th_c"))).toBe(true);
+    expect(document.querySelectorAll(".cost")).toHaveLength(1);
   });
 });

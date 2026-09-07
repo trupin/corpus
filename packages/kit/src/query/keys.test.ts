@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalFilter,
   DOCS_KEY,
+  docCostKey,
   docKey,
   docsListKey,
   HEALTH_KEY,
@@ -217,12 +218,26 @@ describe("retrieval keys", () => {
     expect(searchKey()).toEqual(["docs", "search", {}]);
   });
 
+  /**
+   * SPEC.md §9.4's series (UI-190). Under the same prefix for the same reason,
+   * and for one more of its own: telemetry announces **nothing** (sprint-025
+   * R8), so no `invalidate` frame will ever name this entry directly. Hanging it
+   * under `["docs"]` is the only thing that refreshes it at all.
+   */
+  it("keys a cost series under its own document, and under the docs prefix", () => {
+    expect(docCostKey("doc_x")).toEqual(["docs", "doc_x", "cost"]);
+    // A thread is a document (SPEC.md §6), so a `th_*` id is legal here.
+    expect(docCostKey("th_x")).toEqual(["docs", "th_x", "cost"]);
+  });
+
   it("adds no name to the contract's closed vocabulary", () => {
     // A new name would be a contract change plus an artifact regeneration.
     expect(contract.QUERY_KEY_NAMES).not.toContain("related");
     expect(contract.QUERY_KEY_NAMES).not.toContain("search");
+    expect(contract.QUERY_KEY_NAMES).not.toContain("cost");
     expect(relatedKey("doc_x")[0]).toBe(DOCS_KEY[0]);
     expect(searchKey({ q: "x" })[0]).toBe(DOCS_KEY[0]);
+    expect(docCostKey("doc_x")[0]).toBe(DOCS_KEY[0]);
   });
 
   it("sits under the prefixes the server names, which is what invalidates it", () => {
@@ -230,12 +245,16 @@ describe("retrieval keys", () => {
     expect(relatedKey("doc_x").slice(0, 1)).toEqual(DOCS_KEY);
     expect(relatedKey("doc_x").slice(0, 2)).toEqual(docKey("doc_x"));
     expect(searchKey({ q: "x" }).slice(0, 1)).toEqual(DOCS_KEY);
+    expect(docCostKey("doc_x").slice(0, 1)).toEqual(DOCS_KEY);
+    expect(docCostKey("doc_x").slice(0, 2)).toEqual(docKey("doc_x"));
   });
 
   it("cannot be reached by a document key, and cannot reach one", () => {
     // `"search"` is not a document id (ids are `<prefix>_<suffix>`), and the
-    // `"related"` tail keeps a related set out of the reader's own entry.
+    // `"related"` and `"cost"` tails keep those entries out of the reader's own.
     expect(hashKey(relatedKey("doc_x"))).not.toBe(hashKey(docKey("doc_x")));
     expect(hashKey(searchKey({ q: "x" }))).not.toBe(hashKey(docsListKey({ q: "x" })));
+    expect(hashKey(docCostKey("doc_x"))).not.toBe(hashKey(docKey("doc_x")));
+    expect(hashKey(docCostKey("doc_x"))).not.toBe(hashKey(relatedKey("doc_x")));
   });
 });

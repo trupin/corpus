@@ -39,6 +39,7 @@ import "@corpus/kit/row.css";
 import "@corpus/kit/markdown.css";
 import "@corpus/kit/autocomplete.css";
 import "@corpus/kit/composer.css";
+import "@corpus/kit/cost.css";
 import "@corpus/kit/address.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

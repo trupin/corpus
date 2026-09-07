@@ -35,6 +35,8 @@ const RUNTIME_SURFACE = [
   // CONTRACT-092's vocabulary, read for the query editor's completions.
   "useVocabulary",
   "useRelatedDocs",
+  // SPEC.md §9.4's series, for the reader's measurements panel (UI-190).
+  "useDocCost",
   "useCorpusSearch",
   "useJobs",
   "useOutstandingJobs",
@@ -88,6 +90,7 @@ const RUNTIME_SURFACE = [
   "PendingTurnStore",
   // query keys
   "canonicalFilter",
+  "docCostKey",
   "docKey",
   "docsListKey",
   "AGENTS_KEY",
@@ -226,6 +229,10 @@ const RUNTIME_SURFACE = [
   "findOrchestrateSkill",
   "ORCHESTRATE_SKILL_NAME",
   "composerReachesAgent",
+  // The cost chart (UI-190) — this repository's first, hand-rolled, and its
+  // scale, which the panel does not need but a test of the drawing does.
+  "CostChart",
+  "costDomainMax",
   "chooseWeight",
   "weightChoice",
   "subscribeWeightChoices",
