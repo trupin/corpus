@@ -304,12 +304,17 @@ button.address-line:focus-visible {
  *   action bar, a comment popover's foot — so the card is as wide as the surface
  *   it belongs to and never wider. A column dragged wider makes it wider; a
  *   narrower window narrows the global composer's panel and narrows it with it.
- * - **`--address-pop-max`, the height**: the room above the line, and **nothing
- *   else**. The `280px` ceiling is gone. A ceiling below the room is what forced
- *   the scrollbar in the table above, and SHARED-061 is explicit that scrolling
- *   is for content that cannot fit and never for content that was not given
- *   room. Where the roster genuinely outruns the room the list still scrolls and
- *   still says so — that is the honest, unsatisfiable end of the rule.
+ * - **`--address-pop-max`, the height**: the room above the line, capped by the
+ *   bounding box's **whole** height — and nothing else. The `280px` ceiling is
+ *   gone. A ceiling below the room is what forced the scrollbar in the table
+ *   above, and SHARED-061 is explicit that scrolling is for content that cannot
+ *   fit and never for content that was not given room. Where the roster
+ *   genuinely outruns the room the list still scrolls and still says so — that
+ *   is the honest, unsatisfiable end of the rule. And where even the floored
+ *   card outruns the box that clips it, the card is capped at that box and
+ *   scrolls as one piece (`data-address-pop-scrolls`, below): the phase-60
+ *   evaluation found the shifted card's bottom clipped by the compose panel
+ *   with the "no owner" state's only weight editor past the edge.
  * - **`--min-usable-height` is the list's floor** (UI-192; the kit token,
  *   `tokens.css`). It used to be one row, measured — "a card squeezed until the
  *   list was 0px high would clear the head and offer nothing" — and that
@@ -371,6 +376,45 @@ button.address-line:focus-visible {
      never a number, because a number is what this issue removed. */
   max-height: var(--address-pop-max, none);
   transform: translateY(var(--address-pop-shift, 0px));
+}
+
+/* Where even the floored parts outrun the whole box that bounds the card —
+   the global composer's 192px `overflow: hidden` panel under a crowded
+   no-owner roster, a 1280×400 scrollport — the card scrolls as one piece
+   (the phase-60 evaluation's FAIL-1: a card taller than its clip hid that
+   state's only weight editor past an edge no gesture could reach). The fit
+   sets this attribute, never a stylesheet at rest, so a card that fits keeps
+   `overflow: visible` and its geometry untouched. The ✕ scrolls with the
+   content it closes — Escape and the outside press stay reachable from any
+   scroll offset. */
+.composer-address .address-pop[data-address-pop-scrolls="true"] {
+  overflow-y: auto;
+}
+
+/* Inside a card that scrolls as one piece, the roster holds at exactly its
+   floor and the section holds at exactly its floored content. Two rules,
+   because a scroll container gives its content unbounded room and the resting
+   layout is built on the *squeeze* between the card's max-height and the flex
+   column:
+
+   - Without the cap, the roster would lay out whole (275px of a thirty-lane
+     list), losing the cap contract the room-geometry spec pins — the list is
+     what scrolls, at the token, saying so. The cap is the same number the fit
+     reserved for it (`listFloor`), so the card's scroll length is the fit's
+     own arithmetic.
+   - Without the floor, the section's resting `min-height: 0` let the flex
+     column shrink the section's *box* while its children kept their floored
+     heights — and children past the box of an `overflow: visible` section
+     painted straight over the weight rows below it (found by the battery's
+     weight-editor probe: every row centre hit-tested to a lane button).
+     `min-content` counts the children at their clamped sizes once the cap
+     above bounds the roster. */
+.composer-address .address-pop[data-address-pop-scrolls="true"] .recipient-lanes {
+  max-height: calc(var(--min-usable-height) + 1px);
+}
+
+.composer-address .address-pop[data-address-pop-scrolls="true"] .address-recipient {
+  min-height: min-content;
 }
 
 /* The exit the card never had (UI-192): the primitive's ✕, pinned to the top
@@ -458,11 +502,14 @@ button.address-line:focus-visible {
   gap: 5px;
 }
 
-/* The lane list is a kit `ScrollArea` since UI-192, so `.scroll-region`
-   (controls.css) owns its overflow, its scrollbar and — the point — its floor:
-   `min-height: var(--min-usable-height)`. The `min-height: 0` that used to
-   stand here is exactly what let the flex column squeeze a crowded roster to
-   a 25px sliver, and it must never come back. */
+/* The lane list is a kit `ScrollArea` since UI-192, so the primitive owns its
+   overflow, its scrollbar and — the point — its floor: the measured
+   `min(content, --min-usable-height)` (ScrollArea.tsx). The `min-height: 0`
+   that used to stand here is exactly what let the flex column squeeze a
+   crowded roster to a 25px sliver, and it must never come back — but neither
+   must a short roster be stretched to the token, which is how a three-lane
+   list once pushed the no-owner card past the compose panel's clip
+   (phase-60's FAIL-1). */
 .recipient-lanes {
   flex: 1 1 auto;
   /* A wrap container given a height distributes its lines by default; the rows

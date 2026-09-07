@@ -298,8 +298,13 @@ button.chip:not(.on):not(.warn):not(.good):hover {
   max-height: 78vh;
 }
 
-/* A scroll region never renders shorter than the one minimum
-   (`--min-usable-height`, tokens.css). */
+/* A scroll region never renders shorter than its floor: `min(content,
+   --min-usable-height)` (tokens.css). CSS cannot express that minimum, so the
+   component measures it and writes it as an inline `min-height` — content
+   shorter than the token takes its own height and no more (UI-192, phase-60:
+   a region that spent the full token on a short roster pushed its card past
+   the clip that bounds it). The token below is the fallback that stands
+   wherever there is no layout to measure. */
 .scroll-region {
   position: relative;
   overflow-y: auto;

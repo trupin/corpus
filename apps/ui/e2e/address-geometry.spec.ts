@@ -727,20 +727,24 @@ test.describe("the address popover has a ceiling", () => {
 /**
  * The other two hosts, whose ceiling is **not** a scrollport.
  *
- * `clipperOf` walks for the nearest scrolling ancestor and finds none at either:
- * the global composer's panel and the comment popover are both `overflow:
- * hidden` boxes over a `body` that does not scroll, so the window itself is the
- * ceiling. That path is worth a measurement of its own, because a walk that
- * answered the wrong box would bound these cards to nothing.
+ * Since UI-142 `clipperOf` stops at a clip as well as a scrollport, and the two
+ * hosts here answer differently: the global composer's card is bounded by
+ * `.search-panel`'s `overflow: hidden` box, while the comment popover is
+ * portaled to `document.body` and has the window. Both paths are worth a
+ * measurement of their own, because a walk that answered the wrong box would
+ * bound these cards to nothing.
  *
- * **A residual, stated rather than implied.** `.search-panel` clips with
- * `overflow: hidden`, and the compose card has always been drawn taller than the
- * panel has room for above the line — 157px against 132px, measured — so its top
- * padding and lead are cropped there. That is a different defect from this one
- * and is left alone deliberately: bounding to a clip rather than a scrollport
- * would squeeze a three-lane list to one visible row, and what leaves a clip is
- * cropped where what leaves a scrollport is *unreachable*. UI-127's own compose
- * test is what measures the change in that card's behaviour, and it is green.
+ * **The residual this block used to state is repaid.** The compose card was
+ * "always drawn taller than the panel has room for above the line — 157px
+ * against 132px, measured — so its top padding and lead are cropped there",
+ * and the crop was left alone because bounding harder would have squeezed a
+ * three-lane list to one visible row. The phase-60 evaluation found the same
+ * crop at the card's *bottom* edge hiding the no-owner state's only weight
+ * editor (FAIL-1), and the trade the old note refused is no longer the trade
+ * on offer: the `ScrollArea`'s floor is `min(content, token)` now, so a short
+ * roster costs its own height, and where even the floored card outruns the
+ * panel the fit caps it there and the card scrolls as one piece
+ * (`data-address-pop-scrolls`). The card fits its clip whole, in every state.
  */
 test.describe("a host the window bounds", () => {
   test("the global composer's card is capped, and the cap is the only thing bounding it", async ({

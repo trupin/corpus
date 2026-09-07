@@ -192,3 +192,53 @@ FAIL 7**. Every failure was a real finding:
 - Evaluator item: `.claude/agents/evaluator.md`, Step 4 — "The overlay sweep":
   open every overlay; for each control, name what it edits; two answers the
   same is a finding.
+
+## E2E Verification Log — second pass: the battery gap phase-60 exposed
+
+**Model**: Fable 5 (`claude-fable-5`). **Date**: 2026-09-07.
+
+The phase-60 evaluation's FAIL-1 went through this battery green: the
+designation popover was registered and judged in its designating state only,
+and the "no owner" state — a different host, the tightest clip in the
+product, and the surface's only weight editor — had never been opened by any
+check. Four repairs, all verified against the real Vite dev server in real
+Chromium (`CORPUS_UI_PORT=5573`):
+
+1. **States are a forced declaration.** `OverlayEntry` gains a required
+   `furtherStates` field: `[]` is the author's written assertion that one
+   opener shows everything the surface can offer, and a state may override
+   `surface`/`exit`/`opener`/`scrollRegions` beside its own `open`. The
+   battery runs all four checks per state — 51 tests now (46 before): the
+   `designation-popover [no-owner]` state adds four, its weight-editor probe
+   one. Honesty recorded in the registry header: the completeness scan
+   forces every overlay definition *site* to be claimed, but it cannot
+   enumerate runtime states — no static scan of a `.tsx` can — so the state
+   list is a forced declaration whose completeness belongs to review.
+2. **The evaluator's probe is now a battery test.** Wheel over the card
+   moves it, `elementFromPoint` at each weight-row centre answers the row, a
+   real click chooses a level. It is not a never-failed check: it went red
+   twice against real intermediate defects during the UI-192 fix (rows
+   painted over by lane rows; the cap contract broken) — both recorded with
+   failure text in UI-192's log.
+3. **The fits exemption is earned, not declared.** An element inside a
+   declared scroll region is exempt from the hit-test only while that
+   region's `overflow-y` is `auto`/`scroll`. A surface that regresses to
+   the FAIL-1 layout — clipped, nothing scrollable — loses the cover the
+   declaration was written for and goes red.
+4. **The mockup carries the four missing specimens** (the evaluation's
+   finding 1b, sprint-026 Done Criteria): `design/index.html#primitives` now
+   draws IconButton (rest/hover/on/disabled/focus, in the format toolbar's
+   dress it really wears), Popover (the ✕ and the unconditional exits named),
+   Modal (scrim + panel + ✕), and ScrollArea (overflowing at the token with
+   the affordance border, and short content at its own height) — and the
+   stylesheet gains the `.kit-popover`/`.kit-modal-*` values `controls.css`
+   claims to transcribe, which until now had no mockup source. Rendered and
+   inspected via Playwright screenshot, light theme.
+
+**Finding 1a checked, no fix owed**: the console's act buttons are kit
+`Button`s (`LaneRelease.tsx` imports from `@corpus/kit`) and the format
+toolbar's icons are kit `IconButton`s — both the documented `bare` contract,
+which deliberately contributes no class so the surface's mockup CSS draws
+them. `className === ""` in the rendered DOM is that contract working, not a
+census gap; DOM-level demonstrability of "every control is a kit primitive"
+remains review-by-source, as `Button.tsx`'s own comment records.

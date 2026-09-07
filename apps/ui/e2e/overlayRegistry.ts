@@ -13,9 +13,10 @@ import {
  *
  * The battery (`overlay-battery.spec.ts`) iterates this module: each entry is
  * opened over the **crowded fixture** (`crowdedLanes()` — the empty case is how
- * the reported defects shipped) at the default window size, and judged on four
- * checks — nothing interactive clipped, a working exit affordance, Escape with
- * focus return, and usable scroll regions.
+ * the reported defects shipped) at the default window size, in **every state
+ * the entry declares**, and judged on four checks — nothing interactive
+ * clipped, a working exit affordance, Escape with focus return, and usable
+ * scroll regions.
  *
  * ## Why registration cannot be dodged
  *
@@ -26,6 +27,23 @@ import {
  * suite red — the correct-by-construction half of UI-193's filing. The inverse
  * also holds: an entry whose `sources` no longer exist fails, so a deleted
  * overlay leaves the registry rather than rotting in it.
+ *
+ * ## What the scan can and cannot force, honestly
+ *
+ * The scan forces every overlay definition **site** — a file — to be claimed.
+ * It cannot force a **state list**: which states change what a surface offers
+ * is runtime behaviour, not syntax, and no static scan of a `.tsx` can
+ * enumerate them. So `furtherStates` is a *required* declaration on every
+ * entry — the author must positively write the list down, and a single-state
+ * entry asserts `furtherStates: []` in as many words — but its completeness
+ * is the author's assertion, held by review and by the fact that a missed
+ * state is exactly how the
+ * phase-60 evaluation's FAIL-1 got through: the designation popover was
+ * registered and green in its designating state while the "no owner" state —
+ * the one whose popover is the surface's only weight editor (UI-192's own
+ * decision record) — laid its weight rows out past the compose panel's clip,
+ * unopened by any check. When a surface's content depends on state, every
+ * further state joins `furtherStates`, opened and judged separately.
  *
  * The scan deliberately does **not** match `role="menu"`: menus, toasts and
  * the console strip are out of the battery's scope (sprint-026, Out of scope).
@@ -79,6 +97,26 @@ export interface ScrollRegionDecl {
   readonly affordance?: string;
 }
 
+/**
+ * One further state of an overlay's surface — the battery opens every declared
+ * state and runs all four checks in each. A state overrides only what it
+ * actually changes: the no-owner designation popover lives on a different host
+ * (the global composer), so it overrides everything; a state that merely adds
+ * content to the same surface would override nothing but `open`.
+ */
+export interface OverlayState {
+  readonly id: string;
+  /** Opens the overlay in this state over the crowded fixture. */
+  readonly open: (page: Page) => Promise<void>;
+  /** The open overlay's root in this state; the entry's when absent. */
+  readonly surface?: string;
+  readonly exit?: ExitAffordance;
+  /** Overrides the entry's opener; `null` still means "none survives". */
+  readonly opener?: string | null;
+  /** Replaces (not merges) the entry's scroll regions for this state. */
+  readonly scrollRegions?: readonly ScrollRegionDecl[];
+}
+
 export interface OverlayEntry {
   readonly id: string;
   /** Repo-relative files whose overlay markup this entry vouches for. */
@@ -95,6 +133,16 @@ export interface OverlayEntry {
   readonly scrollRegions: readonly ScrollRegionDecl[];
   /** Opens the overlay over the crowded fixture; resolves once visible. */
   readonly open: (page: Page) => Promise<void>;
+  /**
+   * Every state **beyond `open`'s** that changes what this surface offers,
+   * each opened and judged by the battery on all four checks. Required, never
+   * defaulted: `[]` is the author's written assertion that one opener shows
+   * everything the surface can offer — see the header for what the scan can
+   * and cannot force. A surface whose content depends on state (the
+   * designation popover's weight rows exist only with no owner standing)
+   * declares each such state here, or the battery has never seen it.
+   */
+  readonly furtherStates: readonly OverlayState[];
   readonly expectedFailures?: readonly ExpectedFailure[];
 }
 
@@ -169,6 +217,21 @@ export async function bootCrowded(page: Page, options?: StubOptions): Promise<vo
   await page.locator(".board").waitFor();
 }
 
+/**
+ * Opens the global composer with "no owner — the main agent" picked: the "at"
+ * pill leaves and the address popover carries the WEIGHT rows (UI-192). The
+ * label is `ComposeOverlay.tsx`'s `NO_RESIDENT_LABEL`, spelled out here the
+ * way a person reads it rather than imported — the battery drives the product
+ * through its real menus.
+ */
+export async function openComposeNoOwner(page: Page): Promise<void> {
+  await bootCrowded(page);
+  await page.keyboard.press("c");
+  await page.locator(".compose-panel textarea").waitFor();
+  await page.locator('[data-select="owner"]').click();
+  await page.getByRole("menuitemradio", { name: "no owner — the main agent", exact: true }).click();
+}
+
 /** Opens `th_host` in a column reader, composer at the foot. */
 async function openHostReader(page: Page): Promise<void> {
   await page.locator('.row[data-row-doc="th_host"]').click({ button: "right" });
@@ -208,6 +271,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
     opener: null,
     scrollRegions: [{ selector: ".search-results" }],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.keyboard.press("ControlOrMeta+k");
@@ -225,6 +289,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
     opener: null,
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.keyboard.press("?");
@@ -242,6 +307,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
     opener: null,
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.keyboard.press("c");
@@ -257,6 +323,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     // opener survives to take focus back.
     opener: null,
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.getByRole("button", { name: "New board" }).click();
@@ -271,6 +338,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "trigger", selector: 'button[aria-label="Query syntax for Conversations"]' },
     opener: 'button[aria-label="Query syntax for Conversations"]',
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.getByRole("button", { name: "List options for Conversations" }).click();
@@ -286,6 +354,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "control", selector: ".upgrade-panel .btn-close" },
     opener: ".c-status-button",
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       // Registered after `stubCorpus`, so these win their routes: the strip
@@ -328,6 +397,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "control", selector: ".image-viewer-close" },
     opener: '.reader [data-reader-doc="doc_pic"] img, .reader img',
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator('.row[data-row-doc="doc_pic"]').click();
@@ -349,6 +419,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "control", selector: "[data-close-focus]" },
     opener: null,
     scrollRegions: [{ selector: ".focus-scroll" }],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator('.row[data-row-doc="doc_pic"]').click();
@@ -364,6 +435,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "control", selector: "[data-comment-pop] [data-comment-cancel]" },
     opener: null,
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator('.row[data-row-doc="th_host"]').click();
@@ -412,6 +484,49 @@ export const OVERLAYS: readonly OverlayEntry[] = [
         affordance: '[data-address-more="th_host"]',
       },
     ],
+    furtherStates: [
+      /*
+       * The state the phase-60 evaluation found unreached (FAIL-1): with
+       * "no owner — the main agent" picked in the global composer, the "at"
+       * pill leaves and the popover's WEIGHT rows become the surface's only
+       * weight editor (UI-192's decision record). The card opens inside
+       * `.search-panel.compose-panel` — a fixed-height `overflow: hidden` box
+       * — so this is also the tightest clipping context any ComposerAddress
+       * host provides, and the state in which the crowded card cannot fit its
+       * clip whole: the fit caps it at the panel and the card scrolls as one
+       * piece. Declaring the card as a scroll region below exempts its
+       * content from the fits hit-test *by design* (that check judges
+       * un-scrollable clipping), so reachability of the weight rows in this
+       * state is asserted by the battery's dedicated probe — hit-test returns
+       * the row, a real click chooses a level — not left to the generic
+       * check the declaration just softened.
+       */
+      {
+        id: "no-owner",
+        surface: '[data-address-pop="compose"]',
+        exit: {
+          kind: "control",
+          selector: '[data-address-pop="compose"] .kit-popover-close',
+        },
+        opener: 'button[data-address-line="compose"]',
+        scrollRegions: [
+          {
+            selector: ".recipient-lanes",
+            affordance: '[data-address-more="compose"]',
+          },
+          // The card itself, capped at the compose panel's height (see above).
+          { selector: '[data-address-pop="compose"]' },
+        ],
+        open: async (page) => {
+          await openComposeNoOwner(page);
+          await page.mouse.move(4, 4);
+          await settled(page, 'button[data-address-line="compose"]');
+          await page.locator('button[data-address-line="compose"]').click();
+          await page.locator('[data-address-pop="compose"]').waitFor();
+          await page.mouse.move(4, 4);
+        },
+      },
+    ],
     open: async (page) => {
       await bootCrowded(page);
       await openHostReader(page);
@@ -429,6 +544,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "trigger", selector: '[data-select="lane-weight"]' },
     opener: '[data-select="lane-weight"]',
     scrollRegions: [],
+    furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator(".console-strip").click();

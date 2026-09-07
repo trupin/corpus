@@ -198,10 +198,76 @@ describe("ScrollArea", () => {
         <p>rows</p>
       </ScrollArea>,
     );
-    const region = container.querySelector(".scroll-region");
+    const region = container.querySelector<HTMLElement>(".scroll-region");
     // jsdom has no layout, so heights are 0: unmeasurable is not too short,
-    // and the report says "not overflowing" rather than throwing.
+    // and the report says "not overflowing" rather than throwing. No inline
+    // floor either — the stylesheet's token clamp is left standing.
     expect(region?.getAttribute("data-overflowing")).toBe("false");
+    expect(region?.style.minHeight).toBe("");
+  });
+
+  /** Gives every element in the render the same measured geometry. */
+  function measuring(content: number, height: number): () => void {
+    const scroll = vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(content);
+    const client = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(height);
+    const rect = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockReturnValue({ height } as DOMRect);
+    return () => {
+      scroll.mockRestore();
+      client.mockRestore();
+      rect.mockRestore();
+    };
+  }
+
+  it("floors a region at its content's own height when content is under the token (UI-192, phase-60)", () => {
+    // The token must buy room only where content can spend it: a short roster
+    // stretched to the full token is what pushed the no-owner card past the
+    // compose panel's clip (the evaluation's FAIL-1).
+    const restore = measuring(60, 60);
+    try {
+      const { container } = render(
+        <ScrollArea aria-label="roster">
+          <p>rows</p>
+        </ScrollArea>,
+      );
+      const region = container.querySelector<HTMLElement>(".scroll-region");
+      expect(region?.style.minHeight).toBe("60px");
+      expect(region?.getAttribute("data-overflowing")).toBe("false");
+    } finally {
+      restore();
+    }
+  });
+
+  it("floors an overflowing region at the token plus the affordance border's pixel", () => {
+    const restore = measuring(300, MIN_USABLE_HEIGHT_PX + 1);
+    try {
+      const { container } = render(
+        <ScrollArea aria-label="roster">
+          <p>rows</p>
+        </ScrollArea>,
+      );
+      const region = container.querySelector<HTMLElement>(".scroll-region");
+      expect(region?.style.minHeight).toBe(`${String(MIN_USABLE_HEIGHT_PX + 1)}px`);
+      expect(region?.getAttribute("data-overflowing")).toBe("true");
+    } finally {
+      restore();
+    }
+  });
+
+  it("throws in dev when a surface squeezes it below its floor, naming both heights", () => {
+    const restore = measuring(300, 80);
+    try {
+      expect(() =>
+        render(
+          <ScrollArea aria-label="roster">
+            <p>rows</p>
+          </ScrollArea>,
+        ),
+      ).toThrow(/rendered 80px tall against 300px of content/);
+    } finally {
+      restore();
+    }
   });
 
   it("pins its constant to the token tokens.css declares", () => {

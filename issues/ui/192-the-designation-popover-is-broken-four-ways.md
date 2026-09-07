@@ -276,3 +276,77 @@ kit `index.test.ts` export census (deleted `designationWeightSentence`,
   not reproduce). Flagged to the orchestrator as a suspected TipTap-3-era
   flake worth its own issue — the failure text above is the reproduction to
   file it with.
+
+## E2E Verification Log — second pass: the phase-60 evaluation's FAIL-1
+
+**Model**: Fable 5 (`claude-fable-5`). **Date**: 2026-09-07.
+
+### The defect (reproduced by the evaluator, geometry taken from its log)
+
+Composer → owner "no owner — the main agent" → open the popover: the card
+laid out 229px inside `.search-panel.compose-panel` (a fixed ~192px
+`overflow: hidden` box); the WEIGHT rows — this state's **only** weight
+editor by this issue's own decision record — painted at y 291–312 past the
+clip at y 280, hit-tested to the scrim, and a real click at their coordinates
+dismissed the popover instead of choosing. Identical at 1280×720, 1440×900
+and 1600×1000, and identical with 3 lanes and no roster overflow, because
+the `ScrollArea` clamped the roster at the 120px token even when its content
+needed less — the token was spent as a tax, not a guarantee.
+
+### The fix — reachability, in kit, two mechanisms
+
+1. **`ScrollArea`'s floor is `min(content, token)`, measured.** The
+   component collapses its floor, reads the content's own height, and writes
+   the floor as an inline `min-height` (a *layout* effect, so a consumer's
+   own layout effect — React runs children's first — reads settled geometry,
+   never the CSS token fallback). Content shorter than the token takes its
+   own height and no more; the token still guarantees an overflowing region
+   (plus the affordance border's pixel). `ScrollAreaTooShortError` stays
+   meaningful: it fires only below the *measured* floor and names both
+   heights ("rendered 80px tall against 300px of content").
+2. **The fit measures the room's floor as well as its ceiling.** `roomFor`
+   returns the clipping ancestor's bottom (clamped by the viewport);
+   the card's height is capped at the clip's whole height less the margins
+   (`available`), and the statement's line budget is capped by it too. Where
+   even the floored parts outrun the whole clip, the fit sets
+   `data-address-pop-scrolls` and the card scrolls **as one piece** — in that
+   state the roster caps at the token (it still scrolls internally and still
+   says "N lanes · scroll for the rest") and `.address-recipient` floors at
+   `min-content`, so no section can paint over another. A card that fits
+   keeps `overflow: visible` and byte-identical geometry.
+
+### Verified in real Chromium (Vite dev server, `CORPUS_UI_PORT=5573`, kit `dist/` rebuilt before every run)
+
+- **The battery**: 51/51, including the new `designation-popover [no-owner]`
+  state (all four checks in the 192px panel over the crowded fixture) and
+  the dedicated weight-editor probe — a real wheel moves the card
+  (`scrollTop > 0`), `elementFromPoint` at each of the three row centres
+  answers the row, and a real `page.mouse.click` on the heavy row chooses
+  (`aria-pressed="true"`, popover still open).
+- **The address specs**: `address-geometry` + `address-room-geometry` +
+  `ask-designation-weight` + `recipient` + `weight` + the battery in one
+  run — **112/112 PASS** (1.2m). All fifteen room-geometry claims hold
+  against the capped card unmodified.
+- **The probe caught two intermediate defects before the final shape** —
+  evidence it can fail: (a) with the section's resting `min-height: 0`, the
+  flex column shrank the section's box and its lane rows painted over the
+  weight rows (probe red: `weight row 0 hit-tests to <button
+  .recipient-opt>`); (b) letting the roster lay out whole inside the
+  scrolling card broke the cap contract (`address-room-geometry`'s "a taller
+  window shows more of the same roster" and "a roster that outruns even the
+  room says so" both red, list at 275px unscrolled). The shipped shape —
+  roster capped at the token, section floored at `min-content` — holds all
+  three suites at once.
+- **The 3-lane acceptance** rides `weight.spec.ts` "is offered by the global
+  composer, live, with nothing preselected": small fixture, no-owner state,
+  a real click on the `light` row in the compose panel, the wire asserts
+  `weight: "light"`. Green — with the new floor the 3-lane card fits the
+  panel whole, no scroll.
+- **Unit**: kit + `apps/ui` compose suites 1192/1192; new `ScrollArea` floor
+  tests falsified by mutation (`floor = token + 1` sent the short-content
+  test red, restore sent it green). `eslint`, `prettier --check`,
+  `tsc --noEmit` clean in `packages/kit` and `apps/ui`.
+- **Not run**: a `corpus init` workspace server (the evaluator's 8791 rig).
+  The prescribed verification for this pass was the battery + the address
+  specs against the suite's standing Vite + Chromium arrangement; the panel
+  geometry the defect lives in is the same markup in both.

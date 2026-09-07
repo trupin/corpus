@@ -65,8 +65,11 @@ import {
  *   row** (UI-192, UI-193): the pre-rebuild floor was a single lane row, which
  *   over a crowded roster in a short room rendered a 25px sliver that was
  *   nearly impossible to scroll or to recognise as scrollable. The kit
- *   `ScrollArea` clamps the region at the token and the fit below pays for it
- *   by shifting the card down into its scrollport instead.
+ *   `ScrollArea` clamps the region at `min(content, token)` — a short roster
+ *   takes its own height, never the token's (phase-60's FAIL-1) — and the fit
+ *   below pays for the clamp by shifting the card down into its scrollport,
+ *   or, where the whole box that bounds it is shorter than even the floored
+ *   card, by capping the card at that box and scrolling it as one piece.
  *
  * ## Exits and keys (rebuilt on the kit `Popover`, UI-192)
  *
@@ -299,6 +302,16 @@ function reserveLines(says: HTMLElement, statements: readonly string[]): number 
  * bounds it — a scrollport or a clip — or the top of the window where there is
  * none. See {@link clipperOf}, which records why the walk stops at both.
  *
+ * **`floor` — how low its bottom edge may land.** The bottom of the same box,
+ * clamped by the window. It exists because the ceiling alone answered only
+ * half the question (the phase-60 evaluation's FAIL-1): a card whose floored
+ * parts outran the room above the line was *shifted down* into its box, and a
+ * box shorter than the card — the global composer's `overflow: hidden` panel,
+ * 192px against a 229px card — clipped the shifted bottom, where the "no
+ * owner" state's only weight editor sat, unpainted and unpressable at every
+ * window size. What a clip cuts off was never available (SHARED-061), and
+ * that is as true of a bottom edge as of a top one.
+ *
  * **`right` — how wide it may be drawn.** The trailing edge of `host`, which is
  * the element the address line was placed in: a composer foot, the global
  * panel's action bar, the comment popover's foot. That row **is** the card's
@@ -311,18 +324,23 @@ function reserveLines(says: HTMLElement, statements: readonly string[]): number 
  * `clientWidth` rather than the border-box right, because a scrollport's
  * scrollbar is room the card does not have.
  */
-function roomFor(card: HTMLElement, host: HTMLElement | null): { ceiling: number; right: number } {
+function roomFor(
+  card: HTMLElement,
+  host: HTMLElement | null,
+): { ceiling: number; floor: number; right: number } {
   const clip = clipperOf(card);
   if (clip === null) {
     const width = document.documentElement.clientWidth;
     return {
       ceiling: 0,
+      floor: document.documentElement.clientHeight,
       right: Math.min(host?.getBoundingClientRect().right ?? width, width - POP_MARGIN),
     };
   }
   const box = clip.getBoundingClientRect();
   return {
     ceiling: Math.max(box.top, 0),
+    floor: Math.min(box.bottom, document.documentElement.clientHeight),
     right: Math.min(
       host?.getBoundingClientRect().right ?? box.left + clip.clientWidth,
       box.left + clip.clientWidth - POP_MARGIN,
@@ -415,7 +433,14 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
    * measures it and hands the fitted bound back as `--address-pop-max`. Where
    * the room will not take the fixed parts and a usable list — a 187px
    * scrollport at 1280×400 — `--address-pop-shift` moves the card down until
-   * its top is inside the scrollport instead of behind the reader's head.
+   * its top is inside the scrollport instead of behind the reader's head. And
+   * where the *whole* box that bounds the card will not take them — the
+   * global composer's 192px `overflow: hidden` panel under a crowded no-owner
+   * roster — the card is capped at that box's height and scrolls as one piece
+   * (`data-address-pop-scrolls`), because a shift into a box shorter than the
+   * card just moved the clipped edge from its top to its bottom, and what sat
+   * past it — that state's only weight editor — was unpaintable and
+   * unpressable at every window size (the phase-60 evaluation's FAIL-1).
    *
    * **It runs on opening and never on previewing.** Its dependencies are the
    * open flag, the roster's length and the sentences the roster can say:
@@ -445,9 +470,11 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
     const host = box.current?.parentElement ?? null;
 
     const fit = (): void => {
-      // Measured unbounded and unshifted, so no previous fit can bias this one.
+      // Measured unbounded, unshifted and unscrolled, so no previous fit can
+      // bias this one.
       card.style.setProperty("--address-pop-shift", "0px");
       card.style.setProperty("--address-pop-max", "none");
+      card.setAttribute("data-address-pop-scrolls", "false");
 
       // **The width first**, because the height depends on it: a wider card
       // re-wraps the lane list and changes what the room has to hold. Its left
@@ -468,10 +495,22 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
        * so the fit reserves the same number, and where the room cannot pay it
        * the card comes down over its own composer instead — the shift below.
        */
-      // `+ 1` mirrors `.scroll-region[data-overflowing]`'s own clamp: the
-      // overflow border is sized into the box, so the usable inside costs the
-      // token plus the border's pixel.
+      // `+ 1` mirrors the `ScrollArea`'s own clamp: the overflow border is
+      // sized into the box, so the usable inside costs the token plus the
+      // border's pixel. The `min` against the content is the same reading the
+      // primitive takes since the phase-60 fix — a roster shorter than the
+      // token reserves its own height and no more, so a short list never
+      // spends room the card does not have.
       const listFloor = Math.min(list?.scrollHeight ?? 0, MIN_USABLE_HEIGHT_PX + 1);
+
+      /*
+       * **The room's whole height** — ceiling to floor, less the margin at
+       * each edge: the most card the box that bounds it can show at all
+       * (the phase-60 evaluation's FAIL-1). The headroom below is how much of
+       * it sits *above* the line; this is the cap on the card whatever the
+       * shift moves it down over.
+       */
+      const available = Math.max(0, room.floor - room.ceiling - 2 * POP_MARGIN);
 
       /*
        * **Then the statement's reserve, at the width just set** (UI-143).
@@ -500,7 +539,10 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
           const one = says.getBoundingClientRect().height;
           const bare = card.getBoundingClientRect();
           const fixed = bare.height - (list?.scrollHeight ?? 0);
-          const spare = bare.bottom - room.ceiling - POP_MARGIN - fixed - listFloor;
+          // Budgeted against the room above the line *and* the room's whole
+          // height: a statement line the clip cannot show is not affordable.
+          const budget = Math.min(bare.bottom - room.ceiling - POP_MARGIN, available);
+          const spare = budget - fixed - listFloor;
           const affordable = one > 0 ? 1 + Math.max(0, Math.floor(spare / one)) : want;
           card.style.setProperty("--says-lines", String(Math.min(want, affordable)));
         }
@@ -519,11 +561,29 @@ export function ComposerAddress({ address, surface }: ComposerAddressProps): Rea
       // the parts that cannot shrink are not all the same height (a resident's
       // weight sentence is three lines where a level row is one).
       const floor = free.height - listFull + listFloor;
-      const height = Math.max(floor, headroom);
+      // …and the cap is the room's whole height. A card past the headroom
+      // comes down over its own composer (the shift below); a card past
+      // `available` has nowhere left to come down *to*, so it is capped there
+      // and scrolls as one piece instead — see the attribute below.
+      const height = Math.min(Math.max(floor, headroom), available);
       card.style.setProperty("--address-pop-max", `${String(Math.round(height))}px`);
 
+      /*
+       * Where even the floored parts outrun the whole box that bounds the card
+       * — the global composer's 192px panel under a crowded no-owner roster, a
+       * 1280×400 scrollport — the card scrolls as one piece rather than
+       * letting the clip hide what falls past its edge (the phase-60
+       * evaluation's FAIL-1: the "no owner" state's only weight editor laid
+       * out 11px past the panel, hit-testing to the scrim). Set by this fit
+       * and never at rest, so a card that fits keeps `overflow: visible` and
+       * byte-identical geometry.
+       */
+      card.setAttribute("data-address-pop-scrolls", floor > available + 1 ? "true" : "false");
+
       // Whatever the floor took beyond the room, the card gives back by coming
-      // down — so its top lands inside the scrollport instead of behind the head.
+      // down — so its top lands inside the scrollport instead of behind the
+      // head. With the height capped at `available`, the shifted bottom lands
+      // at most `POP_MARGIN` inside the room's floor, never past it.
       const over = card.getBoundingClientRect().height - headroom;
       card.style.setProperty("--address-pop-shift", `${String(Math.max(0, Math.round(over)))}px`);
       if (list !== null) setCapped(list.scrollHeight > list.clientHeight + 1);
