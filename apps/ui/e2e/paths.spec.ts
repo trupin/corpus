@@ -11,8 +11,10 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * path (re-centre instead); a second pick from the origin replaces the whole
  * path; "open here" is the reader the column always had; restart/new-right/
  * close live on the path column; "close paths" is one act on the bar; and every
- * `open()` with no origin — the search overlay's `↵`, a link inside full
- * screen — lands as a **loose path at the left edge**.
+ * `open()` with no origin — the search overlay's `↵` — lands as a **loose path
+ * at the left edge**. A link inside full screen used to be in that list;
+ * since UI-199 it continues the overlay's own excursion instead (full screen
+ * stays — see `focus-stays.spec.ts`).
  */
 
 const INBOX_VIEW: StubRow = {
@@ -238,9 +240,13 @@ test.describe("a row opens a path (rider 3)", () => {
     await expect(page.locator(".row.origin")).toHaveCount(0);
   });
 
-  test("a link followed inside full screen closes it and lands as a loose path", async ({
+  test("a link followed inside full screen stays there — no loose path lands (UI-199)", async ({
     page,
   }) => {
+    // The boundary of the loose-path rule: full screen is a mode a person
+    // leaves deliberately, so its links continue the overlay's own excursion
+    // and land nothing on the board. The full contract, navigation by
+    // navigation, lives in `focus-stays.spec.ts`.
     await openBoard(page);
     await openAlphaPath(page);
     // Full screen on the path column's document.
@@ -249,10 +255,10 @@ test.describe("a row opens a path (rider 3)", () => {
 
     await page.locator('.focus .doc-body [data-corpus-ref="doc_beta"]').click();
 
-    await expect(page.locator(".focus.open")).toHaveCount(0);
-    await expect(page.locator('.path.loose .reader[data-reader-doc="doc_beta"]')).toBeVisible();
-    const first = page.locator(".board > *").first();
-    await expect(first).toHaveClass(/\bloose\b/);
+    await expect(page.locator(".focus .doc-title")).toHaveValue("Rate table");
+    await expect(page.locator(".focus.open")).toHaveCount(1);
+    await expect(page.locator(".path.loose")).toHaveCount(0);
+    await expect(page.locator(".pcol")).toHaveCount(1);
   });
 
   test("the newest path column is fully in view at a 13″ width", async ({ page }) => {

@@ -175,6 +175,11 @@ test.describe("the weight Ask designates a resident at", () => {
 
     await pick(page, OWNER, "researcher");
     await pick(page, LEVEL, "Heavy or judgment-laden");
+    // The picks *survive* their menus closing (UI-198): the v0.36.0 run of
+    // this suite read the wire but never the triggers, and a choose-then-reset
+    // on a surface whose send path read different state could have passed it.
+    await expect(page.locator(`${OWNER} .select-value`)).toHaveText("researcher");
+    await expect(page.locator(`${LEVEL} .select-value`)).toHaveText("Heavy or judgment-laden");
     await page.locator(".compose-panel textarea").fill("Take the forecast apart.");
     await page.locator(".btn-ask").click();
 
@@ -188,6 +193,58 @@ test.describe("the weight Ask designates a resident at", () => {
     // No message weight was chosen, so the message's field stays off the body —
     // the designation's level must never leak onto it.
     expect("weight" in body).toBe(false);
+  });
+
+  /**
+   * UI-198, the v0.36.0 P0, on the default-owner state: **every level, picked
+   * with a mouse, persists in the trigger and rides the wire.** The shipped
+   * battery asserted the click chooses (aria state at click time) and never
+   * that the choice survives the close — and in WebKit it did not: the
+   * blur-dismiss tore the menu down between the option's mousedown and its
+   * mouseup, so the trigger reverted to "the launcher decides" on every pick
+   * and the POST carried no designation. This engine is Chromium (the WebKit
+   * event order is replayed in `Select.test.tsx`); what it pins here is the
+   * whole choose-then-survive chain per level, through to the request body.
+   */
+  test("every level picked with a mouse persists on the trigger and rides the wire", async ({
+    page,
+  }) => {
+    const corpus = await openComposer(page);
+    const levels = [
+      ["Small and mechanical", "light"],
+      ["Standard", "standard"],
+      ["Heavy or judgment-laden", "heavy"],
+    ] as const;
+
+    for (const [index, [label, key]] of levels.entries()) {
+      if (index > 0) {
+        // A successful Ask closes the overlay (asynchronously — wait for it),
+        // and the "at" pill's level is per-overlay state by design — reopen
+        // fresh for the next pick.
+        await expect(page.locator(".compose-panel")).toBeHidden();
+        await page.keyboard.press("c");
+        await expect(page.locator(".compose-panel textarea")).toBeVisible();
+        await expect(page.locator(`${LEVEL} .select-value`)).toHaveText("the launcher decides");
+      }
+      await pick(page, LEVEL, label);
+      // The menu is gone, and the trigger still holds the choice.
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(page.locator(`${LEVEL} .select-value`)).toHaveText(label);
+      await page.locator(".compose-panel textarea").fill(`Weigh this at ${key}.`);
+      await page.locator(".btn-ask").click();
+
+      await expect
+        .poll(async () => (await corpus.of("POST", "/api/threads")).length)
+        .toBe(index + 1);
+      const body = (await corpus.of("POST", "/api/threads"))[index]?.body as {
+        resident?: unknown;
+        weight?: unknown;
+      };
+      // The default owner stands, so the designation carries the level and
+      // no name — and the message's own weight field stays absent.
+      expect(body.resident).toEqual({ weight: key });
+      expect("weight" in body).toBe(false);
+    }
   });
 
   /**
