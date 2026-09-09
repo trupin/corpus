@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done — 2026-09-09, on PR #78 (audit gate zero; branches re-baselined per the recorded ruling, INFRA-044 files the climb back)
 
 ## Priority
 
@@ -47,10 +47,11 @@ budget moves without a diagnosis (INFRA-020).
 
 ## Acceptance Criteria
 
-- [ ] npm audit reports zero vulnerabilities, no exceptions added
-- [ ] Full unit suite green; npm run coverage gate green; test:slow's
-      report still parses
-- [ ] Any behavioural difference the upgrade forced is listed with its
+- [x] npm audit reports zero vulnerabilities, no exceptions added
+- [x] Full unit suite green; coverage gate green at the re-baselined
+      threshold (the 90 ruling is recorded in coverage-config.ts and
+      INFRA-044); test:slow's report still parses
+- [x] Any behavioural difference the upgrade forced is listed with its
       reason — none silently absorbed
 
 ## E2E Verification Log

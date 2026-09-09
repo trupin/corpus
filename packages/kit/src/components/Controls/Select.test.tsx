@@ -220,6 +220,22 @@ describe("Select", () => {
       expect(document.activeElement).toBe(trigger());
     });
 
+    it("still dismisses on a blur to nowhere when the document lost focus — cmd-tab", () => {
+      // The other half of the guard (PR #78 review, finding 3): the one real
+      // departure that also has no related target is the window losing focus.
+      // jsdom's document.hasFocus() is true by default, so the drop is mocked.
+      const away = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      try {
+        render(<Harness />);
+        fireEvent.click(trigger());
+        expect(screen.queryByRole("menu")).not.toBeNull();
+        fireEvent.focusOut(document.activeElement ?? trigger(), { relatedTarget: null });
+        expect(screen.queryByRole("menu")).toBeNull();
+      } finally {
+        away.mockRestore();
+      }
+    });
+
     it("still dismisses when focus really leaves — a blur with an outside target", () => {
       render(
         <>

@@ -51,10 +51,10 @@ default overwriting the user's pick).
 
 ## Acceptance Criteria
 
-- [ ] Pre-fix reproduction logged with the exact observed reset
-- [ ] Each level, picked with a mouse, persists and rides the wire — E2E on
+- [x] Pre-fix reproduction logged with the exact observed reset
+- [x] Each level, picked with a mouse, persists and rides the wire — E2E on
       the real app
-- [ ] The persistence probe joins the battery so choose-then-reset cannot
+- [x] The persistence probe joins the battery so choose-then-reset cannot
       pass again
 
 ## E2E Verification Log
