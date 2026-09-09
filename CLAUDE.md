@@ -172,7 +172,7 @@ Parallelism is bounded by the machine (user directive, 2026-07-27 — a 7-agent 
 - **Domain agents run scoped tests only** (each agent definition carries a Machine Resources section); the orchestrator's harvest gate is the **single** repo-wide run.
 - **The orchestrator serializes heavy commands**: one build/test at a time, never while a backgrounded run is still alive; a flaky gate means retry the commit once — not an extra verification run plus a commit.
 - **After any interrupted commit or push, sweep orphaned workers** — `ps -Ao pid,etime,pcpu,args | grep -Ei 'vitest|playwright|chromium|vite '`, kill by pid. A hook killed mid-run leaves its children behind: one interrupted push was found still holding a Playwright run, four workers and ~20 Chromium processes, starving the machine long after the command that started it had gone. **Never kill pid-of-`corpus`-on-8765** — that is the user's live server, not ours.
-- Cap vitest workers (`VITEST_MAX_THREADS=4`) on orchestrator-invoked runs too.
+- Cap vitest workers (`VITEST_MAX_WORKERS=4`) on orchestrator-invoked runs too.
 
 ### Escalation Protocol
 

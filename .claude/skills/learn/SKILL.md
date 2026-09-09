@@ -64,7 +64,7 @@ Report what you checked, not merely that you checked.
 Run whatever guards the file you touched:
 
 - Prose and markdown: `npx prettier --check <file>`.
-- Skill text under `assets/workspace/`: `VITEST_MAX_THREADS=4 npx vitest run scripts/workspace-template.test.ts` — it asserts section counts **exactly** and requires every `## ` section to exceed 400 characters, so a new section is a deliberate act.
+- Skill text under `assets/workspace/`: `VITEST_MAX_WORKERS=4 npx vitest run scripts/workspace-template.test.ts` — it asserts section counts **exactly** and requires every `## ` section to exceed 400 characters, so a new section is a deliberate act.
 - Anything with a count assertion: run the suite that pins it.
 
 ## 6. Report

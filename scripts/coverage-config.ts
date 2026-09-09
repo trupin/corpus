@@ -17,9 +17,13 @@ export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**"];
  * `*.generated.ts` modules are type-only declarations with no runtime
  * statements to cover; their generator is tested instead.
  *
- * The `.d.ts` entry is not redundant: naming `coverage.exclude` at all
- * *replaces* Vitest's defaults, so the declaration-file exclusion those defaults
- * carried has to be restated here. A `.d.ts` has no runtime statements.
+ * The `.d.ts` entry is not redundant, and since Vitest 4 it is the only thing
+ * excluding declaration files at all. Vitest 3 shipped a long default
+ * `coverage.exclude`, which naming the option *replaced* — so the entry existed
+ * to restate what the defaults had carried. Vitest 4 cut those defaults to
+ * `node_modules` and `.git`, so there is now nothing left to restate: delete
+ * this line and every `.d.ts` under the include globs enters the report with no
+ * runtime statements to cover.
  */
 export const COVERAGE_EXCLUDE = [
   "**/*.test.{ts,tsx}",
@@ -36,7 +40,13 @@ export const COVERAGE_THRESHOLDS: Record<CoverageMetric, number> = {
   lines: 90,
   statements: 90,
   functions: 90,
-  branches: 90,
+  // Re-baselined 90 -> 89.5 with the Vitest 4 upgrade (INFRA-043, 2026-09-09):
+  // the new AST-aware V8 remapping enumerates branches inside code that never
+  // ran, which Vitest 3 scored as 100% covered — the same tree measured 93.07%
+  // under the old instrument and 89.64% under the honest one. The code did not
+  // get worse; the ruler did get truer. INFRA-044 is the climb back to 90
+  // under the new instrument — raise this number there, never here.
+  branches: 89.5,
 };
 
 /** Vitest's `reportsDirectory`: raw istanbul JSON from the unit run lands here. */
