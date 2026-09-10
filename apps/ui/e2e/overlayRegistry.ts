@@ -72,7 +72,7 @@ import {
  */
 
 /** One check the battery runs; `expectedFailures` pins a known-red pair. */
-export type BatteryCheck = "fits" | "exit" | "escape" | "scroll";
+export type BatteryCheck = "fits" | "exit" | "escape" | "scroll" | "choice";
 
 export interface ExpectedFailure {
   readonly check: BatteryCheck;
@@ -85,6 +85,22 @@ export type ExitAffordance =
   | { readonly kind: "control"; readonly selector: string }
   | { readonly kind: "scrim"; readonly selector: string; readonly authority: string }
   | { readonly kind: "trigger"; readonly selector: string };
+
+/**
+ * Declared on a kit `Select` menu state: the battery picks this row with a
+ * real mouse and requires the choice to **survive** — menu closed, the
+ * trigger showing the label, the row checked on a reopen (UI-198). The
+ * v0.36.0 suites asserted a click *chooses* and never that the choice
+ * outlives the close, which is exactly the half that shipped broken: WebKit
+ * blurs the focused option to `body` on mousedown, the old blur-dismiss tore
+ * the menu down before `mouseup`, and no Safari user could pick a level at
+ * all. The row's label doubles as what the trigger must show, because a
+ * `Select` pill renders the chosen item's label and nothing else.
+ */
+export interface SelectChoiceDecl {
+  /** The `menuitemradio` accessible name to pick — and the label the trigger must then show. */
+  readonly pick: string;
+}
 
 export interface ScrollRegionDecl {
   /** The scrollable region, inside the surface. */
@@ -115,6 +131,8 @@ export interface OverlayState {
   readonly opener?: string | null;
   /** Replaces (not merges) the entry's scroll regions for this state. */
   readonly scrollRegions?: readonly ScrollRegionDecl[];
+  /** The pick-and-survive probe for a `Select` menu state; the entry's when absent. */
+  readonly choice?: SelectChoiceDecl;
 }
 
 export interface OverlayEntry {
@@ -144,6 +162,13 @@ export interface OverlayEntry {
    */
   readonly furtherStates: readonly OverlayState[];
   readonly expectedFailures?: readonly ExpectedFailure[];
+  /**
+   * The pick-and-survive probe (UI-198), declared on every `Select` menu
+   * entry: the battery clicks this row with a real mouse and requires the
+   * choice to hold — on the trigger after the close, and checked on a
+   * reopen. Undeclared on surfaces that choose nothing (a panel, a popover).
+   */
+  readonly choice?: SelectChoiceDecl;
 }
 
 /* ── The shared crowded corpus ─────────────────────────────────────────── */
@@ -185,7 +210,9 @@ const IMAGE_DOC: StubRow = {
   id: "doc_pic",
   title: "The broker's chart",
   path: "data/docs/inbox/pic.md",
-  body: "![The chart](/attachments/att_chart.png)\n",
+  // The ref is what the focus-mode entry's excursion-depth state follows
+  // (UI-199): a link inside full screen continues the excursion there.
+  body: "![The chart](/attachments/att_chart.png)\n\nDiscussed in [[th_host]].\n",
 };
 
 /**
@@ -419,7 +446,29 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "control", selector: "[data-close-focus]" },
     opener: null,
     scrollRegions: [{ selector: ".focus-scroll" }],
-    furtherStates: [],
+    furtherStates: [
+      /*
+       * The excursion with depth (UI-199 — full screen stays): a link
+       * followed inside full screen continues on the overlay's own stack,
+       * and the head gains the ‹ back chevron beside the ✕ — a control the
+       * bottom-of-stack state never shows (`showsBack`). Unreachable before
+       * UI-199, when following a link closed the overlay; now it is the
+       * state every reading excursion passes through. Exit and Escape are
+       * the entry's own — leaving stays explicit, from any depth.
+       */
+      {
+        id: "excursion-depth",
+        open: async (page) => {
+          await bootCrowded(page);
+          await page.locator('.row[data-row-doc="doc_pic"]').click();
+          await page.locator(".reader .ProseMirror").waitFor();
+          await page.keyboard.press("f");
+          await page.locator(".focus.open").waitFor();
+          await page.locator('.focus .doc-body [data-corpus-ref="th_host"]').click();
+          await page.locator(".focus .reader-head .back:not([data-close-focus])").waitFor();
+        },
+      },
+    ],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator('.row[data-row-doc="doc_pic"]').click();
@@ -544,6 +593,8 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     exit: { kind: "trigger", selector: '[data-select="lane-weight"]' },
     opener: '[data-select="lane-weight"]',
     scrollRegions: [],
+    // th_crowd_0 stands at "light", so this pick is a real change.
+    choice: { pick: "Standard weight for everyday drafting and correspondence" },
     /*
      * The header's "every `Select` menu is the same primitive" reasoning held
      * for the primitive and not for the stylesheets around it: a *surface*
@@ -564,6 +615,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
         surface: ".compose-settings .select-menu",
         exit: { kind: "trigger", selector: '[data-select="owner"]' },
         opener: '[data-select="owner"]',
+        choice: { pick: "no owner — the main agent" },
         open: async (page) => {
           await openComposeMenu(page, "owner");
         },
@@ -573,6 +625,7 @@ export const OVERLAYS: readonly OverlayEntry[] = [
         surface: ".compose-settings .select-menu",
         exit: { kind: "trigger", selector: '[data-select="resident-weight"]' },
         opener: '[data-select="resident-weight"]',
+        choice: { pick: "Heavy, judgment-laden, or irreversible without a sign-off" },
         open: async (page) => {
           await openComposeMenu(page, "resident-weight");
         },

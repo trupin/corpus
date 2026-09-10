@@ -9,12 +9,16 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  * otherwise, and its unit tests have always agreed; what nothing asserted was
  * the **rendered header**, which is where the person was looking.
  *
- * It no longer reproduces: SHARED-072's navigation rework made a link followed
- * inside full screen close the overlay rather than push onto a stack, so the
- * focus stack never gains depth and the back control never earns its place. That
- * is a fix by consequence, and a fix by consequence is exactly the kind that
- * comes back — the next feature to give focus mode a stack of its own would
- * restore the symptom with every unit test still green. Hence this file.
+ * For a while it could not reproduce at all: SHARED-072's navigation rework
+ * made a link followed inside full screen close the overlay rather than push
+ * onto a stack, so the focus stack never gained depth and the back control
+ * never earned its place. This file was kept against exactly the change that
+ * then happened — UI-199 gave the overlay its stack back (a link followed
+ * inside full screen continues the excursion there; full screen stays), so
+ * `showsBack`'s depth-0 rule is live again and this is what holds it: at the
+ * bottom of the stack the header carries the ✕ alone, never a back chevron
+ * that would be a second close. Depth's own back button is covered in
+ * `focus-stays.spec.ts`.
  */
 
 const VIEW: StubRow = {

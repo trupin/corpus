@@ -170,6 +170,86 @@ describe("Select", () => {
     expect(order).toEqual(["Who will own this conversation"]);
   });
 
+  /**
+   * UI-198, the v0.36.0 P0: WebKit does not focus a button on mousedown — it
+   * blurs the focused option to `body` with `relatedTarget: null`, mid-press.
+   * The blur-dismiss then unmounted the menu between the option's mousedown
+   * and its mouseup, so the `click` that chooses never fired: Safari users
+   * could not pick a level at all, and Chromium (which focuses buttons on
+   * mousedown) could never show the defect. These tests replay WebKit's exact
+   * event order in jsdom, where the engine difference is ours to script.
+   */
+  describe("WebKit's blur-to-nowhere press (UI-198)", () => {
+    it("an option press is not a dismissal: the menu survives to the click, and the click chooses", () => {
+      const seen = vi.fn();
+      render(<Harness onChange={seen} />);
+      fireEvent.click(trigger());
+      const row = screen.getByRole("menuitemradio", { name: "researcher" });
+      // WebKit's sequence: mousedown on the row, then the focused option
+      // blurs to `body` — no related target, document still focused.
+      fireEvent.mouseDown(row);
+      fireEvent.focusOut(document.activeElement ?? row, { relatedTarget: null });
+      expect(screen.queryByRole("menu")).not.toBeNull();
+      // The mouseup's click now lands on a row that still exists.
+      fireEvent.click(row);
+      expect(seen).toHaveBeenCalledWith("researcher");
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(trigger().querySelector(".select-value")?.textContent).toBe("researcher");
+    });
+
+    it("cancels an option's mousedown, so no engine moves focus for the press at all", () => {
+      render(<Harness />);
+      fireEvent.click(trigger());
+      // `fireEvent` returns false when a handler called preventDefault.
+      expect(fireEvent.mouseDown(screen.getByRole("menuitemradio", { name: "researcher" }))).toBe(
+        false,
+      );
+    });
+
+    it("pressing the trigger of an open menu closes it once, with focus on the trigger", () => {
+      render(<Harness />);
+      fireEvent.click(trigger());
+      // WebKit again: the press blurs the focused option to nowhere first. If
+      // that blur closed the menu, the click's toggle would re-open it — the
+      // blink-and-stay-open defect.
+      fireEvent.mouseDown(trigger());
+      fireEvent.focusOut(document.activeElement ?? trigger(), { relatedTarget: null });
+      expect(screen.queryByRole("menu")).not.toBeNull();
+      fireEvent.click(trigger());
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it("still dismisses on a blur to nowhere when the document lost focus — cmd-tab", () => {
+      // The other half of the guard (PR #78 review, finding 3): the one real
+      // departure that also has no related target is the window losing focus.
+      // jsdom's document.hasFocus() is true by default, so the drop is mocked.
+      const away = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      try {
+        render(<Harness />);
+        fireEvent.click(trigger());
+        expect(screen.queryByRole("menu")).not.toBeNull();
+        fireEvent.focusOut(document.activeElement ?? trigger(), { relatedTarget: null });
+        expect(screen.queryByRole("menu")).toBeNull();
+      } finally {
+        away.mockRestore();
+      }
+    });
+
+    it("still dismisses when focus really leaves — a blur with an outside target", () => {
+      render(
+        <>
+          <Harness />
+          <button type="button">elsewhere</button>
+        </>,
+      );
+      fireEvent.click(trigger());
+      const away = screen.getByRole("button", { name: "elsewhere" });
+      fireEvent.focusOut(document.activeElement ?? trigger(), { relatedTarget: away });
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+  });
+
   it("a disabled trigger opens nothing", () => {
     render(
       <Select

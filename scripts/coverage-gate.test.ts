@@ -485,10 +485,12 @@ describe("thresholdFailures", () => {
   });
 
   it("names each metric that falls short, with its number", () => {
-    const failures = thresholdFailures(metrics({ branches: 89.99, functions: 12 }));
+    // branches sits at 89.5 since INFRA-043's re-baseline, so the shortfall
+    // fixture dips below that, not below the other metrics' 90.
+    const failures = thresholdFailures(metrics({ branches: 89.4, functions: 12 }));
 
     expect(failures.map((failure) => failure.metric)).toEqual(["functions", "branches"]);
-    expect(failures[1]).toMatchObject({ metric: "branches", pct: 89.99, threshold: 90 });
+    expect(failures[1]).toMatchObject({ metric: "branches", pct: 89.4, threshold: 89.5 });
   });
 
   it("honours an explicit threshold set", () => {

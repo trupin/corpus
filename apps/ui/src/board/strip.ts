@@ -405,10 +405,11 @@ export function openHereInPath(
 }
 
 /**
- * An open with no origin — the search overlay's `↵`, the console's `↗ open`, a
- * link inside full screen, "open in" another board: a **loose path at the left
- * edge** of the board (rider 3). A document already showing in one of this
- * board's paths re-centres instead.
+ * An open with no origin — the search overlay's `↵`, the console's `↗ open`,
+ * "open in" another board: a **loose path at the left edge** of the board
+ * (rider 3; a link inside full screen left this list with UI-199 — it now
+ * continues the overlay's own excursion). A document already showing in one of
+ * this board's paths re-centres instead.
  */
 export function openLoose(board: BoardStrip, docId: string, reveal?: RevealTarget): StripResult {
   for (const path of pathsOf(board)) {

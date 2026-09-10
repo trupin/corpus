@@ -42,14 +42,6 @@ export interface FocusModeProps {
    * hosts, exactly as `DocView` is one document view rendered at two sizes.
    */
   readonly reveal?: RevealTarget | undefined;
-  /**
-   * What following a link inside full screen does (SPEC.md §10, rider 3: "a
-   * link inside full screen … lands as a loose path at the left edge"). The
-   * board passes it and closes the overlay first; when absent — a host outside
-   * the board — the overlay keeps its own in-memory stack, the pre-rider
-   * behaviour.
-   */
-  readonly onFollow?: ((docId: string, reveal?: RevealTarget) => void) | undefined;
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -81,7 +73,6 @@ function FocusReader({
   docId,
   listTitle,
   reveal,
-  onFollow,
   onClose,
   onNotify,
 }: FocusModeProps): ReactElement {
@@ -162,17 +153,20 @@ function FocusReader({
    */
   const [editor, setEditor] = useState<Editor | null>(null);
 
+  /**
+   * A link followed inside full screen continues the excursion **here**, on
+   * the overlay's own stack — full screen stays (UI-199, user report
+   * 2026-09-09; the 2026-08-22 navigation-rework decision record already ruled
+   * it: full screen is a mode a person leaves deliberately, never a side
+   * effect of navigating). This replaces rider 3's close-and-land-loose, where
+   * every followed link silently dropped the mode. Leaving remains explicit
+   * only: the ✕, `esc`/`⌫`, `f`, and backing past the bottom of the stack.
+   */
   const navigate = useCallback(
     (next: string, nextReveal?: RevealTarget) => {
-      // Rider 3: a link followed inside full screen closes the overlay and
-      // lands as a loose path at the left edge — the board owns both halves.
-      if (onFollow !== undefined) {
-        onFollow(next, nextReveal);
-        return;
-      }
       stack.push(next, surface.currentScroll(), nextReveal);
     },
-    [onFollow, stack, surface],
+    [stack, surface],
   );
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Focus, onEscape: onClose });

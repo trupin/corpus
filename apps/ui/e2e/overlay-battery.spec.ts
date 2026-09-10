@@ -11,6 +11,7 @@ import {
   type ExitAffordance,
   type OverlayEntry,
   type ScrollRegionDecl,
+  type SelectChoiceDecl,
 } from "./overlayRegistry";
 
 /**
@@ -144,6 +145,7 @@ interface ResolvedState {
   readonly exit: ExitAffordance;
   readonly opener: string | null;
   readonly scrollRegions: readonly ScrollRegionDecl[];
+  readonly choice: SelectChoiceDecl | undefined;
   readonly open: (page: Page) => Promise<void>;
 }
 
@@ -155,6 +157,7 @@ function statesOf(entry: OverlayEntry): readonly ResolvedState[] {
       exit: entry.exit,
       opener: entry.opener,
       scrollRegions: entry.scrollRegions,
+      choice: entry.choice,
       open: entry.open,
     },
     ...entry.furtherStates.map((state) => ({
@@ -163,6 +166,7 @@ function statesOf(entry: OverlayEntry): readonly ResolvedState[] {
       exit: state.exit ?? entry.exit,
       opener: state.opener === undefined ? entry.opener : state.opener,
       scrollRegions: state.scrollRegions ?? entry.scrollRegions,
+      choice: state.choice ?? entry.choice,
       open: state.open,
     })),
   ];
@@ -318,6 +322,43 @@ for (const entry of OVERLAYS) {
           ).toBeVisible();
         }
       });
+
+      /**
+       * The pick-and-survive probe (UI-198). The v0.36.0 suites asserted a
+       * click *chooses* — aria state at click time — and never that the
+       * choice **survives** the close, which is the half that shipped
+       * broken: WebKit blurs the pressed option to `body` on mousedown, the
+       * old blur-dismiss unmounted the menu before `mouseup`, and no Safari
+       * user could pick a level. This engine runs Chromium, so the WebKit
+       * event order itself is replayed in `Select.test.tsx`; what this check
+       * closes is the *class* — any choose-then-reset, from any cause, on
+       * every registered `Select` menu.
+       */
+      const choice = state.choice;
+      if (choice !== undefined) {
+        test(`${state.tag}: a real pick survives the close and a reopen`, async ({ page }) => {
+          pinExpected(entry, "choice");
+          if (state.opener === null)
+            throw new Error(`${state.tag} declares a choice but no trigger to read it from`);
+          await state.open(page);
+          const surface = page.locator(state.surface);
+          const trigger = page.locator(state.opener).first();
+          await page.getByRole("menuitemradio", { name: choice.pick, exact: true }).click();
+          // The pick closed the menu and the trigger holds the choice…
+          await expect(surface).toBeHidden();
+          await expect(trigger.locator(".select-value")).toHaveText(choice.pick);
+          // …the choice is still standing on a reopen…
+          await trigger.click();
+          await expect(surface).toBeVisible();
+          await expect(
+            page.getByRole("menuitemradio", { name: choice.pick, exact: true }),
+          ).toHaveAttribute("aria-checked", "true");
+          // …and an Escape later the trigger still says so.
+          await page.keyboard.press("Escape");
+          await expect(surface).toBeHidden();
+          await expect(trigger.locator(".select-value")).toHaveText(choice.pick);
+        });
+      }
     });
   }
 }

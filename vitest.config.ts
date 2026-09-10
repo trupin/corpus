@@ -26,8 +26,14 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       // Globs come from `scripts/coverage-config.ts` so the unit run and the
-      // merged run describe the same file set; `all` (v8 default) is what makes
-      // a file no test ever loads appear at 0% instead of vanishing.
+      // merged run describe the same file set.
+      //
+      // Naming `include` is also what keeps an untested file at 0% instead of
+      // vanishing from the report. Vitest 3 spelled that `coverage.all`, on by
+      // default; Vitest 4 removed the option and made `include` the switch —
+      // with no `include` a v4 run reports only files some test loaded, which
+      // would let a whole untested module raise the average by disappearing.
+      // So this glob is load-bearing for the gate, not just a filter.
       include: COVERAGE_INCLUDE,
       exclude: COVERAGE_EXCLUDE,
       // This run emits raw istanbul-format coverage-final.json and enforces

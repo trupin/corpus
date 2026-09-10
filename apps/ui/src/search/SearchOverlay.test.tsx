@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, type ReactElement, type ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   BoardNavigationProvider,
   useRegisterBoardNavigation,
@@ -30,9 +30,9 @@ const HITS = [
 ];
 
 interface Handlers {
-  readonly open: ReturnType<typeof vi.fn>;
-  readonly revealColumn: ReturnType<typeof vi.fn>;
-  readonly openFullScreen: ReturnType<typeof vi.fn>;
+  readonly open: Mock<BoardNavigation["open"]>;
+  readonly revealColumn: Mock<BoardNavigation["revealColumn"]>;
+  readonly openFullScreen: Mock<BoardNavigation["openFullScreen"]>;
 }
 
 function FakeBoard({ handlers }: { readonly handlers: Handlers }): ReactElement {
@@ -57,7 +57,11 @@ function renderOverlay(options: SearchTransportOptions = {}) {
   });
   const harness = createBoardHarness(wire.fetch);
   const onClose = vi.fn();
-  const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn(), openFullScreen: vi.fn() };
+  const handlers: Handlers = {
+    open: vi.fn<BoardNavigation["open"]>(),
+    revealColumn: vi.fn<BoardNavigation["revealColumn"]>(),
+    openFullScreen: vi.fn<BoardNavigation["openFullScreen"]>(),
+  };
 
   function Wrapper({ children }: { readonly children?: ReactNode }): ReactElement {
     return (

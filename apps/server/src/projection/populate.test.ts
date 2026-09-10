@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type { Logger } from "../logger.js";
 import { openProjection, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { clearProjection, populateFromFiles } from "./populate.js";
 import { projectDocument } from "./project-document.js";
@@ -17,9 +18,9 @@ let db: ProjectionDb;
  */
 let logger: {
   level: "silent";
-  info: ReturnType<typeof vi.fn>;
-  debug: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
+  info: Mock<Logger["info"]>;
+  debug: Mock<Logger["debug"]>;
+  error: Mock<Logger["error"]>;
 };
 
 beforeEach(() => {
@@ -27,7 +28,12 @@ beforeEach(() => {
   const ws = join(root, "ws");
   mkdirSync(join(ws, "data", "docs"), { recursive: true });
   config = { workspaceRoot: ws, corpusDir: join(ws, ".corpus") };
-  logger = { level: "silent", info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  logger = {
+    level: "silent",
+    info: vi.fn<Logger["info"]>(),
+    debug: vi.fn<Logger["debug"]>(),
+    error: vi.fn<Logger["error"]>(),
+  };
   db = openProjection(config, { populate: false, logger });
 });
 

@@ -17,8 +17,10 @@ import {
  * Since rider 3, **every open lands in a path**. A caller that names a column
  * is looking at a row, and the path hangs off it; a caller that only knows a
  * document — the search overlay's `↵`, the console's `↗ open`, a lane-scope
- * row, a link inside full screen, "open in" another board — lands as a **loose
- * path at the left edge** of the showing board. There is no home-column
+ * row, "open in" another board — lands as a **loose path at the left edge** of
+ * the showing board. (A link inside full screen is no longer such a caller:
+ * since UI-199 it continues the overlay's own excursion, and full screen
+ * stays.) There is no home-column
  * resolution any more: the folder/type precedence this module used to carry
  * (`resolveColumn`) died with the rider, because a loose path is a place of its
  * own and no longer a guess about which column a document "belongs" to.

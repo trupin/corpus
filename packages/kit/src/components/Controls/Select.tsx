@@ -45,6 +45,24 @@ import { MIN_USABLE_HEIGHT_PX } from "./ScrollArea.js";
  * **Focus on choose goes trigger-first, change second**: the trigger is
  * focused *before* `onChange` runs, so a caller that moves focus itself (the
  * editor toolbar's commands refocus the document) wins by acting last.
+ *
+ * **WebKit does not focus a button on mousedown** (UI-198, the v0.36.0 P0):
+ * it *blurs* the focused option to `body` instead, with `relatedTarget: null`
+ * — so a blur-dismiss that closes on that sequence unmounts the menu between
+ * the option's `mousedown` and its `mouseup`, and the `click` that would have
+ * chosen never fires. Safari users could open the menu and press a level, and
+ * the trigger stayed on the old value every time; Chromium masked the defect
+ * by focusing buttons on mousedown. Three rules keep it dead:
+ *
+ * - an option's `mousedown` is cancelled, so pressing a row never moves focus
+ *   at all (the format toolbar's own wrapper already imposes exactly this on
+ *   every Select it hosts, and is why the toolbar never showed the bug);
+ * - the root's blur-dismiss ignores a blur to *nowhere* while the document
+ *   still has focus — that is WebKit's press-a-button behaviour, never focus
+ *   leaving (a real departure has a `relatedTarget`, an outside press is the
+ *   capture listener's job, and cmd-tab drops `document.hasFocus()`);
+ * - toggling the menu closed from the trigger refocuses the trigger, because
+ *   WebKit leaves focus on the option that is about to unmount.
  */
 export interface SelectItem<T> {
   readonly value: T;
@@ -259,7 +277,17 @@ export function Select<T>({
   const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
     if (!open) return;
     const next = event.relatedTarget as Node | null;
-    if (next !== null && root.current?.contains(next) === true) return;
+    if (next === null) {
+      // A blur to nowhere while the document keeps focus is WebKit pressing a
+      // button (see the header note), not focus leaving: closing here is what
+      // unmounted the menu mid-click and lost the choice (UI-198). A press
+      // outside is the capture mousedown listener's dismissal, and cmd-tab —
+      // the one real departure with no related target — drops `hasFocus()`.
+      if (document.hasFocus()) return;
+      setOpen(false);
+      return;
+    }
+    if (root.current?.contains(next) === true) return;
     setOpen(false);
   };
 
@@ -283,7 +311,11 @@ export function Select<T>({
           // Guarded in code as well as by the attribute: a synthetic click
           // (tests, automation) reaches a disabled button's listeners.
           if (disabled === true) return;
-          setOpen((held) => !held);
+          // Toggling closed refocuses deliberately: WebKit never moved focus
+          // to the trigger on the press, so without this the close would
+          // strand focus on an unmounting option (header note, UI-198).
+          if (open) close(true);
+          else setOpen(true);
         }}
         onKeyDown={onTriggerKeyDown}
       >
@@ -320,6 +352,12 @@ export function Select<T>({
               role="menuitemradio"
               aria-checked={index === selectedIndex}
               title={item.title ?? item.label}
+              onMouseDown={(event) => {
+                // Pressing a row must not move focus (header note, UI-198):
+                // in WebKit the default is a blur to `body`, and any engine's
+                // focus change here only races the click that chooses.
+                event.preventDefault();
+              }}
               onClick={() => {
                 choose(item);
               }}

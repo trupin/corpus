@@ -136,6 +136,19 @@ export function Board(): ReactElement {
    * it are the sticky state (SPEC.md §10's "open readers"), and restoring a
    * full-viewport overlay on load would hide the board a reload was meant to
    * show. Its own navigation stack lives inside the overlay.
+   *
+   * **Reconsidered and kept for UI-199** (full screen stays). The mode now
+   * survives every in-app navigation, but deliberately not a reload, for
+   * three reasons. The per-viewer conveniences that survive a reload are all
+   * board-shaped — open readers, paths, widths — while no overlay does:
+   * search, compose, dialogs and menus all reset with the page, and the
+   * 2026-08-22 decision record classes full screen as an overlay. The
+   * excursion stack above is in-memory by design (a reading excursion, not a
+   * place the board was left), so a restored mode would come back amnesiac —
+   * root document only, history gone — which is worse than an honest close.
+   * And a reload is the universal recover gesture: bringing back a
+   * full-viewport `aria-modal` overlay on load is how a wedged overlay would
+   * become un-escapable.
    */
   const [focusDoc, setFocusDoc] = useState<{
     columnTitle: string;
@@ -475,9 +488,10 @@ export function Board(): ReactElement {
    * (the UI-022 finding). So the close arms the keyboard's latch on the column
    * that is already active; the next real `mousemove` releases it.
    *
-   * It must stay the only close: `esc`, `⌫`, the ✕ button, the depth-0
-   * auto-close and rider 3's link-follow (which closes focus before landing the
-   * loose path) all arrive here, and `f` toggles through here too.
+   * It must stay the only close: `esc`, `⌫`, the ✕ button and the depth-0
+   * auto-close all arrive here, and `f` toggles through here too. A link
+   * followed inside full screen is **not** in that list any more: it continues
+   * the excursion on the overlay's own stack (UI-199 — full screen stays).
    */
   const closeFocus = useCallback(() => {
     active.hold();
@@ -1090,12 +1104,6 @@ export function Board(): ReactElement {
             docId={focusDoc.docId}
             listTitle={focusDoc.columnTitle}
             reveal={focusDoc.reveal}
-            onFollow={(docId, reveal) => {
-              // Rider 3: a link inside full screen closes it and lands as a
-              // loose path at the left edge of the showing board.
-              closeFocus();
-              applyStrip(openLoose(stripRef.current, docId, reveal));
-            }}
             onClose={closeFocus}
             onNotify={notify}
           />
