@@ -220,7 +220,7 @@ is meant rather than to make a title change an act.
 > the open window like the tags next to it, so a sitting that retitles a document
 > and rewrites its opening paragraph is one commit and not two.
 >
-> _(Rider drafted 2026-09-06 — **unsigned**.)_
+> _(Rider signed 2026-09-09.)_
 
 ### What lands in code the day it is signed
 
