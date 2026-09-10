@@ -10,6 +10,7 @@ import {
   type BoardTransport,
 } from "../testing/boardFixture";
 import { createBoardHarness } from "../testing/boardHarness";
+import { BoardNavigationProvider, useOpenInColumn } from "../board/openInColumn";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
@@ -911,5 +912,96 @@ describe("the board's keyboard", () => {
     await waitFor(() => {
       expect(screen.getByText(/No thread to reply to/)).toBeDefined();
     });
+  });
+});
+
+/**
+ * UI-200 — full screen stays, at the seam. An open dispatched through
+ * `useOpenInColumn` while the full-screen overlay is up (a search pick made
+ * inside the mode is the one reachable caller) navigates the excursion instead
+ * of landing a loose path behind the `aria-modal` overlay. Outside the mode
+ * the loose-path rule is untouched.
+ */
+describe("the open seam while full screen is up (UI-200)", () => {
+  const ROWS = {
+    "?folder=inbox": [
+      docRowFixture({ id: "doc_r1", title: "First note" }),
+      docRowFixture({ id: "doc_r2", title: "Second note" }),
+    ],
+  };
+
+  /** A caller outside the board — the search overlay's position in the tree. */
+  function SeamProbe(): ReactElement {
+    const navigation = useOpenInColumn();
+    return (
+      <button
+        type="button"
+        data-probe-open
+        onClick={() => {
+          navigation.open({ docId: "doc_r2" });
+        }}
+      >
+        probe
+      </button>
+    );
+  }
+
+  async function withFullScreen(): Promise<{ container: HTMLElement }> {
+    const wire = boardTransport({ views: VIEWS, rows: ROWS });
+    const harness = createBoardHarness(wire.fetch);
+    const { container } = render(
+      <harness.Wrapper>
+        <ContextMenuProvider>
+          <KeyboardHarness>
+            <BoardNavigationProvider>
+              <SeamProbe />
+              <Board />
+            </BoardNavigationProvider>
+          </KeyboardHarness>
+        </ContextMenuProvider>
+      </harness.Wrapper>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("First note")).toBeDefined();
+    });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
+    await waitFor(() => {
+      expect(document.querySelector(".focus.open")).not.toBeNull();
+    });
+    return { container };
+  }
+
+  it("routes a seam open into the excursion, and nothing lands on the board", async () => {
+    const { container } = await withFullScreen();
+
+    fireEvent.click(document.querySelector("[data-probe-open]") as HTMLElement);
+    await waitFor(() => {
+      expect(document.querySelector(".focus .reader-id")?.textContent).toContain("doc_r2");
+    });
+    // The excursion continued: the mode holds, back walks to where the pick was made.
+    expect(document.querySelector(".focus.open")).not.toBeNull();
+    expect(
+      document.querySelector(".focus .reader-head .back:not([data-close-focus])"),
+    ).not.toBeNull();
+    // And nothing landed behind the overlay: no path, no column reader.
+    expect(container.querySelector(".pcol")).toBeNull();
+    expect(container.querySelector(".path")).toBeNull();
+  });
+
+  it("resumes the loose-path landing the moment the mode is left", async () => {
+    const { container } = await withFullScreen();
+
+    fireEvent.keyDown(document, { key: "f" });
+    await waitFor(() => {
+      expect(document.querySelector(".focus.open")).toBeNull();
+    });
+
+    fireEvent.click(document.querySelector("[data-probe-open]") as HTMLElement);
+    await waitFor(() => {
+      expect(container.querySelector(".pcol .reader")).not.toBeNull();
+    });
+    expect(container.querySelector(".path")?.className).toMatch(/\bloose\b/);
+    expect(document.querySelector(".focus.open")).toBeNull();
   });
 });

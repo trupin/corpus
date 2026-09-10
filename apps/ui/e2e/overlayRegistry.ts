@@ -298,7 +298,32 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
     opener: null,
     scrollRegions: [{ selector: ".search-results" }],
-    furtherStates: [],
+    furtherStates: [
+      /*
+       * Search stacked over full screen (UI-200): ⌘K opens above the
+       * full-viewport focus overlay, and it is the one seam surface reachable
+       * from inside the mode. Same panel, same scrim, same scroll region —
+       * what this state adds is the layer beneath, and the battery's closure
+       * checks are what hold the escape chain's order: if Escape (or the
+       * scrim) closed focus instead of search, the panel would still be
+       * standing and the check would fail. What a pick *does* from here —
+       * navigate the excursion, never a loose path behind the modal — is
+       * `focus-stays.spec.ts`'s to hold, because it is a navigation, not an
+       * overlay anatomy.
+       */
+      {
+        id: "over-focus-mode",
+        open: async (page) => {
+          await bootCrowded(page);
+          await page.locator('.row[data-row-doc="doc_pic"]').click();
+          await page.locator(".reader .ProseMirror").waitFor();
+          await page.keyboard.press("f");
+          await page.locator(".focus.open").waitFor();
+          await page.keyboard.press("ControlOrMeta+k");
+          await page.locator('.search-panel[aria-label="Search"]').waitFor();
+        },
+      },
+    ],
     open: async (page) => {
       await bootCrowded(page);
       await page.keyboard.press("ControlOrMeta+k");

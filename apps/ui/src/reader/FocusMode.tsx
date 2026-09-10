@@ -32,6 +32,9 @@ import "./FocusMode.css";
  * scroller.
  */
 
+/** Continues the excursion: pushes a document onto the overlay's own stack. */
+export type FocusNavigate = (docId: string, reveal?: RevealTarget) => void;
+
 export interface FocusModeProps {
   readonly docId: string;
   /** Named on the back button when the focus stack has no depth. */
@@ -42,6 +45,22 @@ export interface FocusModeProps {
    * hosts, exactly as `DocView` is one document view rendered at two sizes.
    */
   readonly reveal?: RevealTarget | undefined;
+  /**
+   * The document whose title should arrive selected — the omnibox create's
+   * "ready to type" (UI-200), the same `selectTitleFor` state the board's
+   * path columns compare against. Compared to the excursion's *current*
+   * document, so it takes effect only when the created document is the one
+   * showing here.
+   */
+  readonly selectTitleFor?: string | null;
+  /**
+   * Publishes the overlay's own navigate while it is mounted (UI-200 — full
+   * screen stays). The board routes any `useOpenInColumn().open` that arrives
+   * while full screen is up through this, so a search pick made inside the
+   * mode continues the excursion instead of landing invisibly behind it.
+   * Called with `null` on unmount.
+   */
+  readonly onRegisterNavigate?: (navigate: FocusNavigate | null) => void;
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -73,6 +92,8 @@ function FocusReader({
   docId,
   listTitle,
   reveal,
+  selectTitleFor,
+  onRegisterNavigate,
   onClose,
   onNotify,
 }: FocusModeProps): ReactElement {
@@ -169,6 +190,22 @@ function FocusReader({
     [stack, surface],
   );
 
+  /**
+   * The same navigate, published to the board while the overlay is mounted
+   * (UI-200): a search pick made inside full screen arrives through the
+   * `useOpenInColumn` seam, and the board hands it here so the excursion
+   * continues — same stack, same back, same scroll capture as a followed
+   * link. Re-registered whenever `navigate` changes identity (every push),
+   * cleared on unmount so the board's loose-path rule resumes the moment the
+   * mode is left.
+   */
+  useEffect(() => {
+    onRegisterNavigate?.(navigate);
+    return () => {
+      onRegisterNavigate?.(null);
+    };
+  }, [navigate, onRegisterNavigate]);
+
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Focus, onEscape: onClose });
 
   // Back past the bottom of the focus stack closes focus rather than leaving an
@@ -223,7 +260,7 @@ function FocusReader({
               <DocView
                 reader={reader}
                 onEditor={setEditor}
-                selectTitle={false}
+                selectTitle={selectTitleFor != null && selectTitleFor === current}
                 flashThread={surface.flashThread}
                 tab={comments.tab}
                 filters={comments.filters}

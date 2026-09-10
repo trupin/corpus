@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import type { RevealTarget } from "@corpus/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
@@ -13,7 +13,7 @@ import {
   threadsSearch,
   type ReaderTransport,
 } from "../testing/readerFixture";
-import { FocusMode, FOCUS_HINT } from "./FocusMode";
+import { FocusMode, FOCUS_HINT, type FocusNavigate } from "./FocusMode";
 import { Reader } from "./Reader";
 import { resetEscapeLayers } from "./useEscapeStack";
 
@@ -90,6 +90,48 @@ function Rewired({ transport }: { readonly transport: ReaderTransport }): ReactE
         docId={target.docId}
         listTitle="Finance"
         reveal={target.reveal}
+        onClose={() => undefined}
+        onNotify={() => undefined}
+      />
+    </harness.Wrapper>
+  );
+}
+
+/**
+ * The board's half of UI-200's seam, in miniature: holds the registered
+ * navigate in a ref (as `Board` does) and drives it from a button — the way a
+ * search pick made inside full screen arrives.
+ */
+function Routed({
+  transport,
+  selectTitleFor,
+  onRegister,
+}: {
+  readonly transport: ReaderTransport;
+  readonly selectTitleFor?: string | null;
+  readonly onRegister?: (navigate: FocusNavigate | null) => void;
+}): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  const navigateRef = useRef<FocusNavigate | null>(null);
+  return (
+    <harness.Wrapper>
+      <button
+        type="button"
+        data-pick
+        onClick={() => {
+          navigateRef.current?.("doc_r");
+        }}
+      >
+        pick
+      </button>
+      <FocusMode
+        docId="doc_m"
+        listTitle="Finance"
+        selectTitleFor={selectTitleFor ?? null}
+        onRegisterNavigate={(navigate) => {
+          navigateRef.current = navigate;
+          onRegister?.(navigate);
+        }}
         onClose={() => undefined}
         onNotify={() => undefined}
       />
@@ -293,6 +335,69 @@ describe("FocusMode", () => {
     // back at its bottom the button is gone again.
     expect(onClose).not.toHaveBeenCalled();
     expect(document.querySelector(".focus .back:not([data-close-focus])")).toBeNull();
+  });
+
+  /**
+   * UI-200 — a search pick made inside full screen. The overlay publishes its
+   * navigate while mounted, the board routes any seam open through it, and the
+   * pick continues the excursion: same stack, same back, same chevron as a
+   * followed link. Before the fix the pick landed as a loose path behind the
+   * `aria-modal` overlay — a result nobody could see.
+   */
+  it("navigates the excursion when the board routes a seam open here", async () => {
+    render(<Routed transport={wire()} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+
+    fireEvent.click(document.querySelector("[data-pick]") as HTMLElement);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Rates");
+    });
+
+    // The pick is a push, not a re-seed: back walks it, named after where it goes.
+    const back = document.querySelector<HTMLElement>(".focus .back:not([data-close-focus])");
+    expect(back?.textContent).toBe("‹ Mortgage options");
+    fireEvent.click(back as HTMLElement);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+  });
+
+  it("clears its registration on unmount, so the loose-path rule can resume", async () => {
+    const onRegister = vi.fn();
+    const { unmount } = render(<Routed transport={wire()} onRegister={onRegister} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    expect(onRegister).toHaveBeenLastCalledWith(expect.any(Function));
+
+    unmount();
+    expect(onRegister).toHaveBeenLastCalledWith(null);
+  });
+
+  /**
+   * The omnibox create inside full screen (UI-200): the created document
+   * arrives in the excursion with its title selected — the same "ready to
+   * type" the board's path columns honour through `selectTitleFor`.
+   */
+  it("selects the arriving title when it is the one the board marked", async () => {
+    render(<Routed transport={wire()} selectTitleFor="doc_r" />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    // The mark names a document that is not showing: nothing is selected.
+    expect(document.activeElement?.classList.contains("doc-title")).toBe(false);
+
+    fireEvent.click(document.querySelector("[data-pick]") as HTMLElement);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Rates");
+    });
+    await waitFor(() => {
+      const title = document.querySelector<HTMLTextAreaElement>(".focus .doc-title");
+      expect(document.activeElement).toBe(title);
+      expect(title?.selectionEnd).toBe("Rates".length);
+    });
   });
 
   it("closes on ✕", async () => {

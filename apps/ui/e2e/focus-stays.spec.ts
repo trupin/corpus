@@ -23,8 +23,11 @@ import { stubCorpus, type StubRow } from "./stubCorpus";
  *   navigates, never closes (until the bottom, where it is not rendered —
  *   `focus-exit.spec.ts` holds that half).
  * - **The search overlay's `↵` over full screen** — search opens above focus
- *   (`z` 40 over 35) and its landing happens on the board behind; the mode
- *   persists.
+ *   (`z` 40 over 35), and since UI-200 the pick navigates the excursion: the
+ *   board routes any seam open that arrives while the mode is up onto the
+ *   overlay's own stack. Before that, the pick landed as a loose path BEHIND
+ *   the `aria-modal` overlay — the mode persisted (correct) but the gesture's
+ *   result was invisible.
  * - **Board rows and the explorer** — pointer-unreachable under the
  *   full-viewport overlay: they are not navigations that exist from inside
  *   the mode. Browser back/forward likewise: the app is a single route, so
@@ -112,7 +115,7 @@ test.describe("full screen stays (UI-199)", () => {
     await expect(page.locator(".focus [data-close-focus]")).toHaveCount(1);
   });
 
-  test("the search overlay's ↵ does not drop the mode", async ({ page }) => {
+  test("a search pick made inside the mode navigates the excursion (UI-200)", async ({ page }) => {
     await enterFullScreen(page);
 
     await page.keyboard.press("ControlOrMeta+k");
@@ -121,12 +124,34 @@ test.describe("full screen stays (UI-199)", () => {
     await page.locator('.sr[data-sr="doc_gamma"]').waitFor();
     await page.keyboard.press("Enter");
 
-    // The pick lands by search's own rule — a loose path on the board
-    // behind — and full screen holds its place over it.
+    // The gesture's result is where the person is: full screen shows the
+    // pick. Before UI-200 it landed as a loose path behind the `aria-modal`
+    // overlay — the mode persisted but nothing visible happened.
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+    await expect(page.locator(".focus.open")).toHaveCount(1);
+    await expect(focusTitle(page)).toHaveValue("Payoff model");
+    // Nothing landed on the board behind: the pick continued the excursion.
+    await expect(page.locator(".path.loose")).toHaveCount(0);
+
+    // A pick is a push: back walks it, named after where the search was made.
+    const back = page.locator(BACK);
+    await expect(back).toHaveText("‹ Mortgage options");
+    await back.click();
+    await expect(focusTitle(page)).toHaveValue("Mortgage options");
+    await expect(page.locator(".focus.open")).toHaveCount(1);
+  });
+
+  test("Escape over full screen closes search only — the mode persists", async ({ page }) => {
+    await enterFullScreen(page);
+
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.locator(".overlay.open")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // One layer per press: the search overlay leaves, full screen holds.
     await expect(page.locator(".overlay.open")).toHaveCount(0);
     await expect(page.locator(".focus.open")).toHaveCount(1);
     await expect(focusTitle(page)).toHaveValue("Mortgage options");
-    await expect(page.locator('.path.loose .reader[data-reader-doc="doc_gamma"]')).toBeAttached();
   });
 
   test("leaving is explicit: esc closes, from any depth, in one press", async ({ page }) => {
