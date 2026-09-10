@@ -1,31 +1,39 @@
-// **The status quo on §4's undecided doors, pinned pending a rider** (SERVER-106).
+// **§4's status doors, after the rider signed 2026-09-09** (SERVER-106).
 //
 // SPEC.md §4 lists "a document archived, restored, moved, renamed, or marked
-// still current (§5)" among the acts that close a commit window. SPEC.md §10's
-// frontmatter-strip rider (signed 2026-08-12) says the opposite of the same
-// change made through the reader: "every field the reader edits — the title
-// above the body, and the strip's tags, status, stage and dates — is an
-// ordinary save that joins the open window", and "§4's acts are reached through
-// their own verbs, not through the strip".
+// still current (§5)" among the acts that close a commit window, and the rider
+// signed 2026-09-09 says which doors that reaches:
 //
-// Both sentences are in force, and they disagree about the status a `PUT
-// /api/docs/{id}` writes. Settling that changes SPEC.md whichever way it goes,
-// so it needs the user's signature, which sprint-024 does not have (Ruling 3).
-// **Nothing here asserts a decision, and nothing here changed behaviour.**
+// > **Archiving and restoring are acts wherever they happen.** §4's list names
+// > what happened to the document and not which verb was used, so a document
+// > reaching `archived`, or leaving it, closes the open commit window and names
+// > its commit — through the archive and unarchive verbs, through a save that
+// > writes `status`, and through a kanban drag whose stage the board maps to a
+// > status (§5).
 //
-// What it does assert is what the server does **today**, so that the diff a
-// signature produces is visible rather than silent: whichever reading is signed,
-// one of these tests changes, and it changes in the file whose whole purpose is
-// to say so. The cases that assert §4's *decided* behaviour live in
-// `acts.test.ts` and are untouched by this file.
+// Before it, `POST /api/docs/{id}/archive` declared the act and `PUT
+// /api/docs/{id}` did not, so the same change to the same document answered §4
+// two different ways and `git log` did not record which door was used. This file
+// was written to pin that divergence while the rider was unsigned. It now
+// asserts the rider instead: every case below that once carried a `TODAY:`
+// comment carries a citation of the signed text.
 //
-// The audit — every §4 list entry against every door that reaches it — and the
-// drafted rider are in
-// `issues/server/106-archiving-through-the-form-is-not-an-act.md`.
+// The rider settles two other things, and both are asserted here too:
+//
+// - **The refusal stands.** A save writing `status: open` over an archived
+//   document is still refused rather than promoted to an act — "unarchiving a
+//   skill is a folder move a field edit cannot undo (§7)" — so the restore that
+//   reaches this route is §5's stage coupling.
+// - **Retitling is not an act.** "§4's 'renamed' is about where a document
+//   lives, not what it is called", so a title change joins the open window like
+//   the tags beside it.
+//
+// The cases that assert §4's list as a whole live in `acts.test.ts`, which gains
+// the two positive cases this rider adds. This file keeps the doors side by
+// side, which is what made the divergence legible in the first place.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "@corpus/contract";
-import { editingSessionSubject } from "../git/index.js";
 import { createDoc, createWriteWorkspace, putDoc, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -45,6 +53,13 @@ afterEach(() => {
 
 const subjectOf = (rev: string): string => ws.git("log", "-1", "--format=%s", rev).trim();
 const commitCount = (): number => ws.log("%H").length;
+/** The files one commit contains, from git itself, sorted. */
+const filesIn = (rev: string): string[] =>
+  ws
+    .git("show", "--name-only", "--no-renames", "--format=", rev)
+    .split("\n")
+    .filter((line) => line !== "")
+    .sort();
 const statusOf = (path: string): string | undefined =>
   ws
     .read(path)
@@ -86,37 +101,39 @@ const archivingBoard = async (): Promise<void> => {
   });
 };
 
-describe("status quo, pending SERVER-106's rider: archiving through `PUT`", () => {
-  it("folds into the open window and does not close it", async () => {
+describe("§4's rider (2026-09-09): archiving through `PUT`", () => {
+  it("folds into the open window and then closes it", async () => {
     const { before, neighbour, subject } = await openWindowAndSubject();
 
     const flipped = await putDoc(ws, subject.id, { status: "archived" }, asUser);
     expect(flipped.status).toBe(200);
     expect(statusOf(subject.path)).toBe("status: archived");
 
-    // TODAY: the flip folds in like any save — still the one window's commit.
+    // The rider: "The commit is still the window's: the act's change is the last
+    // thing in it, so a body edit and a status change made in one sitting remain
+    // **one** commit, exactly as §10 promises." One commit, and it carries both
+    // the neighbour's body edit and the archived document.
     expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect(subjectOf("HEAD")).toContain(`doc edit: Subject (${subject.id})`);
 
-    // TODAY: the window is still open, so the next save by the same party folds
-    // into it too. Under §4's list read literally this would be a second commit,
-    // because the act would have closed the window.
+    // "and that the window closes behind it" — so the next save by the same
+    // party is a commit of its own rather than folding into a window that is no
+    // longer open. This is the assertion the unsigned rider inverted.
     expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
-    expect(commitCount()).toBe(before + 1);
-
-    // TODAY: and when the window finally closes it is relabelled an editing
-    // session — the archive's own subject does not survive. Under §4's list read
-    // literally the subject would name the act.
-    ws.advance(QUIET);
-    expect((await putDoc(ws, neighbour.id, { body: "much later" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
-    expect(subjectOf("HEAD^")).toBe(editingSessionSubject(2, "user"));
+
+    // And the flip's own commit is never relabelled an editing session: the act
+    // named the window it closed.
+    expect(subjectOf("HEAD^")).toContain(`doc edit: Subject (${subject.id})`);
   });
 
-  it("the archive **verb** on the same document does close the window", async () => {
-    // The divergence in one file: the same change to the same document, through
-    // the door §4's list is uncontroversially about. `acts.test.ts` owns this
-    // assertion for §4's sake; it is repeated here only so the two doors can be
-    // read side by side while the rider is unsigned.
+  it("the archive **verb** on the same document closes it too", async () => {
+    // The two doors side by side, which is what this file is for: the same
+    // change to the same document, through the door §4's list was never
+    // ambiguous about. `acts.test.ts` owns this assertion for §4's sake; it is
+    // repeated here so the rider's "wherever they happen" is checkable in one
+    // place.
     const { before, neighbour, subject } = await openWindowAndSubject();
 
     expect((await ws.post(`/api/docs/${subject.id}/archive`, {}, asUser)).status).toBe(200);
@@ -130,14 +147,13 @@ describe("status quo, pending SERVER-106's rider: archiving through `PUT`", () =
   });
 });
 
-describe("status quo, pending SERVER-106's rider: restoring through `PUT`", () => {
+describe("§4's rider (2026-09-09): restoring through `PUT`", () => {
   it("is refused outright when the caller writes `status: open` (SERVER-039)", async () => {
-    // The audit's correction to sprint-024's P9, which lists this as the second
-    // act-declaration gap. It is not one, because the door is shut a step
-    // earlier: `assertNotUnarchivingByPut` answers `400` for **every** document,
-    // since for a §7 skill unarchiving is a folder move a field edit cannot
-    // undo. So "restored" has exactly one direct door — the unarchive verb —
-    // and it declares the act.
+    // The rider leaves this refusal exactly where it was: "A save that would
+    // write `status: open` over an archived document on its own stays refused
+    // rather than becoming an act — unarchiving a skill is a folder move a field
+    // edit cannot undo (§7)". So the direct restore-through-`PUT` is not a door
+    // that folds; it is not a door at all.
     const { subject } = await openWindowAndSubject();
     expect((await ws.post(`/api/docs/${subject.id}/archive`, {}, asUser)).status).toBe(200);
     ws.advance(QUIET);
@@ -147,12 +163,14 @@ describe("status quo, pending SERVER-106's rider: restoring through `PUT`", () =
     expect(statusOf(subject.path)).toBe("status: archived");
   });
 
-  it("reaches the file through §5's stage coupling, and folds there too", async () => {
+  it("reaches the file through §5's stage coupling, and closes the window there", async () => {
     // The restore door that **does** exist through `PUT`, and the one the rider
-    // has to cover: §5's kanban coupling writes `status` from a `stage`, and it
+    // names: "through a kanban drag whose stage the board maps to a status (§5)"
+    // — "so restoring reaches this rule through the unarchive verb, through a
+    // bulk Save or folder act, and through the stage coupling." The coupling
     // deliberately bypasses `assertNotUnarchivingByPut` (`update.ts`) so a board
-    // that maps a stage to `archived` is not a one-way trip. Both directions run
-    // through the same `act:` expression as a plain flip, so both fold.
+    // that maps a stage to `archived` is not a one-way trip, and both directions
+    // run through the same `act:` expression as a caller-written flip.
     await archivingBoard();
     const neighbour = await createDoc(
       ws,
@@ -174,24 +192,51 @@ describe("status quo, pending SERVER-106's rider: restoring through `PUT`", () =
     expect((await putDoc(ws, subject.id, { stage: "triage" }, asUser)).status).toBe(200);
     expect(statusOf(subject.path)).toBe("status: open");
 
-    // TODAY: folded, window still open, subject relabelled on close.
+    // Folded into the window, and the window closed behind it.
+    expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+    expect(subjectOf("HEAD^")).toContain(`doc edit: Task (${subject.id})`);
+  });
+
+  it("a drag between two stages the board maps the same way is still a save", async () => {
+    // The other half of "not which verb was used": the act is the status change,
+    // and a stage move that changes no status changes nothing §4 lists.
+    // `statusCoupled` is already false for a coupled status the document is not
+    // moving to, so this needs no second rule — but it is the case a broader
+    // reading ("any patch carrying `stage`") would have got wrong, so it is
+    // pinned.
+    await createDoc(ws, {
+      type: "board",
+      title: "K",
+      folder: "views",
+      order: 1,
+      query: { folder: "inbox" },
+      kanban: { field: "stage", stages: ["triage", "doing"], status: { triage: "open" } },
+    });
+    const { before, neighbour, subject } = await openWindowAndSubject();
+
+    expect((await putDoc(ws, subject.id, { stage: "doing" }, asUser)).status).toBe(200);
+    expect(statusOf(subject.path)).toBe("status: open");
+
     expect(commitCount()).toBe(before + 1);
     expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 1);
-    ws.advance(QUIET);
-    expect((await putDoc(ws, neighbour.id, { body: "much later" }, asUser)).status).toBe(200);
-    expect(subjectOf("HEAD^")).toBe(editingSessionSubject(2, "user"));
   });
 });
 
-describe("status quo, pending SERVER-106's rider: the rest of §4's list through `PUT`", () => {
+describe("§4's rider (2026-09-09): the rest of the strip through `PUT`", () => {
   it("retitling does not close the window", async () => {
-    // The third door the audit found, and the one SERVER-106's own summary
-    // reports as a wrong repair of §10: §4 lists "renamed" as an act, and a
-    // document's *name* is its title (§5 makes the path presentation).
-    // `docs/move.ts` — the only door that declares that act — changes the
-    // containing folder and never the title, so a retitle reaches §4's list
-    // through nothing at all. Pinned, not judged.
+    // Settled by the rider's third paragraph, and settled the *other* way:
+    // "**And §4's 'renamed' is about where a document lives, not what it is
+    // called.** A document is renamed when its file moves — §9.2's folder move
+    // and the folder rename beside it. Changing a document's title is the
+    // strip's own field and joins the open window like the tags next to it, so a
+    // sitting that retitles a document and rewrites its opening paragraph is one
+    // commit and not two." No code changed for this case; the assertion is
+    // unchanged from the pass that pinned it, and is now a decision rather than
+    // a status quo.
     const { before, neighbour, subject } = await openWindowAndSubject();
 
     const renamed = await putDoc(ws, subject.id, { title: "Subject, renamed" }, asUser);
@@ -203,10 +248,10 @@ describe("status quo, pending SERVER-106's rider: the rest of §4's list through
     expect(commitCount()).toBe(before + 1);
   });
 
-  it("marking a document still current does close it, on this same route", async () => {
-    // The one §4 entry the `PUT` door already honours (`update.ts`'s
-    // `Object.hasOwn(fields, "reviewed")`), asserted here so the audit's claim
-    // that one route answers §4 two different ways is checkable in one file.
+  it("marking a document still current closes it, on this same route", async () => {
+    // The §4 entry this route already honoured before the rider (SERVER-092's
+    // `Object.hasOwn(fields, "reviewed")`), kept here so the file shows the two
+    // acts this one verb can declare rather than the two answers it used to give.
     const { before, neighbour, subject } = await openWindowAndSubject();
 
     const reviewed = await putDoc(ws, subject.id, { reviewed: "2026-09-06T09:00:00Z" }, asUser);

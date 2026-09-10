@@ -322,6 +322,77 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(filesIn("HEAD")).toContain(neighbour.path);
   });
 
+  it("a document archived through a save that writes `status` (rider, 2026-09-09)", async () => {
+    // §4's rider signed 2026-09-09 (SERVER-106): "§4's list names what happened
+    // to the document and not which verb was used, so a document reaching
+    // `archived`, or leaving it, closes the open commit window and names its
+    // commit — through the archive and unarchive verbs, through a save that
+    // writes `status`, and through a kanban drag whose stage the board maps to a
+    // status (§5)."
+    //
+    // Before it, the two rows above declared the act and this one did not, so
+    // the same change to the same document answered §4 differently depending on
+    // a door `git log` does not record.
+    const neighbour = await settledDoc("Neighbour", "kept", "agent");
+    const subject = await createDoc(ws, { type: "note", title: "Subject", body: "one" }, "agent");
+    ws.advance(QUIET);
+
+    const before = await saveThenAct(neighbour.id, "agent", () =>
+      putDoc(ws, subject.id, { status: "archived" }, asAgent),
+    );
+
+    // Ordering, not counting: "the act's change is the last thing in it, so a
+    // body edit and a status change made in one sitting remain **one** commit".
+    expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect(subjectOf("HEAD")).toContain(`doc edit: Subject (${subject.id})`);
+    expect(ws.read(subject.path)).toContain("status: archived");
+
+    // "and that the window closes behind it".
+    expect((await putDoc(ws, neighbour.id, { body: "after" }, asAgent)).status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+  });
+
+  it("a document restored through §5's stage coupling (rider, 2026-09-09)", async () => {
+    // The restore door the rider has to cover, because it is the only one `PUT`
+    // has: a caller writing `status: open` over an archived document is refused
+    // outright (SERVER-039, and the rider leaves that refusal standing), while
+    // §5's kanban coupling writes `status` from a `stage` in both directions so
+    // that a board mapping a stage to `archived` is not a one-way trip.
+    await createDoc(ws, {
+      type: "board",
+      title: "K",
+      folder: "views",
+      order: 1,
+      query: { folder: "inbox" },
+      kanban: {
+        field: "stage",
+        stages: ["triage", "done"],
+        status: { done: "archived", triage: "open" },
+      },
+    });
+    const neighbour = await settledDoc("Neighbour", "kept", "agent");
+    const subject = await createDoc(ws, { type: "note", title: "Task", body: "one" }, "agent");
+    ws.advance(QUIET);
+
+    // Archive it by dragging it into the mapped stage, and settle that.
+    expect((await putDoc(ws, subject.id, { stage: "done" }, asAgent)).status).toBe(200);
+    expect(ws.read(subject.path)).toContain("status: archived");
+    ws.advance(QUIET);
+
+    const before = await saveThenAct(neighbour.id, "agent", () =>
+      putDoc(ws, subject.id, { stage: "triage" }, asAgent),
+    );
+
+    expect(ws.read(subject.path)).toContain("status: open");
+    expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect(subjectOf("HEAD")).toContain(`doc edit: Task (${subject.id})`);
+
+    expect((await putDoc(ws, neighbour.id, { body: "after" }, asAgent)).status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+  });
+
   it("a document moved", async () => {
     const neighbour = await settledDoc("Neighbour", "kept");
     const subject = await createDoc(ws, { type: "note", title: "Subject", body: "one" }, "agent");

@@ -769,12 +769,48 @@ export async function updateDocumentLocked(
         // SPEC.md §4 lists "a document ... marked still current (§5)" among the
         // acts that close a window, and lists "an ordinary save of a document
         // body — whichever document it is to" among the things that do not. The
-        // two meet on this one verb, and `reviewed` is what tells them apart: a
-        // review is a statement about the document that someone else can act on,
-        // where the edit around it is merely underway. `changedFields` has
-        // already dropped a `reviewed` equal to the file's, so the autosave that
-        // re-sends the stored value is not an act (SERVER-092).
-        act: Object.hasOwn(fields, "reviewed") ? "names-the-window" : undefined,
+        // two meet on this one verb, and three of the fields it can write are on
+        // §4's positive list rather than its negative one.
+        //
+        // **`reviewed`** (SERVER-092): a review is a statement about the
+        // document that someone else can act on, where the edit around it is
+        // merely underway.
+        //
+        // **`status`, through either of its two doors** — §4's rider signed
+        // 2026-09-09 (SERVER-106): "§4's list names what happened to the
+        // document and not which verb was used, so a document reaching
+        // `archived`, or leaving it, closes the open commit window and names its
+        // commit — through the archive and unarchive verbs, through a save that
+        // writes `status`, and through a kanban drag whose stage the board maps
+        // to a status (§5)." Before it, `POST /api/docs/{id}/archive` declared
+        // the act and this route did not, so §4's list was true or false
+        // depending on a door `git log` does not record. The rider carves
+        // `status` out of §10's frontmatter strip and leaves the rest of the
+        // strip — tags, stage, dates, and **the title above the body** — an
+        // ordinary save, which is why nothing here reads `title`.
+        //
+        // `"names-the-window"` and not `"commits-alone"`, per the rider's own
+        // sentence: "the act's change is the last thing in it, so a body edit
+        // and a status change made in one sitting remain **one** commit".
+        //
+        // Both status doors are read, and neither can be derived from the other:
+        //
+        // - `fields` is the caller's own `status`. `changedFields` has already
+        //   dropped a value equal to the file's, so the autosave that re-sends
+        //   the stored status is not an act — the same property that keeps a
+        //   re-sent `reviewed` out.
+        // - `statusCoupled` is §5's kanban coupling writing `status` from a
+        //   `stage` the board maps, in **both** directions: it is the only door
+        //   through which a `PUT` restores an archived document, since
+        //   `assertNotUnarchivingByPut` refuses the caller-written form outright
+        //   (SERVER-039, and the rider leaves that refusal standing). It is also
+        //   already false for a coupled status the document is not moving to, so
+        //   an ordinary drag between two stages a board maps the same way stays
+        //   a save.
+        act:
+          Object.hasOwn(fields, "reviewed") || Object.hasOwn(fields, "status") || statusCoupled
+            ? "names-the-window"
+            : undefined,
       },
       keys: [DOCS_KEY, docKey(id), ...cleared.map((board) => docKey(board.id))],
       // `PUT` may set `status: archived`, and archived documents are counted
