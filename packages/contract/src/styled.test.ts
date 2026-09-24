@@ -50,6 +50,7 @@ describe("parseStyleAttributes", () => {
     ["a block attribute written inline", 'align="center"', "inline"],
     ["an inline attribute written on a block", 'color="accent"', "block"],
     ["an indent level outside the set", 'indent="17"', "block"],
+    ["an alignment outside the set", 'align="middle"', "block"],
     ["a bare name", "color", "inline"],
     ["a single-quoted value", "color='accent'", "inline"],
     ["a repeated name", 'color="accent" color="muted"', "inline"],
@@ -190,6 +191,22 @@ describe("stripStyling", () => {
   it("leaves an unclosed fence as prose", () => {
     const body = '::: {align="center"}\n\nProse.\n';
     expect(stripStyling(body)).toBe(body);
+  });
+
+  it("leaves a closing fence that opened nothing as prose", () => {
+    // The other half of the pair rule: a `:::` line with no opener before it is
+    // a line a person wrote, not a wrapper to drop.
+    const body = "Prose.\n\n:::\n\nMore prose.\n";
+    expect(stripStyling(body)).toBe(body);
+  });
+
+  it("leaves an unterminated marker as the characters it is", () => {
+    // A marker is only a marker once it closes. Nothing here is stripped, so a
+    // half-typed line in a draft reads back exactly as typed.
+    expect(stripStyling("==bright but never closed\n")).toBe("==bright but never closed\n");
+    expect(stripStyling('[a]{color="accent"\n')).toBe('[a]{color="accent"\n');
+    expect(kinds("==bright but never closed")).toEqual([]);
+    expect(kinds('[a]{color="accent"')).toEqual([]);
   });
 
   it("leaves a fence line inside a code block alone", () => {

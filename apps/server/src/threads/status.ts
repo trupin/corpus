@@ -18,7 +18,9 @@
 import type { Actor, ThreadStatus, ThreadSummary } from "@corpus/contract";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
 import {
+  documentSubject,
   runMutation,
+  threadStatusSubjectVerb,
   validateBeforeWrite,
   type DocumentMutex,
   type MutationResult,
@@ -100,7 +102,7 @@ export async function setThreadStatus(
         project: [thread.loaded.path],
         unproject: [],
         commit: {
-          subject: `thread ${status === "resolved" ? "resolve" : "reopen"}: ${thread.title} (${id}) by ${actor}`,
+          subject: documentSubject(threadStatusSubjectVerb(status), thread.title, id, actor),
           // SPEC.md §4: "a thread resolved or reopened" is a discrete act — a
           // change someone else can act on — so it closes the open window and
           // its subject is what that window's commit keeps (SERVER-092). Only a

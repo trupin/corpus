@@ -157,7 +157,7 @@ overlay would become un-escapable.
    Whether search over full screen should instead navigate the overlay is
    a UX decision beyond this issue's scope. Flagged, not changed.
 
-## The §10 amendment, drafted for signature (supersedes rider 3's link clause)
+## The §10 amendment, signed 2026-09-09 and applied (supersedes rider 3's link clause)
 
 The fix supersedes signed §10 text ("a link inside full screen ... lands as a
 loose path at the left edge"), on the user's own 2026-09-09 directive.
@@ -170,4 +170,4 @@ Drafted for signature:
 > deliberate act (the exit control, or Escape), never a side effect of
 > reading. The earlier clause that landed a followed link as a loose path at
 > the left edge is superseded: it treated navigation as an exit nobody
-> asked for. _(Amendment signed — date to be filled at signature.)_
+> asked for. _(Amendment signed 2026-09-09.)_

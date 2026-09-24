@@ -94,7 +94,7 @@ and clearable from the CLI (shape to decide: a `corpus workspace keep <path>`
   without that, `corpus workspace merge` on a kept file was unrecoverable the
   moment the template moved again (found live in E2E, below).
 
-## The §2.4 rider, drafted for signature (PR #75 review, finding 1)
+## The §2.4 rider, signed 2026-09-09 and applied (PR #75 review, finding 1)
 
 The review found the upgrade strand shipped behaviour §2.4 does not describe.
 The report-naming half was fixed in code (kept files are named, not counted).
@@ -115,7 +115,7 @@ The spec half is this rider, for the user's signature:
 > server when clean, reported and left untouched when conflicted, with the
 > one undecidable hunk shape — present in baseline and workspace, absent from
 > the incoming copy — named as undecidable rather than silently resolved.
-> _(Rider signed — date to be filled at signature.)_
+> _(Rider signed 2026-09-09.)_
 
 ## E2E Verification Log
 

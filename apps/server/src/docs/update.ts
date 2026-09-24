@@ -12,8 +12,14 @@
 //   same commit** as the body. A design that wrote anchors afterwards would
 //   leave a window in which a crash detaches every thread on the document.
 
-import type { Actor, AnchorReconciliation, Doc, UpdateDocRequest } from "@corpus/contract";
-import { EXTRA_MAX_BYTES } from "@corpus/contract";
+import type {
+  Actor,
+  AnchorReconciliation,
+  Doc,
+  DocStatus,
+  UpdateDocRequest,
+} from "@corpus/contract";
+import { DocStatusSchema, EXTRA_MAX_BYTES } from "@corpus/contract";
 import { reconcileAnchors } from "../anchors/index.js";
 import {
   claudeCodeFrontmatterIssues,
@@ -36,6 +42,7 @@ import {
   DEFAULT_OPEN_KEY,
   planDefaultOpenClears,
 } from "./default-open.js";
+import { documentSubject, statusMoveSubjectVerb } from "./act-subject.js";
 import { decideStageStatus, stageStatusWarning } from "./kanban.js";
 import { assertOrderIsABoardPosition, ORDER_RECOVERY_ON_UPDATE } from "./order-rule.js";
 import { assertDocumentKey } from "./key.js";
@@ -713,6 +720,15 @@ export async function updateDocumentLocked(
   // includes archived documents in a board's scope precisely so it is not.
   if (statusCoupled) nextParsed = setFrontmatterFields(nextParsed, { status: coupledStatus });
 
+  // The status this save moves the document between, or `null` when it moves
+  // none — the caller's `status` and §5's coupled one already folded into
+  // `nextParsed`, so this is read once, off the two files, rather than
+  // re-derived from the doors that wrote it. It decides both halves of §4's
+  // act below: whether the save *is* one, and what its commit's subject calls
+  // it. A caller-written `status` that the coupling overrode back to the stored
+  // value moves nothing, and so is no act.
+  const statusMove = readStatusMove(parsed.data, nextParsed.data, loaded.row.status);
+
   // §10's "at most one board carries `default-open`" — the same plan, so the
   // flag and the clears land in one commit (§9.2's warning rule).
   const cleared =
@@ -764,17 +780,73 @@ export async function updateDocumentLocked(
         // against — one derivation, so a `git log` line, a board row and the
         // save's own comparison cannot call one document three things
         // (SERVER-100).
-        subject: `doc edit: ${documentTitle(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
+        //
+        // **And the verb is the act's, when the save is one** (SERVER-106, PR
+        // #79's review). §4's rider says the act means "the commit says what
+        // happened", and §4 says "the commit's subject names the act" — so a
+        // save that archives writes `doc archive:`, exactly as `POST /archive`
+        // does, and a reader checking §4's list against `git log` gets the
+        // same answer whichever door was used. `statusMoveSubjectVerb` owns
+        // that choice for every route; this call site only supplies the move.
+        //
+        // `reviewed` keeps `doc edit:`. §4 has no verb of its own for marking
+        // a document still current — this route is the only door — so there is
+        // no second subject for it to disagree with, and naming one would be a
+        // new word in `git log`, not a correction of an existing one. When a
+        // save both marks a document current and moves its status, the status
+        // names the commit: it is the change the rider carves out of §10.
+        subject: documentSubject(
+          statusMove === null
+            ? "doc edit"
+            : statusMoveSubjectVerb(loaded.row.type, statusMove.from, statusMove.to),
+          documentTitle(nextParsed.data, loaded.row.title),
+          id,
+          actor,
+        ),
         anchors: report,
         // SPEC.md §4 lists "a document ... marked still current (§5)" among the
         // acts that close a window, and lists "an ordinary save of a document
         // body — whichever document it is to" among the things that do not. The
-        // two meet on this one verb, and `reviewed` is what tells them apart: a
-        // review is a statement about the document that someone else can act on,
-        // where the edit around it is merely underway. `changedFields` has
-        // already dropped a `reviewed` equal to the file's, so the autosave that
-        // re-sends the stored value is not an act (SERVER-092).
-        act: Object.hasOwn(fields, "reviewed") ? "names-the-window" : undefined,
+        // two meet on this one verb, and three of the fields it can write are on
+        // §4's positive list rather than its negative one.
+        //
+        // **`reviewed`** (SERVER-092): a review is a statement about the
+        // document that someone else can act on, where the edit around it is
+        // merely underway.
+        //
+        // **`status`, through either of its two doors** — §4's rider signed
+        // 2026-09-09 (SERVER-106): "§4's list names what happened to the
+        // document and not which verb was used, so a document reaching
+        // `archived`, or leaving it, closes the open commit window and names its
+        // commit — through the archive and unarchive verbs, through a save that
+        // writes `status`, and through a kanban drag whose stage the board maps
+        // to a status (§5)." Before it, `POST /api/docs/{id}/archive` declared
+        // the act and this route did not, so §4's list was true or false
+        // depending on a door `git log` does not record. The rider carves
+        // `status` out of §10's frontmatter strip and leaves the rest of the
+        // strip — tags, stage, dates, and **the title above the body** — an
+        // ordinary save, which is why nothing here reads `title`.
+        //
+        // `"names-the-window"` and not `"commits-alone"`, per the rider's own
+        // sentence: "the act's change is the last thing in it, so a body edit
+        // and a status change made in one sitting remain **one** commit".
+        //
+        // Both status doors reach the act, and both arrive as `statusMove` —
+        // read off the file this save leaves behind, so the act is exactly "the
+        // status really moved", whichever door moved it:
+        //
+        // - the caller's own `status`. An autosave that re-sends the stored
+        //   status leaves the file's status where it was, so it is not an act —
+        //   the same property that keeps a re-sent `reviewed` out.
+        // - §5's kanban coupling, writing `status` from a `stage` the board
+        //   maps, in **both** directions: it is the only door through which a
+        //   `PUT` restores an archived document, since
+        //   `assertNotUnarchivingByPut` refuses the caller-written form outright
+        //   (SERVER-039, and the rider leaves that refusal standing). A drag
+        //   between two stages a board maps the same way moves no status, so it
+        //   stays a save.
+        act:
+          Object.hasOwn(fields, "reviewed") || statusMove !== null ? "names-the-window" : undefined,
       },
       keys: [DOCS_KEY, docKey(id), ...cleared.map((board) => docKey(board.id))],
       // `PUT` may set `status: archived`, and archived documents are counted
@@ -841,4 +913,27 @@ export async function updateDocumentLocked(
     anchors: report,
     result,
   };
+}
+
+/**
+ * The `status` a save moves a document between, or `null` when it moves none.
+ *
+ * Read off the frontmatter before and after the save. A file that carries no
+ * valid `status` holds the one the projection read for it (`fallback`, the
+ * row's), which is `open` for every document whose status is its frontmatter —
+ * so writing an explicit `status: open` onto such a file moves nothing and is no
+ * act, while writing `archived` over it is one.
+ */
+function readStatusMove(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+  fallback: DocStatus,
+): { readonly from: DocStatus; readonly to: DocStatus } | null {
+  const read = (data: Readonly<Record<string, unknown>>, otherwise: DocStatus): DocStatus => {
+    const parsed = DocStatusSchema.safeParse(data["status"]);
+    return parsed.success ? parsed.data : otherwise;
+  };
+  const from = read(before, fallback);
+  const to = read(after, from);
+  return from === to ? null : { from, to };
 }

@@ -630,7 +630,7 @@ guarantees the watcher commits it as the `user` edit it is.
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | done | P0 | SHARED-042 |
 | CLI-041 | `corpus doc diff` dies with `EPIPE` when piped into `head` (AGENT-023 finding) | done | P2 | — |
 | SERVER-105 | The fold guard is blind at directory granularity (PR #43 review, latent) | done | P1 | — |
-| SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | todo | P2 | — |
+| SERVER-106 | §4 says archiving closes a window; archiving through `PUT` does not (PR #44 review) | done | P2 | — |
 | CLI-042 | `--json` carries no `hint`, so a machine caller is told what happened and not what to do | done | P1 | — |
 | INFRA-027 | `issues/PLAN.md` and the issue files disagree, and nothing checks (PR #44 review) | done | P1 | — |
 
@@ -2552,5 +2552,7 @@ written.
 | UI-198 | The composer's "at" select does not hold a chosen level | done | P0 | fable | — |
 | INFRA-043 | Vitest 4, because the gate is red and the fix is ours to take | done | P0 | opus | — |
 | UI-199 | Full screen stays | done | P0 | fable | — |
-| UI-200 | A search pick lands invisibly behind full screen | todo | P1 | fable | UI-199 |
-| INFRA-044 | Branches back to 90, under the honest ruler | todo | P1 | opus | INFRA-043 |
+| UI-200 | A search pick lands invisibly behind full screen | done | P1 | fable | UI-199 |
+| INFRA-044 | Branches back to 90, under the honest ruler | done | P1 | opus | INFRA-043 |
+| SERVER-171 | Two edge doors where the status act reads wrong | todo | P2 | opus | SERVER-106 |
+| AGENT-076 | A second listener was launched onto a lane mid-turn | todo | P1 | fable | — |
