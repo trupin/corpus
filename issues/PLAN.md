@@ -2555,3 +2555,4 @@ written.
 | UI-200 | A search pick lands invisibly behind full screen | done | P1 | fable | UI-199 |
 | INFRA-044 | Branches back to 90, under the honest ruler | done | P1 | opus | INFRA-043 |
 | SERVER-171 | Two edge doors where the status act reads wrong | todo | P2 | opus | SERVER-106 |
+| AGENT-076 | A second listener was launched onto a lane mid-turn | todo | P1 | fable | — |
