@@ -158,3 +158,24 @@ invisible to the person who made it.
   `openInColumn`, `SearchOverlay`, `useNavStack`, `Reader`: **142 passed**.
 - `tsc --noEmit -p apps/ui` clean, `eslint` clean, `prettier` clean on all
   touched files.
+
+## The §10 rider, drafted for signature (PR #79 review, finding 1)
+
+UI-200 ships a behaviour the signed 2026-09-09 amendment implies but does not
+state: its text names "a link followed inside full screen", and a search pick
+or an omnibox create made inside the mode now opens there too. The
+orchestrator first applied this as an enumeration qualifier without a
+signature; the review caught it, and it is reverted to the signed text.
+Drafted for signature:
+
+> **An open made inside full screen stays there.** The loose-path landing
+> is for opens made on the board. An open with no origin that is made while
+> full screen is up — the search overlay's `↵`, and a document created from
+> it — continues the excursion instead, exactly as a followed link does, and
+> a document created that way opens there with its title selected. Leaving
+> the mode stays a deliberate act.
+> _(Rider signed — date to be filled at signature.)_
+
+If signed, apply it by adding "made on the board" to the §10 loose-path
+enumeration, and by adding the full-screen case to the §10 omnibox-create
+sentence ("opens immediately in a path off its column, title selected").
