@@ -2553,4 +2553,4 @@ written.
 | INFRA-043 | Vitest 4, because the gate is red and the fix is ours to take | done | P0 | opus | — |
 | UI-199 | Full screen stays | done | P0 | fable | — |
 | UI-200 | A search pick lands invisibly behind full screen | todo | P1 | fable | UI-199 |
-| INFRA-044 | Branches back to 90, under the honest ruler | todo | P1 | opus | INFRA-043 |
+| INFRA-044 | Branches back to 90, under the honest ruler | done | P1 | opus | INFRA-043 |

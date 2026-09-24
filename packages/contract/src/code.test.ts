@@ -193,6 +193,45 @@ describe("unterminatedFence inside container blocks", () => {
     ]);
   });
 
+  /**
+   * CommonMark's five-space rule, which is the one place the content column is
+   * *not* just past the marker: when five or more columns of whitespace follow
+   * it, the item's content begins one space after the marker and the rest is
+   * the content's own indentation. Four columns of it make this indented code,
+   * so there is no fence here to leave open (INFRA-044).
+   */
+  it("reads a fence five spaces past the marker as indented code, not a fence", () => {
+    expect(fencedCodeRanges("-     ```js\n      code\n      ```\n")).toEqual([]);
+    expect(unterminatedFence("-     ```js\n      code\n")).toBeNull();
+    // Four spaces is the last width that still opens one, and it does.
+    expect(unterminatedFence("-    ```js\n     code\n")).toEqual({
+      marker: "```",
+      start: 0,
+      line: 1,
+    });
+  });
+
+  it("does not close a quoted fence on a line that dropped the quote marker", () => {
+    // The continuation walk stops where the quote marker is missing, so the
+    // unquoted line is content of the open fence rather than its closer, and
+    // the quoted `` ``` `` still closes it. This is the *miss* the module
+    // docblock names under "Containers never end": CommonMark ends the quote
+    // at the unprefixed line and opens a fresh fence on the last one. What
+    // keeps it honest is that both readers err together — one closed range
+    // spanning all three lines, and no report.
+    const text = "> ```js\ncode\n> ```\n";
+    expect(fencedCodeRanges(text)).toHaveLength(1);
+    expect(text.slice(fencedCodeRanges(text)[0]?.start, fencedCodeRanges(text)[0]?.end)).toContain(
+      "code\n> ```",
+    );
+    expect(unterminatedFence(text)).toBeNull();
+    expect(unterminatedFence("> ```js\ncode\n")).toEqual({
+      marker: "```",
+      start: 0,
+      line: 1,
+    });
+  });
+
   it("still reports a fence an item really did leave open", () => {
     expect(unterminatedFence("- ```js\n  code\n")).toEqual({
       marker: "```",

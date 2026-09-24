@@ -1,5 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import {
   contractRoutes,
@@ -541,5 +541,48 @@ describe("UploadError", () => {
           ),
       }),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * SPEC.md §7: absence means the orchestrator decides. So an unstated weight
+ * sends **no part**, and an empty part is a `400` rather than a second spelling
+ * of "no choice" — which makes "omitted" and "stated" two assertions per body,
+ * on all three of them (INFRA-044).
+ */
+describe("a stated weight rides on every multipart body, and only when stated", () => {
+  it("carries it on a turn", () => {
+    expect(buildTurnFormData({ text: "hi", weight: "heavy" }).get("weight")).toBe("heavy");
+    expect(buildTurnFormData({ text: "hi" }).has("weight")).toBe(false);
+  });
+
+  it("carries it on a thread", () => {
+    expect(buildThreadFormData({ text: "hi", weight: "light" }).get("weight")).toBe("light");
+    expect(buildThreadFormData({ text: "hi" }).has("weight")).toBe(false);
+  });
+
+  it("carries it on a capture", () => {
+    expect(buildCaptureFormData({ text: "a thought", weight: "heavy" }).get("weight")).toBe(
+      "heavy",
+    );
+    expect(buildCaptureFormData({ text: "a thought" }).has("weight")).toBe(false);
+  });
+});
+
+describe("the transport, when the caller names none", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts through the host's own fetch", async () => {
+    // `fetch` is an injection seam for tests and for a runtime that wraps it,
+    // not a requirement: the CLI and the board both call these helpers with a
+    // baseUrl and a token and nothing else.
+    vi.stubGlobal("fetch", transport());
+
+    const captured = await uploadCapture({ baseUrl: BASE_URL, token: TOKEN, text: "a thought" });
+
+    expect(captured.docId).toBe("doc_a1b2c3");
+    expect(captured.eventId).toBe("evt_7c1d");
   });
 });

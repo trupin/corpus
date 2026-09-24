@@ -22,6 +22,7 @@ import {
   SNIPPET_FIELDS,
   SnippetFieldSchema,
   SnippetSchema,
+  splitExtraParams,
   STALE_TIERS,
   StaleTierSchema,
 } from "./query.js";
@@ -951,5 +952,37 @@ describe("structured fields and glob patterns", () => {
     expect(DocsQuerySchema.safeParse({ folder: "work", folderScope: "self" }).success).toBe(true);
     // Without a scope, a pattern is perfectly ordinary.
     expect(DocsQuerySchema.safeParse({ folder: "work/*" }).success).toBe(true);
+  });
+});
+
+/**
+ * The split three call sites depend on (INFRA-044). Each one turns a raw query
+ * record into a query, and each would otherwise have to remember on its own that
+ * `extra.assignee` is neither a field of the object schema nor an unknown
+ * parameter. Forgetting is silent in two of the three: a stored query simply
+ * stops filtering.
+ */
+describe("splitExtraParams", () => {
+  it("keeps the flat parameters and lifts the dotted ones out of them", () => {
+    expect(splitExtraParams({ type: "note", "extra.assignee": "theo", tag: "finance" })).toEqual({
+      params: { type: "note", tag: "finance" },
+      extra: { assignee: "theo" },
+    });
+  });
+
+  it("drops a parameter with no value rather than passing an empty one down", () => {
+    // A record read off a URL or a stored query can carry a key whose value is
+    // absent. `params` is `Record<string, string>`, so an undefined belongs in
+    // neither half, and a `""` here would be a filter nobody asked for.
+    expect(splitExtraParams({ type: "note", stage: undefined })).toEqual({
+      params: { type: "note" },
+      extra: undefined,
+    });
+  });
+
+  it("answers undefined, not an empty record, when the namespace was never opened", () => {
+    // The two differ downstream: `{}` is "filter on nothing" and `undefined` is
+    // "no extra filter at all".
+    expect(splitExtraParams({ type: "note" }).extra).toBeUndefined();
   });
 });
