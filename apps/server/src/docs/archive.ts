@@ -24,6 +24,7 @@ import {
 } from "../core/index.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { DOCUMENT_ROOTS, SKILL_FILENAME } from "../projection/index.js";
+import { archiveSubjectVerb, documentSubject } from "./act-subject.js";
 import { findDocumentRowByPath, loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
 import {
   destinationOccupied,
@@ -593,8 +594,6 @@ export async function setArchived(
   id: string,
   archived: boolean,
 ): Promise<ArchiveOutcome> {
-  const verb = archived ? "archive" : "unarchive";
-
   // §7's folder move carries — and this verb therefore *writes* — every other
   // `SKILL.md` under the folder, so their lanes are held for the whole act (PR
   // #38, finding 3). Read before any lane is taken, because which lanes to hold
@@ -632,7 +631,7 @@ export async function setArchived(
         project: plan.project,
         unproject: plan.unproject,
         commit: {
-          subject: `doc ${verb}: ${loaded.row.title} (${id}) by ${actor}`,
+          subject: documentSubject(archiveSubjectVerb(archived), loaded.row.title, id, actor),
           // SPEC.md §4: "a document archived, restored" is a discrete act, so it
           // closes the open window and names its commit (SERVER-092). A document
           // already in the requested state returned above and is no act.

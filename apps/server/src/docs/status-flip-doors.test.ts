@@ -34,6 +34,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "@corpus/contract";
+import { createThread } from "../threads/thread-fixture.js";
 import { createDoc, createWriteWorkspace, putDoc, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -115,7 +116,9 @@ describe("§4's rider (2026-09-09): archiving through `PUT`", () => {
     // the neighbour's body edit and the archived document.
     expect(commitCount()).toBe(before + 1);
     expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
-    expect(subjectOf("HEAD")).toContain(`doc edit: Subject (${subject.id})`);
+    // "What the act adds is that the commit says what happened": the subject
+    // the archive verb writes, not a save's (PR #79's review).
+    expect(subjectOf("HEAD")).toBe(`doc archive: Subject (${subject.id}) by user`);
 
     // "and that the window closes behind it" — so the next save by the same
     // party is a commit of its own rather than folding into a window that is no
@@ -125,7 +128,7 @@ describe("§4's rider (2026-09-09): archiving through `PUT`", () => {
 
     // And the flip's own commit is never relabelled an editing session: the act
     // named the window it closed.
-    expect(subjectOf("HEAD^")).toContain(`doc edit: Subject (${subject.id})`);
+    expect(subjectOf("HEAD^")).toBe(`doc archive: Subject (${subject.id}) by user`);
   });
 
   it("the archive **verb** on the same document closes it too", async () => {
@@ -197,7 +200,7 @@ describe("§4's rider (2026-09-09): restoring through `PUT`", () => {
     expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
     expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
-    expect(subjectOf("HEAD^")).toContain(`doc edit: Task (${subject.id})`);
+    expect(subjectOf("HEAD^")).toBe(`doc unarchive: Task (${subject.id}) by user`);
   });
 
   it("a drag between two stages the board maps the same way is still a save", async () => {
@@ -258,8 +261,170 @@ describe("§4's rider (2026-09-09): the rest of the strip through `PUT`", () => 
     expect(reviewed.status).toBe(200);
 
     expect(commitCount()).toBe(before + 1);
-    expect(subjectOf("HEAD")).toContain(`doc edit: Subject (${subject.id})`);
+    // `reviewed` keeps a save's subject, by decision (SERVER-106, PR #79's
+    // review): this route is the only door to the mark, so there is no second
+    // subject for it to disagree with. See `update.ts`.
+    expect(subjectOf("HEAD")).toBe(`doc edit: Subject (${subject.id}) by user`);
     expect((await putDoc(ws, neighbour.id, { body: "after" }, asUser)).status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The subject, door against door (PR #79's review).
+//
+// SERVER-106's second criterion: "a reader checking §4's list against `git log`
+// finds the same answer whichever route was used". Closing the window through
+// both doors is half of that; the other half is the line `git log` prints. Each
+// case below makes the same change to the same document through two doors and
+// asserts the two subjects are **the same string** — not merely that both
+// mention the document — so a verb that drifted from the save route, or the
+// reverse, fails here by name.
+// ---------------------------------------------------------------------------
+
+describe("§4: the commit's subject names the act, whichever door was used", () => {
+  it("archiving: `PUT {status}`, the kanban drag and `POST /archive` write one subject", async () => {
+    await archivingBoard();
+    const subject = await createDoc(ws, { type: "note", title: "Task", body: "one" }, "user");
+    ws.advance(QUIET);
+
+    // Each archive settled on its own, and undone by the verb between doors, so
+    // every door writes its own commit and HEAD is that door's line.
+    const archiveThrough = async (door: () => Promise<Response>): Promise<string> => {
+      expect((await door()).status).toBe(200);
+      expect(statusOf(subject.path)).toBe("status: archived");
+      const line = subjectOf("HEAD");
+      ws.advance(QUIET);
+      expect((await ws.post(`/api/docs/${subject.id}/unarchive`, {}, asUser)).status).toBe(200);
+      ws.advance(QUIET);
+      return line;
+    };
+
+    const put = await archiveThrough(() => putDoc(ws, subject.id, { status: "archived" }, asUser));
+    const drag = await archiveThrough(() => putDoc(ws, subject.id, { stage: "done" }, asUser));
+    const verb = await archiveThrough(() => ws.post(`/api/docs/${subject.id}/archive`, {}, asUser));
+
+    expect(verb).toBe(`doc archive: Task (${subject.id}) by user`);
+    expect(put).toBe(verb);
+    expect(drag).toBe(verb);
+  });
+
+  it("restoring: the kanban drag and `POST /unarchive` write one subject", async () => {
+    await archivingBoard();
+    const subject = await createDoc(ws, { type: "note", title: "Task", body: "one" }, "user");
+    ws.advance(QUIET);
+
+    const restoreThrough = async (door: () => Promise<Response>): Promise<string> => {
+      expect((await ws.post(`/api/docs/${subject.id}/archive`, {}, asUser)).status).toBe(200);
+      ws.advance(QUIET);
+      expect((await door()).status).toBe(200);
+      // Where it lands differs by door — the verb restores to `resolved`
+      // (SERVER-108), the drag to the stage's `open` — and §4's word for both is
+      // "restored", so the subject does not.
+      expect(statusOf(subject.path)).not.toBe("status: archived");
+      const line = subjectOf("HEAD");
+      ws.advance(QUIET);
+      return line;
+    };
+
+    const verb = await restoreThrough(() =>
+      ws.post(`/api/docs/${subject.id}/unarchive`, {}, asUser),
+    );
+    const drag = await restoreThrough(() => putDoc(ws, subject.id, { stage: "triage" }, asUser));
+
+    expect(verb).toBe(`doc unarchive: Task (${subject.id}) by user`);
+    expect(drag).toBe(verb);
+  });
+
+  it("a thread resolved or reopened: `PUT {status}` and the thread verbs write one subject", async () => {
+    const thread = await createThread(ws, { title: "Question", body: "?" }, "user");
+    ws.advance(QUIET);
+
+    const through = async (door: () => Promise<Response>): Promise<string> => {
+      expect((await door()).status).toBe(200);
+      const line = subjectOf("HEAD");
+      ws.advance(QUIET);
+      return line;
+    };
+
+    const putResolve = await through(() => putDoc(ws, thread.id, { status: "resolved" }, asUser));
+    const putReopen = await through(() => putDoc(ws, thread.id, { status: "open" }, asUser));
+    const verbResolve = await through(() =>
+      ws.post(`/api/threads/${thread.id}/resolve`, {}, asUser),
+    );
+    const verbReopen = await through(() => ws.post(`/api/threads/${thread.id}/reopen`, {}, asUser));
+
+    expect(verbResolve).toBe(`thread resolve: Question (${thread.id}) by user`);
+    expect(verbReopen).toBe(`thread reopen: Question (${thread.id}) by user`);
+    expect(putResolve).toBe(verbResolve);
+    expect(putReopen).toBe(verbReopen);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Any real status move", pinned (PR #79's review).
+//
+// The decision recorded in the issue: the act is any status the save really
+// moves, not only a move to or from `archived` — because §4's list carries "a
+// thread resolved or reopened" beside "a document archived", and a board can
+// hold a document of any type. These cases pin it for a document that is **not**
+// a thread, where no dedicated verb exists to agree with, so a later narrowing
+// to `archived` alone fails here rather than silently.
+// ---------------------------------------------------------------------------
+
+describe("§4: any real status move through `PUT` is an act, on any document", () => {
+  it("a note moved `open` → `resolved` by `PUT {status}` closes the window", async () => {
+    const { before, neighbour, subject } = await openWindowAndSubject();
+
+    expect((await putDoc(ws, subject.id, { status: "resolved" }, asUser)).status).toBe(200);
+    expect(statusOf(subject.path)).toBe("status: resolved");
+
+    // Folded into the window as its last change, and the window named for it.
+    expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect(subjectOf("HEAD")).toBe(`doc resolve: Subject (${subject.id}) by user`);
+
+    // Closed behind it.
+    expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
+    expect(commitCount()).toBe(before + 2);
+    expect(subjectOf("HEAD^")).toBe(`doc resolve: Subject (${subject.id}) by user`);
+  });
+
+  it("a resolved note dragged to an unmapped stage goes back to `open`, and that is an act", async () => {
+    // §5: a stage the map does not name writes `UNMAPPED_STAGE_STATUS` (`open`,
+    // `kanban.ts`). Over a resolved document that is a real move, so it closes
+    // the window like any other.
+    await createDoc(ws, {
+      type: "board",
+      title: "K",
+      folder: "views",
+      order: 1,
+      query: { folder: "inbox" },
+      kanban: { field: "stage", stages: ["doing", "done"], status: { done: "resolved" } },
+    });
+    const neighbour = await createDoc(
+      ws,
+      { type: "note", title: "Neighbour", body: "kept" },
+      "user",
+    );
+    const subject = await createDoc(ws, { type: "note", title: "Task", body: "one" }, "user");
+    ws.advance(QUIET);
+
+    expect((await putDoc(ws, subject.id, { stage: "done" }, asUser)).status).toBe(200);
+    expect(statusOf(subject.path)).toBe("status: resolved");
+    expect(subjectOf("HEAD")).toBe(`doc resolve: Task (${subject.id}) by user`);
+    ws.advance(QUIET);
+
+    expect((await putDoc(ws, neighbour.id, { body: "underway" }, asUser)).status).toBe(200);
+    const before = commitCount() - 1;
+
+    expect((await putDoc(ws, subject.id, { stage: "doing" }, asUser)).status).toBe(200);
+    expect(statusOf(subject.path)).toBe("status: open");
+
+    expect(commitCount()).toBe(before + 1);
+    expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
+    expect(subjectOf("HEAD")).toBe(`doc reopen: Task (${subject.id}) by user`);
+    expect((await putDoc(ws, neighbour.id, { body: "still typing" }, asUser)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
   });
 });

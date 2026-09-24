@@ -290,6 +290,10 @@ the document already carries is likewise not one: `statusCoupled` is false there
 which keeps an ordinary drag between two stages a board maps the same way off
 §4's list and off §11's warnings. That case is pinned.
 
+> **Superseded by PR #79's review (MAJOR).** The subject now names the act on
+> every door. See "PR #79 review fixes" in the E2E log. The paragraph below is
+> kept as the record of the call that the review overturned.
+
 **The commit subject stays `doc edit: <title> (<id>) by <actor>`, and that is a
 judgment call worth naming.** The rider says the act means "the commit says what
 happened". A `PUT` that archives now produces a commit whose subject says a save
@@ -314,8 +318,9 @@ sentence, not a silent widening here.
       and restoring now close the window and name the window's commit through the
       verbs, through a `status` save and through §5's stage coupling. Asserted in
       `acts.test.ts` (two new positive cases) and `status-flip-doors.test.ts`
-      (seven cases), and verified E2E below. The one qualification is recorded
-      above under "the commit subject stays `doc edit:`"
+      (twelve cases), and verified E2E below. Since PR #79's review the commit
+      subject names the act too, and it is the same string on every door
+      (`docs/act-subject.ts`)
 - [x] `docs/acts.test.ts` enumerates §4's lists case by case; whatever is decided
       gets a case there, on the door that currently lacks one — two cases added:
       "a document archived through a save that writes `status`" and "a document
@@ -335,6 +340,10 @@ sentence, not a silent widening here.
   is replaced by a citation of the signed text.
 - `apps/server/src/docs/acts.test.ts` — two positive cases.
 - `SPEC.md` — carries the signed rider already (applied outside this issue).
+- **PR #79 review:** `apps/server/src/docs/act-subject.ts` (+ test) is new, and
+  `docs/archive.ts`, `threads/status.ts` and `docs/index.ts` now build or export
+  their subjects through it. That supersedes the "not modified" line below for
+  `archive.ts`.
 
 Deliberately **not** modified: `docs/archive.ts`, `docs/bulk.ts`,
 `folders/acts.ts`, `docs/move.ts`, `docs/patch.ts`. The first four already
@@ -368,6 +377,124 @@ Both follow the file's existing `saveThenAct` shape, so a closer that committed
 *before* folding would fail on `filesIn("HEAD")` rather than pass a looser count.
 
 ## E2E Verification Log
+
+### PR #79 review fixes (2026-09-24)
+
+**Model: Opus 5.5 (`claude-opus-5-5[1m]`).** Two findings, both fixed.
+
+**MAJOR — the subject now names the act, whichever door was used.** The
+authority is the rider's "the commit says what happened" and §4's "the commit's
+subject names the act". A new module, `apps/server/src/docs/act-subject.ts`, owns
+the subject shape `<verb>: <title> (<id>) by <actor>` and the choice of verb for
+a status move. `docs/archive.ts`, `threads/status.ts` and `docs/update.ts` all
+build their subjects through it, so the verbs and the save route cannot drift
+apart. The title stays each caller's own: `update.ts` still passes SERVER-100's
+`documentTitle(nextParsed.data, row.title)`, so that derivation is not forked.
+
+| change | `POST` verb writes | `PUT` (`status`, or the stage coupling) now writes |
+| --- | --- | --- |
+| to `archived`, from any status | `doc archive: T (id) by a` | `doc archive: T (id) by a` |
+| from `archived`, to `open` or `resolved` | `doc unarchive: T (id) by a` | `doc unarchive: T (id) by a` |
+| thread `open` → `resolved` | `thread resolve: T (id) by a` | `thread resolve: T (id) by a` |
+| thread `resolved` → `open` | `thread reopen: T (id) by a` | `thread reopen: T (id) by a` |
+| non-thread `open` → `resolved` | no verb (the thread verbs refuse it) | `doc resolve: T (id) by a` |
+| non-thread `resolved` → `open` | no verb | `doc reopen: T (id) by a` |
+| no status move (body, tags, title, `reviewed`) | — | `doc edit: T (id) by a` (unchanged) |
+
+For a non-thread document, `doc resolve` and `doc reopen` follow the precedent
+of `docs/delete.ts`, which writes `doc delete` beside `thread delete`.
+
+**The act and the subject now read one value.** `readStatusMove` compares the
+file's `status` before and after the save. Both the caller's `status` and §5's
+coupled status are already in `nextParsed` at that point. The `act:` expression
+is now `reviewed || statusMove !== null`. This replaces
+`reviewed || "status" in fields || statusCoupled`, and it differs in two edge
+cases only. Both edge cases are saves that move no status, so neither is an act
+now:
+
+- A caller sends `stage` and a conflicting `status`, and the coupling puts the
+  stored status back.
+- A file carries no `status`, and the caller writes an explicit `status: open`.
+
+**The `reviewed` decision: it keeps `doc edit:`.** §4 has no verb of its own for
+"marked still current". `PUT` is the only door to it, so no second subject exists
+for it to disagree with. The cross-route criterion is therefore already true for
+it. A name such as `doc review:` would add a new word to `git log`. It would not
+correct an existing mismatch. §4's general sentence "the commit's subject names
+the act" may be read to cover this entry too. If the orchestrator reads it that
+way, the change is one line in `update.ts` and one new verb in `act-subject.ts`.
+When one save both marks a document current and moves its status, the status
+names the commit. Pinned in both test files.
+
+**MINOR — "any real status move" is pinned.** Two cases in
+`status-flip-doors.test.ts`:
+
+- A note moved `open` → `resolved` by `PUT {status}` folds into the open window,
+  names it `doc resolve:`, and closes it.
+- A resolved note dragged to an unmapped stage is written `status: open` through
+  `UNMAPPED_STAGE_STATUS`. That move folds into the window, names it
+  `doc reopen:`, and closes it. The same case also pins the drag into the mapped
+  stage `done → resolved` as `doc resolve:`.
+
+**Subject assertions across routes.** Each new case in
+`status-flip-doors.test.ts` makes the same change to the same document through
+two doors. It asserts that the two subjects are **the same string**:
+
+- `PUT {status: archived}`, the drag into `done → archived`, and `POST /archive`
+  write one subject.
+- The drag out to `triage → open` and `POST /unarchive` write one subject. The
+  verb restores to `resolved` (SERVER-108) and the drag restores to `open`. §4
+  calls both "restored", so the subject is the same.
+- For a thread, `PUT {status: resolved|open}` and `POST
+  /api/threads/{id}/resolve|reopen` write one subject.
+
+The existing assertions changed from `toContain("doc edit: …")` to exact
+`toBe("doc archive: …")` and `toBe("doc unarchive: …")`. That change covers the
+two `acts.test.ts` rider cases, and the archive and coupling-restore cases in
+`status-flip-doors.test.ts`. `act-subject.test.ts` is new. It checks the
+verb-choice table and asserts that the choice matches the verbs' own names.
+
+**Tests (scoped, `VITEST_MAX_WORKERS=4`):** `apps/server/src/docs` and
+`apps/server/src/threads` — **60 files, 1484 tests, all passed.**
+`status-flip-doors.test.ts` has 12 cases. `npm run typecheck -w apps/server` is
+clean. `eslint` and `prettier --check` are clean on every touched file.
+
+**E2E.** Real `corpus init` workspace at `…/scratchpad/ws106r`, port 8793. Real
+server started with `corpus server start` (pid 19368). The process was
+`tsx …/agent-a065012bb98e89ae8/apps/server/src/main.ts`, so the worktree's source
+was running. `curl` sent the requests over HTTP. The settle was a real 35 s
+wait past the idle window.
+
+```
+neighbour=doc_3euvfsis subject=doc_ul73dai3
+settling 35 s past the idle window...
+PUT A body (opens the window): 200
+  commits with the window open: 7
+  HEAD subject: doc edit: Neighbour two (doc_3euvfsis) by user
+PUT S {status: archived}: 200
+  commits now: 7                     -- folded into the open window
+  HEAD subject: doc archive: Subject two (doc_ul73dai3) by user
+  HEAD files:   data/docs/inbox/neighbour-two.md data/docs/inbox/subject-two.md
+PUT A body again: 200
+  commits now: 8                     -- the window closed behind the act
+--- git log --format='%h %an %s' -5
+5b4981b user doc edit: Neighbour two (doc_3euvfsis) by user
+98f0738 user doc archive: Subject two (doc_ul73dai3) by user
+54298bc user editing session: 2 documents by user
+1f9cea4 user doc archive: Subject (doc_uzob2qiq) by user     <- POST /archive, same shape
+e72e9bf user editing session: 1 document by user
+```
+
+The archive by `PUT` in the middle of a window produced one commit. That commit
+holds the neighbour's body edit and the archived document, and its subject reads
+`doc archive:`. `1f9cea4` is the verb's own commit from the same session, and it
+has the same subject shape. Server stopped with `corpus server stop`, and port
+8793 is free.
+
+Not changed, and out of this issue's scope: the watcher's out-of-band commits
+(`watcher/commit-out-of-band.ts`) still write `doc edit:` when someone edits a
+file's `status` by hand. The rider lists three doors, and an external editor is
+not one of them.
 
 ### Pass 2 — the fix (2026-09-09)
 

@@ -345,7 +345,9 @@ describe("each act closes the window and names its commit (§4)", () => {
     // body edit and a status change made in one sitting remain **one** commit".
     expect(commitCount()).toBe(before + 1);
     expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
-    expect(subjectOf("HEAD")).toContain(`doc edit: Subject (${subject.id})`);
+    // "the commit's subject names the act" — and names it as the archive verb
+    // does, so `git log` reads the same whichever door was used (PR #79).
+    expect(subjectOf("HEAD")).toBe(`doc archive: Subject (${subject.id}) by agent`);
     expect(ws.read(subject.path)).toContain("status: archived");
 
     // "and that the window closes behind it".
@@ -387,7 +389,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(ws.read(subject.path)).toContain("status: open");
     expect(commitCount()).toBe(before + 1);
     expect(filesIn("HEAD")).toEqual([neighbour.path, subject.path].sort());
-    expect(subjectOf("HEAD")).toContain(`doc edit: Task (${subject.id})`);
+    expect(subjectOf("HEAD")).toBe(`doc unarchive: Task (${subject.id}) by agent`);
 
     expect((await putDoc(ws, neighbour.id, { body: "after" }, asAgent)).status).toBe(200);
     expect(commitCount()).toBe(before + 2);
