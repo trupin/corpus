@@ -40,13 +40,12 @@ export const COVERAGE_THRESHOLDS: Record<CoverageMetric, number> = {
   lines: 90,
   statements: 90,
   functions: 90,
-  // Re-baselined 90 -> 89.5 with the Vitest 4 upgrade (INFRA-043, 2026-09-09):
-  // the new AST-aware V8 remapping enumerates branches inside code that never
-  // ran, which Vitest 3 scored as 100% covered — the same tree measured 93.07%
-  // under the old instrument and 89.64% under the honest one. The code did not
-  // get worse; the ruler did get truer. INFRA-044 is the climb back to 90
-  // under the new instrument — raise this number there, never here.
-  branches: 89.5,
+  // History: INFRA-043 (Vitest 4) dropped this to 89.5 for one release — the
+  // AST-aware V8 remapping counts branches in never-run code that Vitest 3
+  // scored as covered (93.07% old ruler, 89.64% new, same tree). INFRA-044
+  // restored 90 with tests, chiefly `packages/contract/src/release.ts`
+  // (0 of 66 branches), and moved no glob.
+  branches: 90,
 };
 
 /** Vitest's `reportsDirectory`: raw istanbul JSON from the unit run lands here. */

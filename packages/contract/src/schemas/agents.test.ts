@@ -9,8 +9,10 @@ import {
   DesignateResidentRequestSchema,
   LANE_SUMMARY_MAX_LENGTH,
   LaneOriginSchema,
+  LaneWaitingPayloadSchema,
   MISSING_PROFILE_CAUSE_CLAUSE,
   MISSING_PROFILE_CAUSES,
+  parseLaneWaitingPayload,
   parseResidentDesignatedPayload,
   parseResidentReleasedPayload,
   presenceLiveField,
@@ -666,5 +668,30 @@ describe("the resident event payloads", () => {
         payload: { threadId: "th_x9y8", name: "researcher" },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("a lane that cannot be worked says so (SPEC.md §7)", () => {
+  it("carries the lane, and nothing a settling agent could answer with", () => {
+    expect(LaneWaitingPayloadSchema.parse({ lane: "th_x9y8" })).toEqual({ lane: "th_x9y8" });
+    // A turn timestamp or a document id would make the announcement
+    // answerable, and answering it would be the orchestrator writing in a
+    // resident's name. Extra keys are dropped rather than carried onward.
+    expect(
+      LaneWaitingPayloadSchema.parse({ lane: "th_x9y8", turn: "2026-09-09T10:00:00Z" }),
+    ).toEqual({ lane: "th_x9y8" });
+  });
+
+  it("demands a thread id: the lane is the argument to the launch", () => {
+    expect(LaneWaitingPayloadSchema.safeParse({}).success).toBe(false);
+    expect(LaneWaitingPayloadSchema.safeParse({ lane: "doc_a1b2" }).success).toBe(false);
+  });
+
+  it("reads a well-formed payload and declines a malformed one without throwing", () => {
+    // Same tolerance as its siblings: events come off disk, and a loop reading
+    // a mixed batch skips what it cannot understand rather than dying on it.
+    expect(parseLaneWaitingPayload({ lane: "th_x9y8" })).toEqual({ lane: "th_x9y8" });
+    expect(parseLaneWaitingPayload({ threadId: "th_x9y8" })).toBeUndefined();
+    expect(parseLaneWaitingPayload(null)).toBeUndefined();
   });
 });

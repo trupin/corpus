@@ -96,7 +96,7 @@ For §9 (server) with §2/§10 cross-references:
 
 Order: contract → server → cli → ui; the rider signs before any of it lands.
 
-## The §9.2 catalogue amendment, drafted for signature (PR #76 review, finding 4)
+## The §9.2 catalogue amendment, signed 2026-09-09 and applied (PR #76 review, finding 4)
 
 §9.2's route catalogue does not yet list the two telemetry routes. The
 behaviour is fully covered by the signed §9.4 rider; the catalogue bullets
@@ -111,4 +111,4 @@ are the bookkeeping §9.2's history lands via sign-off. Drafted:
 >   granularity (currently daily), the totals, the document's current size,
 >   and when measuring began.
 >
-> _(Amendment signed — date to be filled at signature.)_
+> _(Amendment signed 2026-09-09.)_

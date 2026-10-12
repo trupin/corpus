@@ -427,3 +427,141 @@ describe("a form that asks a question spelled like the note heading", () => {
     });
   });
 });
+
+/**
+ * The refusals the reader makes when a block does not fit the field it was
+ * written under (INFRA-044). Each one returns `undefined` — the same answer as
+ * "this body belongs to some other form" — because a body the reader cannot
+ * read against *this* form is not this form's answer, whichever of the two it
+ * is. A partial record is never produced.
+ */
+describe("a block that does not fit the field it sits under", () => {
+  const ONE_OF_EACH: Form = FormSchema.parse({
+    fields: [
+      { question: "Which riders do you want?", kind: "choose any", options: ["Water", "Law"] },
+      { question: "Anything I should know?", kind: "write", optional: true },
+    ],
+  });
+
+  const body = (blocks: readonly string[]): string => [FORM_ANSWER_LABEL, ...blocks].join("\n\n");
+
+  it("reads a heading with nothing under it as not an answer to this form", () => {
+    // Not even a blank: `_(blank)_` is how a blank is written, and its absence
+    // is a body that never said anything about the field.
+    const empty = body([
+      "**Which riders do you want?**",
+      "**Anything I should know?**",
+      "nothing else",
+    ]);
+
+    expect(parseFormAnswerBody(empty, ONE_OF_EACH)).toBeUndefined();
+  });
+
+  it("refuses a `choose any` block whose lines are not a list", () => {
+    const prose = body([
+      "**Which riders do you want?**",
+      "Water and Law",
+      "**Anything I should know?**",
+      FORM_ANSWER_BLANK,
+    ]);
+
+    expect(parseFormAnswerBody(prose, ONE_OF_EACH)).toBeUndefined();
+  });
+
+  it("refuses a `choose any` list item that names no option", () => {
+    const blankItem = body([
+      "**Which riders do you want?**",
+      "- Water\n-   ",
+      "**Anything I should know?**",
+      FORM_ANSWER_BLANK,
+    ]);
+
+    expect(parseFormAnswerBody(blankItem, ONE_OF_EACH)).toBeUndefined();
+  });
+
+  it("reads the same body as an answer when every block fits", () => {
+    // The control: the three refusals above are about the blocks, not about
+    // some other thing this fixture gets wrong.
+    const good = body([
+      "**Which riders do you want?**",
+      "- Water\n- Law",
+      "**Anything I should know?**",
+      FORM_ANSWER_BLANK,
+    ]);
+
+    expect(parseFormAnswerBody(good, ONE_OF_EACH)).toEqual({
+      answers: [
+        {
+          question: "Which riders do you want?",
+          kind: "choose any",
+          option: null,
+          options: ["Water", "Law"],
+          text: null,
+        },
+        {
+          question: "Anything I should know?",
+          kind: "write",
+          option: null,
+          options: null,
+          text: null,
+        },
+      ],
+      note: null,
+    });
+  });
+});
+
+describe("the round trip over a whole form, not just its written fields", () => {
+  it("accepts a `choose any` answer, options and order intact", () => {
+    // `unreadableAnswer` compares the read-back record with the given one field
+    // by field, and a multi-option selection is the one comparison that is not
+    // a string equality. Two selections of the same length that differ, or the
+    // same options in another order, are different answers.
+    const chosen = formAnswerRecord(THREE_KINDS, {
+      answers: [
+        { question: "Which quote should I file?", option: "Lemonade — $1,840/yr" },
+        { question: "Which riders do you want?", options: ["Water backup", "Ordinance or law"] },
+        { question: "Anything I should know?", text: "the roof is new" },
+      ],
+    });
+
+    expect(unreadableAnswer(THREE_KINDS, chosen)).toBeUndefined();
+    expect(parseFormAnswerBody(formatFormAnswerBody(chosen), THREE_KINDS)).toEqual(chosen);
+  });
+
+  it("points at the offending line even when the fields before it hold no text", () => {
+    // The loop walks every field looking for the line to blame, and a `choose
+    // one` or `choose any` field has no text that could imitate a delimiter.
+    // It must skip those rather than mistake "no text" for "nothing to say".
+    const hijacked = formAnswerRecord(THREE_KINDS, {
+      answers: [
+        { question: "Which quote should I file?", option: "State Farm — $2,010/yr" },
+        { question: "Which riders do you want?", options: ["Water backup"] },
+        { question: "Anything I should know?", text: "the roof is new\n\n**Note:**\n\nand old" },
+      ],
+    });
+
+    const reason = unreadableAnswer(THREE_KINDS, hijacked);
+    expect(reason).toContain("Anything I should know?");
+    expect(reason).toContain("**Note:**");
+  });
+
+  it("blames the field that collides, not the harmless one written before it", () => {
+    const twoWrites: Form = FormSchema.parse({
+      fields: [
+        { question: "What happened?", kind: "write" },
+        { question: "What should I do?", kind: "write" },
+      ],
+    });
+    const collides = formAnswerRecord(twoWrites, {
+      answers: [
+        { question: "What happened?", text: "the file moved" },
+        { question: "What should I do?", text: "file it\n\n**Note:**\n\nsoon" },
+      ],
+    });
+
+    const reason = unreadableAnswer(twoWrites, collides);
+    expect(reason).toContain("What should I do?");
+    expect(reason).not.toContain("`What happened?` contains");
+  });
+});

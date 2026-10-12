@@ -67,7 +67,7 @@ import { openDocId } from "../board/useBoardLocalState";
 import { useColumns } from "../board/useColumns";
 import { useCreateInColumn } from "../board/useCreateInColumn";
 import type { BoardColumn } from "../board/viewDoc";
-import { FocusMode } from "../reader/FocusMode";
+import { FocusMode, type FocusNavigate } from "../reader/FocusMode";
 import { pushEntry } from "../reader/useNavStack";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { useToast } from "./Toasts";
@@ -381,9 +381,38 @@ export function Board(): ReactElement {
   const orderedRef = useRef<readonly BoardColumn[]>(ordered);
   orderedRef.current = ordered;
 
+  /**
+   * The open full screen's excursion registers while the overlay is mounted
+   * (UI-200): a live function here means the mode is up, and `navigation.open`
+   * below routes into it. A ref, not state, for the same reason as
+   * `orderedRef` — the published handlers keep a stable identity.
+   */
+  const focusNavigateRef = useRef<FocusNavigate | null>(null);
+  const registerFocusNavigate = useCallback((navigate: FocusNavigate | null) => {
+    focusNavigateRef.current = navigate;
+  }, []);
+
   const navigation = useMemo<BoardNavigation>(
     () => ({
       open: (target) => {
+        /*
+         * Full screen stays (UI-200, applying §10's amendment signed
+         * 2026-09-09: navigation moves a person *within* the mode). An open
+         * dispatched through this seam while the full-screen overlay is up
+         * navigates the excursion — the pick pushes onto the overlay's own
+         * stack, so the gesture's result is on screen and back walks it. The
+         * loose-path landing below is for opens made outside the mode: a path
+         * landed behind a full-viewport `aria-modal` overlay is a result the
+         * person cannot see. In practice the only seam caller reachable while
+         * the overlay is up is the search panel (drawn above focus) — the
+         * explorer and the console are pointer-unreachable under it, and this
+         * branch simply makes the rule total rather than per-caller.
+         */
+        if (focusNavigateRef.current !== null) {
+          focusNavigateRef.current(target.docId, target.reveal);
+          setSelectTitleFor(target.selectTitle === true ? target.docId : null);
+          return;
+        }
         const named = target.origin?.view ?? target.columnId;
         /*
          * The explorer's origin is not a column and never resolves to one: its
@@ -1104,6 +1133,8 @@ export function Board(): ReactElement {
             docId={focusDoc.docId}
             listTitle={focusDoc.columnTitle}
             reveal={focusDoc.reveal}
+            selectTitleFor={selectTitleFor}
+            onRegisterNavigate={registerFocusNavigate}
             onClose={closeFocus}
             onNotify={notify}
           />

@@ -100,6 +100,24 @@ describe("ExtraFrontmatter", () => {
     );
   });
 
+  it("counts objects toward the same depth as arrays, and names where it stopped", () => {
+    // The bound is on containers, not on arrays: a record nested past it is the
+    // same refusal, or the limit could be walked around by changing brackets.
+    const nest = (depth: number): unknown => (depth === 0 ? "leaf" : { inner: nest(depth - 1) });
+    expect(ExtraFrontmatterSchema.safeParse({ deep: nest(EXTRA_MAX_DEPTH) }).success).toBe(true);
+
+    const result = ExtraFrontmatterSchema.safeParse({ deep: nest(EXTRA_MAX_DEPTH + 1) });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain(
+      `at most ${String(EXTRA_MAX_DEPTH)} containers deep`,
+    );
+    // The path points at the container that broke it, not at the key.
+    expect(result.error?.issues[0]?.path).toEqual([
+      "deep",
+      ...Array.from({ length: EXTRA_MAX_DEPTH }, () => "inner"),
+    ]);
+  });
+
   it("bounds the serialized size, so frontmatter stays a record and not a database", () => {
     const nearCap = { blob: "x".repeat(EXTRA_MAX_BYTES - 100) };
     const overCap = { blob: "x".repeat(EXTRA_MAX_BYTES + 1) };

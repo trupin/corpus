@@ -89,6 +89,11 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
    * what a ranked hit is: an address and a line of context, never a row. The
    * pre-rider home-column resolution, and the read it needed, are gone with
    * `resolveColumn`.
+   *
+   * The overlay itself does not know about full screen, deliberately: when
+   * the mode is up, the *board's* half of the seam routes this open into the
+   * excursion instead (UI-200 — full screen stays), so the pick is visible
+   * where the person is rather than landing behind an `aria-modal` overlay.
    */
   const openRow = useCallback(
     (hit: SearchHit) => {

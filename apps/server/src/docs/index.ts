@@ -9,6 +9,13 @@
 
 export { actorOf } from "./actor.js";
 export {
+  archiveSubjectVerb,
+  documentSubject,
+  statusMoveSubjectVerb,
+  threadStatusSubjectVerb,
+} from "./act-subject.js";
+export type { DocumentSubjectVerb } from "./act-subject.js";
+export {
   SKILLS_ARCHIVED_ROOT,
   SKILLS_ROOT,
   planSetArchived,

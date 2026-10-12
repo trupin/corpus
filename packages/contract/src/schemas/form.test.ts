@@ -579,6 +579,24 @@ describe("answering a form", () => {
     expect(rejection?.issues[0]?.message).toContain("more than once");
   });
 
+  /**
+   * `FormFieldAnswerSchema` already refuses both of these, and this function is
+   * reached with objects that were never parsed — a client pre-checking before
+   * it spends a round trip, or the server's own call on a body some future
+   * route assembled. It answers with the message rather than crashing on an
+   * entry that gives nothing, or two things (INFRA-044).
+   */
+  it.each([
+    ["gives nothing", { question: RATE }],
+    ["gives two things", { question: RATE, option: "6.1%", text: "hmm" }],
+  ])("names the one key a field's kind takes when an unparsed entry %s", (_name, entry) => {
+    const rejection = validateFormAnswer(form, { answers: [entry] });
+    expect(rejection?.code).toBe("bad_request");
+    expect(rejection?.issues[0]?.path).toBe("body.answers[0]");
+    expect(rejection?.issues[0]?.message).toContain("`choose one` field");
+    expect(rejection?.issues[0]?.message).toContain("`option`");
+  });
+
   it("rejects a required field with no answer, against `answers` as a whole", () => {
     const rejection = validateFormAnswer(RICH_FORM, { answers: [] });
     expect(rejection?.issues.map((issue) => issue.path)).toEqual(["body.answers", "body.answers"]);

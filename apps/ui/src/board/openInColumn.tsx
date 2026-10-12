@@ -20,7 +20,10 @@ import {
  * row, "open in" another board — lands as a **loose path at the left edge** of
  * the showing board. (A link inside full screen is no longer such a caller:
  * since UI-199 it continues the overlay's own excursion, and full screen
- * stays.) There is no home-column
+ * stays. And since UI-200 the board applies the same rule at this seam: an
+ * open dispatched while full screen is up — a search pick made inside the
+ * mode — navigates the excursion, because a loose path landed behind the
+ * overlay is a result nobody can see.) There is no home-column
  * resolution any more: the folder/type precedence this module used to carry
  * (`resolveColumn`) died with the rider, because a loose path is a place of its
  * own and no longer a guess about which column a document "belongs" to.

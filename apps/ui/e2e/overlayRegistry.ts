@@ -298,7 +298,32 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     },
     opener: null,
     scrollRegions: [{ selector: ".search-results" }],
-    furtherStates: [],
+    furtherStates: [
+      /*
+       * Search stacked over full screen (UI-200): ⌘K opens above the
+       * full-viewport focus overlay, and it is the one seam surface reachable
+       * from inside the mode. Same panel, same scrim, same scroll region —
+       * what this state adds is the layer beneath, and the battery's closure
+       * checks are what hold the escape chain's order: if Escape (or the
+       * scrim) closed focus instead of search, the panel would still be
+       * standing and the check would fail. What a pick *does* from here —
+       * navigate the excursion, never a loose path behind the modal — is
+       * `focus-stays.spec.ts`'s to hold, because it is a navigation, not an
+       * overlay anatomy.
+       */
+      {
+        id: "over-focus-mode",
+        open: async (page) => {
+          await bootCrowded(page);
+          await page.locator('.row[data-row-doc="doc_pic"]').click();
+          await page.locator(".reader .ProseMirror").waitFor();
+          await page.keyboard.press("f");
+          await page.locator(".focus.open").waitFor();
+          await page.keyboard.press("ControlOrMeta+k");
+          await page.locator('.search-panel[aria-label="Search"]').waitFor();
+        },
+      },
+    ],
     open: async (page) => {
       await bootCrowded(page);
       await page.keyboard.press("ControlOrMeta+k");
@@ -422,19 +447,22 @@ export const OVERLAYS: readonly OverlayEntry[] = [
     sources: ["apps/ui/src/image/ImageViewer.tsx"],
     surface: ".overlay.image-viewer",
     exit: { kind: "control", selector: ".image-viewer-close" },
-    opener: '.reader [data-reader-doc="doc_pic"] img, .reader img',
+    // `img.md-img`, never a bare `img` (UI-201): ProseMirror draws hidden
+    // `<img class="ProseMirror-separator">` hack nodes of its own around an
+    // inline atom, and since prosemirror-view 1.42.6 one sits *before* the
+    // picture in every browser — so "the first `img` in the reader" is a 0×0
+    // separator that never becomes visible. The class is the one `CorpusImage`
+    // puts on every picture it draws (the kit's `IMAGE_CLASS`).
+    opener: '.reader [data-reader-doc="doc_pic"] img.md-img, .reader img.md-img',
     scrollRegions: [],
     furtherStates: [],
     open: async (page) => {
       await bootCrowded(page);
       await page.locator('.row[data-row-doc="doc_pic"]').click();
-      const image = page.locator(".reader img").first();
+      const image = page.locator(".reader img.md-img").first();
       await image.waitFor();
       // Decoded, not merely mounted: a 1px placeholder box is not clickable.
-      await page
-        .locator(".reader img")
-        .first()
-        .evaluate((node) => (node as HTMLImageElement).decode());
+      await image.evaluate((node) => (node as HTMLImageElement).decode());
       await image.click();
       await page.locator(".overlay.image-viewer").waitFor();
     },
