@@ -159,7 +159,7 @@ invisible to the person who made it.
 - `tsc --noEmit -p apps/ui` clean, `eslint` clean, `prettier` clean on all
   touched files.
 
-## The §10 rider, drafted for signature (PR #79 review, finding 1)
+## The §10 rider — signed 2026-10-12 and applied
 
 UI-200 ships a behaviour the signed 2026-09-09 amendment implies but does not
 state: its text names "a link followed inside full screen", and a search pick
@@ -174,7 +174,7 @@ Drafted for signature:
 > it — continues the excursion instead, exactly as a followed link does, and
 > a document created that way opens there with its title selected. Leaving
 > the mode stays a deliberate act.
-> _(Rider signed — date to be filled at signature.)_
+> _(Rider signed 2026-10-12.)_
 
 If signed, apply it by adding "made on the board" to the §10 loose-path
 enumeration, and by adding the full-screen case to the §10 omnibox-create
