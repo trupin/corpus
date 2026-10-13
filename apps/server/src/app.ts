@@ -109,7 +109,7 @@ import { createHealthHandler } from "./routes/health.js";
 import { mountTelemetryRoutes } from "./telemetry/index.js";
 import { mountUpgradeRoutes } from "./upgrade/routes.js";
 import type { SpawnFn } from "./upgrade/trigger.js";
-import { mountStaticUi } from "./static-ui.js";
+import { API_DOCUMENT_PATH, mountStaticUi } from "./static-ui.js";
 import {
   createOutOfBandCommitter,
   createSelfWriteRegistry,
@@ -121,8 +121,10 @@ import {
  * Server-local introspection: the live OpenAPI document. Deliberately outside
  * the contract (Sprint-002 Adjudication 4) — there is no typed client method for
  * it — but still behind the bearer guard, because it describes a private API.
+ * The path itself lives in `static-ui.ts`, which redirects `/openapi.json` here
+ * (SERVER-169) and cannot import this module.
  */
-export const OPENAPI_PATH = "/api/openapi.json";
+export const OPENAPI_PATH = API_DOCUMENT_PATH;
 
 export type Disposer = () => void | Promise<void>;
 

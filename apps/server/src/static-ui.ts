@@ -33,10 +33,10 @@ export function isReservedPath(path: string): boolean {
 }
 
 /**
- * Where this server really publishes its OpenAPI document. Restated here rather
- * than imported from `app.ts` (`OPENAPI_PATH`), which imports this module;
- * `static-ui.test.ts` pins the two together. The health probe needs no copy:
- * its path comes from the contract through `HEALTH_PATH`.
+ * Where this server really publishes its OpenAPI document. It is defined here,
+ * and `app.ts` serves it as `OPENAPI_PATH`, because `app.ts` imports this module
+ * and not the reverse. The health probe's path comes from the contract through
+ * `HEALTH_PATH`.
  */
 export const API_DOCUMENT_PATH = "/api/openapi.json";
 

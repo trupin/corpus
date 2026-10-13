@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLogger, silentLogger, type LogSink } from "./logger.js";
-import { OPENAPI_PATH } from "./app.js";
 import { HEALTH_PATH } from "./middleware/auth.js";
 import {
   API_DOCUMENT_PATH,
@@ -421,13 +420,12 @@ describe("well-known API-ish paths never receive the shell (SERVER-169)", () => 
     ]),
   ];
 
-  it("redirects /openapi.json to the real document, which app.ts serves", () => {
-    expect(API_DOCUMENT_PATH).toBe(OPENAPI_PATH);
-    expect(wellKnownAnswer("/openapi.json")).toEqual({ redirect: OPENAPI_PATH });
+  it("redirects /openapi.json to the real document", () => {
+    expect(wellKnownAnswer("/openapi.json")).toEqual({ redirect: API_DOCUMENT_PATH });
   });
 
   it("decides bare /doc as the OpenAPI convention, and only the bare path", () => {
-    expect(wellKnownAnswer("/doc")).toEqual({ redirect: OPENAPI_PATH });
+    expect(wellKnownAnswer("/doc")).toEqual({ redirect: API_DOCUMENT_PATH });
     expect(wellKnownAnswer("/doc/")).toBeUndefined();
     expect(wellKnownAnswer("/doc/abc123")).toBeUndefined();
   });
