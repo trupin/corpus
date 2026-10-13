@@ -9,6 +9,7 @@ import { basename, join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "./logger.js";
+import { HEALTH_PATH } from "./middleware/auth.js";
 import {
   TOKEN_SHELL_CACHE_CONTROL,
   injectRuntimeConfig,
@@ -29,6 +30,95 @@ export const UI_MISSING_MESSAGE =
 
 export function isReservedPath(path: string): boolean {
   return RESERVED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+/**
+ * Where this server really publishes its OpenAPI document. It is defined here,
+ * and `app.ts` serves it as `OPENAPI_PATH`, because `app.ts` imports this module
+ * and not the reverse. The health probe's path comes from the contract through
+ * `HEALTH_PATH`.
+ */
+export const API_DOCUMENT_PATH = "/api/openapi.json";
+
+/**
+ * How a well-known path is answered instead of with the SPA shell: either
+ * `"not-found"` (fall through to routing and the API's `ApiError` 404) or a
+ * redirect to the place this server really answers that question.
+ */
+export type WellKnownAnswer = "not-found" | { readonly redirect: string };
+
+/**
+ * Well-known API-ish paths that never receive the SPA shell (SERVER-169).
+ *
+ * The rule is the one {@link RESERVED_PREFIXES} states, applied to the paths a
+ * *tool* asks for by convention rather than the ones this API owns. There is a
+ * second reason it matters here: the shell carries the workspace bearer token
+ * (SERVER-024), so a tool that probed `/openapi.json` and got the shell was
+ * handed a credential in place of an error. These entries are exact paths, not
+ * prefixes, because each is a single conventional filename — `/doc/<id>` must
+ * still reach the shell even though `/doc` is listed.
+ *
+ * A redirect is used only where this server has the *same* resource, in the
+ * same format, under `/api`. The target carries no token — it is a fixed path —
+ * and is a 307 rather than a 308 so a browser does not cache the move forever.
+ *
+ * - `/openapi.json` → redirect to {@link API_DOCUMENT_PATH}. A 404 would tell a
+ *   tool "there is no schema"; the truth is "it lives one level down", and the
+ *   target answers an unauthenticated caller with a 401 naming the token it
+ *   needs. A typo stays distinguishable from an outage either way.
+ * - `/doc` → redirect to {@link API_DOCUMENT_PATH}. Bare `/doc` is
+ *   `@hono/zod-openapi`'s documented `app.doc("/doc", …)` location — the
+ *   convention of the very framework this server is built on. It is not a router
+ *   path: `apps/ui` routes every URL to the board through one catch-all and reads
+ *   no path segment, and a `/doc` with no id names no document anyway. Deep
+ *   links (`/doc/<id>`) are untouched, because this entry is exact.
+ * - `/health` → redirect to {@link HEALTH_PATH}, the same probe, which needs
+ *   no token.
+ * - `/openapi.yaml`, `/openapi.yml`, `/swagger.json`, `/swagger.yaml` → 404.
+ *   This server publishes no YAML form, and the `swagger.*` names conventionally
+ *   mean a Swagger 2.0 document; redirecting either to OpenAPI 3.1 JSON would
+ *   answer a different question than the one asked.
+ * - `/healthz`, `/metrics` → 404. Kubernetes and Prometheus conventions with a
+ *   response format this server does not produce.
+ *
+ * Deliberately not listed: `/docs` and `/swagger-ui` (by convention an HTML page
+ * for a person, so the board is not a misleading answer), and anything the React
+ * router names (`/`, `/doc/<id>`, `/board/<name>`, …).
+ */
+export const WELL_KNOWN_PATHS: ReadonlyMap<string, WellKnownAnswer> = new Map<
+  string,
+  WellKnownAnswer
+>([
+  ["/openapi.json", { redirect: API_DOCUMENT_PATH }],
+  ["/doc", { redirect: API_DOCUMENT_PATH }],
+  ["/health", { redirect: HEALTH_PATH }],
+  ["/openapi.yaml", "not-found"],
+  ["/openapi.yml", "not-found"],
+  ["/swagger.json", "not-found"],
+  ["/swagger.yaml", "not-found"],
+  ["/healthz", "not-found"],
+  ["/metrics", "not-found"],
+]);
+
+/**
+ * Prefixes reserved for the same reason as {@link WELL_KNOWN_PATHS}. RFC 8615's
+ * `/.well-known/` space is where clients probe for machine-readable metadata
+ * (`security.txt`, OAuth discovery, `change-password`, …); none of it is the
+ * board, so every such probe gets a 404, never the shell.
+ */
+export const WELL_KNOWN_PREFIXES = ["/.well-known"] as const;
+
+/**
+ * How `path` is answered instead of with the shell, or `undefined` when the
+ * shell is the right answer. Matching is exact and case-sensitive, like routing.
+ */
+export function wellKnownAnswer(path: string): WellKnownAnswer | undefined {
+  const exact = WELL_KNOWN_PATHS.get(path);
+  if (exact !== undefined) return exact;
+  const prefixed = WELL_KNOWN_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+  return prefixed ? "not-found" : undefined;
 }
 
 /**
@@ -70,7 +160,8 @@ export interface StaticUiTarget {
 
 /**
  * Registers UI serving as the last middleware in the chain. It answers only
- * `GET`/`HEAD` requests outside the reserved prefixes; everything else calls
+ * `GET`/`HEAD` requests outside the reserved prefixes, and never hands the shell
+ * to a {@link wellKnownAnswer} path; everything else calls
  * `next()` and ends up in routing, so the API keeps working with no UI present.
  */
 /**
@@ -118,6 +209,19 @@ export function mountStaticUi(app: StaticUiTarget, options: StaticUiOptions): vo
         );
         return served;
       }
+    }
+
+    // After `serveStatic`, not beside the reserved-prefix check above: a file
+    // the UI build really ships under one of these names is our own bytes and
+    // carries no token, so it may still win. What this guard restores is only
+    // "this path never reaches the shell".
+    const answer = wellKnownAnswer(c.req.path);
+    if (answer === "not-found") return next();
+    if (answer !== undefined) {
+      return c.newResponse(null, 307, {
+        Location: answer.redirect,
+        "Cache-Control": REVALIDATE_CACHE_CONTROL,
+      });
     }
 
     return serveAppShell(c, distDir, logger, token);

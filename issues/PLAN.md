@@ -2532,7 +2532,7 @@ written.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | todo | P0 | opus | — |
+| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | done | P0 | opus | — |
 | CLI-086 | `server status` names the wrong port when a live pid is not answering | todo | P1 | opus | — |
 | SERVER-167 | A rebuild discards an index it may not be able to rebuild | todo | P1 | opus | — |
 | SERVER-168 | A create and an unarchive race for one skill name | todo | P1 | opus | — |
@@ -2557,4 +2557,7 @@ written.
 | SERVER-171 | Two edge doors where the status act reads wrong | todo | P2 | opus | SERVER-106 |
 | AGENT-076 | A second listener was launched onto a lane mid-turn | todo | P1 | fable | — |
 | UI-201 | Images did not stop rendering — the battery's selector found ProseMirror's separator | done | P0 | opus | — |
-| UI-202 | Closing the image viewer leaves the image selected, and the next keystroke deletes it | todo | P0 | opus | — |
+| UI-202 | Closing the image viewer leaves the image selected, and the next keystroke deletes it | done | P0 | opus | — |
+| UI-203 | A paste right after a click lands at the old selection | todo | P1 | opus | — |
+| UI-204 | Backspace on a focused image closes the reader | todo | P1 | opus | — |
+| UI-205 | Space does not open the image viewer | todo | P2 | opus | — |

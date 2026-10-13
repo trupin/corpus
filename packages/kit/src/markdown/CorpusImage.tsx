@@ -69,11 +69,13 @@ export const IMAGE_BROKEN_CLASS = "md-img-broken";
  * stale selection exists somewhere on the page is the worse failure.
  *
  * **Text is what makes it a text selection**, and that clause is not
- * defensive — it is what makes the editor work. Clicking an image inside
- * ProseMirror creates a `NodeSelection`, which reaches the DOM as a
- * *non-collapsed* selection spanning exactly this element and carrying no text
- * at all. Without the test below, every click on an image in a document body
- * was swallowed by the guard meant for a drag across prose.
+ * defensive — it is what makes the editor work. An image ProseMirror has
+ * selected holds a `NodeSelection`, which reaches the DOM as a *non-collapsed*
+ * selection spanning exactly this element and carrying no text at all. Without
+ * the test below, every click on a selected image in a document body was
+ * swallowed by the guard meant for a drag across prose. (The editor's node
+ * view no longer lets the click itself select the image — UI-202 — but the
+ * keyboard still can.)
  */
 function endsASelection(image: Node): boolean {
   const selection = globalThis.getSelection?.() ?? null;

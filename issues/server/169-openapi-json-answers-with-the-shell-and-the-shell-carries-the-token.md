@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -63,23 +63,23 @@ that module names — obtains the token by asking for `/openapi.json`.
 
 ## Acceptance Criteria
 
-- [ ] A defined set of well-known API-ish paths does **not** receive the SPA
+- [x] A defined set of well-known API-ish paths does **not** receive the SPA
       shell. They receive a 404 (or a redirect to the real document where one
       exists) with no token in the response.
-- [ ] `/openapi.json` specifically either 404s or redirects to
+- [x] `/openapi.json` specifically either 404s or redirects to
       `/api/openapi.json`. Whichever is chosen is stated in the module comment
       with the reason.
-- [ ] The chosen behaviour is expressed as data next to `RESERVED_PREFIXES`, not
+- [x] The chosen behaviour is expressed as data next to `RESERVED_PREFIXES`, not
       as an `if` chain in the middleware, so the list is reviewable in one place.
-- [ ] Deep links the React router owns (`/doc/<id>`, `/board/<name>`, and the
+- [x] Deep links the React router owns (`/doc/<id>`, `/board/<name>`, and the
       rest) still reach the shell. The fix must not break the SPA fallback, which
       is the reason the fallback exists.
-- [ ] `/doc` — the bare path, no id — is decided explicitly: it is both a
+- [x] `/doc` — the bare path, no id — is decided explicitly: it is both a
       plausible API convention and a plausible router path. Say which it is and
       why, in the comment.
-- [ ] A test asserts that a 200 HTML response is never returned for any entry in
+- [x] A test asserts that a 200 HTML response is never returned for any entry in
       the new list, and that the response body for those paths contains no token.
-- [ ] An existing test that a legitimate deep link still gets the shell is kept
+- [x] An existing test that a legitimate deep link still gets the shell is kept
       or added.
 
 ## Technical Design
@@ -199,27 +199,134 @@ SPA fallback is proven intact rather than assumed.
 
 ## E2E Verification Log
 
-_[Agent fills: include the actual `curl -i` output for the reproduction and the
-verification, with the token redacted but its presence/absence stated. State
-which model the implementing agent ran on.]_
+Implementing agent: server-dev, running on **opus** (Claude Opus 5.5).
+
+Scratch workspace: `corpus init <scratchpad>/ws169 --port 8931`, then
+`corpus server start`, built from this worktree. The token was read from
+`.corpus/config.json`. Every body below has the token replaced by
+`<REDACTED-TOKEN>`, and each probe states whether the raw response contained it.
+The user's server on 8765 was never touched.
 
 ### Reproduction (bugs only)
 
-_[Agent fills]_
+```
+== GET /openapi.json
+HTTP/1.1 200 OK
+cache-control: no-store
+content-type: text/html; charset=utf-8
+x-frame-options: DENY
+Content-Length: 1545
+
+  <head><script id="corpus-runtime-config" type="application/json">{"token":"<REDACTED-TOKEN>"}</script>
+    <meta charset="UTF-8" />
+    <title>Corpus</title> …
+-- token PRESENT in response
+== GET /doc
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+… same shell …
+-- token PRESENT in response
+```
+
+Controls at the same time: `GET /api/openapi.json` without a token → `401`
+`{"code":"unauthorized",…}`, with the token → `200` OpenAPI 3.1.0 JSON.
+`GET /api/health` → `200`, unauthenticated. So the real schema was behind the
+bearer guard while the mistyped path handed out the bearer itself.
 
 ### Post-Implementation Verification
 
-_[Agent fills]_
+Server stopped, restarted from the patched source, same workspace and port.
+
+```
+== GET /openapi.json
+HTTP/1.1 307 Temporary Redirect
+cache-control: no-cache
+location: /api/openapi.json
+-- token absent
+== HEAD /openapi.json
+HTTP/1.1 307 Temporary Redirect
+cache-control: no-cache
+location: /api/openapi.json
+-- token absent
+== GET /doc
+HTTP/1.1 307 Temporary Redirect
+location: /api/openapi.json
+-- token absent
+== GET /health
+HTTP/1.1 307 Temporary Redirect
+location: /api/health
+-- token absent
+== GET /swagger.json
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+{"code":"not_found","message":"no route matches GET /swagger.json"}
+-- token absent
+== GET /.well-known/security.txt
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+{"code":"not_found","message":"no route matches GET /.well-known/security.txt"}
+-- token absent
+== GET /api/openapi.json  (with bearer)          -- unchanged
+HTTP/1.1 200 OK
+Content-Type: application/json
+{"openapi":"3.1.0","info":{"title":"Corpus API",…
+curl -L /openapi.json (no bearer) -> final 401 at http://127.0.0.1:8931/api/openapi.json
+== GET /doc/doc_seedboardattention                -- deep link, real seed doc id
+HTTP/1.1 200 OK
+cache-control: no-store
+content-type: text/html; charset=utf-8
+x-frame-options: DENY
+<!doctype html> … <script id="corpus-runtime-config" type="application/json">{"token":"<REDACTED-TOKEN>"}</script> …
+-- token PRESENT in response (the SPA fallback and the runtime-config channel are intact)
+== GET /
+HTTP/1.1 200 OK, cache-control: no-store   -- unchanged
+```
+
+Not done: the browser hard-reload in Verification step 4. The deep-link curl
+shows the shell, its `no-store`/`DENY` headers and the runtime-config block are
+byte-for-byte the pre-fix shape, and `serveAppShell` and `ui-runtime-config.ts`
+are unchanged by this diff.
+
+Checks: `VITEST_MAX_WORKERS=4 vitest run apps/server/src/static-ui.test.ts
+apps/server/src/app.test.ts apps/server/src/ui-runtime-config.test.ts` → 3
+files, 212 tests passed. `eslint` and `prettier --check` on both touched files
+clean. `tsc --noEmit -p apps/server/tsconfig.json` exit 0.
+
+### Decisions
+
+- **`/openapi.json` redirects (307) to `/api/openapi.json`.** The document
+  exists, in the same format, one level down. A 404 would say "no schema"
+  when the truth is "it lives here". The target answers an unauthenticated
+  caller with a 401 that names the token, so a typo is still distinguishable
+  from an outage. 307, not 308, so a browser does not cache the move forever.
+  The `Location` is a fixed path and carries no token.
+- **Bare `/doc` is reserved (exact) and redirects to the document.** It is
+  `@hono/zod-openapi`'s documented `app.doc("/doc", …)` location. It is not a
+  router path: `apps/ui/src/app/App.tsx` routes `/` and `*` to the same `Shell`
+  and nothing in `apps/ui` or `packages/kit` reads a path segment
+  (`useParams`/`useLocation`/`window.location` appear only in the dev-only
+  `DataProbe`). `/doc/<id>` and `/doc/` still reach the shell.
+- **`/health` redirects to the contract's `HEALTH_PATH`** (same probe, no
+  token needed). `/openapi.yaml`, `/openapi.yml`, `/swagger.json`,
+  `/swagger.yaml`, `/healthz`, `/metrics` and the `/.well-known/` prefix fall
+  through to routing's `ApiError` JSON 404: this server publishes no YAML form,
+  no Swagger 2.0 document, and no k8s/Prometheus format.
+- **Not listed:** `/docs`, `/swagger-ui` — by convention HTML for a person.
+- **Ordering:** the guard sits after `serveStatic` and before the shell, so a
+  file the UI build really ships under a listed name still wins (it is our own
+  bytes and carries no token). A test pins that.
+- The list is data (`WELL_KNOWN_PATHS` map + `WELL_KNOWN_PREFIXES`) next to
+  `RESERVED_PREFIXES`, read by one predicate `wellKnownAnswer`.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] `ui-runtime-config.ts`'s "what would make it weaker" list re-read and none
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] `ui-runtime-config.ts`'s "what would make it weaker" list re-read and none
       of its entries violated
-- [ ] Acceptance criteria verified
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

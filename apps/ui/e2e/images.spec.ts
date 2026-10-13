@@ -328,3 +328,91 @@ test.describe("the full-screen viewer", () => {
     await expect(focus).toHaveCount(0);
   });
 });
+
+/**
+ * UI-202: a note whose picture sits on a paragraph of its own, between two of
+ * prose — the shape the data loss was found on.
+ */
+const FRAMED: StubRow = {
+  id: "doc_framed",
+  title: "Framed picture",
+  path: "data/docs/inbox/framed.md",
+  body: ["Before", "", `![shot.png](${SHOT})`, "", "After"].join("\n"),
+};
+
+/**
+ * UI-202, a P0 data loss. Clicking a picture in a document body opened the
+ * viewer **and** let ProseMirror put a `NodeSelection` on the image. Closing the
+ * viewer left that selection behind, invisible, and the next keystroke replaced
+ * the image. These tests pin the person's text, not the mechanism: whatever is
+ * typed after the viewer closes, the picture is still in the document.
+ */
+test.describe("closing the viewer from a document body (UI-202)", () => {
+  /** Opens the note, opens its picture full screen, and closes it with esc. */
+  async function openAndCloseTheViewer(page: Page): Promise<void> {
+    await stubAttachments(page);
+    await stubCorpus(page, [VIEW, FRAMED]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_framed"]').click();
+    const editor = page.locator(".reader .ProseMirror");
+    await expect(editor).toBeVisible();
+    // `img.md-img`, never a bare `img`: prosemirror-view draws hidden
+    // `img.ProseMirror-separator` hack nodes around an inline atom (UI-201).
+    const image = editor.locator("img.md-img");
+    await expect
+      .poll(async () => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+      .toBe(PNG_WIDTH);
+
+    await image.click();
+    await expect(page.locator(".overlay.image-viewer")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".overlay.image-viewer")).toHaveCount(0);
+    // SPEC.md §10: focus goes back to the image. That part was never wrong.
+    await expect(image).toBeFocused();
+    // Nothing selected the picture behind the person's back. Before the fix the
+    // press that opened the viewer had also made the image the editor's
+    // selection, and it was still selected here.
+    await expect(editor.locator(".ProseMirror-selectednode")).toHaveCount(0);
+  }
+
+  /** The editor's paragraphs as text, with the picture spelled out where it sits. */
+  async function paragraphs(page: Page): Promise<string[]> {
+    return page.$$eval(".reader .ProseMirror p", (nodes) =>
+      nodes.map(
+        (node) => (node.querySelector("img.md-img") === null ? "" : "[image]") + node.textContent,
+      ),
+    );
+  }
+
+  test("a click in another paragraph takes the caret, and the next keystroke lands there", async ({
+    page,
+  }) => {
+    await openAndCloseTheViewer(page);
+    const editor = page.locator(".reader .ProseMirror");
+    // No pause between the click and the key, on purpose. Before the fix the
+    // editor learnt of the click only from the browser's asynchronous
+    // `selectionchange`, and a key pressed inside that window replaced the
+    // picture although the caret was already drawn in "After".
+    await editor.locator("p", { hasText: "After" }).click();
+    await page.keyboard.type("Z");
+
+    await expect.poll(async () => paragraphs(page)).toEqual(["Before", "[image]", "AfterZ"]);
+    await expect(editor.locator("img.md-img")).toHaveCount(1);
+  });
+
+  /**
+   * The same loss without the click: focus is on the picture after esc, and a
+   * key typed there went to the selection the viewer had left on it.
+   */
+  test("a keystroke straight after esc does not replace the picture", async ({ page }) => {
+    await openAndCloseTheViewer(page);
+    await page.keyboard.type("Z");
+
+    await expect(page.locator(".reader .ProseMirror img.md-img")).toHaveCount(1);
+    // Where a key typed on a focused picture goes is not this issue's to
+    // decide; that it does not go *over* the picture is.
+    const after = await paragraphs(page);
+    expect(after.map((text) => text.replace("Z", ""))).toEqual(["Before", "[image]", "After"]);
+  });
+});
