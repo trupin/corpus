@@ -2558,3 +2558,6 @@ written.
 | AGENT-076 | A second listener was launched onto a lane mid-turn | todo | P1 | fable | — |
 | UI-201 | Images did not stop rendering — the battery's selector found ProseMirror's separator | done | P0 | opus | — |
 | UI-202 | Closing the image viewer leaves the image selected, and the next keystroke deletes it | done | P0 | opus | — |
+| UI-203 | A paste right after a click lands at the old selection | todo | P1 | opus | — |
+| UI-204 | Backspace on a focused image closes the reader | todo | P1 | opus | — |
+| UI-205 | Space does not open the image viewer | todo | P2 | opus | — |
