@@ -4,15 +4,21 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLogger, silentLogger, type LogSink } from "./logger.js";
+import { OPENAPI_PATH } from "./app.js";
+import { HEALTH_PATH } from "./middleware/auth.js";
 import {
+  API_DOCUMENT_PATH,
   IMMUTABLE_CACHE_CONTROL,
   REVALIDATE_CACHE_CONTROL,
   RESERVED_PREFIXES,
   UI_MISSING_MESSAGE,
+  WELL_KNOWN_PATHS,
+  WELL_KNOWN_PREFIXES,
   isAppShellPath,
   isImmutableAsset,
   isReservedPath,
   mountStaticUi,
+  wellKnownAnswer,
 } from "./static-ui.js";
 import { RUNTIME_CONFIG_ELEMENT_ID, TOKEN_SHELL_CACHE_CONTROL } from "./ui-runtime-config.js";
 
@@ -401,5 +407,110 @@ describe("with a partial UI build", () => {
     expect(response.status).toBe(503);
     expect(await response.text()).toContain(UI_MISSING_MESSAGE);
     expect(lines.some((line) => line.includes("index.html"))).toBe(true);
+  });
+});
+
+describe("well-known API-ish paths never receive the shell (SERVER-169)", () => {
+  /** Every listed path, plus probes under each reserved prefix. */
+  const LISTED = [
+    ...WELL_KNOWN_PATHS.keys(),
+    ...WELL_KNOWN_PREFIXES.flatMap((prefix) => [
+      prefix,
+      `${prefix}/security.txt`,
+      `${prefix}/openid-configuration`,
+    ]),
+  ];
+
+  it("redirects /openapi.json to the real document, which app.ts serves", () => {
+    expect(API_DOCUMENT_PATH).toBe(OPENAPI_PATH);
+    expect(wellKnownAnswer("/openapi.json")).toEqual({ redirect: OPENAPI_PATH });
+  });
+
+  it("decides bare /doc as the OpenAPI convention, and only the bare path", () => {
+    expect(wellKnownAnswer("/doc")).toEqual({ redirect: OPENAPI_PATH });
+    expect(wellKnownAnswer("/doc/")).toBeUndefined();
+    expect(wellKnownAnswer("/doc/abc123")).toBeUndefined();
+  });
+
+  it("redirects /health to the contract's health probe", () => {
+    expect(wellKnownAnswer("/health")).toEqual({ redirect: HEALTH_PATH });
+  });
+
+  it.each([
+    "/",
+    "/doc/abc123",
+    "/board/inbox",
+    "/openapi.json.bak",
+    "/OPENAPI.JSON",
+    "/.well-knownx",
+    "/healthy",
+  ])("leaves %s to the shell", (path) => {
+    expect(wellKnownAnswer(path)).toBeUndefined();
+  });
+
+  describe.each(["GET", "HEAD"])("over %s, with a token configured", (method) => {
+    it.each(LISTED)("%s gets no 200, no HTML and no token", async (path) => {
+      const response = await appWithToken(makeDist()).request(path, { method }, LOOPBACK);
+
+      expect(response.status).not.toBe(200);
+      expect(response.headers.get("content-type") ?? "").not.toContain("text/html");
+      const body = await response.text();
+      expect(body).not.toContain(TOKEN);
+      expect(body.toLowerCase()).not.toContain("<!doctype");
+      expect(body).not.toContain(RUNTIME_CONFIG_ELEMENT_ID);
+    });
+  });
+
+  const REDIRECTS = [...WELL_KNOWN_PATHS].flatMap(([path, answer]) =>
+    answer === "not-found" ? [] : [[path, answer.redirect] as const],
+  );
+
+  it.each(REDIRECTS)(
+    "%s answers a 307 to %s, a fixed Location carrying no token",
+    async (path, location) => {
+      const response = await appWithToken(makeDist()).request(path, undefined, LOOPBACK);
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get("location")).toBe(location);
+      expect(location).not.toContain(TOKEN);
+      expect(response.headers.get("cache-control")).toBe(REVALIDATE_CACHE_CONTROL);
+    },
+  );
+
+  it.each(LISTED.filter((path) => wellKnownAnswer(path) === "not-found"))(
+    "%s falls through to routing's JSON 404",
+    async (path) => {
+      const response = await appWithToken(makeDist()).request(path, undefined, LOOPBACK);
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect(await response.json()).toEqual({ code: "not_found", message: path });
+    },
+  );
+
+  it("answers the same way when no UI build is present", async () => {
+    const app = appWithToken(undefined);
+    expect((await app.request("/openapi.json", undefined, LOOPBACK)).status).toBe(307);
+    expect((await app.request("/swagger.json", undefined, LOOPBACK)).status).toBe(404);
+  });
+
+  it("still lets a file the UI build really ships under a listed name win", async () => {
+    const dist = makeDist();
+    writeFileSync(join(dist, "openapi.yaml"), "shipped: true\n", "utf8");
+
+    const response = await appWithToken(dist).request("/openapi.yaml", undefined, LOOPBACK);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("shipped: true\n");
+  });
+
+  it("keeps the SPA fallback: a deep link still gets the shell with the token", async () => {
+    const response = await appWithToken(makeDist()).request("/doc/abc123", undefined, LOOPBACK);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const body = await response.text();
+    expect(body).toContain(RUNTIME_CONFIG_ELEMENT_ID);
+    expect(body).toContain(TOKEN);
   });
 });

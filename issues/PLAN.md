@@ -2532,7 +2532,7 @@ written.
 
 | ID | Title | Status | Priority | Model | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | todo | P0 | opus | — |
+| SERVER-169 | `/openapi.json` answers with the shell, and the shell carries the token | done | P0 | opus | — |
 | CLI-086 | `server status` names the wrong port when a live pid is not answering | todo | P1 | opus | — |
 | SERVER-167 | A rebuild discards an index it may not be able to rebuild | todo | P1 | opus | — |
 | SERVER-168 | A create and an unarchive race for one skill name | todo | P1 | opus | — |
