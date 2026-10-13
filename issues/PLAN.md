@@ -2557,4 +2557,4 @@ written.
 | SERVER-171 | Two edge doors where the status act reads wrong | todo | P2 | opus | SERVER-106 |
 | AGENT-076 | A second listener was launched onto a lane mid-turn | todo | P1 | fable | — |
 | UI-201 | Images did not stop rendering — the battery's selector found ProseMirror's separator | done | P0 | opus | — |
-| UI-202 | Closing the image viewer leaves the image selected, and the next keystroke deletes it | todo | P0 | opus | — |
+| UI-202 | Closing the image viewer leaves the image selected, and the next keystroke deletes it | done | P0 | opus | — |
